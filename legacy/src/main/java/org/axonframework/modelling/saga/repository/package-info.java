@@ -23,8 +23,8 @@
  * {@link org.axonframework.modelling.saga.repository.CachingSagaStore} decorates any of them with a cache for saga
  * instances and for association lookups.
  * <p>
- * These types carry the Axon Framework 4 API unchanged, to ease migration of projects that cannot move off it in one
- * go.
+ * These types retain the synchronous Axon Framework 4 storage behavior and resource-provider model. Store operations
+ * also accept an optional processing context so decorators can coordinate side effects with the processing lifecycle.
  */
 @NullMarked
 package org.axonframework.modelling.saga.repository;

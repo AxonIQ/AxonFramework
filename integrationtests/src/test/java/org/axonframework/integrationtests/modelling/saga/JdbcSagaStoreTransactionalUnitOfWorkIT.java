@@ -154,7 +154,7 @@ class JdbcSagaStoreTransactionalUnitOfWorkIT {
             unitOfWork.runOnInvocation(context -> testSubject.insertSaga(StubSaga.class,
                                                                          "saga-1",
                                                                          new StubSaga(),
-                                                                         singleton(ORDER_1)));
+                                                                         singleton(ORDER_1), context));
 
             // when
             FutureUtils.joinAndUnwrap(unitOfWork.execute(), TIMEOUT);
@@ -171,11 +171,11 @@ class JdbcSagaStoreTransactionalUnitOfWorkIT {
             unitOfWork.runOnInvocation(context -> testSubject.insertSaga(StubSaga.class,
                                                                          "saga-1",
                                                                          new StubSaga(),
-                                                                         singleton(ORDER_1)));
+                                                                         singleton(ORDER_1), context));
             unitOfWork.runOnPrepareCommit(context -> testSubject.insertSaga(StubSaga.class,
                                                                             "saga-2",
                                                                             new StubSaga(),
-                                                                            singleton(ORDER_2)));
+                                                                            singleton(ORDER_2), context));
 
             // when
             FutureUtils.joinAndUnwrap(unitOfWork.execute(), TIMEOUT);
@@ -191,7 +191,7 @@ class JdbcSagaStoreTransactionalUnitOfWorkIT {
             insertingUnitOfWork.runOnInvocation(context -> testSubject.insertSaga(StubSaga.class,
                                                                                   "saga-1",
                                                                                   new StubSaga(),
-                                                                                  singleton(ORDER_1)));
+                                                                                  singleton(ORDER_1), context));
             FutureUtils.joinAndUnwrap(insertingUnitOfWork.execute(), TIMEOUT);
 
             // when a second unit of work loads it and writes new state
@@ -199,17 +199,17 @@ class JdbcSagaStoreTransactionalUnitOfWorkIT {
             updated.handled("OrderShipped");
             UnitOfWork updatingUnitOfWork = unitOfWorkFactory.create();
             updatingUnitOfWork.runOnInvocation(context -> {
-                SagaStore.Entry<StubSaga> loaded = testSubject.loadSaga(StubSaga.class, "saga-1");
+                SagaStore.Entry<StubSaga> loaded = testSubject.loadSaga(StubSaga.class, "saga-1", context);
                 assertThat(loaded).isNotNull();
                 testSubject.updateSaga(StubSaga.class,
                                        "saga-1",
                                        updated,
-                                       new AssociationValuesImpl(singleton(ORDER_1)));
+                                       new AssociationValuesImpl(singleton(ORDER_1)), context);
             });
             FutureUtils.joinAndUnwrap(updatingUnitOfWork.execute(), TIMEOUT);
 
             // then the new state is committed
-            SagaStore.Entry<StubSaga> entry = testSubject.loadSaga(StubSaga.class, "saga-1");
+            SagaStore.Entry<StubSaga> entry = testSubject.loadSaga(StubSaga.class, "saga-1", null);
             assertThat(entry).isNotNull();
             assertThat(entry.saga().getHandledEvents()).containsExactly("OrderShipped");
         }
@@ -225,7 +225,7 @@ class JdbcSagaStoreTransactionalUnitOfWorkIT {
             unitOfWork.runOnInvocation(context -> testSubject.insertSaga(StubSaga.class,
                                                                          "saga-1",
                                                                          new StubSaga(),
-                                                                         singleton(ORDER_1)));
+                                                                         singleton(ORDER_1), context));
             unitOfWork.onPrepareCommit(context -> CompletableFuture.failedFuture(
                     new IllegalStateException("failing the unit of work on purpose")));
 
@@ -247,9 +247,9 @@ class JdbcSagaStoreTransactionalUnitOfWorkIT {
             unitOfWork.runOnInvocation(context -> testSubject.insertSaga(StubSaga.class,
                                                                          "saga-1",
                                                                          new StubSaga(),
-                                                                         singleton(ORDER_1)));
+                                                                         singleton(ORDER_1), context));
             unitOfWork.onPrepareCommit(context -> {
-                testSubject.insertSaga(StubSaga.class, "saga-2", new StubSaga(), singleton(ORDER_2));
+                testSubject.insertSaga(StubSaga.class, "saga-2", new StubSaga(), singleton(ORDER_2), context);
                 return CompletableFuture.failedFuture(new IllegalStateException("failing after the second write"));
             });
 
@@ -268,7 +268,7 @@ class JdbcSagaStoreTransactionalUnitOfWorkIT {
             committed.runOnInvocation(context -> testSubject.insertSaga(StubSaga.class,
                                                                         "saga-1",
                                                                         new StubSaga(),
-                                                                        singleton(ORDER_1)));
+                                                                        singleton(ORDER_1), context));
             FutureUtils.joinAndUnwrap(committed.execute(), TIMEOUT);
 
             // when a later unit of work writes and then fails
@@ -276,7 +276,7 @@ class JdbcSagaStoreTransactionalUnitOfWorkIT {
             failing.runOnInvocation(context -> testSubject.insertSaga(StubSaga.class,
                                                                       "saga-2",
                                                                       new StubSaga(),
-                                                                      singleton(ORDER_2)));
+                                                                      singleton(ORDER_2), context));
             failing.onPrepareCommit(context -> CompletableFuture.failedFuture(new IllegalStateException("boom")));
             assertThatThrownBy(() -> FutureUtils.joinAndUnwrap(failing.execute(), TIMEOUT))
                     .isInstanceOf(IllegalStateException.class);

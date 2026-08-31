@@ -101,19 +101,21 @@ class JpaSagaStoreTest extends SagaStoreTestSuite {
         associations.add(ORDER_1);
 
         // when
-        inTransaction(() -> testSubject.updateSaga(StubSaga.class, "saga-1", new StubSaga(), associations));
+        inTransaction(() -> testSubject.updateSaga(StubSaga.class, "saga-1", new StubSaga(), associations, null));
 
         // then no saga came into being, yet the association was written, leaving it pointing at nothing
-        assertThat(testSubject.loadSaga(StubSaga.class, "saga-1")).isNull();
-        assertThat(testSubject.findSagas(StubSaga.class, ORDER_1)).containsExactly("saga-1");
+        assertThat(testSubject.loadSaga(StubSaga.class, "saga-1", null)).isNull();
+        assertThat(testSubject.findSagas(StubSaga.class, ORDER_1, null)).containsExactly("saga-1");
     }
 
     @Test
     void writingWithoutATransactionFailsRatherThanWritingPartialState() {
         // given no active transaction / when / then
-        assertThatThrownBy(() -> testSubject.insertSaga(StubSaga.class, "saga-1", new StubSaga(), singleton(ORDER_1)))
+        assertThatThrownBy(() -> testSubject.insertSaga(
+                StubSaga.class, "saga-1", new StubSaga(), singleton(ORDER_1), null
+        ))
                 .isInstanceOf(TransactionRequiredException.class);
-        assertThat(testSubject.loadSaga(StubSaga.class, "saga-1")).isNull();
+        assertThat(testSubject.loadSaga(StubSaga.class, "saga-1", null)).isNull();
     }
 
     @Test
@@ -121,12 +123,12 @@ class JpaSagaStoreTest extends SagaStoreTestSuite {
         // given a saga inserted inside a transaction that is then rolled back
         EntityTransaction transaction = entityManager.getTransaction();
         transaction.begin();
-        testSubject.insertSaga(StubSaga.class, "saga-1", new StubSaga(), singleton(ORDER_1));
+        testSubject.insertSaga(StubSaga.class, "saga-1", new StubSaga(), singleton(ORDER_1), null);
         transaction.rollback();
         entityManager.clear();
 
         // when / then nothing was persisted, so the store did join the transaction
-        assertThat(testSubject.loadSaga(StubSaga.class, "saga-1")).isNull();
-        assertThat(testSubject.findSagas(StubSaga.class, ORDER_1)).isEmpty();
+        assertThat(testSubject.loadSaga(StubSaga.class, "saga-1", null)).isNull();
+        assertThat(testSubject.findSagas(StubSaga.class, ORDER_1, null)).isEmpty();
     }
 }

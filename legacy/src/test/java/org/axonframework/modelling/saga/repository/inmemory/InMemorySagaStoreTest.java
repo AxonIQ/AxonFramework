@@ -51,11 +51,13 @@ class InMemorySagaStoreTest extends SagaStoreTestSuite {
         AssociationValue orderId = new AssociationValue("orderId", "order-1");
 
         // when
-        testSubject.updateSaga(StubSaga.class, "saga-1", new StubSaga(), new AssociationValuesImpl(singleton(orderId)));
+        testSubject.updateSaga(
+                StubSaga.class, "saga-1", new StubSaga(), new AssociationValuesImpl(singleton(orderId)), null
+        );
 
         // then
-        assertThat(testSubject.loadSaga(StubSaga.class, "saga-1")).isNotNull();
-        assertThat(testSubject.findSagas(StubSaga.class, orderId)).containsExactly("saga-1");
+        assertThat(testSubject.loadSaga(StubSaga.class, "saga-1", null)).isNotNull();
+        assertThat(testSubject.findSagas(StubSaga.class, orderId, null)).containsExactly("saga-1");
     }
 
     @Test
@@ -67,13 +69,13 @@ class InMemorySagaStoreTest extends SagaStoreTestSuite {
         testSubject.insertSaga(StubSaga.class,
                                "saga-1",
                                new StubSaga(),
-                               singleton(new AssociationValue("orderId", "order-1")));
+                               singleton(new AssociationValue("orderId", "order-1")), null);
 
         // then
         assertThat(testSubject.size()).isEqualTo(1);
 
         // and when the saga is deleted again
-        testSubject.deleteSaga(StubSaga.class, "saga-1", singleton(new AssociationValue("orderId", "order-1")));
+        testSubject.deleteSaga(StubSaga.class, "saga-1", singleton(new AssociationValue("orderId", "order-1")), null);
 
         // then
         assertThat(testSubject.size()).isZero();

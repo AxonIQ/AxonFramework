@@ -78,7 +78,7 @@ class SagaStoreAndTokenStoreShareTransactionIT {
         entityManager = entityManagerFactory.createEntityManager();
         EntityManagerProvider entityManagerProvider = new SimpleEntityManagerProvider(entityManager);
 
-        // Axon Framework 4 shape: holds the provider, takes no ProcessingContext.
+        // Axon Framework 4 resource-access shape: holds the provider and does not resolve it from ProcessingContext.
         sagaStore = JpaSagaStore.builder()
                                 .entityManagerProvider(entityManagerProvider)
                                 .converter(new JacksonConverter())
@@ -127,7 +127,7 @@ class SagaStoreAndTokenStoreShareTransactionIT {
                                                      .thenRun(() -> sagaStore.insertSaga(StubSaga.class,
                                                                                          "saga-1",
                                                                                          new StubSaga(),
-                                                                                         singleton(ORDER_1))));
+                                                                                         singleton(ORDER_1), context)));
 
         // when
         FutureUtils.joinAndUnwrap(unitOfWork.execute(), TIMEOUT);
@@ -145,7 +145,7 @@ class SagaStoreAndTokenStoreShareTransactionIT {
                                                      .thenRun(() -> sagaStore.insertSaga(StubSaga.class,
                                                                                          "saga-1",
                                                                                          new StubSaga(),
-                                                                                         singleton(ORDER_1))));
+                                                                                         singleton(ORDER_1), context)));
         unitOfWork.onPrepareCommit(context -> CompletableFuture.failedFuture(
                 new IllegalStateException("failing the unit of work on purpose")));
 

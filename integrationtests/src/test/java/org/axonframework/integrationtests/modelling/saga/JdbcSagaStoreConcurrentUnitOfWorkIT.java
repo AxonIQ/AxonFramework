@@ -146,7 +146,7 @@ class JdbcSagaStoreConcurrentUnitOfWorkIT {
                 testSubject.insertSaga(StubSaga.class,
                                        "saga-committed",
                                        new StubSaga(),
-                                       singleton(ORDER_COMMITTED));
+                                       singleton(ORDER_COMMITTED), context);
                 awaitBarrier(bothInserted);
             });
             FutureUtils.joinAndUnwrap(unitOfWork.execute(), TIMEOUT);
@@ -158,7 +158,7 @@ class JdbcSagaStoreConcurrentUnitOfWorkIT {
                 testSubject.insertSaga(StubSaga.class,
                                        "saga-rolled-back",
                                        new StubSaga(),
-                                       singleton(ORDER_ROLLED_BACK));
+                                       singleton(ORDER_ROLLED_BACK), context);
                 awaitBarrier(bothInserted);
             });
             unitOfWork.onPrepareCommit(context -> CompletableFuture.failedFuture(
@@ -175,8 +175,8 @@ class JdbcSagaStoreConcurrentUnitOfWorkIT {
         // then each unit of work kept its own transaction: one committed, the other rolled back, and neither took the
         // other with it
         assertThat(committedSagaIds()).containsExactly("saga-committed");
-        assertThat(testSubject.findSagas(StubSaga.class, ORDER_COMMITTED)).containsExactly("saga-committed");
-        assertThat(testSubject.findSagas(StubSaga.class, ORDER_ROLLED_BACK)).isEmpty();
+        assertThat(testSubject.findSagas(StubSaga.class, ORDER_COMMITTED, null)).containsExactly("saga-committed");
+        assertThat(testSubject.findSagas(StubSaga.class, ORDER_ROLLED_BACK, null)).isEmpty();
     }
 
     @Test
@@ -200,7 +200,7 @@ class JdbcSagaStoreConcurrentUnitOfWorkIT {
         return CompletableFuture.runAsync(() -> {
             UnitOfWork unitOfWork = unitOfWorkFactory.create();
             unitOfWork.runOnInvocation(context -> {
-                testSubject.insertSaga(StubSaga.class, sagaId, new StubSaga(), singleton(associationValue));
+                testSubject.insertSaga(StubSaga.class, sagaId, new StubSaga(), singleton(associationValue), context);
                 awaitBarrier(barrier);
             });
             FutureUtils.joinAndUnwrap(unitOfWork.execute(), TIMEOUT);

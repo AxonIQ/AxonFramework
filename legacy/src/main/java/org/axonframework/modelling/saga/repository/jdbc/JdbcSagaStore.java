@@ -18,13 +18,14 @@ package org.axonframework.modelling.saga.repository.jdbc;
 
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.jdbc.ConnectionProvider;
-import org.axonframework.common.jdbc.DataSourceConnectionProvider;
+import org.axonframework.conversion.Converter;
+import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.modelling.saga.AssociationValue;
 import org.axonframework.modelling.saga.AssociationValues;
 import org.axonframework.modelling.saga.SagaStorageException;
 import org.axonframework.modelling.saga.repository.SagaStore;
 import org.axonframework.modelling.saga.repository.jpa.SagaEntry;
-import org.axonframework.conversion.Converter;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,7 +36,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Set;
 import java.util.TreeSet;
-import javax.sql.DataSource;
 
 import static org.axonframework.common.BuilderUtils.assertNonNull;
 import static org.axonframework.common.jdbc.JdbcUtils.closeQuietly;
@@ -54,19 +54,19 @@ import static org.axonframework.common.jdbc.JdbcUtils.closeQuietly;
  * That places a requirement on the {@code ConnectionProvider}, because this store is constructed once while the
  * transaction it must join belongs to whichever unit of work is currently running, and several units of work may be in
  * flight on different threads. <b>The provider must resolve the connection bound to the calling thread's transaction on
- * every call</b>, which is what {@code SpringDataSourceConnectionProvider} does and what
- * {@link DataSourceConnectionProvider} does not. Supply the former in a Spring application, and supply the same instance
- * the transaction manager was given; a store holding a different provider writes outside the transaction entirely. The
+ * every call</b>, which is what {@code SpringDataSourceConnectionProvider} does. Supply the same provider instance the
+ * transaction manager was given; a store holding a different provider writes outside the transaction entirely. The
  * same requirement applies to any Axon Framework 5 component reached through a
  * {@code TransactionalExecutorProvider}, since the executor published on the processing context wraps that same
  * provider.
  * <p>
- * Consequently, <b>saga handling should run inside a transaction.</b> Each of these operations issues several statements
- * -- {@link #insertSaga(Class, String, Object, Set)} writes the saga row plus one row per association value,
- * {@link #updateSaga(Class, String, Object, AssociationValues)} writes the state update plus one insert per added and
- * one delete per removed association, {@link #deleteSaga(Class, String, Set)} deletes the associations and the saga row
- * separately, and {@link #loadSaga(Class, String)} reads the saga row and its associations in two queries. Without an
- * ambient transaction each statement commits on its own, so a failure part way through leaves the saga and its
+ * Consequently, <b>saga handling should run inside a transaction.</b> Each of these operations issues several
+ * statements -- {@link #insertSaga(Class, String, Object, Set, ProcessingContext)} writes the saga row plus one row per
+ * association value, {@link #updateSaga(Class, String, Object, AssociationValues, ProcessingContext)} writes the state
+ * update plus one insert per added and one delete per removed association,
+ * {@link #deleteSaga(Class, String, Set, ProcessingContext)} deletes the associations and the saga row separately, and
+ * {@link #loadSaga(Class, String, ProcessingContext)} reads the saga row and its associations in two queries. Without
+ * an ambient transaction each statement commits on its own, so a failure part way through leaves the saga and its
  * associations inconsistent rather than failing cleanly.
  * <p>
  * A saga inserted here records {@link SagaEntry#LEGACY_REVISION} in its revision column, marking the row as one this
@@ -106,11 +106,6 @@ public class JdbcSagaStore implements SagaStore<Object> {
      * <p>
      * The {@link ConnectionProvider} and {@link Converter} are <b>hard requirements</b> and as such should be
      * provided.
-     * <p>
-     * You can choose to provide a {@link DataSource} instead of a ConnectionProvider, but in that case the used
-     * ConnectionProvider will be a plain {@link DataSourceConnectionProvider}, whose connections are not bound to any
-     * ambient transaction.
-     *
      * @return a Builder to be able to create a {@link JdbcSagaStore}
      */
     public static Builder builder() {
@@ -118,7 +113,8 @@ public class JdbcSagaStore implements SagaStore<Object> {
     }
 
     @Override
-    public <S> Entry<S> loadSaga(Class<S> sagaType, String sagaIdentifier) {
+    public @Nullable <S> Entry<S> loadSaga(Class<S> sagaType, String sagaIdentifier,
+                                           @Nullable ProcessingContext context) {
         PreparedStatement statement = null;
         ResultSet resultSet = null;
         Connection conn = null;
@@ -150,7 +146,8 @@ public class JdbcSagaStore implements SagaStore<Object> {
     }
 
     @Override
-    public Set<String> findSagas(Class<?> sagaType, AssociationValue associationValue) {
+    public Set<String> findSagas(Class<?> sagaType, AssociationValue associationValue,
+                                 @Nullable ProcessingContext context) {
         ResultSet resultSet = null;
         PreparedStatement statement = null;
         Connection conn = null;
@@ -175,7 +172,8 @@ public class JdbcSagaStore implements SagaStore<Object> {
     }
 
     @Override
-    public void deleteSaga(Class<?> sagaType, String sagaIdentifier, Set<AssociationValue> associationValues) {
+    public void deleteSaga(Class<?> sagaType, String sagaIdentifier, Set<AssociationValue> associationValues,
+                           @Nullable ProcessingContext context) {
         PreparedStatement statement1 = null;
         PreparedStatement statement2 = null;
         Connection conn = null;
@@ -195,7 +193,8 @@ public class JdbcSagaStore implements SagaStore<Object> {
     }
 
     @Override
-    public void updateSaga(Class<?> sagaType, String sagaIdentifier, Object saga, AssociationValues associationValues) {
+    public void updateSaga(Class<?> sagaType, String sagaIdentifier, Object saga, AssociationValues associationValues,
+                           @Nullable ProcessingContext context) {
         SagaEntry<?> entry = new SagaEntry<>(saga, sagaIdentifier, converter);
         if (logger.isDebugEnabled()) {
             logger.debug("Updating saga id {} as {}", sagaIdentifier, new String(entry.getSerializedSaga(),
@@ -247,7 +246,7 @@ public class JdbcSagaStore implements SagaStore<Object> {
 
     @Override
     public void insertSaga(Class<?> sagaType, String sagaIdentifier, Object saga,
-                           Set<AssociationValue> associationValues) {
+                           Set<AssociationValue> associationValues, @Nullable ProcessingContext context) {
         SagaEntry<?> entry = new SagaEntry<>(saga, sagaIdentifier, converter);
         if (logger.isDebugEnabled()) {
             logger.debug("Storing saga id {} as {}", sagaIdentifier, new String(entry.getSerializedSaga(),
@@ -318,10 +317,6 @@ public class JdbcSagaStore implements SagaStore<Object> {
      * <p>
      * The {@link ConnectionProvider} and {@link Converter} are <b>hard requirements</b> and as such should be
      * provided.
-     * <p>
-     * You can choose to provide a {@link DataSource} instead of a ConnectionProvider, but in that case the used
-     * ConnectionProvider will be a plain {@link DataSourceConnectionProvider}, whose connections are not bound to any
-     * ambient transaction.
      */
     public static class Builder {
 
@@ -338,26 +333,6 @@ public class JdbcSagaStore implements SagaStore<Object> {
         public Builder connectionProvider(ConnectionProvider connectionProvider) {
             assertNonNull(connectionProvider, "ConnectionProvider may not be null");
             this.connectionProvider = connectionProvider;
-            return this;
-        }
-
-        /**
-         * Sets the {@link ConnectionProvider} by providing a {@link DataSource}. The given {@code dataSource} is wrapped
-         * in a {@link DataSourceConnectionProvider}, which provides access to a JDBC connection for this
-         * {@link SagaStore} implementation.
-         * <p>
-         * Connections obtained this way are taken straight from the {@code DataSource} and are therefore <b>not</b>
-         * bound to any ambient transaction. In a Spring application, pass a
-         * {@code SpringDataSourceConnectionProvider} to {@link #connectionProvider(ConnectionProvider)} instead, so that
-         * saga changes commit together with the surrounding Spring transaction.
-         *
-         * @param dataSource a {@link DataSource} which ends up in a {@link DataSourceConnectionProvider} as the
-         *                   {@link ConnectionProvider} for this {@link SagaStore} implementation
-         * @return the current Builder instance, for fluent interfacing
-         */
-        public Builder dataSource(DataSource dataSource) {
-            assertNonNull(dataSource, "DataSource used to instantiate a ConnectionProvider may not be null");
-            this.connectionProvider = new DataSourceConnectionProvider(dataSource);
             return this;
         }
 

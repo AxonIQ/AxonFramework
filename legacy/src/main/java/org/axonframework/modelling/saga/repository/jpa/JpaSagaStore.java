@@ -21,10 +21,12 @@ import jakarta.persistence.EntityManagerFactory;
 import jakarta.persistence.EntityNotFoundException;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.jpa.EntityManagerProvider;
+import org.axonframework.conversion.Converter;
+import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.modelling.saga.AssociationValue;
 import org.axonframework.modelling.saga.AssociationValues;
 import org.axonframework.modelling.saga.repository.SagaStore;
-import org.axonframework.conversion.Converter;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -159,7 +161,8 @@ public class JpaSagaStore implements SagaStore<Object> {
     }
 
     @Override
-    public <S> Entry<S> loadSaga(Class<S> sagaType, String sagaIdentifier) {
+    public @Nullable <S> Entry<S> loadSaga(Class<S> sagaType, String sagaIdentifier,
+                                           @Nullable ProcessingContext context) {
         EntityManager entityManager = entityManagerProvider.getEntityManager();
 
         List<byte[]> serializedSagaList = entityManager.createNamedQuery(LOAD_SAGA_NAMED_QUERY, byte[].class)
@@ -239,7 +242,8 @@ public class JpaSagaStore implements SagaStore<Object> {
     }
 
     @Override
-    public Set<String> findSagas(Class<?> sagaType, AssociationValue associationValue) {
+    public Set<String> findSagas(Class<?> sagaType, AssociationValue associationValue,
+                                 @Nullable ProcessingContext context) {
         EntityManager entityManager = entityManagerProvider.getEntityManager();
         List<String> entries = entityManager.createNamedQuery(FIND_ASSOCIATION_IDS_NAMED_QUERY, String.class)
                                             .setParameter("associationKey", associationValue.getKey())
@@ -249,7 +253,8 @@ public class JpaSagaStore implements SagaStore<Object> {
     }
 
     @Override
-    public void deleteSaga(Class<?> sagaType, String sagaIdentifier, Set<AssociationValue> associationValues) {
+    public void deleteSaga(Class<?> sagaType, String sagaIdentifier, Set<AssociationValue> associationValues,
+                           @Nullable ProcessingContext context) {
         EntityManager entityManager = entityManagerProvider.getEntityManager();
         try {
             entityManager.createNamedQuery(DELETE_ASSOCIATIONS_NAMED_QUERY)
@@ -269,7 +274,8 @@ public class JpaSagaStore implements SagaStore<Object> {
     }
 
     @Override
-    public void updateSaga(Class<?> sagaType, String sagaIdentifier, Object saga, AssociationValues associationValues) {
+    public void updateSaga(Class<?> sagaType, String sagaIdentifier, Object saga, AssociationValues associationValues,
+                           @Nullable ProcessingContext context) {
         EntityManager entityManager = entityManagerProvider.getEntityManager();
         SagaEntry<?> entry = createSagaEntry(saga, sagaIdentifier, converter);
 
@@ -304,7 +310,7 @@ public class JpaSagaStore implements SagaStore<Object> {
 
     @Override
     public void insertSaga(Class<?> sagaType, String sagaIdentifier, Object saga,
-                           Set<AssociationValue> associationValues) {
+                           Set<AssociationValue> associationValues, @Nullable ProcessingContext context) {
         EntityManager entityManager = entityManagerProvider.getEntityManager();
         SagaEntry<?> entry = createSagaEntry(saga, sagaIdentifier, converter);
         entityManager.persist(entry);

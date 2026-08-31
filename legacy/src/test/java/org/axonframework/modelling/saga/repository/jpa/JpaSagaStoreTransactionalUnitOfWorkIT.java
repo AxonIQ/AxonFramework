@@ -53,8 +53,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * The other tests in this module drive the {@code EntityTransaction} by hand, which shows the store works but says
  * nothing about the framework wiring. Here the transaction is started, committed and rolled back by the unit of work
  * itself, through an {@link EntityManagerTransactionManager}, exactly as it would be in an application. The store is
- * given the same {@link EntityManagerProvider} the transaction manager holds, which is the whole mechanism by which it
- * joins: no {@code ProcessingContext} parameter, and no
+ * given the same {@link EntityManagerProvider} the transaction manager holds, which is the mechanism by which it joins.
+ * The processing context passed to the store does not replace that provider and the store does not use a
  * {@code TransactionalExecutorProvider}.
  * <p>
  * Every assertion reads through a second {@link EntityManager} with its own persistence context, so what is being
@@ -134,7 +134,7 @@ class JpaSagaStoreTransactionalUnitOfWorkIT {
             unitOfWork.runOnInvocation(context -> testSubject.insertSaga(StubSaga.class,
                                                                          "saga-1",
                                                                          new StubSaga(),
-                                                                         singleton(ORDER_1)));
+                                                                         singleton(ORDER_1), context));
 
             // when
             FutureUtils.joinAndUnwrap(unitOfWork.execute(), TIMEOUT);
@@ -151,11 +151,11 @@ class JpaSagaStoreTransactionalUnitOfWorkIT {
             unitOfWork.runOnInvocation(context -> testSubject.insertSaga(StubSaga.class,
                                                                          "saga-1",
                                                                          new StubSaga(),
-                                                                         singleton(ORDER_1)));
+                                                                         singleton(ORDER_1), context));
             unitOfWork.runOnPrepareCommit(context -> testSubject.insertSaga(StubSaga.class,
                                                                             "saga-2",
                                                                             new StubSaga(),
-                                                                            singleton(ORDER_2)));
+                                                                            singleton(ORDER_2), context));
 
             // when
             FutureUtils.joinAndUnwrap(unitOfWork.execute(), TIMEOUT);
@@ -171,7 +171,7 @@ class JpaSagaStoreTransactionalUnitOfWorkIT {
             insertingUnitOfWork.runOnInvocation(context -> testSubject.insertSaga(StubSaga.class,
                                                                                   "saga-1",
                                                                                   new StubSaga(),
-                                                                                  singleton(ORDER_1)));
+                                                                                  singleton(ORDER_1), context));
             FutureUtils.joinAndUnwrap(insertingUnitOfWork.execute(), TIMEOUT);
 
             // when a second unit of work loads and updates it
@@ -179,12 +179,12 @@ class JpaSagaStoreTransactionalUnitOfWorkIT {
             updated.handled("OrderShipped");
             UnitOfWork updatingUnitOfWork = unitOfWorkFactory.create();
             updatingUnitOfWork.runOnInvocation(context -> {
-                SagaStore.Entry<StubSaga> entry = testSubject.loadSaga(StubSaga.class, "saga-1");
+                SagaStore.Entry<StubSaga> entry = testSubject.loadSaga(StubSaga.class, "saga-1", context);
                 assertThat(entry).isNotNull();
                 testSubject.updateSaga(StubSaga.class,
                                        "saga-1",
                                        updated,
-                                       new AssociationValuesImpl(singleton(ORDER_1)));
+                                       new AssociationValuesImpl(singleton(ORDER_1)), context);
             });
             FutureUtils.joinAndUnwrap(updatingUnitOfWork.execute(), TIMEOUT);
 
@@ -195,7 +195,7 @@ class JpaSagaStoreTransactionalUnitOfWorkIT {
                                                        .entityManagerProvider(new SimpleEntityManagerProvider(reader))
                                                        .converter(new JacksonConverter())
                                                        .build();
-                SagaStore.Entry<StubSaga> entry = readerStore.loadSaga(StubSaga.class, "saga-1");
+                SagaStore.Entry<StubSaga> entry = readerStore.loadSaga(StubSaga.class, "saga-1", null);
                 assertThat(entry).isNotNull();
                 assertThat(entry.saga().getHandledEvents()).containsExactly("OrderShipped");
             } finally {
@@ -214,7 +214,7 @@ class JpaSagaStoreTransactionalUnitOfWorkIT {
             unitOfWork.runOnInvocation(context -> testSubject.insertSaga(StubSaga.class,
                                                                          "saga-1",
                                                                          new StubSaga(),
-                                                                         singleton(ORDER_1)));
+                                                                         singleton(ORDER_1), context));
             unitOfWork.onPrepareCommit(context -> CompletableFuture.failedFuture(
                     new IllegalStateException("failing the unit of work on purpose")));
 
@@ -236,9 +236,9 @@ class JpaSagaStoreTransactionalUnitOfWorkIT {
             unitOfWork.runOnInvocation(context -> testSubject.insertSaga(StubSaga.class,
                                                                          "saga-1",
                                                                          new StubSaga(),
-                                                                         singleton(ORDER_1)));
+                                                                         singleton(ORDER_1), context));
             unitOfWork.onPrepareCommit(context -> {
-                testSubject.insertSaga(StubSaga.class, "saga-2", new StubSaga(), singleton(ORDER_2));
+                testSubject.insertSaga(StubSaga.class, "saga-2", new StubSaga(), singleton(ORDER_2), context);
                 return CompletableFuture.failedFuture(new IllegalStateException("failing after the second write"));
             });
 
@@ -257,7 +257,7 @@ class JpaSagaStoreTransactionalUnitOfWorkIT {
             committed.runOnInvocation(context -> testSubject.insertSaga(StubSaga.class,
                                                                         "saga-1",
                                                                         new StubSaga(),
-                                                                        singleton(ORDER_1)));
+                                                                        singleton(ORDER_1), context));
             FutureUtils.joinAndUnwrap(committed.execute(), TIMEOUT);
 
             // when a later unit of work writes and then fails
@@ -265,7 +265,7 @@ class JpaSagaStoreTransactionalUnitOfWorkIT {
             failing.runOnInvocation(context -> testSubject.insertSaga(StubSaga.class,
                                                                       "saga-2",
                                                                       new StubSaga(),
-                                                                      singleton(ORDER_2)));
+                                                                      singleton(ORDER_2), context));
             failing.onPrepareCommit(context -> CompletableFuture.failedFuture(new IllegalStateException("boom")));
             assertThatThrownBy(() -> FutureUtils.joinAndUnwrap(failing.execute(), TIMEOUT))
                     .isInstanceOf(IllegalStateException.class);
