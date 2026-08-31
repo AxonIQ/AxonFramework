@@ -28,13 +28,16 @@ import org.axonframework.messaging.core.unitofwork.UnitOfWork;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
 import org.axonframework.modelling.saga.AssociationValue;
 import org.axonframework.modelling.saga.repository.StubSaga;
-import org.axonframework.modelling.saga.repository.jdbc.HsqlSagaSqlSchema;
 import org.axonframework.modelling.saga.repository.jdbc.JdbcSagaStore;
-import org.hsqldb.jdbc.JDBCDataSource;
+import org.axonframework.modelling.saga.repository.jdbc.PostgresSagaSqlSchema;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.postgresql.ds.PGSimpleDataSource;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -70,38 +73,38 @@ import static org.assertj.core.api.Assertions.assertThat;
  * The two units of work are interleaved deliberately: both insert before either finishes, so a shared transaction or a
  * shared connection would show up as interference rather than being hidden by lucky sequencing.
  */
+@Testcontainers
 class JdbcSagaStoreConcurrentUnitOfWorkIT {
 
     private static final Duration TIMEOUT = Duration.ofSeconds(10);
 
+    @Container
+    private static final PostgreSQLContainer POSTGRESQL = new PostgreSQLContainer("postgres:16-alpine");
+
     private static final AssociationValue ORDER_COMMITTED = new AssociationValue("orderId", "committed");
     private static final AssociationValue ORDER_ROLLED_BACK = new AssociationValue("orderId", "rolled-back");
 
-    private JDBCDataSource dataSource;
-    private Connection keepAlive;
+    private PGSimpleDataSource dataSource;
     private JdbcSagaStore testSubject;
     private UnitOfWorkFactory unitOfWorkFactory;
     private ExecutorService executor;
 
     @BeforeEach
     void setUp() throws SQLException {
-        dataSource = new JDBCDataSource();
-        dataSource.setUrl("jdbc:hsqldb:mem:sagastore-concurrent");
-        dataSource.setUser("sa");
-        dataSource.setPassword("");
-        keepAlive = dataSource.getConnection();
-        // HSQLDB defaults to two-phase locking, which takes a table-level write lock, so two transactions inserting
-        // into SagaEntry would serialise and the interleaving below could never happen. MVCC moves that to row level.
-        // This is a property of the database, not of the framework, but it has to be out of the way for this test to be
-        // about transaction isolation rather than about HSQLDB's lock manager.
-        try (Statement statement = keepAlive.createStatement()) {
-            statement.execute("SET DATABASE TRANSACTION CONTROL MVCC");
+        dataSource = new PGSimpleDataSource();
+        dataSource.setURL(POSTGRESQL.getJdbcUrl());
+        dataSource.setUser(POSTGRESQL.getUsername());
+        dataSource.setPassword(POSTGRESQL.getPassword());
+        try (Connection connection = dataSource.getConnection();
+             Statement statement = connection.createStatement()) {
+            statement.execute("DROP TABLE IF EXISTS AssociationValueEntry");
+            statement.execute("DROP TABLE IF EXISTS SagaEntry");
         }
 
         ConnectionProvider connectionProvider = new SpringDataSourceConnectionProvider(dataSource);
         testSubject = JdbcSagaStore.builder()
                                    .connectionProvider(connectionProvider)
-                                   .sqlSchema(new HsqlSagaSqlSchema())
+                                   .sqlSchema(new PostgresSagaSqlSchema())
                                    .converter(new JacksonConverter())
                                    .build();
         testSubject.createSchema();
@@ -114,16 +117,13 @@ class JdbcSagaStoreConcurrentUnitOfWorkIT {
     }
 
     @AfterEach
-    void tearDown() throws SQLException {
+    void tearDown() {
         executor.shutdownNow();
-        try (Statement statement = keepAlive.createStatement()) {
-            statement.execute("SHUTDOWN");
-        }
-        keepAlive.close();
     }
 
     private List<String> committedSagaIds() {
-        try (Statement statement = keepAlive.createStatement();
+        try (Connection connection = dataSource.getConnection();
+             Statement statement = connection.createStatement();
              ResultSet resultSet = statement.executeQuery("SELECT sagaId FROM SagaEntry ORDER BY sagaId")) {
             List<String> ids = new ArrayList<>();
             while (resultSet.next()) {
