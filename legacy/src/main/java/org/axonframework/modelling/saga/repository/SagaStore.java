@@ -64,9 +64,7 @@ public interface SagaStore<T> {
     void deleteSaga(Class<? extends T> sagaType, String sagaIdentifier, Set<AssociationValue> associationValues);
 
     /**
-     * Adds a new Saga and its initial association values to the store. The tracking token of the event last handled by
-     * the Saga (usually the event that started the Saga) is also passed as a parameter. Note that the given {@code
-     * token} may be {@code null} if the Saga is not tracking the event store.
+     * Adds a new Saga and its initial association values to the store.
      *
      * @param sagaType          The type of the Saga
      * @param sagaIdentifier    The identifier of the Saga
@@ -76,14 +74,13 @@ public interface SagaStore<T> {
     void insertSaga(Class<? extends T> sagaType, String sagaIdentifier, T saga, Set<AssociationValue> associationValues);
 
     /**
-     * Updates a given Saga after its state was modified. The tracking token of the event last handled by the Saga is
-     * also passed as a parameter. Note that the given {@code token} may be {@code null} if the Saga is not tracking the
-     * event store.
+     * Updates a given Saga after its state was modified, applying the association values added and removed since it was
+     * last stored.
      *
      * @param sagaType          The type of the Saga
      * @param sagaIdentifier    The identifier of the Saga
      * @param saga              The Saga instance
-     * @param associationValues The initial association values of the Saga
+     * @param associationValues The association values of the Saga, carrying the additions and removals to apply
      */
     void updateSaga(Class<? extends T> sagaType, String sagaIdentifier, T saga, AssociationValues associationValues);
 

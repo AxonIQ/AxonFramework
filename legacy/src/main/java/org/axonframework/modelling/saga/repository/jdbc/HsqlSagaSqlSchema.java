@@ -27,6 +27,22 @@ import java.sql.SQLException;
  */
 public class HsqlSagaSqlSchema extends GenericSagaSqlSchema {
 
+    /**
+     * Initialize a HsqlSagaSqlSchema using the default {@link SagaSchema}.
+     */
+    public HsqlSagaSqlSchema() {
+        super();
+    }
+
+    /**
+     * Initialize a HsqlSagaSqlSchema using the given {@code sagaSchema}.
+     *
+     * @param sagaSchema the saga schema defining the table and column names to use
+     */
+    public HsqlSagaSqlSchema(SagaSchema sagaSchema) {
+        super(sagaSchema);
+    }
+
     @Override
     public PreparedStatement sql_createTableAssocValueEntry(Connection conn) throws SQLException {
         final String s = "create table " + sagaSchema.associationValueEntryTable() + " (\n" +

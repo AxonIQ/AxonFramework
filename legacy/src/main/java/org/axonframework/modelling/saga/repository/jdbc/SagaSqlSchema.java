@@ -196,6 +196,9 @@ public interface SagaSqlSchema {
      * @param resultSet The result set to read data from.
      * @return the token from the resultSet
      * @throws SQLException when an exception occurs reading from the resultSet
+     * @deprecated Saga stores do not track tokens, and no implementation returns anything but {@code null}. Retained
+     * only so that existing implementations of this interface keep compiling.
      */
+    @Deprecated
     String readToken(ResultSet resultSet);
 }

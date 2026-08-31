@@ -28,7 +28,7 @@ import org.axonframework.conversion.Converter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -188,7 +188,7 @@ public class JdbcSagaStore implements SagaStore<Object> {
         SagaEntry<?> entry = new SagaEntry<>(saga, sagaIdentifier, converter);
         if (logger.isDebugEnabled()) {
             logger.debug("Updating saga id {} as {}", sagaIdentifier, new String(entry.getSerializedSaga(),
-                                                                                 Charset.forName("UTF-8")));
+                                                                                 StandardCharsets.UTF_8));
         }
 
         int updateCount;
@@ -240,7 +240,7 @@ public class JdbcSagaStore implements SagaStore<Object> {
         SagaEntry<?> entry = new SagaEntry<>(saga, sagaIdentifier, converter);
         if (logger.isDebugEnabled()) {
             logger.debug("Storing saga id {} as {}", sagaIdentifier, new String(entry.getSerializedSaga(),
-                                                                                Charset.forName("UTF-8")));
+                                                                                StandardCharsets.UTF_8));
         }
         Connection conn = null;
         PreparedStatement statement = null;

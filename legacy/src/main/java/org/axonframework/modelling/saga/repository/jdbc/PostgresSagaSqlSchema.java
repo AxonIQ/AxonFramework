@@ -15,8 +15,6 @@
  */
 package org.axonframework.modelling.saga.repository.jdbc;
 
-import org.axonframework.messaging.eventhandling.processing.streaming.StreamingEventProcessor;
-
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -93,13 +91,11 @@ public class PostgresSagaSqlSchema extends GenericSagaSqlSchema {
      * database.
      * <p>
      * If {@code true}, only one instance of the application may load a saga at a time. This may be used to serialize
-     * event handling in sagas in multi-node configurations where <b>no</b>
-     * {@link StreamingEventProcessor} is used. The given processor type caveat is
-     * explained through the fact that a {@code StreamingEventProcessor} requires claimed segments to be able to perform
-     * any event handling work. Furthermore, this segments originate from a shared resources in a distributed
-     * environment.
+     * event handling in sagas in multi-node configurations where <b>no</b> streaming event processor is used. That
+     * caveat follows from a streaming event processor needing a claimed segment before it performs any event handling
+     * work, and those segments originating from a resource shared across the nodes.
      * <p>
-     * As such, a Saga cannot be accessed concurrently through the {@code StreamingEventProcessor}. And hence, setting
+     * As such, a saga cannot be accessed concurrently through a streaming event processor, and hence setting
      * {@code exclusiveLoad} to {@code true} would not change the underlying behavior at all.
      */
     public void setExclusiveLoad(boolean exclusiveLoad) {

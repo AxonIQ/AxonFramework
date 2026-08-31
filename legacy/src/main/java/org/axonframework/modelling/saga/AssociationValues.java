@@ -19,8 +19,8 @@ package org.axonframework.modelling.saga;
 import java.util.Set;
 
 /**
- * Interface describing a container of {@link AssociationValue Association Values} for a single {@link Saga} instance.
- * This container tracks changes made to its contents between commits (see {@link #commit()}).
+ * Interface describing a container of {@link AssociationValue Association Values} for a single saga instance. This
+ * container tracks changes made to its contents between commits (see {@link #commit()}).
  *
  * @author Allard Buijze
  * @since 0.7
