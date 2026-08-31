@@ -200,6 +200,14 @@
             <version>${project.version}</version>
             <scope>test</scope>
         </dependency>
+        <!-- For the StubSaga fixture, rather than duplicating it here. -->
+        <dependency>
+            <groupId>org.axonframework</groupId>
+            <artifactId>axon-legacy</artifactId>
+            <version>${project.version}</version>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.axonframework.extensions.spring</groupId>
             <artifactId>axon-spring</artifactId>

@@ -29,6 +29,7 @@ import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
 import org.axonframework.modelling.saga.AssociationValue;
 import org.axonframework.modelling.saga.AssociationValuesImpl;
 import org.axonframework.modelling.saga.repository.SagaStore;
+import org.axonframework.modelling.saga.repository.StubSaga;
 import org.axonframework.modelling.saga.repository.jdbc.HsqlSagaSqlSchema;
 import org.axonframework.modelling.saga.repository.jdbc.JdbcSagaStore;
 import org.hsqldb.jdbc.JDBCDataSource;
