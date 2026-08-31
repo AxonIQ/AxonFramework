@@ -1,14 +1,15 @@
+[#long_running_processes]
 = Long-Running Processes
 :navtitle: Long-running processes
 :reftext: Long-running processes
 
-A *saga*, or *process manager*, coordinates a business process that no single transaction can guarantee. It spans
+A *saga*, or *process manager*, coordinates a business process that no single transaction can guarantee.It spans
 several components and often several systems, and it takes as long as the business takes, which may be seconds, days,
-or weeks. Nothing can hold a lock for that long or across that many owners, so each step commits on its own and nothing
+or weeks.Nothing can hold a lock for that long or across that many owners, so each step commits on its own and nothing
 can roll the whole process back.
 
-Booking a trip is the classic example. A flight, a hotel and a car have to be reserved, each held by a different
-component, and if the hotel comes back unavailable an hour later the flight is already booked. Undoing it is not a
+Booking a trip is the classic example.A flight, a hotel and a car have to be reserved, each held by a different
+component, and if the hotel comes back unavailable an hour later the flight is already booked.Undoing it is not a
 rollback but another step of the process: the flight is cancelled by the same thing that booked it.
 That is *compensation*, and deciding when it is needed is most of what a saga does.
 
