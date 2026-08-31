@@ -60,6 +60,9 @@ import static org.axonframework.common.jdbc.JdbcUtils.closeQuietly;
  * separately, and {@link #loadSaga(Class, String)} reads the saga row and its associations in two queries. Without an
  * ambient transaction each statement commits on its own, so a failure part way through leaves the saga and its
  * associations inconsistent rather than failing cleanly.
+ * <p>
+ * A saga inserted here records {@link SagaEntry#LEGACY_REVISION} in its revision column, marking the row as one this
+ * module created. An update leaves that column alone, so a revision written by Axon Framework 4 survives.
  *
  * @author Allard Buijze
  * @author Kristian Rosenvold
@@ -246,7 +249,7 @@ public class JdbcSagaStore implements SagaStore<Object> {
         PreparedStatement statement = null;
         try {
             conn = connectionProvider.getConnection();
-            statement = sqlSchema.sql_storeSaga(conn, entry.getSagaId(), entry.getSagaType(),
+            statement = sqlSchema.sql_storeSaga(conn, entry.getSagaId(), entry.getRevision(), entry.getSagaType(),
                                                 entry.getSerializedSaga());
             statement.executeUpdate();
 

@@ -48,6 +48,9 @@ import static org.axonframework.common.BuilderUtils.assertNonNull;
  * {@link EntityManagerProvider} it is given, so its changes commit together with whatever else the surrounding
  * transaction covers. Since its operations issue several statements each, saga handling should run inside a transaction;
  * JPA enforces this itself, and without an active transaction these methods fail rather than write partial state.
+ * <p>
+ * A saga inserted here records {@link SagaEntry#LEGACY_REVISION} in its revision column, marking the row as one this
+ * module created. An update leaves that column alone, so a revision written by Axon Framework 4 survives.
  *
  * @author Allard Buijze
  * @since 3.0

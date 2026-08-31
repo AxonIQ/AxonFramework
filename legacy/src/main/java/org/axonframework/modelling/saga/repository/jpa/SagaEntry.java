@@ -32,15 +32,31 @@ import org.axonframework.conversion.Converter;
 @Entity
 public class SagaEntry<T> {
 
+    /**
+     * Value written to the {@code revision} column of a saga inserted by this module, marking the row as one created
+     * here rather than by Axon Framework 4.
+     * <p>
+     * Axon Framework 4 used the column for the {@code @Revision} value of the saga class, which fed upcaster matching.
+     * That concept was removed from the framework, and saga stores never ran upcasters in the first place, so nothing
+     * reads the column any more and it is free to carry this marker instead. It gives an otherwise unanswerable question
+     * an answer, because a {@code null} revision is indistinguishable from an Axon Framework 4 saga whose class carried
+     * no {@code @Revision}:
+     * <pre>{@code
+     * SELECT sagaId FROM SagaEntry WHERE revision = 'axon-legacy'
+     * }</pre>
+     * The marker is written on insert only. An update leaves the column alone, so a value written by Axon Framework 4
+     * survives rather than being replaced by this one.
+     */
+    public static final String LEGACY_REVISION = "axon-legacy";
+
     @SuppressWarnings({"FieldCanBeLocal", "UnusedDeclaration"})
     @Id
     protected String sagaId; // NOSONAR
     @Basic
     protected String sagaType;
     /**
-     * Never populated. The column is retained so that the table generated here matches one written by Axon Framework 4,
-     * where it held the {@code @Revision} value of the saga class. Nothing reads it: a saga is always converted into the
-     * type the caller asks for, and saga stores do not run upcasters.
+     * Set to {@link #LEGACY_REVISION} for an entry constructed here, and otherwise whatever wrote the row put there.
+     * Never read.
      */
     @Basic
     protected String revision;
@@ -60,6 +76,7 @@ public class SagaEntry<T> {
         this.sagaId = sagaIdentifier;
         this.serializedSaga = converter.convert(saga, byte[].class);
         this.sagaType = saga.getClass().getName();
+        this.revision = LEGACY_REVISION;
     }
 
     /**
@@ -90,9 +107,7 @@ public class SagaEntry<T> {
     }
 
     /**
-     * Returns the revision of the serialized saga, which is always {@code null} for an entry constructed here.
-     * <p>
-     * The column is retained only so that a table generated from this entity matches one written by Axon Framework 4.
+     * Returns the revision of the serialized saga, which is {@link #LEGACY_REVISION} for an entry constructed here.
      *
      * @return the revision of the serialized saga
      */

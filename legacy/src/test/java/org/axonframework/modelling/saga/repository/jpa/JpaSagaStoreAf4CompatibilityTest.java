@@ -133,12 +133,27 @@ class JpaSagaStoreAf4CompatibilityTest {
     }
 
     @Test
-    void insertingASagaLeavesTheRevisionColumnNull() {
+    void insertingASagaMarksTheRowAsWrittenByThisModule() {
         // given / when
         inTransaction(() -> testSubject.insertSaga(StubSaga.class, "saga-new", new StubSaga(), singleton(ORDER_1)));
 
-        // then the column is still there, and simply unset
-        assertThat(revisionOf("saga-new")).isNull();
+        // then the row is distinguishable from one Axon Framework 4 left without a revision
+        assertThat(revisionOf("saga-new")).isEqualTo(SagaEntry.LEGACY_REVISION);
+    }
+
+    @Test
+    void updatingASagaInsertedHereKeepsItsMarker() {
+        // given a saga inserted by this module
+        inTransaction(() -> testSubject.insertSaga(StubSaga.class, "saga-new", new StubSaga(), singleton(ORDER_1)));
+
+        // when
+        inTransaction(() -> testSubject.updateSaga(StubSaga.class,
+                                                   "saga-new",
+                                                   new StubSaga(),
+                                                   new AssociationValuesImpl(singleton(ORDER_1))));
+
+        // then the update left the column alone, so the marker is still there
+        assertThat(revisionOf("saga-new")).isEqualTo(SagaEntry.LEGACY_REVISION);
     }
 
     @Test

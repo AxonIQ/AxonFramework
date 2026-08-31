@@ -131,6 +131,9 @@ public interface SagaSqlSchema {
      * @param serializedSaga The serialized form of the saga to update
      * @param sagaType       The serialized type of the saga
      * @return a statement that update a Saga entry, when executed
+     * @implNote Deliberately takes no revision, unlike
+     * {@link #sql_storeSaga(Connection, String, String, String, byte[])}. The revision column is written once, on
+     * insert, so that a value put there by Axon Framework 4 survives an update made here.
      * @throws SQLException when an error occurs creating the PreparedStatement
      */
     PreparedStatement sql_updateSaga(Connection connection, String sagaIdentifier, byte[] serializedSaga,
@@ -142,12 +145,13 @@ public interface SagaSqlSchema {
      *
      * @param connection     The connection to create the PreparedStatement for
      * @param sagaIdentifier The identifier of the Saga to insert
-     * @param serializedSaga The serialized form of the saga to insert
+     * @param revision       The revision to record for the inserted saga
      * @param sagaType       The serialized type of the saga
+     * @param serializedSaga The serialized form of the saga to insert
      * @return a statement that inserts a Saga entry, when executed
      * @throws SQLException when an error occurs creating the PreparedStatement
      */
-    PreparedStatement sql_storeSaga(Connection connection, String sagaIdentifier, String sagaType,
+    PreparedStatement sql_storeSaga(Connection connection, String sagaIdentifier, String revision, String sagaType,
                                     byte[] serializedSaga) throws SQLException;
 
     /**

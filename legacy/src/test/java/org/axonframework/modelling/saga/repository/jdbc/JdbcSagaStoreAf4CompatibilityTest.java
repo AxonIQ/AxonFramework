@@ -22,6 +22,7 @@ import org.axonframework.modelling.saga.AssociationValue;
 import org.axonframework.modelling.saga.AssociationValuesImpl;
 import org.axonframework.modelling.saga.repository.SagaStore;
 import org.axonframework.modelling.saga.repository.StubSaga;
+import org.axonframework.modelling.saga.repository.jpa.SagaEntry;
 import org.hsqldb.jdbc.JDBCDataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -141,12 +142,27 @@ class JdbcSagaStoreAf4CompatibilityTest {
     }
 
     @Test
-    void insertingASagaLeavesTheRevisionColumnNull() {
+    void insertingASagaMarksTheRowAsWrittenByThisModule() {
         // given / when
         testSubject.insertSaga(StubSaga.class, "saga-new", new StubSaga(), singleton(ORDER_1));
 
-        // then the column is still there, and simply unset
-        assertThat(revisionOf("saga-new")).isNull();
+        // then the row is distinguishable from one Axon Framework 4 left without a revision
+        assertThat(revisionOf("saga-new")).isEqualTo(SagaEntry.LEGACY_REVISION);
+    }
+
+    @Test
+    void updatingASagaInsertedHereKeepsItsMarker() {
+        // given a saga inserted by this module
+        testSubject.insertSaga(StubSaga.class, "saga-new", new StubSaga(), singleton(ORDER_1));
+
+        // when
+        testSubject.updateSaga(StubSaga.class,
+                               "saga-new",
+                               new StubSaga(),
+                               new AssociationValuesImpl(singleton(ORDER_1)));
+
+        // then the update left the column alone, so the marker is still there
+        assertThat(revisionOf("saga-new")).isEqualTo(SagaEntry.LEGACY_REVISION);
     }
 
     @Test
