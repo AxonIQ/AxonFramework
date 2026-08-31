@@ -22,6 +22,12 @@
         <provider>org.hibernate.jpa.HibernatePersistenceProvider</provider>
         <class>org.axonframework.modelling.saga.repository.jpa.AssociationValueEntry</class>
         <class>org.axonframework.modelling.saga.repository.jpa.SagaEntry</class>
+        <!--
+          ~ Not a saga entity. Present so that a test can put a saga store and a token store in one unit of work and
+          ~ show they share its transaction, the token store being a component that reaches its EntityManager through
+          ~ the ProcessingContext rather than by holding a provider.
+          -->
+        <class>org.axonframework.messaging.eventhandling.processing.streaming.token.store.jpa.TokenEntry</class>
         <properties>
             <property name="hibernate.dialect" value="org.hibernate.dialect.HSQLDialect"/>
             <property name="jakarta.persistence.jdbc.driver" value="org.hsqldb.jdbcDriver"/>
