@@ -16,7 +16,15 @@
 
 
 /**
- * This is part of a stashed module that is not actively maintained and just kept for reference.
+ * The {@link org.axonframework.modelling.saga.repository.SagaStore} abstraction and the decorators over it.
+ * <p>
+ * A {@code SagaStore} finds, loads, stores and deletes saga instances together with their association values. Backing
+ * implementations live in the {@code inmemory}, {@code jpa} and {@code jdbc} sub-packages;
+ * {@link org.axonframework.modelling.saga.repository.CachingSagaStore} decorates any of them with a cache for saga
+ * instances and for association lookups.
+ * <p>
+ * These types carry the Axon Framework 4 API unchanged, to ease migration of projects that cannot move off it in one
+ * go.
  */
 @NullMarked
 package org.axonframework.modelling.saga.repository;

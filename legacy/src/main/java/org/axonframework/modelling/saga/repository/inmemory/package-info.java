@@ -15,7 +15,11 @@
  */
 
 /**
- * This is part of a stashed module that is not actively maintained and just kept for reference.
+ * An in-memory {@link org.axonframework.modelling.saga.repository.SagaStore}, for testing and for sagas whose state
+ * need not outlive the JVM.
+ * <p>
+ * These types carry the Axon Framework 4 API unchanged, to ease migration of projects that cannot move off it in one
+ * go.
  */
 @NullMarked
 package org.axonframework.modelling.saga.repository.inmemory;

@@ -15,7 +15,15 @@
  */
 
 /**
- * This is part of a stashed module that is not actively maintained and just kept for reference.
+ * A JPA-backed {@link org.axonframework.modelling.saga.repository.SagaStore}, storing sagas as
+ * {@link org.axonframework.modelling.saga.repository.jpa.SagaEntry} rows and their associations as
+ * {@link org.axonframework.modelling.saga.repository.jpa.AssociationValueEntry} rows.
+ * <p>
+ * The entity and column layout is that of Axon Framework 4, so an existing saga table can be read and updated without
+ * migration.
+ * <p>
+ * These types carry the Axon Framework 4 API unchanged, to ease migration of projects that cannot move off it in one
+ * go.
  */
 @NullMarked
 package org.axonframework.modelling.saga.repository.jpa;

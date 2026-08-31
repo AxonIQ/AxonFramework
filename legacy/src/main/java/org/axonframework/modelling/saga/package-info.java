@@ -15,21 +15,17 @@
  */
 
 /**
- * A JDBC-backed {@link org.axonframework.modelling.saga.repository.SagaStore}, together with the SQL dialects it can
- * speak.
+ * Association values, the means by which an event is correlated to the saga instances that should handle it.
  * <p>
- * {@link org.axonframework.modelling.saga.repository.jdbc.SagaSqlSchema} supplies the statements and
- * {@link org.axonframework.modelling.saga.repository.jdbc.SagaSchema} the table and column names, so both the dialect
- * and the naming can be swapped without touching the store. Implementations are provided for generic databases, HSQLDB,
- * PostgreSQL and Oracle 11.
- * <p>
- * The table and column layout is that of Axon Framework 4, so an existing saga table can be read and updated without
- * migration.
+ * An {@link org.axonframework.modelling.saga.AssociationValue} is a key-value pair that a saga registers itself under;
+ * {@link org.axonframework.modelling.saga.AssociationValues} tracks a saga's current set together with the additions
+ * and removals made since it was last stored, which is what a
+ * {@link org.axonframework.modelling.saga.repository.SagaStore} persists.
  * <p>
  * These types carry the Axon Framework 4 API unchanged, to ease migration of projects that cannot move off it in one
  * go.
  */
 @NullMarked
-package org.axonframework.modelling.saga.repository.jdbc;
+package org.axonframework.modelling.saga;
 
 import org.jspecify.annotations.NullMarked;
