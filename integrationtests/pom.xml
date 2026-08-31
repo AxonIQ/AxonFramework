@@ -188,6 +188,29 @@
             <artifactId>hibernate-core</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <!--
+            Verifies that the Axon Framework 4 saga stores take part in a transaction driven by a unit of work. This is
+            the module that can depend on both axon-legacy and the Spring extension, which is what makes the JDBC side
+            testable against the real SpringTransactionManager.
+        -->
+        <dependency>
+            <groupId>org.axonframework</groupId>
+            <artifactId>axon-legacy</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.axonframework.extensions.spring</groupId>
+            <artifactId>axon-spring</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-jdbc</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
