@@ -5,10 +5,10 @@
 
 Every other approach in this guide builds a process out of parts you assemble yourself: an event handler, some form of
 state, a command. Workflows take the opposite position. The process is written as a single method that reads
-top to bottom, and the machinery that lets it survive a restart is provided rather than assembled.
+top to bottom. The machinery that lets it survive a restart is provided rather than assembled.
 
-*This is the recommended way to orchestrate a business process, and the first option to consider.* Orchestration is
-what a workflow is for, and writing the flow as a flow avoids the state-management concerns the other pages cover.
+*This is the recommended way to orchestrate a business process, and the first option to consider.* Writing the flow
+as a flow avoids the state-management concerns the other pages cover.
 
 The other approaches exist for cases where the reaction to events is not a single flow. A handful of independent
 reactions is better modelled as a handful of independent reactions; forcing them into one method gives them a centre
@@ -26,18 +26,18 @@ for the API and current status.
 
 == What changes
 
-The approaches on the other pages are all *reactive*. Each event arrives independently, the process reconstructs
-enough context to decide what to do, and the flow between steps exists only in the reader's head or on an event model.
-Reconstructing that context is why so much of this guide is about state.
+The approaches on the other pages are all *reactive*. Each event arrives independently. The process reconstructs
+enough context to decide what to do. The flow between steps exists only in the reader's head or on an event model.
+That reconstruction is the shared burden the state-management pages address.
 
-A workflow inverts that. The sequence is written as a sequence, and waiting is an ordinary statement rather than the
+A workflow inverts that. The sequence is written as a sequence. Waiting is an ordinary statement rather than the
 end of one handler and the start of another. Where a reactive process spreads "ask for payment, then wait, then
 approve or reject" across three handlers and a stored correlation, a workflow expresses it as three lines.
 
 The code is close to ordinary imperative code, in a place where the framework usually asks you to think in reactions.
 Correctness is unaffected; what changes is that the persistence of the flow's position is no longer yours to design.
 
-The consequences follow from that inversion:
+That inversion has four consequences:
 
 * *The process is legible.* One method describes the whole flow, which is what people usually want when they ask where
   the process is.
@@ -63,8 +63,8 @@ reactions that happen to share a subject, xref::vertical-slices.adoc[vertical sl
 workflow would give them a centre they do not need. That decision is about the shape of the work, not about the
 framework you are on.
 
-Practically, a preview dependency has to be acceptable in your build, and production use needs a licence. Neither
-affects trying it.
+A preview dependency has to be acceptable in your build, and production use needs a licence. Neither affects trying
+it.
 
 The bike rental example running through the rest of this guide is not written as a workflow, so that the other
 approaches can be compared line for line against the same process. This is not a suggestion that a process this small
@@ -75,11 +75,11 @@ is better off without one.
 The other approaches differ in where the process lives and how it keeps its state; a workflow differs in *who
 reconstructs the flow*.
 
-That has a practical consequence. A process written as
-xref::vertical-slices.adoc[vertical slices] is the furthest from a workflow, because it has no centre;
-converting it later means gathering the slices back into one flow. A process written as
+A process written as
+xref::vertical-slices.adoc[vertical slices] is the furthest from a workflow, because it has no centre. Converting
+it later means gathering the slices back into one flow. A process written as
 xref::state-from-process-events.adoc[state from its own events] is the closest, because it already records its own
-progress as facts, which is much the same information a workflow persists on your behalf.
+progress as facts. That is much the same information a workflow persists on your behalf.
 
 If you expect to adopt workflows later, that is an argument for keeping the process in one class now.
 

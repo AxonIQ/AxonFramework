@@ -37,7 +37,7 @@ flowchart TD
 
 xref::workflows.adoc[[.advanced-framework]#Workflows#] come first because they are the recommended answer wherever they
 are available, and that recommendation does not depend on the process. They are the most advanced of the options and
-the easiest to write, and the gap widens as the process grows: adding a step is adding a line, where every other
+the easiest to write. The gap widens as the process grows: adding a step is adding a line, where every other
 approach makes it a new handler, a new piece of state, and a new correlation to get right.
 
 The approaches after them are ordered by how little they ask of you, not by elegance. Each is a complete answer
@@ -57,7 +57,7 @@ are where the difference is largest, but there is no size below which something 
 
 | xref::vertical-slices.adoc[Vertical slices]
 | Vertical Slice Architecture and Event Modelling. The best transactional profile, since each slice does exactly one
-thing, and each picks its own answer to the state question below.
+thing. Each slice also picks its own answer to the state question below.
 | No single place describes the process any more. Only an event model shows it whole.
 
 | One process class
@@ -75,7 +75,7 @@ when that is not available to you.
 These are not alternatives to the slice or the class. They are what goes *inside* one, and a slice-based process may
 use a different one per slice.
 
-The column that usually decides is the last, and it is the event store context that it counts, not the bounded
+The column that usually decides is the last, and it is the event store context that counts, not the bounded
 context. A process coordinating entities whose events all live in one context can use any of the three, however many
 bounded contexts those entities belong to. A process waiting on another Axon Server context, another team's service or
 a payment provider cannot rebuild what it never receives, and is down to two.

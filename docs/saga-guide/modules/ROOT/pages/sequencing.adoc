@@ -41,7 +41,7 @@ delegates to a typed policy per event type. The example module contains one.
 Two mistakes in such a policy are easy to make and hard to see.
 
 Extract the *raw* correlation value, not a typed wrapper. Returning `RentalId` from one side and `PaymentReference`
-from the other means the two never compare equal, so the two sides land in separate sequences and the policy silently
+from the other means the two never compare equal. The two sides land in separate sequences, and the policy silently
 does nothing.
 
 Target *concrete* payload types, never a shared supertype. Converting to an interface works in memory, where the

@@ -9,9 +9,9 @@ record of the process itself rather than only of the entities it drove.
 .Works across any number of event store contexts
 ====
 The process sources only the events it wrote itself, and it writes them to its own context, so the single-context rule
-is satisfied trivially. It needs nothing from the other side beyond being told that something happened, which is what
-makes it work where xref::state-from-context-events.adoc[state from context events] cannot: the other side may sit in
-a different Axon Server context, or in no event store at all.
+is satisfied trivially. It works where xref::state-from-context-events.adoc[state from context events] cannot: the
+other side may sit in a different Axon Server context, or in no event store at all, because this process needs
+nothing from it beyond being told that something happened.
 ====
 
 [TIP]
@@ -22,18 +22,18 @@ the integration case here without any events of your own to design. This page is
 
 == When to use it
 
-Two situations make this the right choice, and both are common.
+Two situations make this the right choice.
 
 The first is integration with something you cannot source. Deriving state from
 xref::state-from-context-events.adoc[context events] needs the other side's events in the same event store context,
-carrying a tag you can select on. Against a payment provider that merely calls you back that is impossible, and it is
-equally impossible against a team whose events live in a different Axon Server context, because an entity cannot be
-sourced from two. This process reads only its own events, so it needs nothing from the other side beyond being told
-that something happened.
+carrying a tag you can select on. A payment provider that only calls you back cannot be sourced that way. Neither can
+a team whose events live in a different Axon Server context, because an entity cannot be sourced from two contexts.
+This process reads only its own events, so it needs nothing from the other side beyond being told that something
+happened.
 
-The second is auditing the process itself. A repository row is deleted when the process ends, and derived state is
-never written at all, so neither approach retains a record of how a rental turned out or how long it took. A process
-that writes its own events keeps that record, which matters for long-running or regulated processes.
+The second is auditing the process itself. A repository row is deleted when the process ends. Derived state is never
+written at all. Neither approach retains a record of how a rental turned out or how long it took. A process that
+writes its own events keeps that record, which matters for long-running or regulated processes.
 
 == The process's own events
 
@@ -59,8 +59,8 @@ are out of reach.
 
 == Recording what the process did
 
-There are two ways to append those events, and they differ only in mechanism. Both are shown here because the choice
-is a real one, and because the sample module ships both and proves them interchangeable with the same tests.
+There are two ways to append those events, and they differ only in mechanism. The choice between them is real: the
+sample module ships both, proven interchangeable by the same tests.
 
 === Through a command
 

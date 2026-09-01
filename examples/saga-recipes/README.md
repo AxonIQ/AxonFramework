@@ -8,18 +8,18 @@ The approaches are described in prose in the
 
 ## The process
 
-The bike rental payment saga from the Axon Framework 4 sample application. A renter asks for a bike; the rental is not
-confirmed until payment is; if payment is refused, cancelled or never arrives, the request is turned down and the bike
-released.
+The bike rental payment saga from the Axon Framework 4 sample application. A renter asks for a bike. The rental is not
+confirmed until payment is. If payment is refused, cancelled, or never arrives, the request is turned down and the bike
+is released.
 
 Two contexts, which know nothing about each other:
 
 - `rental` - bikes and rental requests. Never mentions payment.
 - `payment` - a generic payment context that can be paid for anything. Never mentions renting.
-- `saga` - the only place allowed to import from both. That is what makes it the saga.
+- `saga` - the only place allowed to import from both.
 
 An ArchUnit test enforces that boundary, including a check that no payment record carries a field named after a rental
-concept. It is the one design property this module cannot afford to lose by accident.
+concept.
 
 ## How the code is laid out
 
@@ -47,7 +47,7 @@ that write a fact down. `verticalslices` documents itself in `package-info.java`
 document.
 
 `saga/deadline` sits outside the recipes. It replaces Axon Framework 4's `DeadlineManager` with a projection of outstanding
-payments plus a scheduled sweep, and applies to every recipe equally.
+payments plus a scheduled sweep. It applies to every recipe equally.
 
 ## Running the tests
 
@@ -64,12 +64,12 @@ Everything runs in memory. No Axon Server and no database are required.
 ```
 
 Axon Server is started through `examples/docker-compose.yaml`. Switch recipes with
-`--saga.recipe=verticalslices` and the observable behaviour should not change, which is the point.
+`--saga.recipe=verticalslices`. The observable behaviour does not change.
 
 ## What to read first
 
-`SagaRecipeContractTest` is the most useful file in the module. It holds the scenarios every recipe must satisfy, and
-they mirror the bike rental sample application's `PaymentSagaTest` method for method, with two cases that suite never
+`SagaRecipeContractTest` is the most useful file in the module. It holds the scenarios every recipe must satisfy.
+They mirror the bike rental sample application's `PaymentSagaTest` method for method, plus two cases that suite never
 had: a redelivered trigger, and a timeout arriving after the payment already settled.
 
 Each recipe subclass adds only what is specific to it. Anything asserted in the shared class is, by construction,
@@ -81,16 +81,20 @@ behaviour that does not depend on the approach.
 sometimes be sent twice. Approving an already-approved request appends nothing and reports success.
 
 **Progress must not be recorded before the command succeeded.** There is no transaction spanning "dispatch a command"
-and "write down that I did". Recording first wedges the process permanently: the dispatch fails, the token is not
-committed, the event is redelivered, and the record now says the work is done.
+and "write down that I did". Recording first wedges the process permanently:
 
-The recipes that store nothing sidestep the second rule entirely, which is their main argument.
+- the dispatch fails
+- the token is not committed
+- the event is redelivered
+- the record now says the work is done
+
+The recipes that store nothing sidestep the second rule entirely.
 
 ## Notes on the setup
 
-- Spring Boot 4.1.0 is skipped deliberately. Combined with JPA and the Axon starter it deadlocks on a circular
-  reference between `applicationTaskExecutor` and Axon's `UnitOfWorkFactory`; 4.1.1 resolves it.
-- The aggregate-based JPA event storage engine is excluded. It rejects multiple tags per event, and this example tags
+- Spring Boot 4.1.0 is unsupported: combined with JPA and the Axon starter it deadlocks on a circular
+  reference between `applicationTaskExecutor` and Axon's `UnitOfWorkFactory`. 4.1.1 resolves it.
+- The aggregate-based JPA event storage engine is excluded. It rejects multiple tags per event. This example tags
   events with `bikeId`, `rentalId` and `renter` at once.
 - `spring.properties` disables Spring's test context pausing. Restarting a paused context re-runs Axon's start-up
   lifecycle, which re-subscribes handlers and fails with a duplicate subscription.
