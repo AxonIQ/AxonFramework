@@ -16,12 +16,12 @@
 
 package org.axonframework.messaging.commandhandling;
 
-import org.jspecify.annotations.Nullable;
 import org.axonframework.common.infra.DescribableComponent;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.jspecify.annotations.Nullable;
 
 import java.util.concurrent.CompletableFuture;
 
@@ -47,10 +47,11 @@ public interface CommandBus extends CommandHandlerRegistry<CommandBus>, Describa
      * {@link #subscribe(QualifiedName, CommandHandler) subscribed} to the given {@code command}'s name. The name is
      * typically deferred from the {@link Message#type()}, which contains a {@link MessageType#qualifiedName()}.
      *
-     * @param command           The command to dispatch.
-     * @param processingContext The processing context under which the command is being published (can be
-     *                          {@code null}).
-     * @return The {@code CompletableFuture} providing the result of the command, once finished.
+     * @param command           the command to dispatch
+     * @param processingContext the processing context under which the command is being published (can be {@code null})
+     * @return the {@code CompletableFuture} providing the {@link CommandResultMessage result of the command} once
+     * finished. The result message will contain a {@code null} {@link CommandResultMessage#payload()} if the
+     * {@link CommandHandler command handler} returned {@code null}
      * @throws NoHandlerForCommandException when no {@link CommandHandler command handler} is registered for the given
      *                                      {@code command}'s name.
      */
