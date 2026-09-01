@@ -56,10 +56,8 @@ import java.time.Instant;
  * <h2>Where this pattern gets harder</h2>
  * The naive version looks simpler than it is, so the caveats are worth stating rather than discovering:
  * <ul>
- *     <li><b>Every instance sweeps.</b> {@code @Scheduled} runs on all of them, so a cluster of three dispatches
- *     each cancellation three times. Harmless here, because cancelling is idempotent, but wasteful. That follows
- *     from {@code @Scheduled} rather than from the pattern: a scheduler that coordinates across instances, such as
- *     Quartz on a clustered job store, JobRunr or db-scheduler, fires the sweep once.</li>
+ *     <li><b>Every instance sweeps.</b> {@code @Scheduled} fires on every instance, so each cancellation is
+ *     dispatched once per instance. Sweeping once needs a scheduler that coordinates across instances.</li>
  *     <li><b>A replay rebuilds the list with the original timestamps.</b> Every historical pending payment briefly
  *     looks overdue and gets swept. This is survivable only because the payment context ignores a cancellation of a
  *     payment that already settled. The pattern leans on rule two of this module rather harder than it first
