@@ -8,7 +8,7 @@ The same applies to the `DeadlineManager` and related APIs.
 A legacy layer allows migrating running sagas and deadlines.
 
 For *new* processes, Axon Framework 5 provides several ways to implement them with the existing framework building blocks.
-The xref:saga-guide:ROOT:index.adoc[Sagas and Process Managers] guide describes them in detail.
+The xref:{page-component-version}@saga-guide:ROOT:index.adoc[Sagas and Process Managers] guide describes them in detail.
 
 For sagas that are *already running* (considering business processes running for months), rewriting is not an option.
 That case is served by the `axon-legacy` module, described in <<legacy-module>>.
@@ -18,7 +18,7 @@ That case is served by the `axon-legacy` module, described in <<legacy-module>>.
 For saga migration you need to consider two scenarios:
 
 *Writing new processes:* Pick an approach from the
-xref:saga-guide:ROOT:index.adoc[Sagas and Process Managers] guide and write it today.
+xref:{page-component-version}@saga-guide:ROOT:index.adoc[Sagas and Process Managers] guide and write it today.
 
 *Migrating running sagas:* Use the Axon Framework 4 compatible APIs of the `axon-legacy` module to keep existing saga classes running until all legacy saga instances are drained naturally.
 The legacy module should be treated as a way to finish existing instances, not to keep sagas in Axon Framework 5.
@@ -61,7 +61,7 @@ An Axon Framework 4 saga provides opinionated technical infrastructure to implem
 * Life cycle is framework-managed, through `@StartSaga` and `@EndSaga`.
 
 Axon Framework 5 provides several ways to implement long-running processes, described in
-xref:saga-guide:ROOT:index.adoc[Sagas and Process Managers].
+xref:{page-component-version}@saga-guide:ROOT:index.adoc[Sagas and Process Managers].
 The following table maps Axon Framework 4 saga concepts to their Axon Framework 5 equivalents.
 
 [cols="1,2",options="header"]
@@ -91,7 +91,7 @@ The following table maps Axon Framework 4 saga concepts to their Axon Framework 
 
 | `DeadlineManager`, `@DeadlineHandler`
 | `sleep(...)` for a <<workflows,Workflow>>, or a projection of outstanding work plus a scheduled sweep that sends a command. See
-xref:saga-guide:ROOT:deadlines.adoc[deadlines].
+xref:{page-component-version}@saga-guide:ROOT:deadlines.adoc[deadlines].
 
 | `SagaTestFixture`
 | The dedicated <<workflows,Workflows>> Test infrastructure, or `AxonTestFixture` publishing events in the given phase and asserting on dispatched commands for a plain `@EventHandler` approach.
@@ -101,7 +101,7 @@ xref:saga-guide:ROOT:deadlines.adoc[deadlines].
 [.axoniq-feature]
 == Replacing sagas with Workflows
 
-The recommended replacement for sagas is xref:saga-guide:ROOT:workflows.adoc[Workflows]: a process is written as a
+The recommended replacement for sagas is xref:{page-component-version}@saga-guide:ROOT:workflows.adoc[Workflows]: a process is written as a
 single method that reads top to bottom, using the regular event store for event-sourced persistence.
 
 [NOTE]
@@ -135,7 +135,7 @@ In Axon Framework 5, use a scheduling library of your choice: wire in the `Comma
 through the gateway when the scheduled task triggers.
 An idempotent command handler ignores an action scheduled for a process that has already progressed.
 
-See xref:saga-guide:ROOT:deadlines.adoc[deadlines] for details on deadlines for long-running processes in Axon
+See xref:{page-component-version}@saga-guide:ROOT:deadlines.adoc[deadlines] for details on deadlines for long-running processes in Axon
 Framework 5.
 
 [#choosing]
@@ -144,15 +144,15 @@ Framework 5.
 Not every saga should become a workflow.
 Simple processes consisting of a limited set of independent reactions can use regular Axon Framework 5 event and
 command handlers.
-The xref:saga-guide:ROOT:index.adoc#long_running_processes[guide] compares the alternatives in detail:
+The xref:{page-component-version}@saga-guide:ROOT:choosing-an-approach.adoc[guide] compares the alternatives in detail:
 
-* xref:saga-guide:ROOT:state-in-a-repository.adoc[State in a repository] is the closest to how an Axon Framework 4 saga worked.
+* xref:{page-component-version}@saga-guide:ROOT:state-in-a-repository.adoc[State in a repository] is the closest to how an Axon Framework 4 saga worked.
 Start here if you are porting an existing saga.
-* xref:saga-guide:ROOT:state-from-context-events.adoc[State from context events] avoids persistent state in a repository.
+* xref:{page-component-version}@saga-guide:ROOT:state-from-context-events.adoc[State from context events] avoids persistent state in a repository.
 This is only possible if all involved contexts write to one event store and their events carry a tag you can select on.
-* xref:saga-guide:ROOT:state-from-process-events.adoc[State from process events] suits integration with systems whose
+* xref:{page-component-version}@saga-guide:ROOT:state-from-process-events.adoc[State from process events] suits integration with systems whose
 events are not yours, and gives an audit trail of the process.
-* xref:saga-guide:ROOT:vertical-slices.adoc[Vertical slices] break the process into independent reactions. This fits
+* xref:{page-component-version}@saga-guide:ROOT:vertical-slices.adoc[Vertical slices] break the process into independent reactions. This fits
 Vertical Slice Architecture and Event Modelling.
 
 [#strategy]
@@ -226,7 +226,7 @@ The mapping below covers the common cases:
 | No equivalent. Assert on the observable outcome, or on your own state if the approach keeps any.
 
 | `whenTimeElapses(duration)`
-| No equivalent. Structure the timeout so it can be invoked directly; see xref:saga-guide:ROOT:deadlines.adoc[deadlines].
+| No equivalent. Structure the timeout so it can be invoked directly; see xref:{page-component-version}@saga-guide:ROOT:deadlines.adoc[deadlines].
 |===
 
 
