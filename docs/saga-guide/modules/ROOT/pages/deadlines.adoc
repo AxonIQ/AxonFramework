@@ -144,9 +144,8 @@ or fails for at least three different reasons, and tells you nothing about which
 The naive version looks simpler than it is. The following caveats apply before relying on it.
 
 Every instance sweeps::
-`@Scheduled` runs on all of them, so three instances dispatch each cancellation three times. Harmless when the command
-is idempotent, but wasteful. This follows from `@Scheduled` rather than from the pattern: a scheduler that coordinates
-across instances, such as Quartz on a clustered job store, JobRunr or db-scheduler, fires the sweep once.
+`@Scheduled` fires on every instance, so each cancellation is dispatched once per instance. Sweeping once needs a
+scheduler that coordinates across instances.
 
 A replay rebuilds the list with original timestamps::
 Every historical outstanding item briefly looks overdue and is swept. This is survivable only because the receiver
