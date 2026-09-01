@@ -111,20 +111,7 @@ the row disappearing is the observable proof that the sweep reached the payment 
 
 [source,java]
 ----
-@Test
-void givenOverduePayment_whenSweeping_thenItIsCalledOffAndLeavesTheList() {
-    // given a payment that has been outstanding for a while
-    var reference = someReference();
-    fixture.given()
-           .events(new PaymentPrepared(PaymentId.random(), PRICE, reference));
-    awaitListed(reference);
-
-    // when judged from far enough in the future
-    sweeper.cancelOverduePayments(Instant.now().plus(Duration.ofHours(1))); // <1>
-
-    // then the payment was called off, which is what takes it off the list again
-    awaitNotListed(reference);
-}
+include::example$sagas/deadlines/PaymentTimeoutTest.java[tag=sweep-test,indent=0]
 ----
 <1> No clock is faked and nothing sleeps. A fifteen-minute timeout is tested in microseconds.
 
@@ -141,25 +128,7 @@ clock in it at all. The test says nothing about sweeping:
 
 [source,java]
 ----
-@Test
-void givenPaymentNotConfirmed_whenAskedToGiveUp_thenRequestRejected() {
-    // given a payment was asked for and never arrived
-    fixture.given()
-           .events(new BikeRegistered(bikeId, "city", "Vilnius"),
-                   new BikeRequested(bikeId, renter, rentalId))
-           .then()
-           .await(result -> result.commandsSatisfy(commands -> assertDispatched(
-                   commands, new PreparePayment(reference, PRICE)
-           )), TIMEOUT) // <1>
-           .and()
-           .when()
-           .command(new CancelRentalPayment(rentalId)) // <2>
-           .then()
-           .success()
-           .await(result -> result.commandsSatisfy(
-                   commands -> assertDispatched(commands, new RejectRequest(bikeId, renter))
-           ), TIMEOUT);
-}
+include::example$sagas/deadlines/PaymentTimeoutTest.java[tag=process-test,indent=0]
 ----
 <1> The payment is not published by the test: the process asks for it, and the payment side creates it. Waiting for
 that command is what tells us the process has noticed this rental. That matters because the approaches that record

@@ -7,14 +7,7 @@ about, then assert on the command the process sends:
 
 [source,java]
 ----
-fixture.given()
-       .events(new BikeRequested(bikeId, renter, rentalId),
-               new PaymentPrepared(paymentId, PRICE, paymentReferenceFor(rentalId)),
-               new PaymentConfirmed(paymentId, paymentReferenceFor(rentalId)))
-       .then()
-       .await(result -> result.commandsSatisfy( // <1>
-               commands -> assertThat(payloadsOf(commands)).contains(new ApproveRequest(bikeId, renter))
-       ), Duration.ofSeconds(5));
+include::example$sagas/testing/RentalPaymentProcessTest.java[tag=event-driven,indent=0]
 ----
 <1> `await` is required where the processor handles events on its own threads, as a streaming processor does: the
 command has not been sent yet when the given phase returns.
