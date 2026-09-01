@@ -16,8 +16,8 @@ fixture.given()
                commands -> assertThat(payloadsOf(commands)).contains(new ApproveRequest(bikeId, renter))
        ), Duration.ofSeconds(5));
 ----
-<1> `await` is required: a pooled streaming processor runs on its own threads, so the command has not been sent yet
-when the given phase returns.
+<1> `await` is required where the processor handles events on its own threads, as a streaming processor does: the
+command has not been sent yet when the given phase returns.
 
 Two details save time. Filter assertions to the identifiers the test generated rather than asserting on the exact
 recorded list, because the recording command bus accumulates across every test sharing a Spring context and is only

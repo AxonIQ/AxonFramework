@@ -53,19 +53,23 @@ Axon-specific.
 ----
 include::example$sagas/staterepository/RentalPaymentProcess.java[tag=process,indent=0]
 ----
-<1> The idempotency check. A redelivered `BikeRequested` must not ask for payment a second time.
+<1> The idempotency check. A `BikeRequested` handled twice must not ask for payment a second time.
 <2> An ordinary repository call in an ordinary method. It commits and rolls back with the surrounding unit of
 work, for the reason below.
 <3> Returning the result of the dispatch is what makes the processor await the command. A failed command fails the
-handler, which rolls the transaction back, and the event is not recorded as handled.
+handler, which rolls the write back with it.
 <4> Ending the process by forgetting it.
 
 There is no ceremony here. Storing process state can otherwise require explicit transaction handling; this
 approach does not.
 
-One thing the sample leaves out for brevity: this class handles events from both sides. The two sides name their
-correlation differently, so it needs a sequencing policy that spans them. See
-xref::sequencing.adoc[sequencing].
+One thing the sample leaves out for brevity: this class handles events from both sides, which name their
+correlation differently, so no single `PropertySequencingPolicy` spans them. Where the processor handles events
+concurrently it needs a
+xref:{page-component-version}@axon-framework-reference:events:event-processors/streaming.adoc#sequential_processing[sequencing policy]
+routing on the message's `QualifiedName`, as
+link:https://github.com/AxonFramework/AxonFramework/blob/main/examples/saga-recipes/src/main/java/org/axonframework/examples/sagarecipes/saga/shared/RentalPaymentSequencingPolicy.java[the example module's,role=external,window=_blank]
+does.
 
 [#transaction]
 == Where the transaction comes from
@@ -73,36 +77,14 @@ xref::sequencing.adoc[sequencing].
 Nowhere in this class. With a `PlatformTransactionManager` present the handler already runs in a transaction, so
 the write above needs no `@Transactional` and no callback.
 
-The row and xref::index.adoc#progress-record[the processor's record of progress] need not commit together. The
-guard on the first line is what absorbs an event that arrives twice.
-
-[#ordering]
-== Why the write comes first
-
-Purely so that it happens on the handler's own thread, where the transaction is bound. Ordering carries no correctness
-weight here, because a failed command takes the write with it. The handler fails, the transaction rolls back, and the
-row is gone as though it had never been written. The event is not recorded as handled, so it arrives again, finds no
-row, and the guard lets it through. The process tries again from the top.
-
-What does break is deferring the write until after the command has answered:
-
-[source,java]
-----
-// Do not do this
-return dispatcher.send(command)
-                 .getResultMessage()
-                 .thenRun(() -> repository.save(state));
-----
-
-That callback runs on whichever thread completed the command's future, where nothing is bound, so the write escapes
-the unit of work's transaction entirely. Recovering from that costs a hop back into a unit-of-work phase to find a
-transaction again, and writing first removes the callback and the hop together.
+The row and xref::index.adoc#progress-record[the processor's record of what it has handled] need not commit
+together. The guard on the first line is what absorbs an event that arrives twice.
 
 [NOTE]
 ====
-One kind of process has no choice but to defer: one that cannot know what to store until the command has answered. If
-`PreparePayment` returned a generated payment identifier the process had to keep, the write could not precede the
-dispatch, and it would have to be registered on the processing context to stay inside the transaction:
+A process that cannot know what to store until the command has answered has to defer the write. If
+`PreparePayment` returned a generated payment identifier the process had to keep, register the write on the
+processing context so it still runs inside the transaction:
 
 [source,java]
 ----
@@ -111,11 +93,9 @@ return dispatcher.send(command)
                  .thenRun(() -> context.runOnPrepareCommit(ignored -> repository.save(state)));
 ----
 
-Deriving the payment reference from the rental identifier avoids the deferred write. It is another reason to check
-whether the correlation is derivable before deciding where state lives.
+Deriving the payment reference from the rental identifier avoids the deferred write, which is another reason to
+check whether the correlation is derivable before deciding where state lives.
 ====
-
-Whichever shape you end up with, keep the write inside the handler. Anywhere else it commits on its own.
 
 [#ending]
 == Ending the process
