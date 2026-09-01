@@ -76,11 +76,10 @@ public abstract class SagaStoreTestSuite {
 
             // when
             inTransaction(() -> testSubject().insertSaga(
-                    StubSaga.class, "saga-1", saga, Set.of(ORDER_1, SHIPMENT_1), null
-            ));
+                    StubSaga.class, "saga-1", saga, Set.of(ORDER_1, SHIPMENT_1)));
 
             // then
-            SagaStore.Entry<StubSaga> entry = testSubject().loadSaga(StubSaga.class, "saga-1", null);
+            SagaStore.Entry<StubSaga> entry = testSubject().loadSaga(StubSaga.class, "saga-1");
             assertThat(entry).isNotNull();
             assertThat(entry.saga()).isEqualTo(saga);
             assertThat(entry.saga().getHandledEvents()).containsExactly("OrderPlaced", "OrderPaid");
@@ -90,10 +89,10 @@ public abstract class SagaStoreTestSuite {
         @Test
         void sagaWithoutAssociationsIsLoadedBackWithNone() {
             // given / when
-            inTransaction(() -> testSubject().insertSaga(StubSaga.class, "saga-1", sagaHandling(), emptySet(), null));
+            inTransaction(() -> testSubject().insertSaga(StubSaga.class, "saga-1", sagaHandling(), emptySet()));
 
             // then
-            SagaStore.Entry<StubSaga> entry = testSubject().loadSaga(StubSaga.class, "saga-1", null);
+            SagaStore.Entry<StubSaga> entry = testSubject().loadSaga(StubSaga.class, "saga-1");
             assertThat(entry).isNotNull();
             assertThat(entry.associationValues()).isEmpty();
         }
@@ -105,7 +104,7 @@ public abstract class SagaStoreTestSuite {
         @Test
         void unknownIdentifierYieldsNull() {
             // given no saga stored / when / then
-            assertThat(testSubject().loadSaga(StubSaga.class, "no-such-saga", null)).isNull();
+            assertThat(testSubject().loadSaga(StubSaga.class, "no-such-saga")).isNull();
         }
     }
 
@@ -116,13 +115,13 @@ public abstract class SagaStoreTestSuite {
         void findsOnlyTheSagasAssociatedWithTheGivenValue() {
             // given
             inTransaction(() -> {
-                testSubject().insertSaga(StubSaga.class, "saga-1", sagaHandling(), singleton(ORDER_1), null);
-                testSubject().insertSaga(StubSaga.class, "saga-2", sagaHandling(), singleton(ORDER_2), null);
-                testSubject().insertSaga(StubSaga.class, "saga-3", sagaHandling(), singleton(ORDER_1), null);
+                testSubject().insertSaga(StubSaga.class, "saga-1", sagaHandling(), singleton(ORDER_1));
+                testSubject().insertSaga(StubSaga.class, "saga-2", sagaHandling(), singleton(ORDER_2));
+                testSubject().insertSaga(StubSaga.class, "saga-3", sagaHandling(), singleton(ORDER_1));
             });
 
             // when
-            Set<String> found = testSubject().findSagas(StubSaga.class, ORDER_1, null);
+            Set<String> found = testSubject().findSagas(StubSaga.class, ORDER_1);
 
             // then
             assertThat(found).containsExactlyInAnyOrder("saga-1", "saga-3");
@@ -132,11 +131,10 @@ public abstract class SagaStoreTestSuite {
         void unknownAssociationYieldsEmptySet() {
             // given
             inTransaction(() -> testSubject().insertSaga(
-                    StubSaga.class, "saga-1", sagaHandling(), singleton(ORDER_1), null
-            ));
+                    StubSaga.class, "saga-1", sagaHandling(), singleton(ORDER_1)));
 
             // when / then
-            assertThat(testSubject().findSagas(StubSaga.class, ORDER_2, null)).isEmpty();
+            assertThat(testSubject().findSagas(StubSaga.class, ORDER_2)).isEmpty();
         }
     }
 
@@ -149,17 +147,17 @@ public abstract class SagaStoreTestSuite {
             inTransaction(() -> testSubject().insertSaga(StubSaga.class,
                                                         "saga-1",
                                                         sagaHandling("OrderPlaced"),
-                                                        singleton(ORDER_1), null));
+                                                        singleton(ORDER_1)));
 
             // when
             StubSaga updated = sagaHandling("OrderPlaced", "OrderShipped");
             inTransaction(() -> testSubject().updateSaga(StubSaga.class,
                                                          "saga-1",
                                                          updated,
-                                                         new AssociationValuesImpl(singleton(ORDER_1)), null));
+                                                         new AssociationValuesImpl(singleton(ORDER_1))));
 
             // then
-            SagaStore.Entry<StubSaga> entry = testSubject().loadSaga(StubSaga.class, "saga-1", null);
+            SagaStore.Entry<StubSaga> entry = testSubject().loadSaga(StubSaga.class, "saga-1");
             assertThat(entry).isNotNull();
             assertThat(entry.saga().getHandledEvents()).containsExactly("OrderPlaced", "OrderShipped");
         }
@@ -170,17 +168,17 @@ public abstract class SagaStoreTestSuite {
             inTransaction(() -> testSubject().insertSaga(StubSaga.class,
                                                          "saga-1",
                                                          sagaHandling(),
-                                                         singleton(ORDER_1), null));
+                                                         singleton(ORDER_1)));
             AssociationValuesImpl associations = new AssociationValuesImpl(singleton(ORDER_1));
 
             // when a shipment association is added
             associations.add(SHIPMENT_1);
-            inTransaction(() -> testSubject().updateSaga(StubSaga.class, "saga-1", sagaHandling(), associations, null));
+            inTransaction(() -> testSubject().updateSaga(StubSaga.class, "saga-1", sagaHandling(), associations));
 
             // then it is findable by both, and both come back on load
-            assertThat(testSubject().findSagas(StubSaga.class, ORDER_1, null)).containsExactly("saga-1");
-            assertThat(testSubject().findSagas(StubSaga.class, SHIPMENT_1, null)).containsExactly("saga-1");
-            SagaStore.Entry<StubSaga> entry = testSubject().loadSaga(StubSaga.class, "saga-1", null);
+            assertThat(testSubject().findSagas(StubSaga.class, ORDER_1)).containsExactly("saga-1");
+            assertThat(testSubject().findSagas(StubSaga.class, SHIPMENT_1)).containsExactly("saga-1");
+            SagaStore.Entry<StubSaga> entry = testSubject().loadSaga(StubSaga.class, "saga-1");
             assertThat(entry).isNotNull();
             assertThat(entry.associationValues()).containsExactlyInAnyOrder(ORDER_1, SHIPMENT_1);
         }
@@ -191,17 +189,17 @@ public abstract class SagaStoreTestSuite {
             inTransaction(() -> testSubject().insertSaga(StubSaga.class,
                                                          "saga-1",
                                                          sagaHandling(),
-                                                         Set.of(ORDER_1, SHIPMENT_1), null));
+                                                         Set.of(ORDER_1, SHIPMENT_1)));
             AssociationValuesImpl associations = new AssociationValuesImpl(Set.of(ORDER_1, SHIPMENT_1));
 
             // when the shipment association is removed
             associations.remove(SHIPMENT_1);
-            inTransaction(() -> testSubject().updateSaga(StubSaga.class, "saga-1", sagaHandling(), associations, null));
+            inTransaction(() -> testSubject().updateSaga(StubSaga.class, "saga-1", sagaHandling(), associations));
 
             // then only the order association remains
-            assertThat(testSubject().findSagas(StubSaga.class, SHIPMENT_1, null)).isEmpty();
-            assertThat(testSubject().findSagas(StubSaga.class, ORDER_1, null)).containsExactly("saga-1");
-            SagaStore.Entry<StubSaga> entry = testSubject().loadSaga(StubSaga.class, "saga-1", null);
+            assertThat(testSubject().findSagas(StubSaga.class, SHIPMENT_1)).isEmpty();
+            assertThat(testSubject().findSagas(StubSaga.class, ORDER_1)).containsExactly("saga-1");
+            SagaStore.Entry<StubSaga> entry = testSubject().loadSaga(StubSaga.class, "saga-1");
             assertThat(entry).isNotNull();
             assertThat(entry.associationValues()).containsExactly(ORDER_1);
         }
@@ -221,32 +219,32 @@ public abstract class SagaStoreTestSuite {
             inTransaction(() -> testSubject().insertSaga(StubSaga.class,
                                                          "saga-1",
                                                          sagaHandling(),
-                                                         Set.of(ORDER_1, SHIPMENT_1), null));
+                                                         Set.of(ORDER_1, SHIPMENT_1)));
 
             // when
-            inTransaction(() -> testSubject().deleteSaga(StubSaga.class, "saga-1", Set.of(ORDER_1, SHIPMENT_1), null));
+            inTransaction(() -> testSubject().deleteSaga(StubSaga.class, "saga-1", Set.of(ORDER_1, SHIPMENT_1)));
 
             // then
-            assertThat(testSubject().loadSaga(StubSaga.class, "saga-1", null)).isNull();
-            assertThat(testSubject().findSagas(StubSaga.class, ORDER_1, null)).isEmpty();
-            assertThat(testSubject().findSagas(StubSaga.class, SHIPMENT_1, null)).isEmpty();
+            assertThat(testSubject().loadSaga(StubSaga.class, "saga-1")).isNull();
+            assertThat(testSubject().findSagas(StubSaga.class, ORDER_1)).isEmpty();
+            assertThat(testSubject().findSagas(StubSaga.class, SHIPMENT_1)).isEmpty();
         }
 
         @Test
         void deletingOneSagaLeavesTheOtherIntact() {
             // given two sagas sharing an association value
             inTransaction(() -> {
-                testSubject().insertSaga(StubSaga.class, "saga-1", sagaHandling(), singleton(ORDER_1), null);
-                testSubject().insertSaga(StubSaga.class, "saga-2", sagaHandling(), singleton(ORDER_1), null);
+                testSubject().insertSaga(StubSaga.class, "saga-1", sagaHandling(), singleton(ORDER_1));
+                testSubject().insertSaga(StubSaga.class, "saga-2", sagaHandling(), singleton(ORDER_1));
             });
 
             // when
-            inTransaction(() -> testSubject().deleteSaga(StubSaga.class, "saga-1", singleton(ORDER_1), null));
+            inTransaction(() -> testSubject().deleteSaga(StubSaga.class, "saga-1", singleton(ORDER_1)));
 
             // then
-            assertThat(testSubject().loadSaga(StubSaga.class, "saga-1", null)).isNull();
-            assertThat(testSubject().loadSaga(StubSaga.class, "saga-2", null)).isNotNull();
-            assertThat(testSubject().findSagas(StubSaga.class, ORDER_1, null)).containsExactly("saga-2");
+            assertThat(testSubject().loadSaga(StubSaga.class, "saga-1")).isNull();
+            assertThat(testSubject().loadSaga(StubSaga.class, "saga-2")).isNotNull();
+            assertThat(testSubject().findSagas(StubSaga.class, ORDER_1)).containsExactly("saga-2");
         }
     }
 }

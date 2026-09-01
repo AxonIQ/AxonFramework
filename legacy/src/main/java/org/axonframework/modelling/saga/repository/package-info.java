@@ -23,8 +23,9 @@
  * {@link org.axonframework.modelling.saga.repository.CachingSagaStore} decorates any of them with a cache for saga
  * instances and for association lookups.
  * <p>
- * These types retain the synchronous Axon Framework 4 storage behavior and resource-provider model. Store operations
- * also accept an optional processing context so decorators can coordinate side effects with the processing lifecycle.
+ * These types retain the synchronous Axon Framework 4 storage behavior and resource-provider model. A store takes no
+ * part in transaction management: it obtains its resource from the provider it was given, so its writes commit with
+ * whatever else the surrounding transaction covers.
  */
 @NullMarked
 package org.axonframework.modelling.saga.repository;

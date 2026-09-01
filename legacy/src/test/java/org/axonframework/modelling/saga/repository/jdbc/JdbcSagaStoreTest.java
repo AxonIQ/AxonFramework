@@ -116,11 +116,11 @@ class JdbcSagaStoreTest {
             associations.add(ORDER_1);
 
             // when
-            testSubject().updateSaga(StubSaga.class, "saga-1", new StubSaga(), associations, null);
+            testSubject().updateSaga(StubSaga.class, "saga-1", new StubSaga(), associations);
 
             // then the update count guard kept the association out too
-            assertThat(testSubject().loadSaga(StubSaga.class, "saga-1", null)).isNull();
-            assertThat(testSubject().findSagas(StubSaga.class, ORDER_1, null)).isEmpty();
+            assertThat(testSubject().loadSaga(StubSaga.class, "saga-1")).isNull();
+            assertThat(testSubject().findSagas(StubSaga.class, ORDER_1)).isEmpty();
         }
     }
 
@@ -159,48 +159,47 @@ class JdbcSagaStoreTest {
         void rollingBackTheTransactionDiscardsTheInsertedSaga() {
             // given a saga inserted inside a transaction that is then rolled back
             TransactionStatus transaction = transactionManager.getTransaction(new DefaultTransactionDefinition());
-            testSubject().insertSaga(StubSaga.class, "saga-1", new StubSaga(), singleton(ORDER_1), null);
+            testSubject().insertSaga(StubSaga.class, "saga-1", new StubSaga(), singleton(ORDER_1));
             transactionManager.rollback(transaction);
 
             // when / then nothing was persisted, so the store did join the transaction
-            assertThat(testSubject().loadSaga(StubSaga.class, "saga-1", null)).isNull();
-            assertThat(testSubject().findSagas(StubSaga.class, ORDER_1, null)).isEmpty();
+            assertThat(testSubject().loadSaga(StubSaga.class, "saga-1")).isNull();
+            assertThat(testSubject().findSagas(StubSaga.class, ORDER_1)).isEmpty();
         }
 
         @Test
         void twoInsertsInOneTransactionCommitTogether() {
             // given two sagas inserted in a single transaction that is rolled back
             TransactionStatus transaction = transactionManager.getTransaction(new DefaultTransactionDefinition());
-            testSubject().insertSaga(StubSaga.class, "saga-1", new StubSaga(), singleton(ORDER_1), null);
-            testSubject().insertSaga(StubSaga.class, "saga-2", new StubSaga(), singleton(ORDER_1), null);
+            testSubject().insertSaga(StubSaga.class, "saga-1", new StubSaga(), singleton(ORDER_1));
+            testSubject().insertSaga(StubSaga.class, "saga-2", new StubSaga(), singleton(ORDER_1));
             transactionManager.rollback(transaction);
 
             // then neither survived
-            assertThat(testSubject().findSagas(StubSaga.class, ORDER_1, null)).isEmpty();
+            assertThat(testSubject().findSagas(StubSaga.class, ORDER_1)).isEmpty();
         }
 
         @Test
         void aSecondCallInTheSameTransactionSeesTheFirstCallsUncommittedWrite() {
             // given a saga inserted but not yet committed
             TransactionStatus transaction = transactionManager.getTransaction(new DefaultTransactionDefinition());
-            testSubject().insertSaga(StubSaga.class, "saga-1", new StubSaga(), singleton(ORDER_1), null);
+            testSubject().insertSaga(StubSaga.class, "saga-1", new StubSaga(), singleton(ORDER_1));
 
             // when a separate store instance reads within the same transaction
-            SagaStore.Entry<StubSaga> entry = testSubject().loadSaga(StubSaga.class, "saga-1", null);
+            SagaStore.Entry<StubSaga> entry = testSubject().loadSaga(StubSaga.class, "saga-1");
 
             // then it sees the write, so closing the connection after the insert did not release it from the
             // transaction and did not commit it either
             assertThat(entry).isNotNull();
             transactionManager.rollback(transaction);
-            assertThat(testSubject().loadSaga(StubSaga.class, "saga-1", null)).isNull();
+            assertThat(testSubject().loadSaga(StubSaga.class, "saga-1")).isNull();
         }
 
         @Test
         void insertedSagaIsVisibleOutsideTheTransactionOnceCommitted() throws SQLException {
             // given
             inTransaction(() -> testSubject().insertSaga(
-                    StubSaga.class, "saga-1", new StubSaga(), singleton(ORDER_1), null
-            ));
+                    StubSaga.class, "saga-1", new StubSaga(), singleton(ORDER_1)));
 
             // when reading through a connection that has nothing to do with the transaction
             // then the row is there

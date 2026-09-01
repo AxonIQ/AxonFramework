@@ -18,7 +18,6 @@ package org.axonframework.modelling.saga.repository;
 
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.caching.Cache;
-import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.modelling.saga.AssociationValue;
 import org.axonframework.modelling.saga.AssociationValues;
 import org.jspecify.annotations.Nullable;
@@ -36,8 +35,15 @@ import static org.axonframework.common.BuilderUtils.assertNonNull;
  * Updating associations involves a read and write, which are performed atomically. Therefore, it is unsafe to add or
  * remove specific associations outside this instance. Obviously, clearing and evictions are safe.
  * <p>
- * When a {@link ProcessingContext} is provided, cache changes are applied after the processing lifecycle commits. When
- * no context is provided, cache changes are applied immediately, preserving the Axon Framework 4 behavior.
+ * This decorator is not transaction aware, exactly as it was in Axon Framework 4, and two consequences follow that a
+ * caller has to account for. A unit of work that rolls back leaves behind whatever it wrote to these caches, since
+ * nothing compensates for it, so the caches keep serving state the delegate {@link SagaStore} discarded until the
+ * entries are evicted for other reasons. And because every change lands immediately, a concurrently running unit of
+ * work can read state out of these shared caches that the delegate has not committed yet.
+ * <p>
+ * Making the caches follow the transaction is a redesign of this decorator rather than a property that can be added to
+ * it, so it is deliberately not attempted here. Applications that cannot accept either exposure should size the caches
+ * for their tolerance, or run without this decorator.
  *
  * @param <T> The saga type
  * @author Allard Buijze
@@ -78,48 +84,24 @@ public class CachingSagaStore<T> implements SagaStore<T> {
     }
 
     @Override
-    public Set<String> findSagas(Class<? extends T> sagaType, AssociationValue associationValue,
-                                 @Nullable ProcessingContext context) {
-        final String key = cacheKey(associationValue, sagaType);
-        if (context == null) {
-            return associationsCache.computeIfAbsent(
-                    key,
-                    () -> {
-                        // We copy the original collection in a thread-safe implementation, since the original might be
-                        // changed while the SagaManager is reading it using the insertSaga/deleteSaga methods.
-                        return new ConcurrentSkipListSet<>(delegate.findSagas(sagaType, associationValue, null));
-                    }
-            );
-        }
-
-        Set<String> cachedSagaIdentifiers = associationsCache.get(key);
-        if (cachedSagaIdentifiers != null) {
-            return cachedSagaIdentifiers;
-        }
-
-        Set<String> sagaIdentifiers = new ConcurrentSkipListSet<>(
-                delegate.findSagas(sagaType, associationValue, context)
+    public Set<String> findSagas(Class<? extends T> sagaType, AssociationValue associationValue) {
+        return associationsCache.computeIfAbsent(
+                cacheKey(associationValue, sagaType),
+                () -> {
+                    // We copy the original collection in a thread-safe implementation, since the original might be
+                    // changed while the SagaManager is reading it using the insertSaga/deleteSaga methods.
+                    return new ConcurrentSkipListSet<>(delegate.findSagas(sagaType, associationValue));
+                }
         );
-        Set<String> sagaIdentifiersSnapshot = Set.copyOf(sagaIdentifiers);
-        context.runOnAfterCommit(ignored -> associationsCache.putIfAbsent(
-                key, new ConcurrentSkipListSet<>(sagaIdentifiersSnapshot)
-        ));
-        return sagaIdentifiers;
     }
 
     @Override
-    public @Nullable <S extends T> Entry<S> loadSaga(Class<S> sagaType, String sagaIdentifier,
-                                                     @Nullable ProcessingContext context) {
+    public @Nullable <S extends T> Entry<S> loadSaga(Class<S> sagaType, String sagaIdentifier) {
         Entry<S> saga = sagaCache.get(sagaIdentifier);
         if (saga == null) {
-            saga = delegate.loadSaga(sagaType, sagaIdentifier, context);
+            saga = delegate.loadSaga(sagaType, sagaIdentifier);
             if (saga != null) {
-                if (context == null) {
-                    sagaCache.put(sagaIdentifier, new CacheEntry<T>(saga));
-                } else {
-                    CacheEntry<T> sagaSnapshot = new CacheEntry<>(saga.saga(), Set.copyOf(saga.associationValues()));
-                    context.runOnAfterCommit(ignored -> sagaCache.putIfAbsent(sagaIdentifier, sagaSnapshot));
-                }
+                sagaCache.put(sagaIdentifier, new CacheEntry<T>(saga));
             }
         }
         return saga;
@@ -127,40 +109,18 @@ public class CachingSagaStore<T> implements SagaStore<T> {
 
     @Override
     public void insertSaga(Class<? extends T> sagaType, String sagaIdentifier, T saga,
-                           Set<AssociationValue> associationValues, @Nullable ProcessingContext context) {
-        if (context == null) {
-            delegate.insertSaga(sagaType, sagaIdentifier, saga, associationValues, null);
-            sagaCache.put(sagaIdentifier, new CacheEntry<>(saga, associationValues));
-            addCachedAssociations(associationValues, sagaIdentifier, sagaType);
-            return;
-        }
-
-        Set<AssociationValue> associationValuesSnapshot = Set.copyOf(associationValues);
-        delegate.insertSaga(sagaType, sagaIdentifier, saga, associationValues, context);
-        context.runOnAfterCommit(ignored -> {
-            sagaCache.put(sagaIdentifier, new CacheEntry<>(saga, associationValuesSnapshot));
-            addCachedAssociations(associationValuesSnapshot, sagaIdentifier, sagaType);
-        });
+                           Set<AssociationValue> associationValues) {
+        delegate.insertSaga(sagaType, sagaIdentifier, saga, associationValues);
+        sagaCache.put(sagaIdentifier, new CacheEntry<>(saga, associationValues));
+        addCachedAssociations(associationValues, sagaIdentifier, sagaType);
     }
 
     @Override
     public void deleteSaga(Class<? extends T> sagaType, String sagaIdentifier,
-                           Set<AssociationValue> associationValues, @Nullable ProcessingContext context) {
-        if (context == null) {
-            sagaCache.remove(sagaIdentifier);
-            associationValues.forEach(av -> removeAssociationValueFromCache(sagaType, sagaIdentifier, av));
-            delegate.deleteSaga(sagaType, sagaIdentifier, associationValues, null);
-            return;
-        }
-
-        Set<AssociationValue> associationValuesSnapshot = Set.copyOf(associationValues);
-        delegate.deleteSaga(sagaType, sagaIdentifier, associationValues, context);
-        context.runOnAfterCommit(ignored -> {
-            sagaCache.remove(sagaIdentifier);
-            associationValuesSnapshot.forEach(
-                    associationValue -> removeAssociationValueFromCache(sagaType, sagaIdentifier, associationValue)
-            );
-        });
+                           Set<AssociationValue> associationValues) {
+        sagaCache.remove(sagaIdentifier);
+        associationValues.forEach(av -> removeAssociationValueFromCache(sagaType, sagaIdentifier, av));
+        delegate.deleteSaga(sagaType, sagaIdentifier, associationValues);
     }
 
     private void removeAssociationValueFromCache(Class<?> sagaType,
@@ -200,28 +160,12 @@ public class CachingSagaStore<T> implements SagaStore<T> {
     public void updateSaga(Class<? extends T> sagaType,
                            String sagaIdentifier,
                            T saga,
-                           AssociationValues associationValues,
-                           @Nullable ProcessingContext context) {
-        if (context == null) {
-            sagaCache.put(sagaIdentifier, new CacheEntry<>(saga, associationValues.asSet()));
-            delegate.updateSaga(sagaType, sagaIdentifier, saga, associationValues, null);
-            associationValues.removedAssociations()
-                             .forEach(av -> removeAssociationValueFromCache(sagaType, sagaIdentifier, av));
-            addCachedAssociations(associationValues.addedAssociations(), sagaIdentifier, sagaType);
-            return;
-        }
-
-        Set<AssociationValue> associationValuesSnapshot = Set.copyOf(associationValues.asSet());
-        Set<AssociationValue> removedAssociationsSnapshot = Set.copyOf(associationValues.removedAssociations());
-        Set<AssociationValue> addedAssociationsSnapshot = Set.copyOf(associationValues.addedAssociations());
-        delegate.updateSaga(sagaType, sagaIdentifier, saga, associationValues, context);
-        context.runOnAfterCommit(ignored -> {
-            sagaCache.put(sagaIdentifier, new CacheEntry<>(saga, associationValuesSnapshot));
-            removedAssociationsSnapshot.forEach(
-                    associationValue -> removeAssociationValueFromCache(sagaType, sagaIdentifier, associationValue)
-            );
-            addCachedAssociations(addedAssociationsSnapshot, sagaIdentifier, sagaType);
-        });
+                           AssociationValues associationValues) {
+        sagaCache.put(sagaIdentifier, new CacheEntry<>(saga, associationValues.asSet()));
+        delegate.updateSaga(sagaType, sagaIdentifier, saga, associationValues);
+        associationValues.removedAssociations()
+                         .forEach(av -> removeAssociationValueFromCache(sagaType, sagaIdentifier, av));
+        addCachedAssociations(associationValues.addedAssociations(), sagaIdentifier, sagaType);
     }
 
     private String cacheKey(AssociationValue associationValue, Class<?> sagaType) {

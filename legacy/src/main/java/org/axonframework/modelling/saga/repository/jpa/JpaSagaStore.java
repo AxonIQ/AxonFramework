@@ -22,7 +22,6 @@ import jakarta.persistence.EntityNotFoundException;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.jpa.EntityManagerProvider;
 import org.axonframework.conversion.Converter;
-import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.modelling.saga.AssociationValue;
 import org.axonframework.modelling.saga.AssociationValues;
 import org.axonframework.modelling.saga.repository.SagaStore;
@@ -57,7 +56,7 @@ import static org.axonframework.common.BuilderUtils.assertNonNull;
  * fixed {@link org.axonframework.common.jpa.SimpleEntityManagerProvider} is suitable only where a single thread is
  * involved, such as in a test. Supply the same instance the transaction manager was given; a store holding a different
  * provider writes outside the transaction entirely. The same requirement applies to any Axon Framework 5 component
- * reached through a {@code TransactionalExecutorProvider}, since the executor published on the processing context wraps
+ * reached through a {@code TransactionalExecutorProvider}, since the executor such a component is handed wraps
  * that same provider. Since its operations issue several statements each, saga handling should run inside a transaction;
  * JPA enforces this itself, and without an active transaction these methods fail rather than write partial state.
  * <p>
@@ -161,8 +160,7 @@ public class JpaSagaStore implements SagaStore<Object> {
     }
 
     @Override
-    public @Nullable <S> Entry<S> loadSaga(Class<S> sagaType, String sagaIdentifier,
-                                           @Nullable ProcessingContext context) {
+    public @Nullable <S> Entry<S> loadSaga(Class<S> sagaType, String sagaIdentifier) {
         EntityManager entityManager = entityManagerProvider.getEntityManager();
 
         List<byte[]> serializedSagaList = entityManager.createNamedQuery(LOAD_SAGA_NAMED_QUERY, byte[].class)
@@ -242,8 +240,7 @@ public class JpaSagaStore implements SagaStore<Object> {
     }
 
     @Override
-    public Set<String> findSagas(Class<?> sagaType, AssociationValue associationValue,
-                                 @Nullable ProcessingContext context) {
+    public Set<String> findSagas(Class<?> sagaType, AssociationValue associationValue) {
         EntityManager entityManager = entityManagerProvider.getEntityManager();
         List<String> entries = entityManager.createNamedQuery(FIND_ASSOCIATION_IDS_NAMED_QUERY, String.class)
                                             .setParameter("associationKey", associationValue.getKey())
@@ -253,8 +250,7 @@ public class JpaSagaStore implements SagaStore<Object> {
     }
 
     @Override
-    public void deleteSaga(Class<?> sagaType, String sagaIdentifier, Set<AssociationValue> associationValues,
-                           @Nullable ProcessingContext context) {
+    public void deleteSaga(Class<?> sagaType, String sagaIdentifier, Set<AssociationValue> associationValues) {
         EntityManager entityManager = entityManagerProvider.getEntityManager();
         try {
             entityManager.createNamedQuery(DELETE_ASSOCIATIONS_NAMED_QUERY)
@@ -274,8 +270,7 @@ public class JpaSagaStore implements SagaStore<Object> {
     }
 
     @Override
-    public void updateSaga(Class<?> sagaType, String sagaIdentifier, Object saga, AssociationValues associationValues,
-                           @Nullable ProcessingContext context) {
+    public void updateSaga(Class<?> sagaType, String sagaIdentifier, Object saga, AssociationValues associationValues) {
         EntityManager entityManager = entityManagerProvider.getEntityManager();
         SagaEntry<?> entry = createSagaEntry(saga, sagaIdentifier, converter);
 
@@ -310,7 +305,7 @@ public class JpaSagaStore implements SagaStore<Object> {
 
     @Override
     public void insertSaga(Class<?> sagaType, String sagaIdentifier, Object saga,
-                           Set<AssociationValue> associationValues, @Nullable ProcessingContext context) {
+                           Set<AssociationValue> associationValues) {
         EntityManager entityManager = entityManagerProvider.getEntityManager();
         SagaEntry<?> entry = createSagaEntry(saga, sagaIdentifier, converter);
         entityManager.persist(entry);

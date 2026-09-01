@@ -127,7 +127,7 @@ class SagaStoreAndTokenStoreShareTransactionIT {
                                                      .thenRun(() -> sagaStore.insertSaga(StubSaga.class,
                                                                                          "saga-1",
                                                                                          new StubSaga(),
-                                                                                         singleton(ORDER_1), context)));
+                                                                                         singleton(ORDER_1))));
 
         // when
         FutureUtils.joinAndUnwrap(unitOfWork.execute(), TIMEOUT);
@@ -145,7 +145,7 @@ class SagaStoreAndTokenStoreShareTransactionIT {
                                                      .thenRun(() -> sagaStore.insertSaga(StubSaga.class,
                                                                                          "saga-1",
                                                                                          new StubSaga(),
-                                                                                         singleton(ORDER_1), context)));
+                                                                                         singleton(ORDER_1))));
         unitOfWork.onPrepareCommit(context -> CompletableFuture.failedFuture(
                 new IllegalStateException("failing the unit of work on purpose")));
 

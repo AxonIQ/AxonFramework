@@ -16,7 +16,6 @@
 
 package org.axonframework.modelling.saga.repository.inmemory;
 
-import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.modelling.saga.AssociationValue;
 import org.axonframework.modelling.saga.AssociationValues;
 import org.axonframework.modelling.saga.repository.SagaStore;
@@ -39,8 +38,7 @@ public class InMemorySagaStore implements SagaStore<Object> {
     private final ConcurrentMap<String, ManagedSaga> managedSagas = new ConcurrentHashMap<>();
 
     @Override
-    public Set<String> findSagas(Class<?> sagaType, AssociationValue associationValue,
-                                 @Nullable ProcessingContext context) {
+    public Set<String> findSagas(Class<?> sagaType, AssociationValue associationValue) {
         return managedSagas.entrySet()
                 .stream()
                 .filter(avEntry -> sagaType.isInstance(avEntry.getValue().saga()))
@@ -50,28 +48,24 @@ public class InMemorySagaStore implements SagaStore<Object> {
     }
 
     @Override
-    public void deleteSaga(Class<?> sagaType, String sagaIdentifier, Set<AssociationValue> associationValues,
-                           @Nullable ProcessingContext context) {
+    public void deleteSaga(Class<?> sagaType, String sagaIdentifier, Set<AssociationValue> associationValues) {
         managedSagas.remove(sagaIdentifier);
     }
 
     @SuppressWarnings("unchecked")
     @Override
-    public @Nullable <S> Entry<S> loadSaga(Class<S> sagaType, String sagaIdentifier,
-                                           @Nullable ProcessingContext context) {
+    public @Nullable <S> Entry<S> loadSaga(Class<S> sagaType, String sagaIdentifier) {
         return (Entry<S>) managedSagas.get(sagaIdentifier);
     }
 
     @Override
     public void insertSaga(Class<?> sagaType, String sagaIdentifier, Object saga,
-                           Set<AssociationValue> associationValues,
-                           @Nullable ProcessingContext context) {
+                           Set<AssociationValue> associationValues) {
         managedSagas.put(sagaIdentifier, new ManagedSaga(saga, associationValues));
     }
 
     @Override
-    public void updateSaga(Class<?> sagaType, String sagaIdentifier, Object saga, AssociationValues associationValues,
-                           @Nullable ProcessingContext context) {
+    public void updateSaga(Class<?> sagaType, String sagaIdentifier, Object saga, AssociationValues associationValues) {
         managedSagas.put(sagaIdentifier, new ManagedSaga(saga, associationValues.asSet()));
     }
 

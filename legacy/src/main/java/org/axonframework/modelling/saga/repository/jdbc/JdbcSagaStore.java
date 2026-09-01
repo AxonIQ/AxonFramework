@@ -19,7 +19,6 @@ package org.axonframework.modelling.saga.repository.jdbc;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.jdbc.ConnectionProvider;
 import org.axonframework.conversion.Converter;
-import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.modelling.saga.AssociationValue;
 import org.axonframework.modelling.saga.AssociationValues;
 import org.axonframework.modelling.saga.SagaStorageException;
@@ -57,15 +56,15 @@ import static org.axonframework.common.jdbc.JdbcUtils.closeQuietly;
  * every call</b>, which is what {@code SpringDataSourceConnectionProvider} does. Supply the same provider instance the
  * transaction manager was given; a store holding a different provider writes outside the transaction entirely. The
  * same requirement applies to any Axon Framework 5 component reached through a
- * {@code TransactionalExecutorProvider}, since the executor published on the processing context wraps that same
+ * {@code TransactionalExecutorProvider}, since the executor such a component is handed wraps that same
  * provider.
  * <p>
  * Consequently, <b>saga handling should run inside a transaction.</b> Each of these operations issues several
- * statements -- {@link #insertSaga(Class, String, Object, Set, ProcessingContext)} writes the saga row plus one row per
- * association value, {@link #updateSaga(Class, String, Object, AssociationValues, ProcessingContext)} writes the state
+ * statements -- {@link #insertSaga(Class, String, Object, Set)} writes the saga row plus one row per
+ * association value, {@link #updateSaga(Class, String, Object, AssociationValues)} writes the state
  * update plus one insert per added and one delete per removed association,
- * {@link #deleteSaga(Class, String, Set, ProcessingContext)} deletes the associations and the saga row separately, and
- * {@link #loadSaga(Class, String, ProcessingContext)} reads the saga row and its associations in two queries. Without
+ * {@link #deleteSaga(Class, String, Set)} deletes the associations and the saga row separately, and
+ * {@link #loadSaga(Class, String)} reads the saga row and its associations in two queries. Without
  * an ambient transaction each statement commits on its own, so a failure part way through leaves the saga and its
  * associations inconsistent rather than failing cleanly.
  * <p>
@@ -113,8 +112,7 @@ public class JdbcSagaStore implements SagaStore<Object> {
     }
 
     @Override
-    public @Nullable <S> Entry<S> loadSaga(Class<S> sagaType, String sagaIdentifier,
-                                           @Nullable ProcessingContext context) {
+    public @Nullable <S> Entry<S> loadSaga(Class<S> sagaType, String sagaIdentifier) {
         PreparedStatement statement = null;
         ResultSet resultSet = null;
         Connection conn = null;
@@ -146,8 +144,7 @@ public class JdbcSagaStore implements SagaStore<Object> {
     }
 
     @Override
-    public Set<String> findSagas(Class<?> sagaType, AssociationValue associationValue,
-                                 @Nullable ProcessingContext context) {
+    public Set<String> findSagas(Class<?> sagaType, AssociationValue associationValue) {
         ResultSet resultSet = null;
         PreparedStatement statement = null;
         Connection conn = null;
@@ -172,8 +169,7 @@ public class JdbcSagaStore implements SagaStore<Object> {
     }
 
     @Override
-    public void deleteSaga(Class<?> sagaType, String sagaIdentifier, Set<AssociationValue> associationValues,
-                           @Nullable ProcessingContext context) {
+    public void deleteSaga(Class<?> sagaType, String sagaIdentifier, Set<AssociationValue> associationValues) {
         PreparedStatement statement1 = null;
         PreparedStatement statement2 = null;
         Connection conn = null;
@@ -193,8 +189,7 @@ public class JdbcSagaStore implements SagaStore<Object> {
     }
 
     @Override
-    public void updateSaga(Class<?> sagaType, String sagaIdentifier, Object saga, AssociationValues associationValues,
-                           @Nullable ProcessingContext context) {
+    public void updateSaga(Class<?> sagaType, String sagaIdentifier, Object saga, AssociationValues associationValues) {
         SagaEntry<?> entry = new SagaEntry<>(saga, sagaIdentifier, converter);
         if (logger.isDebugEnabled()) {
             logger.debug("Updating saga id {} as {}", sagaIdentifier, new String(entry.getSerializedSaga(),
@@ -246,7 +241,7 @@ public class JdbcSagaStore implements SagaStore<Object> {
 
     @Override
     public void insertSaga(Class<?> sagaType, String sagaIdentifier, Object saga,
-                           Set<AssociationValue> associationValues, @Nullable ProcessingContext context) {
+                           Set<AssociationValue> associationValues) {
         SagaEntry<?> entry = new SagaEntry<>(saga, sagaIdentifier, converter);
         if (logger.isDebugEnabled()) {
             logger.debug("Storing saga id {} as {}", sagaIdentifier, new String(entry.getSerializedSaga(),

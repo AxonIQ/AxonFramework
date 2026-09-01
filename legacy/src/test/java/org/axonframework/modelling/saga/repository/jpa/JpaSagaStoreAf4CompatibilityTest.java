@@ -86,7 +86,7 @@ class JpaSagaStoreAf4CompatibilityTest {
     @Test
     void readsASagaWrittenByAxonFramework4() {
         // given a row written by Axon Framework 4 / when
-        SagaStore.Entry<StubSaga> entry = testSubject.loadSaga(StubSaga.class, SAGA_WITHOUT_REVISION, null);
+        SagaStore.Entry<StubSaga> entry = testSubject.loadSaga(StubSaga.class, SAGA_WITHOUT_REVISION);
 
         // then
         assertThat(entry).isNotNull();
@@ -97,7 +97,7 @@ class JpaSagaStoreAf4CompatibilityTest {
     @Test
     void readsASagaWrittenByAxonFramework4ThatCarriedARevision() {
         // given a row whose revision column is set / when
-        SagaStore.Entry<StubSaga> entry = testSubject.loadSaga(StubSaga.class, SAGA_WITH_REVISION, null);
+        SagaStore.Entry<StubSaga> entry = testSubject.loadSaga(StubSaga.class, SAGA_WITH_REVISION);
 
         // then the revision is irrelevant to reading it back
         assertThat(entry).isNotNull();
@@ -108,8 +108,8 @@ class JpaSagaStoreAf4CompatibilityTest {
     @Test
     void findsASagaByAnAssociationWrittenByAxonFramework4() {
         // given / when / then
-        assertThat(testSubject.findSagas(StubSaga.class, ORDER_1, null)).containsExactly(SAGA_WITHOUT_REVISION);
-        assertThat(testSubject.findSagas(StubSaga.class, ORDER_2, null)).containsExactly(SAGA_WITH_REVISION);
+        assertThat(testSubject.findSagas(StubSaga.class, ORDER_1)).containsExactly(SAGA_WITHOUT_REVISION);
+        assertThat(testSubject.findSagas(StubSaga.class, ORDER_2)).containsExactly(SAGA_WITH_REVISION);
     }
 
     @Test
@@ -123,10 +123,10 @@ class JpaSagaStoreAf4CompatibilityTest {
         inTransaction(() -> testSubject.updateSaga(StubSaga.class,
                                                    SAGA_WITH_REVISION,
                                                    updated,
-                                                   new AssociationValuesImpl(singleton(ORDER_2)), null));
+                                                   new AssociationValuesImpl(singleton(ORDER_2))));
 
         // then the state was replaced but the revision survived, so an Axon Framework 4 reader still sees its own value
-        SagaStore.Entry<StubSaga> entry = testSubject.loadSaga(StubSaga.class, SAGA_WITH_REVISION, null);
+        SagaStore.Entry<StubSaga> entry = testSubject.loadSaga(StubSaga.class, SAGA_WITH_REVISION);
         assertThat(entry).isNotNull();
         assertThat(entry.saga().getHandledEvents()).containsExactly("OrderShipped");
         assertThat(revisionOf(SAGA_WITH_REVISION)).isEqualTo("2");
@@ -136,8 +136,7 @@ class JpaSagaStoreAf4CompatibilityTest {
     void insertingASagaMarksTheRowAsWrittenByThisModule() {
         // given / when
         inTransaction(() -> testSubject.insertSaga(
-                StubSaga.class, "saga-new", new StubSaga(), singleton(ORDER_1), null
-        ));
+                StubSaga.class, "saga-new", new StubSaga(), singleton(ORDER_1)));
 
         // then the row is distinguishable from one Axon Framework 4 left without a revision
         assertThat(revisionOf("saga-new")).isEqualTo(SagaEntry.LEGACY_REVISION);
@@ -147,14 +146,13 @@ class JpaSagaStoreAf4CompatibilityTest {
     void updatingASagaInsertedHereKeepsItsMarker() {
         // given a saga inserted by this module
         inTransaction(() -> testSubject.insertSaga(
-                StubSaga.class, "saga-new", new StubSaga(), singleton(ORDER_1), null
-        ));
+                StubSaga.class, "saga-new", new StubSaga(), singleton(ORDER_1)));
 
         // when
         inTransaction(() -> testSubject.updateSaga(StubSaga.class,
                                                    "saga-new",
                                                    new StubSaga(),
-                                                   new AssociationValuesImpl(singleton(ORDER_1)), null));
+                                                   new AssociationValuesImpl(singleton(ORDER_1))));
 
         // then the update left the column alone, so the marker is still there
         assertThat(revisionOf("saga-new")).isEqualTo(SagaEntry.LEGACY_REVISION);
@@ -164,8 +162,7 @@ class JpaSagaStoreAf4CompatibilityTest {
     void theSagaTypeColumnHoldsTheSagaClassName() {
         // given / when
         inTransaction(() -> testSubject.insertSaga(
-                StubSaga.class, "saga-new", new StubSaga(), singleton(ORDER_1), null
-        ));
+                StubSaga.class, "saga-new", new StubSaga(), singleton(ORDER_1)));
 
         // then what Axon Framework 4 wrote through the serializer is what is written here
         assertThat(columnOf("sagaType", "saga-new")).isEqualTo(StubSaga.class.getName());
