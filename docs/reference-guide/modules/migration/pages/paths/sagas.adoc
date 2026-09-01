@@ -99,7 +99,7 @@ xref:{page-component-version}@saga-guide:ROOT:deadlines.adoc[deadlines].
 
 [#workflows]
 [.axoniq-feature]
-== Replacing sagas with Workflows
+== Replacing a saga with a workflow
 
 The recommended replacement for sagas is xref:{page-component-version}@saga-guide:ROOT:workflows.adoc[Workflows]: a process is written as a
 single method that reads top to bottom, using the regular event store for event-sourced persistence.
@@ -123,7 +123,7 @@ A running saga holding a serialized instance in a `SagaStore` cannot be handed t
 described in <<strategy>>, whichever replacement you pick.
 
 [#deadlines]
-== Migrating deadlines for sagas
+== Migrating deadlines
 
 Axon Framework 4 scheduled deadlines to defer reactions for sagas.
 Axon Framework 5 has no built-in deadline scheduling. Use other capabilities to get the same effect.
