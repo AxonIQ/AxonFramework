@@ -23,9 +23,7 @@ import java.util.UUID;
 /**
  * Identifies a single rental request.
  * <p>
- * The bike rental sample application calls this a {@code rentalReference}. There it was a random
- * value minted inside the request handler and used only to correlate the payment; here it is supplied by the caller,
- * which makes {@code RequestBike} idempotent.
+ * Supplied by the caller rather than minted inside the request handler, which makes {@code RequestBike} idempotent.
  * <p>
  * There is deliberately no {@code Rental} entity keyed by this identifier. The rental request is the process, and
  * the process is the saga. See the module README for why that matters.

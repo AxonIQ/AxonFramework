@@ -41,7 +41,7 @@ import java.time.Instant;
         name = "saga_recipe_pending_payment",
         indexes = @Index(name = "idx_saga_recipe_pending_payment_prepared_at", columnList = "preparedAt")
 )
-public class PendingPayment {
+class PendingPayment {
 
     @Id
     private String paymentReference;

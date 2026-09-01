@@ -38,7 +38,7 @@ import org.axonframework.examples.sagarecipes.rental.RentalId;
  */
 @Entity
 @Table(name = "saga_recipe_rental_payment_process")
-public class PaymentProcessState {
+class PaymentProcessState {
 
     @Id
     private String rentalId;
