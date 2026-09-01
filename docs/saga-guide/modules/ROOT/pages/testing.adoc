@@ -12,11 +12,6 @@ include::example$sagas/testing/RentalPaymentProcessTest.java[tag=event-driven,in
 <1> `await` is required where the processor handles events on its own threads, as a streaming processor does: the
 command has not been sent yet when the given phase returns.
 
-Two details save time. Filter assertions to the identifiers the test generated rather than asserting on the exact
-recorded list, because the recording command bus accumulates across every test sharing a Spring context and is only
-reset by a `when` phase that event-driven scenarios do not use. And keep correlation values unique per test, since a
-value used as a tag makes one test's events visible to another test's criteria.
-
 Testing the timeout path needs one extra thing: `AxonTestFixture` cannot move the clock. Write the component that
 notices overdue work so that "now" is a parameter, and the test calls it directly instead of waiting.
 xref::deadlines.adoc[The deadlines page] shows the shape.

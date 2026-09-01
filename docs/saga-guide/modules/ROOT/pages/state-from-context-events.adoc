@@ -31,15 +31,12 @@ when they are not.
 
 == When to use it
 
-Use this when both sides write to the same event store context, their events carry a tag the process can select on,
-and the process's state really is implied by events that already exist.
+Three conditions have to hold:
 
-Check the first condition first: it is a deployment fact, not a design choice. Two bounded contexts in one Axon Server
-context qualify. The same two split across two contexts do not, and no amount of tagging changes that. If the payment
-side is a third-party provider whose events you merely receive, this approach is likewise unavailable and
-xref::state-from-process-events.adoc[process events] applies instead.
-
-When the conditions do hold, this is the approach with the fewest ways to go wrong.
+* Both sides write to the same event store context. This one is a deployment fact rather than a design choice, and
+  no amount of tagging works around it.
+* Their events carry a tag the process can select on.
+* The state the process needs is implied by events that already exist.
 
 == The decision model
 
