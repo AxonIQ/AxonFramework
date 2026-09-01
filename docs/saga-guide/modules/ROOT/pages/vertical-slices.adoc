@@ -32,7 +32,7 @@ The most instructive slice is the one that needs nothing:
 
 [source,java]
 ----
-include::example$sagas/verticalslices/VerticalSlices.java[tag=stateless,indent=0]
+include::example$sagas/verticalslices/WhenBikeRequestedThenPreparePayment.java[tag=stateless,indent=0]
 ----
 <1> Events of one rental are handled in order; different rentals still run in parallel.
 <2> Returning the result makes the processor await the command and treat a failed command as a failure of the
@@ -54,7 +54,7 @@ and the renter. This slice therefore has to look them up:
 
 [source,java]
 ----
-include::example$sagas/verticalslices/VerticalSlices.java[tag=with-lookup,indent=0]
+include::example$sagas/verticalslices/WhenPaymentConfirmedThenApproveRequest.java[tag=with-lookup,indent=0]
 ----
 <1> Sequenced on the property this slice's own event carries. Each slice handles one event type, so the built-in
 policy is enough, where a single process class handling both sides would need a policy spanning two correlation

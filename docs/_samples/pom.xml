@@ -171,7 +171,6 @@
                                 <source>${project.basedir}/../reference-guide/modules/messaging-concepts/examples</source>
                                 <source>${project.basedir}/../reference-guide/modules/monitoring/examples</source>
                                 <source>${project.basedir}/../reference-guide/modules/queries/examples</source>
-                                <source>${project.basedir}/../saga-guide/modules/ROOT/examples</source>
                                 <source>${project.basedir}/../reference-guide/modules/tuning/examples</source>
                                 <source>${project.basedir}/../getting-started/modules/ROOT/examples</source>
                                 <source>${project.basedir}/../identifier-generation-guide/modules/ROOT/examples</source>
@@ -194,6 +193,9 @@
                                      alongside plain configuration samples; test scope is a superset of compile scope,
                                      so the whole module compiles fine as test sources -->
                                 <source>${project.basedir}/../reference-guide/modules/migration/examples</source>
+                                <!-- The saga guide's testing and deadlines pages use AxonTestFixture and JUnit, and
+                                     test scope is a superset of compile scope, so the whole module compiles fine here -->
+                                <source>${project.basedir}/../saga-guide/modules/ROOT/examples</source>
                             </sources>
                         </configuration>
                     </execution>
