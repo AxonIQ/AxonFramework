@@ -19,7 +19,7 @@ another Axon Server context, another team's service, or a third-party provider.
 [TIP]
 ====
 Where xref::workflows.adoc[[.advanced-framework]#Workflows#] are available to you they are the recommended answer: the position
-within the flow is the state, so there is no table to design and nothing to keep in step with the tracking token. This
+within the flow is the state, so there is no table to design and nothing to keep in step with anything else. This
 page is what to write when they are not.
 ====
 
@@ -54,14 +54,14 @@ Axon-specific.
 include::example$sagas/staterepository/RentalPaymentProcess.java[tag=process,indent=0]
 ----
 <1> The idempotency check. A redelivered `BikeRequested` must not ask for payment a second time.
-<2> An ordinary repository call in an ordinary method. It commits with the tracking token, and rolls back with it,
-for the reason below.
+<2> An ordinary repository call in an ordinary method. It commits and rolls back with the surrounding unit of
+work, for the reason below.
 <3> Returning the result of the dispatch is what makes the processor await the command. A failed command fails the
-handler. That rolls the transaction back and leaves the tracking token where it was.
+handler, which rolls the transaction back, and the event is not recorded as handled.
 <4> Ending the process by forgetting it.
 
-There is no ceremony here. Storing process state alongside a tracking token can otherwise require explicit
-transaction handling; this approach does not.
+There is no ceremony here. Storing process state can otherwise require explicit transaction handling; this
+approach does not.
 
 One thing the sample leaves out for brevity: this class handles events from both sides. The two sides name their
 correlation differently, so it needs a sequencing policy that spans them. See
@@ -70,21 +70,19 @@ xref::sequencing.adoc[sequencing].
 [#transaction]
 == Where the transaction comes from
 
-Nowhere in this class. With a `PlatformTransactionManager` on the classpath, Axon Framework wraps
-each unit of work in a transaction that opens before the handler is invoked and commits alongside the tracking token.
-It also requires the phases to run on one thread, so the handler body executes on the thread that transaction is bound
-to.
+Nowhere in this class. With a `PlatformTransactionManager` present the handler already runs in a transaction, so
+the write above needs no `@Transactional` and no callback.
 
-The write above therefore lands in that transaction without asking. The row and the token commit together, or neither
-does. No `@Transactional`, no `runOnPrepareCommit`, no callback.
+The row and xref::index.adoc#progress-record[the processor's record of progress] need not commit together. The
+guard on the first line is what absorbs an event that arrives twice.
 
 [#ordering]
 == Why the write comes first
 
 Purely so that it happens on the handler's own thread, where the transaction is bound. Ordering carries no correctness
 weight here, because a failed command takes the write with it. The handler fails, the transaction rolls back, and the
-row is gone as though it had never been written. The tracking token stays put, so the event is redelivered. The
-redelivery finds no row, so the guard lets it through. The process tries again from the top.
+row is gone as though it had never been written. The event is not recorded as handled, so it arrives again, finds no
+row, and the guard lets it through. The process tries again from the top.
 
 What does break is deferring the write until after the command has answered:
 
@@ -97,7 +95,7 @@ return dispatcher.send(command)
 ----
 
 That callback runs on whichever thread completed the command's future, where nothing is bound, so the write escapes
-the transaction that commits the token. Recovering from that costs a hop back into a unit-of-work phase to find a
+the unit of work's transaction entirely. Recovering from that costs a hop back into a unit-of-work phase to find a
 transaction again, and writing first removes the callback and the hop together.
 
 [NOTE]
@@ -117,8 +115,7 @@ Deriving the payment reference from the rental identifier avoids the deferred wr
 whether the correlation is derivable before deciding where state lives.
 ====
 
-Whichever shape you end up with, the property to preserve is that the state and the token commit together. A process
-whose state can commit without its token, or the reverse, will drift, and the drift only shows up under failure.
+Whichever shape you end up with, keep the write inside the handler. Anywhere else it commits on its own.
 
 [#ending]
 == Ending the process
@@ -150,7 +147,7 @@ a|
 * No requirement on tags, event stores, or ownership of the other context.
 
 a|
-* Two effects per step, and they only commit together because a transaction manager is present.
+* Two effects per step, so the write has to roll back when the command fails.
 * The state is a second source of truth that can drift from the events.
 * Ending is a decision you have to make and get right.
 |===

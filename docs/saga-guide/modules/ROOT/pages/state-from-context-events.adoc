@@ -81,8 +81,8 @@ dispatched.
 
 That difference removes an entire class of bug:
 
-* If the command fails, no event is appended, the tracking token stays where it is, and the redelivery rebuilds an
-  identical decision model and tries again.
+* If the command fails, no event is appended and the event is not recorded as handled, so it arrives again,
+  rebuilds an identical decision model, and tries again.
 * If the command succeeded but the commit did not, the redelivery re-dispatches and the receiver's idempotency absorbs
   it.
 
@@ -118,7 +118,7 @@ production fails.
 
 a|
 * Nothing is stored, so nothing can drift.
-* One effect per handler, so nothing can commit out of step with the tracking token.
+* One effect per handler, so there is no second write that could fall out of step with the progress record.
 * No life cycle to manage: being finished is a question asked of the events.
 * No schema, no migration, no cleanup.
 

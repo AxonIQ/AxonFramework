@@ -48,7 +48,7 @@ import java.util.concurrent.CompletableFuture;
  * model with a table behind it.
  * <p>
  * The lookup is a read. Nothing is written here beyond the command that gets dispatched, so there is still only one
- * effect and nothing that could fall out of step with the tracking token.
+ * effect and no second write that could fall out of step with the processor's record of progress.
  * <p>
  * Note that the lookup is private to this slice. Two neighbouring slices keep the same one, and that duplication is
  * the point: slices are independent, and sharing would couple them.

@@ -38,8 +38,8 @@
  * </ul>
  * <p>
  * The transactional profile is the best of any recipe: every slice has exactly one effect. The lookups are reads, not
- * writes, so there is no second thing that could fall out of step with the tracking token, and the ordering rule the
- * other recipes have to observe simply does not apply.
+ * writes, so there is no second thing that could fall out of step with the processor's record of progress, and the
+ * ordering rule the other recipes have to observe simply does not apply.
  * <p>
  * <b>Each slice gets an event processor of its own</b>, because a handler is assigned to a processor named after its
  * package unless something says otherwise, and every slice has a package of its own. That default happens to be the

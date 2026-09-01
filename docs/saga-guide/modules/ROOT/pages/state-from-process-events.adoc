@@ -88,12 +88,11 @@ pre-attached to the processing context, and works on a pooled streaming processo
 include::example$sagas/stateprocessevents/RentalPaymentProcess.java[tag=appending,indent=0]
 ----
 <1> The appender is injected like any other handler parameter.
-<2> Half the code of the command-translating version, and the append joins the same event store transaction that the
-work package commits alongside the tracking token.
+<2> Half the code of the command-translating version, and one dispatch fewer per step.
 
-Recording becomes atomic with the token, which neither the repository approach nor the command-translating one
-manages. Because the command being recorded is idempotent, this makes no practical difference: a retry re-dispatches
-it as a no-op and then records. Atomic recording matters only when the target command cannot be made idempotent.
+What keeps a second append from happening is not a transaction, since the event store and the processor's progress
+record are separate systems. It is the entity this handler sourced, whose append condition covers exactly the
+events it read, making that entity the consistency boundary.
 
 [WARNING]
 ====
