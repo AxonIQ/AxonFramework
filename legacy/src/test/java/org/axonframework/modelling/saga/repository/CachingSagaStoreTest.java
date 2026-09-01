@@ -19,9 +19,6 @@ package org.axonframework.modelling.saga.repository;
 import org.axonframework.common.FutureUtils;
 import org.axonframework.common.IdentifierFactory;
 import org.axonframework.common.caching.Cache;
-import org.axonframework.messaging.core.EmptyApplicationContext;
-import org.axonframework.messaging.core.unitofwork.SimpleUnitOfWorkFactory;
-import org.axonframework.messaging.core.unitofwork.UnitOfWork;
 import org.axonframework.modelling.saga.AssociationValue;
 import org.axonframework.modelling.saga.AssociationValuesImpl;
 import org.axonframework.modelling.saga.repository.inmemory.InMemorySagaStore;
@@ -44,30 +41,36 @@ import static org.mockito.Mockito.*;
 /**
  * Abstract test class for validating the {@link CachingSagaStore}. Expects implementations to construct the type of
  * {@link Cache} used during testing.
+ * <p>
+ * Extends {@link SagaStoreTestSuite}, so the decorator is held to the same contract as the stores it wraps. The tests
+ * declared here cover what the suite cannot see: that the caches are read and written where they should be.
  *
  * @author Allard Buijze
  */
-public abstract class CachingSagaStoreTest {
+public abstract class CachingSagaStoreTest extends SagaStoreTestSuite {
 
-    private SagaStore<StubSaga> delegate;
+    private SagaStore<Object> delegate;
     private Cache sagaCache;
     private Cache associationsCache;
 
-    private CachingSagaStore<StubSaga> testSubject;
+    private CachingSagaStore<Object> testSubject;
 
-    @SuppressWarnings("unchecked")
     @BeforeEach
     void setUp() {
-        //noinspection rawtypes
-        delegate = spy((SagaStore) new InMemorySagaStore());
+        delegate = spy(new InMemorySagaStore());
         sagaCache = spy(sagaCache());
         associationsCache = spy(associationCache());
 
-        testSubject = CachingSagaStore.<StubSaga>builder()
+        testSubject = CachingSagaStore.builder()
                                       .delegateSagaStore(delegate)
                                       .sagaCache(sagaCache)
                                       .associationsCache(associationsCache)
                                       .build();
+    }
+
+    @Override
+    protected SagaStore<Object> testSubject() {
+        return testSubject;
     }
 
     /**
@@ -150,7 +153,6 @@ public abstract class CachingSagaStoreTest {
         verify(associationsCache, never()).put(any(), any());
     }
 
-
     @Test
     void commitDelegatedAfterAddingToCache() {
         StubSaga saga = new StubSaga();
@@ -206,7 +208,7 @@ public abstract class CachingSagaStoreTest {
                                      String sagaId = IdentifierFactory.getInstance().generateIdentifier();
 
                                      testSubject.insertSaga(
-                                             StubSaga.class, sagaId, mock(StubSaga.class), associationValues);
+                                             StubSaga.class, sagaId, new StubSaga(), associationValues);
                                      testSubject.findSagas(StubSaga.class, associationValue);
                                      testSubject.deleteSaga(
                                              StubSaga.class, sagaId, associationValues);

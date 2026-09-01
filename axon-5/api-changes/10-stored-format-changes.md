@@ -82,3 +82,24 @@ consuming events through the `EventStorageEngine#stream(StreamingCondition)` met
 1. A `mask` column containing the mask associated with each segment was added to avoid
    having to query all segments in order to calculate it.
 
+## Sagas
+
+The saga tables are unchanged, so an Axon Framework 4 saga table can be read and written by `axon-legacy` without
+migration. What changed is what the `revision` column carries.
+
+Axon Framework 4 filled it from the saga class's `@Revision` value, which the `Serializer` resolved, and rewrote it on
+every save. The `Converter` has no revision concept, and nothing has ever read the value back: the revision was half of
+a `SerializedType`, which is what an upcaster chain matches on, and saga stores never ran an upcaster chain.
+
+1. An `INSERT` writes the constant `SagaEntry.LEGACY_REVISION`, currently `"axon-legacy"`, marking the row as one this
+   module created.
+2. An `UPDATE` leaves the column alone, so a revision written by Axon Framework 4 survives rather than being replaced.
+3. No query reads the column.
+4. Schema creation retains the column, so a table created here is one an Axon Framework 4 application can still read.
+
+Two consequences are visible only from outside the store. A row created here has no `@Revision`-derived value where
+Axon Framework 4 would have recorded one, and a row Axon Framework 4 created keeps the revision from its last Axon
+Framework 4 write rather than tracking the current class. A migration script or support query reading the column
+directly will see that. A `revision` column narrowed to `NOT NULL`, which the Axon Framework 4 schema does not do, still
+accepts these inserts.
+
