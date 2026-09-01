@@ -53,6 +53,12 @@ import static org.axonframework.common.jdbc.JdbcUtils.closeQuietly;
  * calling thread's transaction on every call, such as {@code SpringDataSourceConnectionProvider}. A store holding a
  * provider that hands out an unbound connection writes outside the transaction entirely.
  * <p>
+ * Such a provider finds the transaction by thread, so the store has to be called on the thread that began it. A
+ * {@code TransactionManager} declaring {@code requiresSameThreadInvocations()} arranges that, and the ones shipped for
+ * Spring and JPA do. A custom transaction manager that leaves that method at its default of {@code false} does not, and
+ * neither does handler code that moves work onto a thread of its own: the provider then finds no transaction and
+ * silently hands out a connection that commits on its own, which survives a rollback of the unit of work.
+ * <p>
  * Because every operation here issues several statements, <b>saga handling should run inside a transaction</b>.
  * Without one each statement commits on its own, so a failure part way through leaves a saga and its associations
  * inconsistent rather than failing cleanly.

@@ -53,6 +53,11 @@ import static org.axonframework.common.BuilderUtils.assertNonNull;
  * {@link org.axonframework.common.jpa.SimpleEntityManagerProvider} is suitable only where a single thread is involved,
  * such as in a test.
  * <p>
+ * Such a provider finds the transaction by thread, so the store has to be called on the thread that began it. A
+ * {@code TransactionManager} declaring {@code requiresSameThreadInvocations()} arranges that, and the ones shipped for
+ * Spring and JPA do. A custom transaction manager that leaves that method at its default of {@code false} does not, and
+ * neither does handler code that moves work onto a thread of its own.
+ * <p>
  * Saga handling should run inside a transaction. JPA enforces that itself: without an active one these operations fail
  * rather than write partial state.
  * <p>
