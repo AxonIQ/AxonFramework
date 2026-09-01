@@ -168,7 +168,7 @@ class JdbcSagaStoreTest {
         }
 
         @Test
-        void twoInsertsInOneTransactionCommitTogether() {
+        void twoInsertsInOneTransactionRollBackTogether() {
             // given two sagas inserted in a single transaction that is rolled back
             TransactionStatus transaction = transactionManager.getTransaction(new DefaultTransactionDefinition());
             testSubject().insertSaga(StubSaga.class, "saga-1", new StubSaga(), singleton(ORDER_1));

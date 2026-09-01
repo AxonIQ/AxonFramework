@@ -56,6 +56,11 @@ import static org.axonframework.common.jdbc.JdbcUtils.closeQuietly;
  * Because every operation here issues several statements, <b>saga handling should run inside a transaction</b>.
  * Without one each statement commits on its own, so a failure part way through leaves a saga and its associations
  * inconsistent rather than failing cleanly.
+ * <p>
+ * The saga type column holds the saga class name and is matched against it. Axon Framework 4 derived both through its
+ * {@code Serializer}, which for the default configuration also produced the class name, so an existing table reads and
+ * writes unchanged. An application that mapped its saga classes to some other type name, an XStream alias being the
+ * usual way, has rows this store cannot route to and must rewrite that column to the class name first.
  *
  * @author Allard Buijze
  * @author Kristian Rosenvold

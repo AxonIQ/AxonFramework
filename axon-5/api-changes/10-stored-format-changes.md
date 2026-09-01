@@ -85,7 +85,37 @@ consuming events through the `EventStorageEngine#stream(StreamingCondition)` met
 ## Sagas
 
 The saga tables are unchanged, so an Axon Framework 4 saga table can be read and written by `axon-legacy` without
-migration. What changed is what the `revision` column carries.
+migration in the default configuration. Two columns need a closer look: `sagaType`, which is a condition on that
+statement, and `revision`, whose contents changed.
+
+### The `sagaType` column
+
+Axon Framework 4 derived this column, and the value it matched against when finding a saga, through the `Serializer`:
+`serializer.serialize(saga).getType().getName()` on write and `serializer.typeForClass(sagaType).getName()` on read.
+`axon-legacy` uses the class name directly on both sides.
+
+For the default configuration those are the same string, so nothing changes: the Jackson serializer returned the class
+name, and so did XStream for a class without an alias. An application that mapped its saga classes to some other type
+name, an XStream alias being the usual way to get one, has rows whose `sagaType` column holds that alias. Those rows are
+not reachable through `axon-legacy`, because `findSagas`, and the association queries behind loading and deleting, match
+the column literally against the class name. The saga row itself still loads by identifier, but without its
+associations, so it can never be routed an event.
+
+Such a table needs its `sagaType` columns rewritten to the class name before use, in both the saga entry and the
+association value entry tables:
+
+```sql
+UPDATE SagaEntry            SET sagaType = 'com.example.OrderSaga' WHERE sagaType = 'order-saga';
+UPDATE AssociationValueEntry SET sagaType = 'com.example.OrderSaga' WHERE sagaType = 'order-saga';
+```
+
+Reading a saga back changed with it. Axon Framework 4 resolved the class from the stored `sagaType`, so
+`serializer.deserialize` returned whatever the row said. `axon-legacy` converts into the class the caller asked for and
+ignores the stored name. In the saga flow those are the same class, since a saga is found by an association query that
+already filtered on it, so this is not separately observable; it only means the stored name is no longer what selects
+the type.
+
+### The `revision` column
 
 Axon Framework 4 filled it from the saga class's `@Revision` value, which the `Serializer` resolved, and rewrote it on
 every save. The `Converter` has no revision concept, and nothing has ever read the value back: the revision was half of

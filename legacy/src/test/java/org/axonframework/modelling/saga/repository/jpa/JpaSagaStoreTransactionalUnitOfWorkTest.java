@@ -60,7 +60,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * Every assertion reads through a second {@link EntityManager} with its own persistence context, so what is being
  * observed is committed database state rather than the writing session's cache.
  */
-class JpaSagaStoreTransactionalUnitOfWorkIT {
+class JpaSagaStoreTransactionalUnitOfWorkTest {
 
     private static final Duration TIMEOUT = Duration.ofSeconds(10);
 

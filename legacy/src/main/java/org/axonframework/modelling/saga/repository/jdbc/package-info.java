@@ -24,11 +24,16 @@
  * PostgreSQL and Oracle 11.
  * <p>
  * The table and column layout is that of Axon Framework 4, so an existing saga table can be read and updated without
- * migration.
+ * migration, provided its saga type column holds saga class names. See
+ * {@link org.axonframework.modelling.saga.repository.jdbc.JdbcSagaStore} for when it might not.
  * <p>
  * These types carry the Axon Framework 4 API, to ease migration of projects that cannot move off it in one go. The
- * one departure is forced: Axon Framework 5 has no {@code Serializer}, so wherever one was accepted a
- * {@link org.axonframework.conversion.Converter} is taken instead.
+ * departures are those Axon Framework 5 forced by removing the {@code Serializer}:
+ * {@code JdbcSagaStore.Builder#serializer} became {@code converter}, {@code JdbcSagaStore#setSerializer} is gone,
+ * {@link org.axonframework.modelling.saga.repository.jdbc.SagaSqlSchema#readSerializedSaga} returns the raw bytes
+ * rather than a serialized object, and {@code sql_updateSaga} no longer takes a revision. Gone with them is
+ * {@code JdbcSagaStore.Builder#dataSource}, which built a connection provider that is not bound to the ambient
+ * transaction; supply a {@code ConnectionProvider} instead.
  */
 @NullMarked
 package org.axonframework.modelling.saga.repository.jdbc;

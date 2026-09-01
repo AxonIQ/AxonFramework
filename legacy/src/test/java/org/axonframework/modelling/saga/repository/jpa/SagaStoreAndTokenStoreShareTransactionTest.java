@@ -60,7 +60,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * They do converge, because {@code EntityManagerExecutor} is a wrapper over the same provider the transaction manager
  * began its transaction on. This test is what makes that a demonstrated fact rather than a reading of the code.
  */
-class SagaStoreAndTokenStoreShareTransactionIT {
+class SagaStoreAndTokenStoreShareTransactionTest {
 
     private static final Duration TIMEOUT = Duration.ofSeconds(10);
     private static final String PROCESSOR = "saga-processor";

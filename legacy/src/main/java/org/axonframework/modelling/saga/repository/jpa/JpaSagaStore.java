@@ -55,6 +55,11 @@ import static org.axonframework.common.BuilderUtils.assertNonNull;
  * <p>
  * Saga handling should run inside a transaction. JPA enforces that itself: without an active one these operations fail
  * rather than write partial state.
+ * <p>
+ * The saga type column holds the saga class name and is matched against it. Axon Framework 4 derived both through its
+ * {@code Serializer}, which for the default configuration also produced the class name, so an existing table reads and
+ * writes unchanged. An application that mapped its saga classes to some other type name, an XStream alias being the
+ * usual way, has rows this store cannot route to and must rewrite that column to the class name first.
  *
  * @author Allard Buijze
  * @since 3.0

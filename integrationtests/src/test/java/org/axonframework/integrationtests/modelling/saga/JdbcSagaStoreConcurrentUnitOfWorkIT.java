@@ -169,7 +169,10 @@ class JdbcSagaStoreConcurrentUnitOfWorkIT {
             unitOfWork.onPrepareCommit(context -> CompletableFuture.failedFuture(
                     new IllegalStateException("failing one of the two units of work on purpose")));
             // The failure is the point of this unit of work, so it is expected rather than asserted here.
-            unitOfWork.execute().exceptionally(e -> null).join();
+            unitOfWork.execute()
+                      .exceptionally(e -> null)
+                      .orTimeout(TIMEOUT.toSeconds(), TimeUnit.SECONDS)
+                      .join();
         }, executor);
 
         // when both have run to completion
