@@ -35,10 +35,10 @@ The second is auditing the process itself. A repository row is deleted when the 
 written at all. Neither approach retains a record of how a rental turned out or how long it took. A process that
 writes its own events keeps that record, which matters for long-running or regulated processes.
 
-== The process's own events
+== The process's own events and decision model
 
-These describe the process, not the domain it coordinates. They are tagged with the correlation identifier and carry
-whatever the process will need later:
+The events describe the process, not the domain it coordinates. They are tagged with the correlation identifier and
+carry whatever the process will need later:
 
 [source,java]
 ----
@@ -48,7 +48,7 @@ include::example$sagas/stateprocessevents/RentalPaymentProcess.java[tag=process-
 Ending is a fact the process records, not a callback anything performs on its behalf. Once the completion event is
 written, every handler short-circuits on it.
 
-== The decision model
+The decision model sources those events back:
 
 [source,java]
 ----
