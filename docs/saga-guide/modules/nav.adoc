@@ -3,9 +3,8 @@
 * xref::choosing-an-approach.adoc[]
 * xref::workflows.adoc[[.advanced-framework]#Workflows#]
 * xref::vertical-slices.adoc[]
-* Keeping state
-** xref::state-in-a-repository.adoc[In a repository]
-** xref::state-from-context-events.adoc[From context events]
-** xref::state-from-process-events.adoc[From process events]
+* xref::state-in-a-repository.adoc[State in a repository]
+* xref::state-from-context-events.adoc[State from context events]
+* xref::state-from-process-events.adoc[State from process events]
 * xref::testing.adoc[]
 * xref::deadlines.adoc[]
