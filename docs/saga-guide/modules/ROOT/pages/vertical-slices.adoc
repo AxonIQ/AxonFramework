@@ -7,7 +7,7 @@ The other approaches keep the process in one class. This one asks whether it nee
 Often the answer is no. What looks like a saga is a handful of independent reactions, each of the form "when this
 happens, do that". In Vertical Slice Architecture each is a folder, and nothing outside it needs to know it exists. If
 you model with Event Modelling you will recognise these as automation slices, drawn between an event and the command it
-triggers, so this page treats the two as mostly the same thing.
+triggers. This page treats the two as mostly the same thing.
 
 == When to use it
 
@@ -37,44 +37,44 @@ include::example$sagas/verticalslices/VerticalSlices.java[tag=stateless,indent=0
 <1> Events of one rental are handled in order; different rentals still run in parallel.
 <2> Returning the result makes the processor await the command and leave the token where it is on failure.
 
-There is no check for whether payment was already asked for. There is nowhere to check, and no need: the reference is
+There is no check for whether payment was already asked for. There is nowhere to check, and no need. The reference is
 derived from the rental, and the payment side refuses to prepare a second payment under a reference it already
 knows. Idempotency lives where the decision lives.
 
 That leaves the processor's tracking token as the entire to-do list. Everything before it has been done, everything
-after it has not, and a redelivery is harmless. No state object, no schema, no cleanup.
+after it has not. A redelivery is harmless. No state object, no schema, no cleanup.
 
 [#lookups]
 == A slice that needs a lookup
 
 Not every slice can be stateless. A payment event carries only the reference, while approving a request needs the bike
-and the renter, so this slice has to look them up:
+and the renter. This slice therefore has to look them up:
 
 [source,java]
 ----
 include::example$sagas/verticalslices/VerticalSlices.java[tag=with-lookup,indent=0]
 ----
 <1> Sequenced on the property this slice's own event carries. Each slice handles one event type, so the built-in
-policy is enough and no custom policy is needed. See xref::sequencing.adoc[sequencing] for the case a single process
+policy is enough. See xref::sequencing.adoc[sequencing] for the case a single process
 class faces, where two sides name the correlation differently.
 <2> The lookup is injected like any other entity.
 <3> A three-line decision model, selecting the single event that answers the question.
 
 This is still one effect. The lookup is a read, so nothing is written that could fall out of step with the tracking
-token, and no transaction has to span anything.
+token. No transaction has to span anything.
 
 [NOTE]
 .Slices do not share lookups
 ====
-If three slices need the same lookup, each keeps its own copy rather than sharing one. Slices are independent; a
+If three slices need the same lookup, each keeps its own copy rather than sharing one. Slices are independent. A
 shared lookup couples them, so a change made for one slice can break another. Duplication that becomes painful is a
-sign the slices are really one thing, and a process class is the better shape in that case.
+sign the slices are really one thing. A process class is the better shape in that case.
 ====
 
 [#state-per-slice]
 == Each slice chooses its own state
 
-The lookup above is one answer to "where does this slice get what it needs". It is not the only one, and the choice is
+The lookup above is one answer to "where does this slice get what it needs". It is not the only one. The choice is
 made per slice rather than once for the whole process. That is the practical difference between this approach and a
 process class: there, one decision covers every reaction; here, each slice answers only for itself.
 
@@ -97,11 +97,11 @@ All three approaches from the rest of this guide are available inside a slice:
 | Any number of event store contexts
 |===
 
-The last column counts event store contexts, not bounded contexts, and it is the constraint an entity brings with it:
+The last column counts event store contexts, not bounded contexts. It is the constraint an entity brings with it:
 a slice that injects one is sourcing from a single context, because no `EventCriteria` spans two.
 
-A process usually ends up mixing them, and choosing per slice is the advantage. In the rental example most slices need
-nothing, three read a lookup from context events, and none needs a repository. Had the payment side sat in a different
+A process usually ends up mixing them. Choosing per slice is the advantage. In the rental example most slices need
+nothing. Three read a lookup from context events. None needs a repository. Had the payment side sat in a different
 Axon Server context, or been a third-party provider whose events never reached this application, those three would
 have had to record their own instead, and only those three. Nothing else about the process would change.
 
@@ -114,8 +114,7 @@ independent.
 
 == The whole process
 
-The rental payment process decomposes into six slices, and the split between stateless and not is the interesting
-part:
+The rental payment process decomposes into six slices, split between stateless and not:
 
 [cols="2,1,1",options="header"]
 |===
@@ -134,8 +133,8 @@ payment-triggered ones are not, because a payment event knows only the reference
 
 The last slice is stateless for a different reason: cancelling is not its decision to make. It does not check whether
 cancelling is still needed before passing the request on. That is a question about the payment, and the payment side
-answers it authoritatively; a check here would only be a stale copy of that answer, which adds no safety and can add
-confusion.
+answers it authoritatively. A check here would only be a stale copy of that answer. It would add no safety and could
+add confusion.
 
 == Compensation
 
@@ -163,14 +162,13 @@ a|
 * Duplication between slices that need the same lookup.
 |===
 
-The first drawback matters most. If the process is something people reason about, discuss, and draw on a whiteboard as
-one unit, then scattering it across six files hides that unit. If it is really a set of independent rules that happen
-to concern the same identifier, this arrangement reflects that structure directly, and a process class would not.
+If the process is something people reason about, discuss, and draw on a whiteboard as one unit, then scattering it
+across six files hides that unit. If it is really a set of independent rules that happen to concern the same
+identifier, this arrangement reflects that structure directly. A process class would not.
 
-"Only an event model shows it whole" is meant literally, not as a figure of speech. The
-xref::bike-rental-event-model.adoc[bike rental event model] is that whole view: every slice on this page is one purple
-sticky on it, and the flow they add up to exists nowhere else. If your team keeps such a model, this drawback is largely
-offset. If it does not, the six files are the only description there is.
+The xref::bike-rental-event-model.adoc[bike rental event model] is that whole view: every slice on this page is one
+purple sticky on it, and the flow they add up to exists nowhere else. If your team keeps such a model, this drawback
+is largely offset. If it does not, the six files are the only description there is.
 
 == Where next
 

@@ -3,22 +3,22 @@
 :navtitle: Long-running processes
 :reftext: Long-running processes
 
-A *saga*, or *process manager*, coordinates a business process that no single transaction can guarantee.It spans
-several components and often several systems, and it takes as long as the business takes, which may be seconds, days,
-or weeks.Nothing can hold a lock for that long or across that many owners, so each step commits on its own and nothing
-can roll the whole process back.
+A *saga*, or *process manager*, coordinates a business process that no single transaction can guarantee. It spans
+several components and often several systems. It takes as long as the business takes, which may be seconds, days, or
+weeks. Nothing can hold a lock for that long or across that many owners, so each step commits on its own. Nothing can
+roll the whole process back.
 
-Booking a trip is the classic example.A flight, a hotel and a car have to be reserved, each held by a different
-component, and if the hotel comes back unavailable an hour later the flight is already booked.Undoing it is not a
+Booking a trip is the classic example. A flight, a hotel and a car have to be reserved, each held by a different
+component, and if the hotel comes back unavailable an hour later the flight is already booked. Undoing it is not a
 rollback but another step of the process: the flight is cancelled by the same thing that booked it.
-That is *compensation*, and deciding when it is needed is most of what a saga does.
+That is *compensation*. Deciding when it is needed is most of what a saga does.
 
-The same shape turns up well short of trip booking, and inside a single application. A rental is not confirmed until
-its payment is, an order is not shipped until stock and payment both agree, and a subscription is not active until the
-first charge clears. In Axon Framework such a process is an event handler: it remembers what it has seen so far and
-decides what should happen next.
+The same shape turns up well short of trip booking, inside a single application. A rental is not confirmed until its
+payment is. An order is not shipped until stock and payment both agree. A subscription is not active until the first
+charge clears. In Axon Framework such a process is an event handler: it remembers what it has seen so far and decides
+what should happen next.
 
-Axon Framework (since 5.0.0) has no `Saga` class, and this is deliberate. A process makes three decisions that are better made one
+Axon Framework (since 5.0.0) has no `Saga` class. A process makes three decisions that are better made one
 at a time than bundled together:
 
 * *Where its state lives*, if it needs any. A blob nobody can query, a table with real columns, its own events, or
@@ -30,7 +30,7 @@ at a time than bundled together:
   events.
 
 Those decisions pull in different directions for different processes. A process that has to be reported on wants
-columns; a process whose correlation is derivable needs no mapping at all; a process that is really a handful of
+columns. A process whose correlation is derivable needs no mapping at all. A process that is really a handful of
 independent reactions has no life cycle to manage.
 
 So a process is written with the same building blocks as everything else: event handlers that react, command handlers
@@ -49,28 +49,28 @@ pages the bare word *context* always means the second one.
 xref::bike-rental-event-model.adoc[bike rental example] are two bounded contexts. They are a property of your code.
 
 *Context* is the event store's unit of separation, and in Axon Server it is a named, logical partition of events with
-its own stream. Ordering is preserved within one context and does not exist between two, so events in different
-contexts cannot be placed on a single timeline at all. It is a property of your deployment.
+its own stream. Ordering is preserved within one context and does not exist between two. Events in different contexts
+cannot be placed on a single timeline at all. It is a property of your deployment.
 
-The two do not have to line up, and usually do not. Several bounded contexts commonly share one context, which is
-exactly the case in the example: `rental` and `payment` know nothing about each other, yet their events sit in the same
-event store context. That is what allows a process to source both.
+The two do not have to line up, and usually do not. Several bounded contexts commonly share one context. In the
+example, `rental` and `payment` know nothing about each other, yet their events sit in the same event store context.
+That is what allows a process to source both.
 
-*The constraint that follows.* An event-sourced entity is sourced from one context. `EventCriteria` selects tags and
-types within a context, and there is no criteria that spans two, so a process cannot inject an entity assembled from
-events in more than one context. Where the other side of the process lives in a different Axon Server context, or in a
-system that is not an Axon event store at all, xref::state-from-context-events.adoc[state from context events] is
-unavailable, since it is the only approach that assembles an entity across both sides; the "Works across" column in
-xref::choosing-an-approach.adoc#state-approaches[the comparison table] is reporting that constraint.
+An event-sourced entity is sourced from one context. `EventCriteria` selects tags and types within a context, and
+there is no criteria that spans two. A process therefore cannot inject an entity assembled from events in more than
+one context. If the other side of the process lives in a different Axon Server context, or in a system that is not an
+Axon event store at all, xref::state-from-context-events.adoc[state from context events] is unavailable: it is the
+only approach that assembles an entity across both sides. The "Works across" column in
+xref::choosing-an-approach.adoc#state-approaches[the comparison table] reports that constraint.
 ====
 
 [NOTE]
 .Coming from Axon Framework 4
 ====
 This guide describes how to write a process, and does not assume you have written one before. If you are migrating,
-the xref:{page-component-version}@axon-framework-reference:migration:paths/sagas.adoc[saga migration path] is the companion to it: it maps every
-Axon Framework 4 construct to what replaces it, explains the `axon-legacy` module that keeps existing saga instances running
-while you write their replacement, and covers testing and the drainage strategy. This guide does not repeat any of
+the xref:{page-component-version}@axon-framework-reference:migration:paths/sagas.adoc[saga migration path] is the companion to it. It maps every
+Axon Framework 4 construct to what replaces it. It explains the `axon-legacy` module that keeps existing saga instances running
+while you write their replacement. It covers testing and the drainage strategy. This guide does not repeat any of
 that.
 ====
 
@@ -79,7 +79,7 @@ that.
 ====
 xref::workflows.adoc[[.advanced-framework]#Workflows#] are the recommended way to orchestrate a process, whatever the
 process looks like. The flow is written as a single method that reads top to bottom, so the code is close to ordinary
-imperative code, and the position within it is persisted for you: no state to keep, no correlation to derive, and no
+imperative code. The position within it is persisted for you: no state to keep, no correlation to derive, and no
 deadline pattern to build. Extending it later means adding a line in the middle of a method, not another handler and
 another piece of state. The recommendation holds for small processes as much as large ones.
 
@@ -87,7 +87,7 @@ Workflows are part of Axoniq Framework and are available as a preview, at no cos
 choosing one of the approaches below.
 
 Workflows are not the only answer, and cost is not the reason. Not every reaction to an event needs to be written as
-a flow, and the approaches in this guide are the right shape for those cases. Each needs nothing beyond Axon
+a flow. The approaches in this guide are the right shape for those cases. Each needs nothing beyond Axon
 Framework, and each is proven by the same contract test in the example module.
 ====
 
@@ -97,11 +97,11 @@ Framework, and each is proven by the same contract test in the example module.
 The saga and the process manager are two names for this shape, and they carry a classical distinction. A saga matches
 each event to a command in a mostly linear flow; a process manager holds the state of the sequence and branches on it
 to pick the next step. A rule of thumb: once the flow needs `if`/`else` to decide what happens next, it is a process
-manager. Axon Framework draws no line between them, because the same building blocks cover both, and the shapes this
-guide describes simply scale from the plainest event-to-command matching to the most branching.
+manager. Axon Framework draws no line between them: the same building blocks cover both, and the shapes this guide
+describes scale from the plainest event-to-command matching to the most branching.
 
 That `if` is exactly what forces the first decision this guide is about. A branch has to read something the process
-remembered, so the moment you have a process to manage rather than a single reaction, you have state to keep, and the
+remembered. The moment you have a process to manage rather than a single reaction, you have state to keep, and the
 question becomes *where* it lives. That is what xref::choosing-an-approach.adoc[choosing an approach] answers.
 
 [#reactions]
@@ -128,15 +128,15 @@ stop here.
 
 It stops being a reaction the moment the decision depends on *something that happened earlier*. Consider approving a
 rental once its payment arrives. The payment event says a payment was confirmed and which reference it belongs to.
-It does not say which bike, or who asked for it, and it certainly does not say whether the rental was ever requested,
-or has since been cancelled. Deciding needs two things the event does not carry:
+It does not say which bike, or who asked for it. It certainly does not say whether the rental was ever requested, or
+has since been cancelled. Deciding needs two things the event does not carry:
 
 * *Correlation.* Which rental does this payment concern?
 * *Prior state.* Was that rental requested, and is it still waiting? Approving a rental nobody asked for, or one
   already turned down, is wrong.
 
 Once a decision depends on prior state, that state has to come from somewhere: kept in a table, rebuilt from events, or
-recorded by the process itself. Choosing where is what the rest of this guide is about, and coordinating several such
+recorded by the process itself. Choosing where is what the rest of this guide is about. Coordinating several such
 decisions towards an outcome is what makes it *orchestration* rather than a reaction.
 
 [NOTE]
@@ -150,7 +150,7 @@ below.
 == Two rules that apply to every approach
 
 Whatever shape you choose, a process reacts to events and sends commands. That combination has two consequences you
-cannot design away, and most process bugs are a violation of one of them.
+cannot design away. Most process bugs are a violation of one of them.
 
 === Commands a process sends must be idempotent
 
@@ -201,4 +201,4 @@ the command is lost, and the process waits forever. Retrying is the processor's 
 you give it back.
 ====
 
-Note that two of the state approaches sidestep this rule entirely, because they never record anything of their own.
+Two of the state approaches sidestep this rule entirely, because they never record anything of their own.

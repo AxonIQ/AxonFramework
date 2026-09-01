@@ -2,9 +2,9 @@
 :navtitle: Bike rental event model
 :reftext: Bike rental event model
 
-Every approach in this guide implements the same process, so they can be compared line for line: a renter asks for a
-bike, the rental is not confirmed until payment is, and if payment is refused, cancelled or never arrives, the request
-is turned down and the bike released.
+Every approach in this guide implements the same process, so they can be compared line for line. A renter asks for a
+bike. The rental is not confirmed until payment is. If payment is refused, cancelled, or never arrives, the request is
+turned down and the bike released.
 
 == The domain
 
@@ -27,29 +27,33 @@ xref::index.adoc#context-meaning[what "context" means] for how the distinction a
 .The rental payment process as a single event model, drawn on link:https://prooph-board.com[prooph board,role=external,window=_blank] (click to open full size)
 image::EventModeling_BikeRentalPaymentProcess.png[The bike rental payment process modelled as one event model on prooph board,link=self,window=_blank]
 
-Read the model left to right. The blue stickies are commands, the orange ones events, the green ones information a
-reader can see, and the purple ones automations: the process reacting to something and sending a command because of it.
+Read the model left to right:
+
+* Blue stickies are commands.
+* Orange stickies are events.
+* Green stickies are information a reader can see.
+* Purple stickies are automations: the process reacting to something and sending a command because of it.
+
 The bottom two rows are the two bounded contexts, and the row between them is where every command enters and every view
 leaves.
 
 The flow it draws is this. An operator registers a bike; the registered bikes are what the renter picks from. The
 renter requests one, and the bike is held but not theirs: `BikeRequested` is a reservation, not a rental. The first
-automation reacts to it by asking the payment side to prepare a payment, the renter pays, and a second automation
-turns `PaymentConfirmed` into `ApproveRequest`, which is the moment the rental becomes real. Returning the bike ends
+automation reacts to it by asking the payment side to prepare a payment. The renter pays, and a second automation
+turns `PaymentConfirmed` into `ApproveRequest`, the moment the rental becomes real. Returning the bike ends
 it.
 
-The rest of the model handles the process failing partway through. A refused payment releases the bike; a released
-bike calls off its payment, so a rental turned down on grounds of its own cannot leave money outstanding; and a
-cancelled payment releases the bike in turn. These three reactions are the process itself: each one does very little
-on its own.
+The rest of the model handles the process failing partway through. A refused payment releases the bike. A released
+bike calls off its payment, so a rental turned down on grounds of its own cannot leave money outstanding. A cancelled
+payment releases the bike in turn.
 
 Note what is *not* on the model: nothing labelled "saga". The process is the purple row, and how much of it lives in one
 class is the question the rest of this guide answers. Timeouts are not here either, since nothing on this model notices
 that a payment simply never arrived. That is a model of its own, on xref::deadlines.adoc[the deadlines page].
 
-The timeout is drawn as its own model rather than edited into this one, so adding it does not change this model.
-Nothing already drawn, built or tested has to change to make room for it. This is the same property that makes
-xref::vertical-slices.adoc[Vertical Slice Architecture] a natural fit: behaviour is added, not modified.
+The timeout is drawn as its own model rather than edited into this one: adding it does not change anything already
+drawn, built or tested. xref::vertical-slices.adoc[Vertical Slice Architecture] relies on the same property, adding
+behaviour without modifying it.
 
 == The shared events
 
