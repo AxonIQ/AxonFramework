@@ -16,6 +16,7 @@
 
 package org.axonframework.modelling.saga.repository;
 
+import org.axonframework.messaging.core.annotation.Namespace;
 import org.axonframework.modelling.saga.AssociationValue;
 import org.axonframework.modelling.saga.AssociationValuesImpl;
 import org.axonframework.modelling.saga.repository.jpa.SagaEntry;
@@ -233,5 +234,19 @@ public abstract class Af4CompatibilityTestSuite {
             // then, which is what Axon Framework 4 wrote for any saga without a custom type mapping
             assertThat(columnOf("sagaType", "saga-new")).isEqualTo(StubSaga.class.getName());
         }
+
+        @Test
+        void namespaceDoesNotChangeThePersistedSagaType() {
+            // given / when
+            inTransaction(() -> testSubject().insertSaga(
+                    NamespacedSaga.class, "namespaced-saga", new NamespacedSaga("created"), singleton(ORDER_1)));
+
+            // then @Namespace remains an event-processing and message-naming concern
+            assertThat(columnOf("sagaType", "namespaced-saga")).isEqualTo(NamespacedSaga.class.getName());
+        }
+    }
+
+    @Namespace("orders")
+    private record NamespacedSaga(String state) {
     }
 }

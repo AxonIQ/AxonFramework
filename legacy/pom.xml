@@ -34,6 +34,12 @@
 
     <packaging>jar</packaging>
 
+    <properties>
+        <!-- Loaded in an isolated class loader by Af4SerializerCompatibilityTest. Keeping the AF4 artifact out of the
+             dependency graph prevents its org.axonframework classes from colliding with the reactor's AF5 classes. -->
+        <axon4.serializer.version>4.13.2</axon4.serializer.version>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>org.axonframework</groupId>
@@ -79,6 +85,11 @@
             <scope>test</scope>
         </dependency>
         <dependency>
+            <groupId>com.fasterxml.jackson.datatype</groupId>
+            <artifactId>jackson-datatype-jsr310</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
             <groupId>org.hsqldb</groupId>
             <artifactId>hsqldb</artifactId>
             <scope>test</scope>
@@ -114,6 +125,31 @@
 
     <build>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>copy-af4-serializer</id>
+                        <phase>generate-test-resources</phase>
+                        <goals>
+                            <goal>copy</goal>
+                        </goals>
+                        <configuration>
+                            <skip>${skipTests}</skip>
+                            <outputDirectory>${project.build.directory}/af4-serializer</outputDirectory>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>org.axonframework</groupId>
+                                    <artifactId>axon-messaging</artifactId>
+                                    <version>${axon4.serializer.version}</version>
+                                    <destFileName>axon-messaging-af4.jar</destFileName>
+                                </artifactItem>
+                            </artifactItems>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <artifactId>maven-jar-plugin</artifactId>
                 <configuration>
