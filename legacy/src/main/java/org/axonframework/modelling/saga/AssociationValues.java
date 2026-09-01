@@ -29,7 +29,7 @@ public interface AssociationValues extends Iterable<AssociationValue> {
 
     /**
      * Returns the Set of association values that have been removed since the last {@link #commit()}.
-     * <p/>
+     * <p>
      * If an association was added and then removed (or vice versa), without any calls to {@link #commit()} in
      * between, it is not returned.
      *
@@ -39,7 +39,7 @@ public interface AssociationValues extends Iterable<AssociationValue> {
 
     /**
      * Returns the Set of association values that have been added since the last  {@link #commit()}.
-     * <p/>
+     * <p>
      * If an association was added and then removed (or vice versa), without any calls to {@link #commit()} in
      * between, it is not returned.
      *
@@ -69,7 +69,7 @@ public interface AssociationValues extends Iterable<AssociationValue> {
 
     /**
      * Adds the given {@code associationValue}, if it has not been previously added.
-     * <p/>
+     * <p>
      * When added (method returns {@code true}), the given {@code associationValue} will be returned on the
      * next call to {@link #addedAssociations()}, unless it has been removed after the last call to {@link
      * #removedAssociations()}.
@@ -82,7 +82,7 @@ public interface AssociationValues extends Iterable<AssociationValue> {
 
     /**
      * Removes the given {@code associationValue}, if it is contained by this instance.
-     * <p/>
+     * <p>
      * When removed (method returns {@code true}), the given {@code associationValue} will be returned on the
      * next call to {@link #removedAssociations()}, unless it has been added after the last call to {@link
      * #addedAssociations()}.

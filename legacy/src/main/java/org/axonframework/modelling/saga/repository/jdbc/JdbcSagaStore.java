@@ -47,29 +47,15 @@ import static org.axonframework.common.jdbc.JdbcUtils.closeQuietly;
  * SagaSqlSchema#sql_createTableSagaEntry(Connection)} respectively. For convenience, these tables can be constructed
  * through the {@link JdbcSagaStore#createSchema()} operation.
  * <p>
- * This store manages no transaction of its own. It obtains a {@link Connection} from the {@link ConnectionProvider} it
- * is given, so its changes commit together with whatever else the surrounding transaction covers.
+ * This store manages no transaction of its own. It takes a {@link Connection} from the {@link ConnectionProvider} it
+ * was given, so its changes commit together with whatever else the surrounding transaction covers. Give it the same
+ * provider instance the transaction manager was given, and use a provider that resolves the connection bound to the
+ * calling thread's transaction on every call, such as {@code SpringDataSourceConnectionProvider}. A store holding a
+ * provider that hands out an unbound connection writes outside the transaction entirely.
  * <p>
- * That places a requirement on the {@code ConnectionProvider}, because this store is constructed once while the
- * transaction it must join belongs to whichever unit of work is currently running, and several units of work may be in
- * flight on different threads. <b>The provider must resolve the connection bound to the calling thread's transaction on
- * every call</b>, which is what {@code SpringDataSourceConnectionProvider} does. Supply the same provider instance the
- * transaction manager was given; a store holding a different provider writes outside the transaction entirely. The
- * same requirement applies to any Axon Framework 5 component reached through a
- * {@code TransactionalExecutorProvider}, since the executor such a component is handed wraps that same
- * provider.
- * <p>
- * Consequently, <b>saga handling should run inside a transaction.</b> Each of these operations issues several
- * statements -- {@link #insertSaga(Class, String, Object, Set)} writes the saga row plus one row per
- * association value, {@link #updateSaga(Class, String, Object, AssociationValues)} writes the state
- * update plus one insert per added and one delete per removed association,
- * {@link #deleteSaga(Class, String, Set)} deletes the associations and the saga row separately, and
- * {@link #loadSaga(Class, String)} reads the saga row and its associations in two queries. Without
- * an ambient transaction each statement commits on its own, so a failure part way through leaves the saga and its
- * associations inconsistent rather than failing cleanly.
- * <p>
- * A saga inserted here records {@link SagaEntry#LEGACY_REVISION} in its revision column, marking the row as one this
- * module created. An update leaves that column alone, so a revision written by Axon Framework 4 survives.
+ * Because every operation here issues several statements, <b>saga handling should run inside a transaction</b>.
+ * Without one each statement commits on its own, so a failure part way through leaves a saga and its associations
+ * inconsistent rather than failing cleanly.
  *
  * @author Allard Buijze
  * @author Kristian Rosenvold

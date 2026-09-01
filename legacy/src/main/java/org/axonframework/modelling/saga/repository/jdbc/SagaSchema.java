@@ -18,7 +18,7 @@ package org.axonframework.modelling.saga.repository.jdbc;
 
 /**
  * SagaSchema allows specification of custom storage locations for the saga repositories.
- * <p/>
+ * <p>
  * Usage depends on the underlying database - in general the form of "schema.tablename" should be sufficient.
  *
  * @author Jochen Munz

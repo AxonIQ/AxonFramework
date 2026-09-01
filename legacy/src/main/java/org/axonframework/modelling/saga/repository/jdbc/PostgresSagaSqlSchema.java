@@ -22,7 +22,7 @@ import java.sql.SQLException;
 
 /**
  * SQL schema supporting PostgreSQL databases.
- * <p/>
+ * <p>
  * This implementation uses the appropriate PostgreSQL data types (serial, bytea).
  *
  * @author Jochen Munz

@@ -49,6 +49,7 @@ public interface SagaStore<T> {
      *
      * @param sagaType       The type of the returned saga entry
      * @param sagaIdentifier The unique identifier of the returned saga entry
+     * @param <S>            the specific saga type returned
      * @return The saga entry, or {@code null} if no such saga exists
      */
     @Nullable <S extends T> Entry<S> loadSaga(Class<S> sagaType, String sagaIdentifier);

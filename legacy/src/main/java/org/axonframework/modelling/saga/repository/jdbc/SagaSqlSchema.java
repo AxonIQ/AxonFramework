@@ -126,14 +126,15 @@ public interface SagaSqlSchema {
      * Creates a PreparedStatement that update the serialized form of an existing Saga entry, of given
      * {@code sagaType} and with given {@code sagaIdentifier}.
      *
+     * Deliberately takes no revision, unlike {@link #sql_storeSaga(Connection, String, String, String, byte[])}. The
+     * revision column is written once, on insert, so that a value put there by Axon Framework 4 survives an update
+     * made here.
+     *
      * @param connection     The connection to create the PreparedStatement for
      * @param sagaIdentifier The identifier of the Saga to update
      * @param serializedSaga The serialized form of the saga to update
      * @param sagaType       The serialized type of the saga
      * @return a statement that update a Saga entry, when executed
-     * @implNote Deliberately takes no revision, unlike
-     * {@link #sql_storeSaga(Connection, String, String, String, byte[])}. The revision column is written once, on
-     * insert, so that a value put there by Axon Framework 4 survives an update made here.
      * @throws SQLException when an error occurs creating the PreparedStatement
      */
     PreparedStatement sql_updateSaga(Connection connection, String sagaIdentifier, byte[] serializedSaga,
@@ -175,7 +176,7 @@ public interface SagaSqlSchema {
     /**
      * Reads the serialized form of a saga from the given {@code resultSet}, which has been returned by executing the
      * Statement returned from {@link #sql_loadSaga(java.sql.Connection, String)}
-     * <p/>
+     * <p>
      * Note: The implementation must not change the resultSet's cursor position
      *
      * @param resultSet The result set to read data from.
@@ -199,7 +200,6 @@ public interface SagaSqlSchema {
      *
      * @param resultSet The result set to read data from.
      * @return the token from the resultSet
-     * @throws SQLException when an exception occurs reading from the resultSet
      * @deprecated Saga stores do not track tokens, and no implementation returns anything but {@code null}. Retained
      * only so that existing implementations of this interface keep compiling.
      */

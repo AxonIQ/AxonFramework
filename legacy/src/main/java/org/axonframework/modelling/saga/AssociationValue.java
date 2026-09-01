@@ -24,7 +24,7 @@ import java.util.Objects;
  * A combination of key and value by which a Saga can be found. Sagas are triggered by events that have a property that
  * the saga is associated with. A single Association Value can lead to multiple Sagas, and a single Saga can be
  * associated with multiple Association Values.
- * <p/>
+ * <p>
  * Two association values are considered equal when both their key and value are equal. For example, a Saga managing
  * Orders could have a AssociationValue with key &quot;orderId&quot; and the order identifier as value.
  *

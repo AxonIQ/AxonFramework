@@ -41,27 +41,20 @@ import static org.axonframework.common.BuilderUtils.assertNonNull;
 /**
  * JPA implementation of the {@link SagaStore}. It uses an {@link EntityManager} to persist the actual saga in a backing
  * store in serialized form.
- * <p/>
+ * <p>
  * After each operation that modified the backing store, {@link EntityManager#flush()} is invoked to ensure the store
  * contains the last modifications. To override this behavior, see {@link #setUseExplicitFlush(boolean)}
  * <p>
- * This store manages no transaction of its own. It obtains an {@link EntityManager} from the
- * {@link EntityManagerProvider} it is given, so its changes commit together with whatever else the surrounding
- * transaction covers.
+ * This store manages no transaction of its own. It takes an {@link EntityManager} from the
+ * {@link EntityManagerProvider} it was given, so its changes commit together with whatever else the surrounding
+ * transaction covers. Give it the same provider instance the transaction manager was given, and use a provider that
+ * resolves the {@code EntityManager} of the calling thread's transaction on every call, as a container-managed
+ * shared-{@code EntityManager} proxy does. A fixed
+ * {@link org.axonframework.common.jpa.SimpleEntityManagerProvider} is suitable only where a single thread is involved,
+ * such as in a test.
  * <p>
- * That places a requirement on the {@code EntityManagerProvider}, because this store is constructed once while the
- * transaction it must join belongs to whichever unit of work is currently running, and several units of work may be in
- * flight on different threads. <b>The provider must resolve the {@code EntityManager} of the calling thread's
- * transaction on every call</b>, as a container-managed one backed by a shared-{@code EntityManager} proxy does. A
- * fixed {@link org.axonframework.common.jpa.SimpleEntityManagerProvider} is suitable only where a single thread is
- * involved, such as in a test. Supply the same instance the transaction manager was given; a store holding a different
- * provider writes outside the transaction entirely. The same requirement applies to any Axon Framework 5 component
- * reached through a {@code TransactionalExecutorProvider}, since the executor such a component is handed wraps
- * that same provider. Since its operations issue several statements each, saga handling should run inside a transaction;
- * JPA enforces this itself, and without an active transaction these methods fail rather than write partial state.
- * <p>
- * A saga inserted here records {@link SagaEntry#LEGACY_REVISION} in its revision column, marking the row as one this
- * module created. An update leaves that column alone, so a revision written by Axon Framework 4 survives.
+ * Saga handling should run inside a transaction. JPA enforces that itself: without an active one these operations fail
+ * rather than write partial state.
  *
  * @author Allard Buijze
  * @since 3.0

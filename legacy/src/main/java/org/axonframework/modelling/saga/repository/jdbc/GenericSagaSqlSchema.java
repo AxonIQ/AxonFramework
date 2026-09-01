@@ -45,7 +45,7 @@ public class GenericSagaSqlSchema implements SagaSqlSchema {
 
     /**
      * Initialize a GenericSagaSqlSchema.
-     * <p/>
+     * <p>
      * Serialized data is stored using the given {@code sagaSchema}.
      *
      * @param sagaSchema The configuration to use for the initialization of the schema

@@ -41,9 +41,8 @@ import static org.axonframework.common.BuilderUtils.assertNonNull;
  * entries are evicted for other reasons. And because every change lands immediately, a concurrently running unit of
  * work can read state out of these shared caches that the delegate has not committed yet.
  * <p>
- * Making the caches follow the transaction is a redesign of this decorator rather than a property that can be added to
- * it, so it is deliberately not attempted here. Applications that cannot accept either exposure should size the caches
- * for their tolerance, or run without this decorator.
+ * Applications that cannot accept either exposure should size the caches for their tolerance, or run without this
+ * decorator.
  *
  * @param <T> The saga type
  * @author Allard Buijze

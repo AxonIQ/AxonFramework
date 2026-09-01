@@ -26,6 +26,7 @@ import org.axonframework.conversion.Converter;
 /**
  * Java Persistence Entity allowing sagas to be stored in a relational database.
  *
+ * @param <T> the type of saga stored in this entry
  * @author Allard Buijze
  * @since 0.7
  */
@@ -34,18 +35,11 @@ public class SagaEntry<T> {
 
     /**
      * Value written to the {@code revision} column of a saga inserted by this module, marking the row as one created
-     * here rather than by Axon Framework 4.
-     * <p>
-     * Axon Framework 4 used the column for the {@code @Revision} value of the saga class, which fed upcaster matching.
-     * That concept was removed from the framework, and saga stores never ran upcasters in the first place, so nothing
-     * reads the column any more and it is free to carry this marker instead. It gives an otherwise unanswerable question
-     * an answer, because a {@code null} revision is indistinguishable from an Axon Framework 4 saga whose class carried
-     * no {@code @Revision}:
+     * here rather than by Axon Framework 4:
      * <pre>{@code
      * SELECT sagaId FROM SagaEntry WHERE revision = 'axon-legacy'
      * }</pre>
-     * The marker is written on insert only. An update leaves the column alone, so a value written by Axon Framework 4
-     * survives rather than being replaced by this one.
+     * Written on insert only. An update leaves the column alone, so a value written by Axon Framework 4 survives.
      */
     public static final String LEGACY_REVISION = "axon-legacy";
 
@@ -56,7 +50,7 @@ public class SagaEntry<T> {
     protected String sagaType;
     /**
      * Set to {@link #LEGACY_REVISION} for an entry constructed here, and otherwise whatever wrote the row put there.
-     * Never read.
+     * Never read back when loading a saga.
      */
     @Basic
     protected String revision;
