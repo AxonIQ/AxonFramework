@@ -5,9 +5,6 @@
 Most long-running processes need to give up eventually. A payment that never arrives, an approval nobody grants, a
 confirmation that never comes: something has to notice and act.
 
-Nothing schedules a callback into a process's own future. The alternative below needs no scheduling infrastructure
-that understands your domain, and is easier to test than a timer.
-
 [TIP]
 ====
 Where xref::workflows.adoc[[.advanced-framework]#Workflows#] are available to you, they are the recommended answer.
@@ -15,7 +12,7 @@ None of this page applies: waiting is an ordinary statement in the flow, so a ti
 rather than built out of a projection and a sweep.
 ====
 
-== The shape of the replacement
+== The deadline behavior
 
 A deadline consists of two things: a record of work that is outstanding, and something that periodically
 notices when a piece of it has waited too long. Separating them removes the need for a scheduler that understands
