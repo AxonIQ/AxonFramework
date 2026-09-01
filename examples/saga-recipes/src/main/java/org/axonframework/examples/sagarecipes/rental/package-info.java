@@ -28,8 +28,8 @@
  * {@code renter} are exactly what no entity here owns.
  * <p>
  * <b>Worth noticing before reaching for a process at all:</b> if you can give the process an identity of its own, you
- * may not need one. That refactoring is legitimate and often the right answer; the recipes cover the case where it is
- * not available to you.
+ * may not need one. That refactoring is legitimate and often the right answer. The recipes given in this project cover
+ * the case where it is not available to you.
  * <p>
  * Three tags are written, and the third is the interesting one:
  * <ul>

@@ -53,11 +53,6 @@ import java.util.concurrent.CompletableFuture;
  * contract test runs against both, which is what turns "these are equivalent" into something the build checks rather
  * than a claim in a comment.
  * <p>
- * <b>This is supported.</b> {@code EventAppender} appears in the reference guide's table of parameters available to
- * event handlers, and the parameter resolver behind it looks only at the parameter type, never at the kind of
- * handler. It needs nothing pre-attached to the processing context: the event store transaction is created lazily on
- * first use, and a pooled processor's batch context is an ordinary unit of work.
- * <p>
  * <b>What it buys.</b> Half the code, and one dispatch fewer per step.
  * <p>
  * <b>What keeps it correct.</b> Not a transaction: events live in Axon Server and tracking tokens in JPA, and nothing

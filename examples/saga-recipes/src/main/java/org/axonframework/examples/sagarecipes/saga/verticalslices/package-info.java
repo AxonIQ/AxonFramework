@@ -26,12 +26,15 @@
  * <p>
  * Each slice is a to-do list. The important observation is how few of them need somewhere to keep it:
  * <ul>
- *     <li>{@code whenbikerequestedthenpreparepayment} and {@code whenrequestrejectedthencancelpayment} are
- *     completely stateless. The trigger event carries everything the command needs, so the processor's tracking
- *     token <em>is</em> the to-do list: everything before it is done, everything after it is not.</li>
- *     <li>{@code whencancelrentalpaymentthencancelpayment} is stateless for a different reason. It could check
- *     whether cancelling is still worthwhile, but the payment context checks anyway, and that check is the one that
- *     holds under a race. Asking twice would only duplicate a decision that is not this slice's to make.</li>
+ *     <li>{@link org.axonframework.examples.sagarecipes.saga.verticalslices.whenbikerequestedthenpreparepayment.WhenBikeRequestedThenPreparePayment}
+ *     and
+ *     {@link org.axonframework.examples.sagarecipes.saga.verticalslices.whenrequestrejectedthencancelpayment.WhenRequestRejectedThenCancelPayment}
+ *     are completely stateless. The trigger event carries everything the command needs, so the processor's record of
+ *     what it has handled is the to-do list.</li>
+ *     <li>{@link org.axonframework.examples.sagarecipes.saga.verticalslices.whencancelrentalpaymentthencancelpayment.WhenCancelRentalPaymentThenCancelPayment}
+ *     is stateless for a different reason. It could check whether cancelling is still worthwhile, but the payment
+ *     context checks anyway, and that check is the one that holds under a race. Asking twice would only duplicate a
+ *     decision that is not this slice's to make.</li>
  *     <li>The three slices triggered by payment events cannot be stateless. A payment event carries only the
  *     reference, and approving or rejecting a request needs the bike and the renter, so each keeps a small lookup of
  *     its own. Slices are independent, so none of them shares another's.</li>
@@ -45,13 +48,9 @@
  * package unless something says otherwise, and every slice has a package of its own. That default happens to be the
  * right answer here, and it buys something the other recipes cannot have.
  * <p>
- * A processor that sees one event type needs no custom sequencing policy. The other recipes handle five event types
- * from two contexts in one component, and those contexts name their correlation differently -- rental events carry a
- * {@code rentalId}, payment events carry a {@code paymentReference} -- so no single property spans them and
- * {@link org.axonframework.examples.sagarecipes.saga.shared.RentalPaymentSequencingPolicy} has to route on
- * {@code QualifiedName} to bridge the two vocabularies. Here each slice knows exactly one event type, so the built-in
- * {@link org.axonframework.messaging.core.sequencing.PropertySequencingPolicy} does the job with a property name and
- * nothing else. Slice finely enough and the custom infrastructure disappears.
+ * Each slice handles one event type, so the built-in
+ * {@link org.axonframework.messaging.core.sequencing.PropertySequencingPolicy} suffices and no equivalent of
+ * {@link org.axonframework.examples.sagarecipes.saga.shared.RentalPaymentSequencingPolicy} is needed.
  * <p>
  * The cost is that nothing orders one slice against another. Two reactions to the same rental can run at once, and
  * whether that is safe is decided downstream rather than here: exactly one of confirmed, rejected or cancelled is

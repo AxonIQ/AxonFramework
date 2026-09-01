@@ -47,11 +47,6 @@ public class PreparePaymentCommandHandler {
 
     /**
      * Prepares the payment, unless one already exists for this reference.
-     * <p>
-     * The entity is nullable because this is a create-if-missing flow: no entity means no payment has been prepared
-     * for this reference yet. Without the nullable marker the framework would raise
-     * {@link org.axonframework.modelling.repository.EntityNotFoundException} instead, which is the correct default
-     * for handlers that need an entity to already exist.
      *
      * @param command  the command to handle
      * @param state    the payment already prepared for this reference, or {@code null} if there is none
