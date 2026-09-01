@@ -94,7 +94,7 @@ public interface AssociationValues extends Iterable<AssociationValue> {
 
     /**
      * Returns this instance as a Set of Association Values. The returned set is a read-only view on this container.
-     * Any changes made to the container after this invocation <em>may</em> be reflected in the returned Set.
+     * Any changes made to the container after this invocation may be reflected in the returned Set.
      *
      * @return a read only view on the contents of this container
      */

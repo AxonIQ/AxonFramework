@@ -61,7 +61,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>
  * This matters because {@link JdbcSagaStore} is handed its {@link ConnectionProvider} once, at construction, while the
  * transaction it must join belongs to whichever unit of work is currently running. {@code forcedSameThreadInvocation},
- * which {@link SpringTransactionManager} triggers, pins the phases of a <em>single</em> unit of work to one thread; it
+ * which {@link SpringTransactionManager} triggers, pins the phases of a single unit of work to one thread; it
  * does not serialise units of work, so several can be in flight at once, as they are under a pooled event processor.
  * <p>
  * What makes that safe is the provider, not the store and not the {@code ProcessingContext}:
@@ -72,6 +72,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>
  * The two units of work are interleaved deliberately: both insert before either finishes, so a shared transaction or a
  * shared connection would show up as interference rather than being hidden by lucky sequencing.
+ * <p>
+ * This runs against PostgreSQL rather than the in-memory HSQLDB the rest of these tests use. Under HSQLDB's default
+ * two-phase locking an insert takes a table-level write lock, so the two units of work serialise and the interleaving
+ * deadlocks. That is a property of the database, not of the framework, and it has to be out of the way for this test to
+ * be about transaction isolation.
  */
 @Testcontainers
 class JdbcSagaStoreConcurrentUnitOfWorkIT {

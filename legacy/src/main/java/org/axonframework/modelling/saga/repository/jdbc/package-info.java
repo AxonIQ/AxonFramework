@@ -26,8 +26,9 @@
  * The table and column layout is that of Axon Framework 4, so an existing saga table can be read and updated without
  * migration.
  * <p>
- * These types carry the Axon Framework 4 API unchanged, to ease migration of projects that cannot move off it in one
- * go.
+ * These types carry the Axon Framework 4 API, to ease migration of projects that cannot move off it in one go. The
+ * one departure is forced: Axon Framework 5 has no {@code Serializer}, so wherever one was accepted a
+ * {@link org.axonframework.conversion.Converter} is taken instead.
  */
 @NullMarked
 package org.axonframework.modelling.saga.repository.jdbc;
