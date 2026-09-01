@@ -176,7 +176,8 @@ The naive version looks simpler than it is. The following caveats apply before r
 
 Every instance sweeps::
 `@Scheduled` runs on all of them, so three instances dispatch each cancellation three times. Harmless when the command
-is idempotent, but wasteful. Production deployments want a lock or a leader election.
+is idempotent, but wasteful. This follows from `@Scheduled` rather than from the pattern: a scheduler that coordinates
+across instances, such as Quartz on a clustered job store, JobRunr or db-scheduler, fires the sweep once.
 
 A replay rebuilds the list with original timestamps::
 Every historical outstanding item briefly looks overdue and is swept. This is survivable only because the receiver
@@ -189,9 +190,8 @@ real scheduler and have it send the same command.
 The query must stay a query::
 Filtering at the database on an indexed column, never loading everything and filtering in memory.
 
-This replaces a deadline *manager* with a deadline *projection*. It is simple, replayable, and needs no new
-infrastructure. It is approximate in time and duplicated across instances. It is acceptable because every command it
-sends can be sent twice.
+This replaces a deadline *manager* with a deadline *projection*. It is simple, replayable, approximate in time, and
+needs no new infrastructure. It is acceptable because every command it sends can be sent twice.
 
 == Alternatives
 
