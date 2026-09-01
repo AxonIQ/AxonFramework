@@ -37,10 +37,13 @@ import org.axonframework.modelling.saga.AssociationValue;
 import org.axonframework.modelling.saga.repository.StubSaga;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static java.util.Collections.singleton;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -66,6 +69,7 @@ class SagaStoreAndTokenStoreShareTransactionTest {
     private static final String PROCESSOR = "saga-processor";
     private static final AssociationValue ORDER_1 = new AssociationValue("orderId", "order-1");
 
+    private EntityManagerProvider entityManagerProvider;
     private EntityManagerFactory entityManagerFactory;
     private EntityManager entityManager;
     private JpaSagaStore sagaStore;
@@ -76,7 +80,7 @@ class SagaStoreAndTokenStoreShareTransactionTest {
     void setUp() {
         entityManagerFactory = Persistence.createEntityManagerFactory("jpaSagaStorePersistenceUnit");
         entityManager = entityManagerFactory.createEntityManager();
-        EntityManagerProvider entityManagerProvider = new SimpleEntityManagerProvider(entityManager);
+        entityManagerProvider = new SimpleEntityManagerProvider(entityManager);
 
         // Axon Framework 4 resource-access shape: holds the provider and does not resolve it from ProcessingContext.
         sagaStore = JpaSagaStore.builder()
@@ -158,5 +162,71 @@ class SagaStoreAndTokenStoreShareTransactionTest {
         // discarded one and left the other behind.
         assertThat(committedTokenCount()).isZero();
         assertThat(committedSagaCount()).isZero();
+    }
+
+    /**
+     * The behavioural tests above show the two routes committing and rolling back together. This shows why: they are
+     * not two resources kept in step, they are one resource reached twice.
+     * <p>
+     * {@link EntityManagerTransactionManager} begins its transaction on
+     * {@code entityManagerProvider.getEntityManager()}, and publishes an {@code EntityManagerExecutor} built over that
+     * same provider onto the {@link org.axonframework.messaging.core.unitofwork.ProcessingContext}. So the Axon
+     * Framework 5 route, resolving an executor from the context, and the Axon Framework 4 route, asking the provider
+     * directly, both end at one call. Nothing keeps them in step because nothing has to.
+     */
+    @Nested
+    class TheTwoRoutesResolveOneEntityManager {
+
+        @Test
+        void theContextExecutorAndTheProviderYieldTheSameEntityManagerInTheSameActiveTransaction() {
+            // given a unit of work over a transaction manager sharing the store's provider
+            UnitOfWork unitOfWork = unitOfWorkFactory.create();
+            AtomicReference<EntityManager> viaProvider = new AtomicReference<>();
+            AtomicReference<EntityManager> viaContext = new AtomicReference<>();
+            AtomicBoolean transactionWasActive = new AtomicBoolean();
+
+            // when both routes are followed inside it
+            unitOfWork.runOnInvocation(context -> {
+                // the route the saga store takes
+                viaProvider.set(entityManagerProvider.getEntityManager());
+                // the route an Axon Framework 5 component such as the JpaTokenStore takes
+                viaContext.set(FutureUtils.joinAndUnwrap(
+                        context.getResource(JpaTransactionalExecutorProvider.SUPPLIER_KEY)
+                               .get()
+                               .apply(entityManager -> entityManager),
+                        TIMEOUT));
+                transactionWasActive.set(viaProvider.get().getTransaction().isActive());
+            });
+            FutureUtils.joinAndUnwrap(unitOfWork.execute(), TIMEOUT);
+
+            // then they are the very same entity manager, and its transaction was the unit of work's
+            assertThat(viaContext.get()).isSameAs(viaProvider.get());
+            assertThat(transactionWasActive).isTrue();
+        }
+
+        @Test
+        void everyPhaseRunsOnTheThreadThatOpenedTheTransaction() {
+            // given a transaction manager that declares it needs same-thread invocation, which is what makes a
+            // thread-bound provider safe to reach without a ProcessingContext
+            assertThat(new EntityManagerTransactionManager(entityManagerProvider).requiresSameThreadInvocations())
+                    .isTrue();
+            Thread creating = Thread.currentThread();
+            AtomicReference<Thread> invoking = new AtomicReference<>();
+            AtomicReference<Thread> committing = new AtomicReference<>();
+
+            // when
+            UnitOfWork unitOfWork = unitOfWorkFactory.create();
+            unitOfWork.runOnInvocation(context -> {
+                invoking.set(Thread.currentThread());
+                sagaStore.insertSaga(StubSaga.class, "saga-1", new StubSaga(), singleton(ORDER_1));
+            });
+            unitOfWork.runOnPrepareCommit(context -> committing.set(Thread.currentThread()));
+            FutureUtils.joinAndUnwrap(unitOfWork.execute(), TIMEOUT);
+
+            // then the store never left the thread the transaction was opened on
+            assertThat(invoking).hasValue(creating);
+            assertThat(committing).hasValue(creating);
+            assertThat(committedSagaCount()).isOne();
+        }
     }
 }

@@ -47,6 +47,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 import static java.util.Collections.singleton;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -283,6 +284,61 @@ class JdbcSagaStoreTransactionalUnitOfWorkIT {
 
             // then only the failed unit of work's write was discarded
             assertThat(committedSagaIds()).containsExactly("saga-1");
+        }
+    }
+
+    /**
+     * Pins the hazard that the absence of a {@code ProcessingContext} on the {@link SagaStore} API creates, so that it
+     * is a recorded property rather than a surprise.
+     * <p>
+     * {@link SpringDataSourceConnectionProvider} finds the transaction by thread. The framework keeps the store on the
+     * right one: a {@link SpringTransactionManager} reports
+     * {@code TransactionManager#requiresSameThreadInvocations() == true}, which makes
+     * {@link TransactionalUnitOfWorkFactory} configure the unit of work for same-thread invocation. Handler code that
+     * moves work onto a thread of its own steps outside that guarantee, and this is what happens when it does.
+     * <p>
+     * This is the constraint on the saga manager that will be built on this store. As an
+     * {@code EventHandlingComponent} it returns a {@code MessageStream}, and it has to do its store work synchronously
+     * on the thread it was invoked on. Completing that stream from elsewhere and writing from there fails the way
+     * shown here: silently, with the write surviving a rollback.
+     */
+    @Nested
+    class WhenHandlerWorkMovesToAnotherThread {
+
+        @Test
+        void aWriteFromAnotherThreadEscapesTheTransactionAndSurvivesARollback() {
+            // given a unit of work whose handler hands the store call to a thread of its own
+            UnitOfWork unitOfWork = unitOfWorkFactory.create();
+            unitOfWork.runOnInvocation(context -> CompletableFuture
+                    .runAsync(() -> testSubject.insertSaga(
+                            StubSaga.class, "saga-off-thread", new StubSaga(), singleton(ORDER_1)))
+                    .orTimeout(TIMEOUT.toSeconds(), TimeUnit.SECONDS)
+                    .join());
+
+            // when the unit of work fails, so its transaction rolls back
+            unitOfWork.onPrepareCommit(context -> CompletableFuture.failedFuture(new IllegalStateException("boom")));
+            assertThatThrownBy(() -> FutureUtils.joinAndUnwrap(unitOfWork.execute(), TIMEOUT))
+                    .isInstanceOf(IllegalStateException.class);
+
+            // then the write survived it. The provider found no transaction bound to the other thread, so it handed
+            // out a connection of its own, which committed independently of the unit of work.
+            assertThat(committedSagaIds()).containsExactly("saga-off-thread");
+        }
+
+        @Test
+        void aWriteOnTheInvokingThreadIsDiscardedByTheSameRollback() {
+            // given the same unit of work, with the store called where the framework put it
+            UnitOfWork unitOfWork = unitOfWorkFactory.create();
+            unitOfWork.runOnInvocation(context -> testSubject.insertSaga(
+                    StubSaga.class, "saga-on-thread", new StubSaga(), singleton(ORDER_1)));
+
+            // when
+            unitOfWork.onPrepareCommit(context -> CompletableFuture.failedFuture(new IllegalStateException("boom")));
+            assertThatThrownBy(() -> FutureUtils.joinAndUnwrap(unitOfWork.execute(), TIMEOUT))
+                    .isInstanceOf(IllegalStateException.class);
+
+            // then nothing survived, which is the difference the thread makes and the whole point of the pair
+            assertThat(committedSagaIds()).isEmpty();
         }
     }
 }
