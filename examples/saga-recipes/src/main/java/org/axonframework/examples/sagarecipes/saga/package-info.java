@@ -34,11 +34,11 @@
  *     nothing when a request or payment has already settled.</li>
  *     <li><b>Progress must not be recorded before the command succeeds.</b> There is no transaction spanning
  *     "dispatch a command" and "write my state". Recording first and dispatching second is the bug that wedges a
- *     process permanently: the dispatch fails, the tracking token does not advance, the event is redelivered, and the
+ *     process permanently: the dispatch fails, the event is not recorded as handled, it arrives again, and the
  *     recorded progress now makes the process skip the work it never did.</li>
  *     <li><b>The handler must return its {@code CompletableFuture}.</b> That is what makes the processor wait for the
- *     command and leave the token where it is on failure. Dropping the {@code return} turns the whole thing into
- *     fire-and-forget, silently, and it is what removes any need to schedule a retry.</li>
+ *     command and treat a failed command as a failure of the event. Dropping the {@code return} turns the whole thing
+ *     into fire-and-forget, silently, and it is what removes any need to schedule a retry.</li>
  * </ol>
  * <p>
  * Note what is <em>not</em> in this list. Ending the process is not a rule but a choice, and each recipe makes it

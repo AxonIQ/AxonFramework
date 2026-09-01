@@ -86,7 +86,8 @@ a payment provider cannot rebuild what it never receives, and is down to two.
 
 | xref::state-in-a-repository.adoc[State in a repository]
 | The first thing to try. Ordinary, queryable state, and it does not care where the events it reacts to come from.
-| Two things happen per step, and they commit together only because a transaction manager is there to make them.
+| Two things happen per step, a row written and a command sent, and the write has to roll back when the command
+fails.
 | Any number of contexts
 
 | xref::state-from-context-events.adoc[State from context events]

@@ -47,11 +47,13 @@ import java.util.concurrent.CompletableFuture;
  * The most familiar of the recipes. Two things happen per step, writing a row and dispatching a
  * command, and getting them to agree is this recipe's whole difficulty.
  * <p>
- * <b>Where the transaction comes from.</b> Nowhere in this class, which is the point. When a
- * {@link org.springframework.transaction.PlatformTransactionManager} is on the classpath, Axon Framework wraps every
- * unit of work in a transaction that begins before the handler is invoked and commits alongside the tracking token.
- * The write below is an ordinary call in an ordinary method, and it lands in that transaction because the handler runs
- * inside it. Row and token commit together, or neither does. No {@code @Transactional}, no deferral, no callback.
+ * <b>Where the transaction comes from.</b> Nowhere in this class, which is the point. With a
+ * {@link org.springframework.transaction.PlatformTransactionManager} present the handler already runs in a
+ * transaction, so the write below is an ordinary call needing no {@code @Transactional}, deferral or callback.
+ * <p>
+ * Row and token commit together here only because this application puts the process state and the JPA token store on
+ * one {@code DataSource}, which is this deployment's property rather than the framework's. The guard below is what
+ * makes the alternative survivable.
  * <p>
  * <b>Why the write comes first.</b> Purely so it happens on the handler's own thread, where the transaction is bound.
  * Ordering carries no correctness weight here: a failed dispatch rolls the row back with the rest of the unit of work.
@@ -64,9 +66,10 @@ import java.util.concurrent.CompletableFuture;
  * command is sent.
  * <p>
  * <b>Returning the future is load-bearing.</b> A {@link CommandDispatcher} hands back a future immediately and does
- * not enlist with the unit of work, so returning it is what makes the processor await the command and leave the token
- * where it is on failure. Drop the {@code return} and this silently becomes fire-and-forget: the token advances, the
- * command is lost, and the process waits forever. It is also what removes any need to schedule a retry.
+ * not enlist with the unit of work, so returning it is what makes the processor await the command and treat a failed
+ * command as a failure of the event. Drop the {@code return} and this silently becomes fire-and-forget: the processor
+ * records the event as handled, the command is lost, and the process waits forever. It is also what removes any need
+ * to schedule a retry.
  * <p>
  * <b>How it ends.</b> The row is deleted. That is safe here only because the commands this process sends are
  * idempotent: a redelivery after deletion restarts the process, re-dispatches, and the rental context declines to

@@ -58,12 +58,12 @@ import java.util.concurrent.CompletableFuture;
  * handler. It needs nothing pre-attached to the processing context: the event store transaction is created lazily on
  * first use, and a pooled processor's batch context is an ordinary unit of work.
  * <p>
- * <b>What it buys.</b> Half the code, and the recording becomes atomic with the tracking token, because the append
- * joins the same event store transaction the work package commits alongside the token. Neither the repository recipe
- * nor the command-translating one can manage that. Note how little that is worth here, though: because
- * {@code PreparePayment} is idempotent, the window the other recipes leave open costs nothing, since a retry
- * re-dispatches it as a no-op and then records. Atomic recording earns its keep only when the target command cannot
- * be made idempotent, and at that point there is a bigger problem to solve.
+ * <b>What it buys.</b> Half the code, and one dispatch fewer per step.
+ * <p>
+ * <b>What keeps it correct.</b> Not a transaction: events live in Axon Server and tracking tokens in JPA, and nothing
+ * spans the two. {@link ProcessState} is what prevents a second recording of the same fact, because the append
+ * condition covers exactly the events that entity sourced. That makes the entity the consistency boundary, which is
+ * why the trap below matters.
  * <p>
  * <b>What it costs.</b> An event now appears without a command behind it, which is what Event Modelling asks you not
  * to do: the process's own write stops being a write slice on the model. The append condition is also batch-wide,

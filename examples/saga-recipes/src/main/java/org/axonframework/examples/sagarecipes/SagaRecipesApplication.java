@@ -31,8 +31,10 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  * delay. Axon Framework 5 has no {@code DeadlineManager}, so a scheduled projection takes its place.
  * <p>
  * JPA backs the two components that keep state of their own, the repository recipe and the pending-payment to-do
- * list, so both can commit in the same transaction as the tracking token. That property is the whole point of the
- * repository recipe, and an in-memory map could not demonstrate it.
+ * list, so their writes roll back with a failed handler rather than recording work that never happened. The token
+ * store is JPA on the same {@code DataSource}, which incidentally makes state and token commit together; that is
+ * this deployment's property rather than the framework's, since events live in Axon Server, which no transaction
+ * reaches.
  *
  * @author Mateusz Nowak
  * @since 5.4.0

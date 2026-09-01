@@ -36,8 +36,9 @@ import java.util.concurrent.CompletableFuture;
  * there is nowhere to check and no need: the reference is derived from the rental, and the payment context refuses to
  * prepare a second payment under a reference it already knows. Idempotency lives where the decision lives.
  * <p>
- * That leaves the processor's tracking token as the entire to-do list. Everything before it has been asked for,
- * everything after it has not, and a redelivery is harmless.
+ * That leaves the processor's record of progress as the entire to-do list, a tracking token on the streaming
+ * processor this application configures. Everything before it has been asked for, everything after it has not, and
+ * handling the same event twice is harmless.
  *
  * @author Mateusz Nowak
  * @since 5.4.0

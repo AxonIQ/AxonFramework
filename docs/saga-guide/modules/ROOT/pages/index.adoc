@@ -121,10 +121,10 @@ public CompletableFuture<?> react(BikeRequested event, CommandDispatcher dispatc
 }
 ----
 
-There is nothing to remember. The processor's
-xref:{page-component-version}@axon-framework-reference:events:event-processors/streaming.adoc#tracking_tokens[tracking token]
-is the entire record of what has been done: everything before it has happened, everything after it has not. If your whole "process" looks like this, write the handler and
-stop here.
+There is nothing to remember. The record of what has been done belongs to the event processor rather than to the
+process, and on a streaming processor that record is a <<progress-record,tracking token>>: everything before it
+has happened, everything after it has not. If your whole "process" looks like this, write the handler and stop
+here.
 
 It stops being a reaction the moment the decision depends on *something that happened earlier*. Consider approving a
 rental once its payment arrives. The payment event says a payment was confirmed and which reference it belongs to.
@@ -146,6 +146,18 @@ independent of every other slice. Whether the process lives in one class or seve
 below.
 ====
 
+[#progress-record]
+== Choosing an event processor
+
+Pick the processor before the approach. The recommended
+xref:{page-component-version}@axon-framework-reference:events:event-processors/streaming.adoc[pooled streaming
+processor] records what it has handled in a
+xref:{page-component-version}@axon-framework-reference:events:event-processors/streaming.adoc#tracking_tokens[tracking token]
+and recovers from a failed handler by delivering the event again. A
+xref:{page-component-version}@axon-framework-reference:events:event-processors/subscribing.adoc[subscribing
+processor] keeps no token and handles the event inside the publisher's transaction, so a failure surfaces to
+whoever published the event instead of being retried for you.
+
 [#two-rules]
 == Two rules that apply to every approach
 
@@ -154,10 +166,9 @@ cannot design away. Most process bugs are a violation of one of them.
 
 === Commands a process sends must be idempotent
 
-An event processor delivers at least once. Its position in the stream is a
-xref:{page-component-version}@axon-framework-reference:events:event-processors/streaming.adoc#tracking_tokens[tracking token],
-committed once a batch of events has been handled: if that commit does not happen, the events in the batch arrive
-again and the process reacts again. Every command it sends will therefore sometimes be sent twice.
+An event processor delivers at least once. On a streaming processor the tracking token is committed once a batch
+of events has been handled: if that commit does not happen, the events in the batch arrive again and the process
+reacts again. Every command it sends will therefore sometimes be sent twice.
 
 The fix belongs in the receiver, not the sender. Approving an already-approved request, or cancelling an
 already-settled payment, should append nothing and report success:
@@ -178,27 +189,26 @@ A useful trick is to make the receiver's decision model naturally exclusive. If 
 reference rather than by an identifier the payment mints, then "prepare a payment for this reference" cannot happen
 twice, and no guard has to be remembered.
 
-=== Recorded progress must commit with the tracking token
+=== Recorded progress must not outlive a failed command
 
-A process that remembers anything is writing in two places: its own state, and the token that says which events it has
-seen. If those two can commit independently, the process drifts, and only under failure.
+A process that remembers anything writes in two places: its own state, and whatever
+<<progress-record,records that the event was handled>>. The two do not have to commit atomically. Because the
+commands a process sends are idempotent, an event that arrives again re-dispatches, the receiver absorbs it, and
+the process catches up.
 
-They commit together without any effort on your part when the write happens inside the unit of work: with a
-`PlatformTransactionManager` present, the handler runs in a transaction that commits alongside the token, so an
-ordinary repository call in an ordinary handler is already atomic with it. That holds on the failure path too: a
-command that fails fails the handler, the transaction rolls back, and the write is undone along with the token. What
-breaks the property is moving the write out of the handler, typically into a callback on the command's future, which
-runs on a thread with nothing bound to it.
+What no redelivery corrects is state that survives a command that failed, because the process then skips work it
+never did. Keep the write inside the handler, where a failed command rolls it back, and out of a callback on the
+command's future, which runs on a thread with no transaction bound to it.
 
 Ordering the write against the dispatch is a smaller question than it looks, and
 xref::state-in-a-repository.adoc#ordering[the repository page] works it through.
 
 [IMPORTANT]
 ====
-Returning the `CompletableFuture` from the event handler is what makes the processor wait for the command and leave
-the token where it is on failure. Dropping the `return` turns the whole thing into fire-and-forget: the token advances,
-the command is lost, and the process waits forever. Retrying is the processor's job, and returning the future is how
-you give it back.
+Returning the `CompletableFuture` from the event handler is what makes the processor wait for the command and
+treat a failed command as a failure of the event. Dropping the `return` turns the whole thing into
+fire-and-forget: the processor records the event as handled, the command is lost, and the process waits forever.
+Retrying is the processor's job, and returning the future is how you give it back.
 ====
 
 Two of the state approaches sidestep this rule entirely, because they never record anything of their own.

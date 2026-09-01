@@ -35,14 +35,16 @@ The most instructive slice is the one that needs nothing:
 include::example$sagas/verticalslices/VerticalSlices.java[tag=stateless,indent=0]
 ----
 <1> Events of one rental are handled in order; different rentals still run in parallel.
-<2> Returning the result makes the processor await the command and leave the token where it is on failure.
+<2> Returning the result makes the processor await the command and treat a failed command as a failure of the
+event.
 
 There is no check for whether payment was already asked for. There is nowhere to check, and no need. The reference is
 derived from the rental, and the payment side refuses to prepare a second payment under a reference it already
 knows. Idempotency lives where the decision lives.
 
-That leaves the processor's tracking token as the entire to-do list. Everything before it has been done, everything
-after it has not. A redelivery is harmless. No state object, no schema, no cleanup.
+That leaves xref::index.adoc#progress-record[the processor's own record of progress] as the entire to-do list, a
+tracking token on the streaming processor this example configures. Everything before it has been done, everything
+after it has not. Handling the same event twice is harmless. No state object, no schema, no cleanup.
 
 [#lookups]
 == A slice that needs a lookup

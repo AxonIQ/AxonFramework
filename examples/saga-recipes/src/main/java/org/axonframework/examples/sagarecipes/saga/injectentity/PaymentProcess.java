@@ -62,8 +62,8 @@ import java.util.concurrent.CompletableFuture;
  * <p>
  * <b>What this buys.</b> Only one thing can go wrong per handler, because there is only one effect. Nothing is
  * written by the process itself, so the ordering hazard that recipes keeping their own state have to work around
- * simply cannot arise. If a command fails, no event is appended, the tracking token stays where it is, and the
- * redelivery rebuilds an identical decision model and tries again.
+ * simply cannot arise. If a command fails, no event is appended and the event is not recorded as handled, so it
+ * arrives again, rebuilds an identical decision model, and tries again.
  * <p>
  * <b>What it costs.</b> The process is readable only through its outcomes. A step that produces no event, an e-mail
  * or an outbound call, leaves no trace here and cannot be tracked. It also requires that both contexts write to one
