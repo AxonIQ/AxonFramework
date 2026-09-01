@@ -42,9 +42,9 @@ There is no check for whether payment was already asked for. There is nowhere to
 derived from the rental, and the payment side refuses to prepare a second payment under a reference it already
 knows. Idempotency lives where the decision lives.
 
-That leaves xref::index.adoc#progress-record[the processor's own record of progress] as the entire to-do list, a
-tracking token on the streaming processor this example configures. Everything before it has been done, everything
-after it has not. Handling the same event twice is harmless. No state object, no schema, no cleanup.
+That leaves xref::index.adoc#progress-record[the processor's own record of what it has handled] as the entire
+to-do list: what has been delivered is done, what has not is not. Handling the same event twice is harmless. No
+state object, no schema, no cleanup.
 
 [#lookups]
 == A slice that needs a lookup
@@ -57,13 +57,13 @@ and the renter. This slice therefore has to look them up:
 include::example$sagas/verticalslices/VerticalSlices.java[tag=with-lookup,indent=0]
 ----
 <1> Sequenced on the property this slice's own event carries. Each slice handles one event type, so the built-in
-policy is enough. See xref::sequencing.adoc[sequencing] for the case a single process
-class faces, where two sides name the correlation differently.
+policy is enough, where a single process class handling both sides would need a policy spanning two correlation
+names.
 <2> The lookup is injected like any other entity.
 <3> A three-line decision model, selecting the single event that answers the question.
 
-This is still one effect. The lookup is a read, so nothing is written that could fall out of step with the tracking
-token. No transaction has to span anything.
+This is still one effect. The lookup is a read, so nothing is written that could fall out of step with what the
+processor has recorded. No transaction has to span anything.
 
 [NOTE]
 .Slices do not share lookups

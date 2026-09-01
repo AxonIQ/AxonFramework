@@ -94,10 +94,9 @@ include::example$sagas/deadlines/PaymentsAwaitingConfirmation.java[tag=todo-list
 ====
 The projection is written only by event handlers. The sweep only reads and dispatches.
 
-The list cannot drift from the event stream, because nothing else writes to
-it. The sweep has no state of its own to keep in step with anything. This is the same hazard that
-xref::state-in-a-repository.adoc#ordering[keeping process state in a repository] has to work around by care,
-avoided here by construction.
+The list cannot drift from the event stream, because nothing else writes to it. The sweep has no state of its own
+to keep in step with anything, so xref::state-in-a-repository.adoc[the hazard a stored-state process has to work
+around] does not arise here.
 ====
 
 == Testing a timeout

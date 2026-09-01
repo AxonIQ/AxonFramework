@@ -81,10 +81,10 @@ dispatched.
 
 That difference removes an entire class of bug:
 
-* If the command fails, no event is appended and the event is not recorded as handled, so it arrives again,
-  rebuilds an identical decision model, and tries again.
-* If the command succeeded but the commit did not, the redelivery re-dispatches and the receiver's idempotency absorbs
-  it.
+* If the command fails, no event is appended and the handler fails, so handling the event again rebuilds an
+  identical decision model and tries again.
+* If the command succeeded but the commit did not, handling the event again re-dispatches and the receiver's
+  idempotency absorbs it.
 
 There is nothing to keep in step. Nothing is written to a second place.
 

@@ -121,10 +121,9 @@ public CompletableFuture<?> react(BikeRequested event, CommandDispatcher dispatc
 }
 ----
 
-There is nothing to remember. The record of what has been done belongs to the event processor rather than to the
-process, and on a streaming processor that record is a <<progress-record,tracking token>>: everything before it
-has happened, everything after it has not. If your whole "process" looks like this, write the handler and stop
-here.
+There is nothing to remember. The event processor already keeps <<progress-record,the record of what it has
+handled>>, so the process needs no state of its own. If your whole "process" looks like this, write the handler
+and stop here.
 
 It stops being a reaction the moment the decision depends on *something that happened earlier*. Consider approving a
 rental once its payment arrives. The payment event says a payment was confirmed and which reference it belongs to.
@@ -166,9 +165,9 @@ cannot design away. Most process bugs are a violation of one of them.
 
 === Commands a process sends must be idempotent
 
-An event processor delivers at least once. On a streaming processor the tracking token is committed once a batch
-of events has been handled: if that commit does not happen, the events in the batch arrive again and the process
-reacts again. Every command it sends will therefore sometimes be sent twice.
+An event processor delivers at least once. A failure while handling a batch means those events are handled again,
+whether the processor redelivers them or the publication that produced them is retried. Every command a process
+sends will therefore sometimes be sent twice.
 
 The fix belongs in the receiver, not the sender. Approving an already-approved request, or cancelling an
 already-settled payment, should append nothing and report success:
@@ -199,9 +198,6 @@ the process catches up.
 What no redelivery corrects is state that survives a command that failed, because the process then skips work it
 never did. Keep the write inside the handler, where a failed command rolls it back, and out of a callback on the
 command's future, which runs on a thread with no transaction bound to it.
-
-Ordering the write against the dispatch is a smaller question than it looks, and
-xref::state-in-a-repository.adoc#ordering[the repository page] works it through.
 
 [IMPORTANT]
 ====

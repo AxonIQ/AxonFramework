@@ -7,6 +7,5 @@
 ** xref::state-in-a-repository.adoc[In a repository]
 ** xref::state-from-context-events.adoc[From context events]
 ** xref::state-from-process-events.adoc[From process events]
-* xref::sequencing.adoc[]
 * xref::testing.adoc[]
 * xref::deadlines.adoc[]

@@ -80,8 +80,7 @@ without adding behaviour.
 
 === By appending directly
 
-An event handler may append events itself. `EventAppender` is a supported parameter for event handlers, needs nothing
-pre-attached to the processing context, and works on a pooled streaming processor:
+An event handler may append events itself. Wire in the `EventAppender` to do this:
 
 [source,java]
 ----
