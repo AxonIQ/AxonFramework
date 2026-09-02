@@ -354,7 +354,7 @@ rhetorical questions to make a pitch. Do not let that voice spread to reference,
   Do not add a closing sentence that only restates or interprets what came before.
 - Three or more related, independent facts belong in a list or table, not a paragraph.
 
-**Explanations - this replaces the old "Limit architectural justification" rule**
+**Explanations - supporting "Limit architectural justification" above**
 - Explain *how* the framework works, not *why the reader should find the design interesting*. Keep rationale to one
   sentence, and only when it has an actionable implication - e.g. "the timeout is a command, not an event, so the
   process can reject a stale one" earns its place; a rationale that only explains a trade-off, with nothing the
