@@ -93,7 +93,7 @@ public interface ConsistencyMarker {
      * @param consistencyMarker The {@code consistencyMarker} to add to the given {@code context} using the
      *                          {@link #RESOURCE_KEY}.
      * @return The given {@code context} with the given {@code consistencyMarker} attached to it.
-     */ // TODO
+     */
     static Context addToContext(Context context,
                                 ConsistencyMarker consistencyMarker) {
         return context.withResource(RESOURCE_KEY, consistencyMarker);
