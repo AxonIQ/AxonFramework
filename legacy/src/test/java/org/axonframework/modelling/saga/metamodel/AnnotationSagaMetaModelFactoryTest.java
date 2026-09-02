@@ -16,8 +16,8 @@
 
 package org.axonframework.modelling.saga.metamodel;
 
-import org.axonframework.messaging.LegacyHandlerInvoker;
 import org.axonframework.common.AxonException;
+import org.axonframework.common.FutureUtils;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.core.interception.annotation.MessageHandlerInterceptorMemberChain;
@@ -68,7 +68,11 @@ class AnnotationSagaMetaModelFactoryTest {
                 .findHandlerMethods(event, StubProcessingContext.forMessage(event)).stream().findFirst();
         assertTrue(handler.isPresent());
         MessageHandlerInterceptorMemberChain<MySaga> interceptorChain = testSubject.chainedInterceptor(MySaga.class);
-        assertThrows(FooException.class, () -> LegacyHandlerInvoker.handleSync(interceptorChain, event, saga, handler.get()));
+        assertThrows(FooException.class, () -> FutureUtils.joinAndUnwrap(
+                interceptorChain.handle(event, StubProcessingContext.forMessage(event), saga, handler.get())
+                                .first()
+                                .asCompletableFuture()
+        ));
     }
 
     @Test
@@ -83,8 +87,12 @@ class AnnotationSagaMetaModelFactoryTest {
         assertTrue(handler.isPresent());
         MessageHandlerInterceptorMemberChain<MySagaWithErrorHandler> interceptorChain = testSubject.chainedInterceptor(
                 MySagaWithErrorHandler.class);
-        Object result = LegacyHandlerInvoker.handleSync(interceptorChain, event, saga, handler.get());
-        assertNull(result);
+        var entry = FutureUtils.joinAndUnwrap(
+                interceptorChain.handle(event, StubProcessingContext.forMessage(event), saga, handler.get())
+                                .first()
+                                .asCompletableFuture()
+        );
+        assertNull(entry);
     }
 
     @Test
