@@ -193,6 +193,7 @@ This section contains four subsections, called:
 | `org.axonframework.modelling.saga.repository.jdbc.JdbcSagaStore.Builder#dataSource(DataSource)`                             | Silently built a `ConnectionProvider` that is not bound to the ambient transaction. Supply a `ConnectionProvider` explicitly. |
 | `org.axonframework.modelling.saga.repository.jdbc.JdbcSagaStore#setSerializer(Serializer)`                                  | Removed with the `Serializer`. The `Converter` is a construction-time setting.                                              |
 | `org.axonframework.modelling.saga.repository.jpa.JpaSagaStore#serializedObjectType()`                                       | Removed with the `Serializer`. There is no `SerializedObject` type to select anymore.                                       |
+| `org.axonframework.modelling.saga.SagaLifecycle` (all `static` methods: `associateWith`, `removeAssociationWith`, `end`, `associationValues`) | Replaced by instance methods on a `ProcessingContext`-scoped `SagaLifecycle`, injected as a `SagaLifecycle`-typed parameter on `@SagaEventHandler` methods (see [SagaLifecycle](02-processing-context.md#sagalifecycle)) |
 
 ### Changed Method return types
 
