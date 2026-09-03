@@ -16,6 +16,10 @@
 
 package org.axonframework.modelling.saga.repository;
 
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.core.Logger;
+import org.apache.logging.log4j.core.test.appender.ListAppender;
 import org.axonframework.common.FutureUtils;
 import org.axonframework.common.lock.Lock;
 import org.axonframework.common.lock.LockFactory;
@@ -268,6 +272,85 @@ class LockingSagaRepositoryTest {
                 handlerResult.complete(null);
                 otherThread.shutdownNow();
             }
+        }
+    }
+
+    /**
+     * The release of a thread-owned lock on the wrong thread cannot be made to work. What it can be is visible: the
+     * lifecycle swallows anything a completion handler throws, logging it as a warning about "a Completion handler",
+     * which says nothing about which saga is now stuck.
+     */
+    @Nested
+    class WhenTheLockCannotBeReleased {
+
+        private ListAppender appender;
+        private Logger repositoryLogger;
+        private boolean previousAdditive;
+
+        @BeforeEach
+        void attachAppender() {
+            appender = new ListAppender("LockingSagaRepositoryTestAppender");
+            appender.start();
+            repositoryLogger = (Logger) LogManager.getLogger(LockingSagaRepository.class);
+            previousAdditive = repositoryLogger.isAdditive();
+            repositoryLogger.setAdditive(false);
+            repositoryLogger.addAppender(appender);
+        }
+
+        @AfterEach
+        void detachAppender() {
+            repositoryLogger.removeAppender(appender);
+            repositoryLogger.setAdditive(previousAdditive);
+            appender.stop();
+        }
+
+        @Test
+        void theSagaThatIsNowStuckIsNamedInAnError() {
+            // given a repository using the real pessimistic locking strategy, whose lock belongs to the thread that
+            // took it
+            LockingSagaRepository<Object> repository =
+                    CustomSagaRepository.builder().lockFactory(PessimisticLockFactory.usingDefaults()).build();
+            ExecutorService otherThread = Executors.newSingleThreadExecutor(r -> new Thread(r, "completing-thread"));
+            CompletableFuture<Object> handlerResult = new CompletableFuture<>();
+
+            try {
+                UnitOfWork unitOfWork = unitOfWorkFactory.create();
+                unitOfWork.onInvocation(context -> {
+                    repository.load("stuck-saga", context);
+                    return handlerResult;
+                });
+
+                // when the unit of work completes on another thread, so the release runs there
+                CompletableFuture<Void> execution = unitOfWork.execute();
+                otherThread.execute(() -> handlerResult.complete(null));
+                FutureUtils.joinAndUnwrap(execution, TIMEOUT);
+
+                // then the saga identifier and both threads are in an error, rather than the failure being reported
+                // as an anonymous completion handler problem
+                assertThat(appender.getEvents()).anySatisfy(event -> {
+                    assertThat(event.getLevel()).isEqualTo(Level.ERROR);
+                    assertThat(event.getMessage().getFormattedMessage())
+                            .contains("stuck-saga")
+                            .contains("completing-thread")
+                            .contains(Thread.currentThread().getName());
+                });
+            } finally {
+                handlerResult.complete(null);
+                otherThread.shutdownNow();
+            }
+        }
+
+        @Test
+        void aReleaseOnTheAcquiringThreadIsNotReported() {
+            // given the same repository / when a unit of work that stays on one thread completes
+            LockingSagaRepository<Object> repository =
+                    CustomSagaRepository.builder().lockFactory(PessimisticLockFactory.usingDefaults()).build();
+            UnitOfWork unitOfWork = unitOfWorkFactory.create();
+            unitOfWork.runOnInvocation(context -> repository.load("healthy-saga", context));
+            FutureUtils.joinAndUnwrap(unitOfWork.execute(), TIMEOUT);
+
+            // then nothing is logged, so the check does not cry wolf on the ordinary path
+            assertThat(appender.getEvents()).isEmpty();
         }
     }
 

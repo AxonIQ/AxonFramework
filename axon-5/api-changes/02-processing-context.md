@@ -178,5 +178,7 @@ executor and returns `void` is undetectable, as it was in Axon Framework 4.
 The same thread affinity applies to the saga's lock. `PessimisticLockFactory` hands out a lock owned by the thread that
 took it, and the repository releases it when the context completes, which runs on the invoking thread only when the
 `TransactionManager` requires same-thread invocations. `SpringTransactionManager` and `EntityManagerTransactionManager`
-both do; a custom one that does not would leak saga locks.
+both do; a custom one that does not would leak saga locks. Nothing can release such a lock afterwards, so
+`LockingSagaRepository` logs an error naming the saga and both threads instead of letting the processing lifecycle
+swallow the failure as an anonymous completion handler problem.
 
