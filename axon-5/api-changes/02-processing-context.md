@@ -86,5 +86,19 @@ public class MyInterceptingEventHandler {
 You are able inject the `ProcessingContext` in any message-handling method, so this is always available. Any code that
 uses the old `UnitOfWork` should be rewritten to put resources in this context.
 
+The saga stores in `axon-legacy` are an exception worth calling out, because the opposite would be a reasonable
+assumption. `SagaStore` keeps its Axon Framework 4 signatures and takes no `ProcessingContext` on any of its five
+operations, and neither `InMemorySagaStore`, `JdbcSagaStore`, `JpaSagaStore` nor `CachingSagaStore` is aware of the
+processing lifecycle. `JdbcSagaStore` and `JpaSagaStore` join the surrounding transaction through the
+`ConnectionProvider` or `EntityManagerProvider` they are given: hand the store the same provider instance the
+transaction manager was given, and its writes commit with whatever else that transaction covers. This is the same route
+a `TransactionalExecutorProvider` takes internally, so a saga store and an Axon Framework 5 component such as the
+`JpaTokenStore` end up in one transaction without the store ever seeing a context.
+
+Note that this places a requirement on the provider rather than on the store: it must resolve the resource bound to the
+calling thread's transaction on every call, which `SpringDataSourceConnectionProvider` does and a plain
+`DataSourceConnectionProvider` does not. Several units of work can be in flight at once, while the store holds its
+provider from construction.
+
 We will provide a migration guide, as well as OpenWrite recipes for these scenarios.
 

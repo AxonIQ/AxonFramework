@@ -38,6 +38,9 @@ This section contains four subsections, called:
 | `DefaultSubscriptionQueryResult`                                                                   | Replaced `Mono` and `Flux` for `SubscriptionQueryResponseMessages` and payload map functions | See [here](09-queries-and-minor-changes.md#subscription-queries-and-the-query-update-emitter) |
 | `JpaTokenStore`                                                                                    | Replaced `Serializer` with `Converter`                                                       | See [here](#Serialization-Conversion-changes)                  |
 | `JdbcTokenStore`                                                                                   | Replaced `Serializer` with `Converter`                                                       | See [here](#Serialization-Conversion-changes)                  |
+| `JpaSagaStore`                                                                                     | Replaced `Serializer` with `Converter`                                                       | See [here](#Serialization-Conversion-changes)                  |
+| `JdbcSagaStore`                                                                                    | Replaced `Serializer` with `Converter`                                                       | See [here](#Serialization-Conversion-changes)                  |
+| `SagaEntry(T, String, Serializer)`                                                                 | Replaced `Serializer` with `Converter`                                                       | See [here](#Serialization-Conversion-changes)                  |
 
 ### Moved, Renamed, or parameter adjusted Methods
 
@@ -116,6 +119,10 @@ This section contains four subsections, called:
 | `TokenStore#fetchSegments(String)`                                                                                              | `TokenStore#fetchSegments(String, ProcessingContext)`                                                                  |
 | `TokenStore#fetchAvailableSegments(String)`                                                                                     | `TokenStore#fetchAvailableSegments(String, ProcessingContext)`                                                         |
 | `TokenStore#retrieveStorageIdentifier()`                                                                                        | `TokenStore#retrieveStorageIdentifier(ProcessingContext)`                                                              |
+| `JpaSagaStore.Builder#serializer(Serializer)`                                                                                   | `JpaSagaStore.Builder#converter(Converter)`                                                                            |
+| `JdbcSagaStore.Builder#serializer(Serializer)`                                                                                  | `JdbcSagaStore.Builder#converter(Converter)`                                                                           |
+| `JpaSagaStore#createSagaEntry(Object, String, Serializer)`                                                                      | `JpaSagaStore#createSagaEntry(Object, String, Converter)`                                                              |
+| `SagaSqlSchema#sql_updateSaga(Connection, String, byte[], String, String)`                                                      | `SagaSqlSchema#sql_updateSaga(Connection, String, byte[], String)` - the saga revision is no longer written on update  |
 
 ### Removed Methods and Constructors
 
@@ -183,6 +190,9 @@ This section contains four subsections, called:
 | `SubscribingEventProcessor#getMessageSource()`                                                                              | Removed due to no usages.                                                                                                   |
 | `org.axonframework.eventhandling.tokenstore.TokenStore#initializeTokenSegments(String, int)`                                | Removed due to limited usage                                                                                                |
 | `org.axonframework.eventhandling.tokenstore.TokenStore#requiresExplicitSegmentInitialization()`                             | Removed due to explicit initialization now being a requirement                                                              |
+| `org.axonframework.modelling.saga.repository.jdbc.JdbcSagaStore.Builder#dataSource(DataSource)`                             | Silently built a `ConnectionProvider` that is not bound to the ambient transaction. Supply a `ConnectionProvider` explicitly. |
+| `org.axonframework.modelling.saga.repository.jdbc.JdbcSagaStore#setSerializer(Serializer)`                                  | Removed with the `Serializer`. The `Converter` is a construction-time setting.                                              |
+| `org.axonframework.modelling.saga.repository.jpa.JpaSagaStore#serializedObjectType()`                                       | Removed with the `Serializer`. There is no `SerializedObject` type to select anymore.                                       |
 
 ### Changed Method return types
 
@@ -194,6 +204,7 @@ This section contains four subsections, called:
 | `EventGateway#publish(List<?>)`                                                | `void`                                       | `CompletableFuture<Void>`                    |
 | `SequencingPolicy#getSequenceIdentifierFor(List<?>)`                           | `Object`                                     | `Optional<Object>`                           |
 | `CommandBus#dispatch(CommandMessage<C>)`                                       | `void`                                       | `CompletableFuture<CommandResultMessage<?>>` |
+| `SagaSqlSchema#readSerializedSaga(ResultSet)`                                  | `SerializedObject<?>`                        | `byte[]`                                     |
 | `CommandBus#subscribe(String, MessageHandler<? super CommandMessage<?>>)`      | `Registration`                               | `<? extends CommandHandlerRegistry>`         |
 | `CommandGateway#sendAndWait(Object)`                                           | `R`                                          | `void`                                       |
 | `MessageDispatchInterceptor#handle(T)`                                         | `T`                                          | `MessageStream<?>`                           |
