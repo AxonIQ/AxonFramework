@@ -16,8 +16,10 @@
 
 package org.axonframework.modelling.saga.metamodel;
 
+import org.axonframework.common.StringUtils;
 import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
 import org.axonframework.messaging.core.MessageTypeResolver;
+import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.annotation.AnnotatedHandlerInspector;
 import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
 import org.axonframework.messaging.core.annotation.ClasspathParameterResolverFactory;
@@ -27,12 +29,14 @@ import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
 import org.axonframework.messaging.core.interception.annotation.MessageHandlerInterceptorMemberChain;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
+import org.axonframework.messaging.eventhandling.annotation.EventHandlingMember;
 import org.axonframework.modelling.saga.AssociationValue;
 import org.axonframework.modelling.saga.SagaMethodMessageHandlingMember;
 
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
@@ -117,11 +121,24 @@ public class AnnotationSagaMetaModelFactory implements SagaMetaModelFactory {
     private class InspectedSagaModel<T> implements SagaModel<T> {
 
         private final List<MessageHandlingMember<? super T>> handlers;
+        private final Set<QualifiedName> supportedEvents;
 
         public InspectedSagaModel(
                 List<MessageHandlingMember<? super T>> handlers
         ) {
             this.handlers = handlers;
+            this.supportedEvents = handlers.stream()
+                                           .filter(handler -> handler.canHandleMessageType(EventMessage.class))
+                                           .map(this::qualifiedNameOf)
+                                           .collect(Collectors.toUnmodifiableSet());
+        }
+
+        private QualifiedName qualifiedNameOf(MessageHandlingMember<? super T> handler) {
+            return handler.unwrap(EventHandlingMember.class)
+                          .map(EventHandlingMember::eventName)
+                          .filter(StringUtils::nonEmpty)
+                          .map(QualifiedName::new)
+                          .orElseGet(() -> MESSAGE_TYPE_RESOLVER.resolveOrThrow(handler.payloadType()).qualifiedName());
         }
 
         @Override
@@ -155,6 +172,11 @@ public class AnnotationSagaMetaModelFactory implements SagaMetaModelFactory {
         @Override
         public SagaMetaModelFactory modelFactory() {
             return AnnotationSagaMetaModelFactory.this;
+        }
+
+        @Override
+        public Set<QualifiedName> supportedEvents() {
+            return supportedEvents;
         }
     }
 }

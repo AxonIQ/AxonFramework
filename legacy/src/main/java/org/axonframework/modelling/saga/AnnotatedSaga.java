@@ -102,7 +102,7 @@ public class AnnotatedSaga<T> implements Saga<T>, SagaLifecycle {
 
     @Override
     public Set<QualifiedName> supportedEvents() {
-        throw new UnsupportedOperationException("TODO #3728");
+        return metaModel.supportedEvents();
     }
 
     @Override
