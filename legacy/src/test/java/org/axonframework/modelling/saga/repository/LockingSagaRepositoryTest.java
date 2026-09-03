@@ -114,6 +114,34 @@ class LockingSagaRepositoryTest {
         verify(lock).release();
     }
 
+    /**
+     * Behaviour inherited from Axon Framework 4 that is odd enough to be mistaken for a bug. It is pinned here so that
+     * a future reader can see it is deliberate rather than overlooked.
+     */
+    @Nested
+    class InheritedAxonFramework4Behaviour {
+
+        @Test
+        void theLockIsTakenEvenForASagaThatDoesNotExist() {
+            // given a repository that finds no saga for the identifier
+            doReturn(null).when(subject).doLoad(eq("no-such-saga"), any());
+
+            // when loading that identifier
+            UnitOfWork unitOfWork = unitOfWorkFactory.create();
+            unitOfWork.runOnInvocation(context -> {
+                subject.load("no-such-saga", context);
+
+                // then its lock was taken anyway, and stays taken until the context completes
+                verify(lockFactory).obtainLock("no-such-saga");
+                verifyNoInteractions(lock);
+            });
+
+            FutureUtils.joinAndUnwrap(unitOfWork.execute(), TIMEOUT);
+
+            verify(lock).release();
+        }
+    }
+
     @Nested
     class WhenTwoUnitsOfWorkTargetTheSameSaga {
 
