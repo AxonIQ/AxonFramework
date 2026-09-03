@@ -1,0 +1,12 @@
+create table if not exists WF_TOKEN_ENTRY
+(
+    MASK           INTEGER                not null,
+    SEGMENT        INTEGER                not null,
+    OWNER          CHARACTER VARYING(255),
+    PROCESSOR_NAME CHARACTER VARYING(255) not null,
+    TIMESTAMP      CHARACTER VARYING(255) not null,
+    TOKEN_TYPE     CHARACTER VARYING(255),
+    TOKEN          BINARY LARGE OBJECT,
+    primary key (SEGMENT, PROCESSOR_NAME)
+);
+
