@@ -84,6 +84,22 @@ The processing lifecycle consists of these phases, executed in order:
 * **Parallel actions**: Multiple actions within the same phase may execute in parallel.
 * **Phase completion**: All actions in a phase must complete before moving to the next phase.
 * **Failure handling**: If any action fails, subsequent phases are skipped and error handlers execute.
+* **Registering from within a phase**: An action may register further actions, but only for a phase with a higher order than the one it is running in. Registering for the phase currently running, or for one already passed, is rejected with an `IllegalStateException`.
+
+That last rule matters more often than it looks, because a handler is not always invoked in the phase it would expect. Events published with a `ProcessingContext` are delivered during that context's prepare-commit phase, and a subscribing event processor hands them to its handlers there. Such a handler runs *inside* prepare-commit and so cannot register for it.
+
+The way to attach work to the caller's lifecycle from that position is a custom phase in the gap above the one you are in. `Phase` is an interface over an arbitrary order, and the default phases leave 10000 between them, so there is always room:
+
+[source,java]
+----
+private static final ProcessingLifecycle.Phase AFTER_PREPARE_COMMIT =
+        () -> ProcessingLifecycle.DefaultPhases.PREPARE_COMMIT.order() + 5_000;
+
+// From a handler invoked during PREPARE_COMMIT:
+context.runOn(AFTER_PREPARE_COMMIT, ctx -> { /* still inside the caller's transaction */ });
+----
+
+The action runs once every prepare-commit action is done and before the context commits. Two framework components use exactly this: an `axon-legacy` saga is written in such a phase, and the event store hands its appended events to the storage engine in another one, ordered last so that anything appending from an earlier custom phase is still included.
 
 === Registering lifecycle actions
 

@@ -85,11 +85,22 @@ public interface ProcessingLifecycle {
      * {@link CompletableFuture} returned by the {@code action} to compose actions and to carry the action's result.
      * <p>
      * Use this operation when the return value of the {@code action} is important.
+     * <p>
+     * An action may register further actions while it runs, but only for a {@code Phase} with a higher
+     * {@link Phase#order() order} than the one it is running in. Registering for the {@code Phase} currently running,
+     * or for one already passed, is rejected.
+     * <p>
+     * A component that is itself invoked from within a late {@code Phase} therefore cannot register for that same
+     * {@code Phase}. It can register for a custom {@code Phase} ordered in the gap above it: {@code Phase} is an
+     * interface over an arbitrary order and the {@link DefaultPhases} leave {@code 10000} between them, so such an
+     * action still runs once the current {@code Phase} completed and before the next default one begins.
      *
      * @param phase  The {@link Phase} to execute the given {@code action} in.
      * @param action The {@link Function} that's given the active {@link ProcessingContext} and returns a
      *               {@link CompletableFuture} for chaining purposes and to carry the action's result.
      * @return This {@link ProcessingLifecycle} instance for fluent interfacing.
+     * @throws IllegalStateException when the given {@code phase} has an {@link Phase#order() order} at or below that
+     *                               of the {@code Phase} this {@link ProcessingLifecycle} is currently in
      */
     ProcessingLifecycle on(Phase phase, Function<ProcessingContext, CompletableFuture<?>> action);
 
