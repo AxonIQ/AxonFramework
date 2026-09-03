@@ -17,34 +17,33 @@
 package org.axonframework.modelling.saga;
 
 import org.axonframework.common.AxonConfigurationException;
-import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.GenericEventMessage;
-import org.axonframework.messaging.eventhandling.replay.ResetNotSupportedException;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.Metadata;
-import org.axonframework.messaging.core.unitofwork.ProcessingContext;
-import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.core.interception.annotation.NoMoreInterceptors;
+import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
+import org.axonframework.messaging.eventhandling.EventMessage;
+import org.axonframework.messaging.eventhandling.GenericEventMessage;
+import org.axonframework.messaging.eventhandling.replay.ResetContext;
+import org.axonframework.messaging.eventhandling.replay.ResetNotSupportedException;
 import org.axonframework.modelling.saga.metamodel.AnnotationSagaMetaModelFactory;
 import org.jspecify.annotations.NonNull;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Nested;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.*;
 
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.*;
 
 /**
- * Test class validating the {@link AnnotatedSaga}, in particular its role as the {@link SagaLifecycle} for its
- * wrapped saga instance.
+ * Test class validating the {@link AnnotatedSaga}, in particular its role as the {@link SagaLifecycle} for its wrapped
+ * saga instance.
  *
  * @author Allard Buijze
  * @author Sofia Guy Ang
@@ -74,11 +73,20 @@ class AnnotatedSagaTest {
 
             // when
             var matchingEvent = new GenericEventMessage(new MessageType("event"), new RegularEvent("id"));
-            testSubject.handle(matchingEvent, StubProcessingContext.forMessage(matchingEvent)).asCompletableFuture().join();
+            testSubject.handle(matchingEvent, StubProcessingContext.forMessage(matchingEvent))
+                       .asCompletableFuture()
+                       .orTimeout(50, TimeUnit.MILLISECONDS)
+                       .join();
             var nonMatchingEvent = new GenericEventMessage(new MessageType("event"), new RegularEvent("wrongId"));
-            testSubject.handle(nonMatchingEvent, StubProcessingContext.forMessage(nonMatchingEvent)).asCompletableFuture().join();
+            testSubject.handle(nonMatchingEvent, StubProcessingContext.forMessage(nonMatchingEvent))
+                       .asCompletableFuture()
+                       .orTimeout(50, TimeUnit.MILLISECONDS)
+                       .join();
             var unhandledEvent = new GenericEventMessage(new MessageType("event"), new Object());
-            testSubject.handle(unhandledEvent, StubProcessingContext.forMessage(unhandledEvent)).asCompletableFuture().join();
+            testSubject.handle(unhandledEvent, StubProcessingContext.forMessage(unhandledEvent))
+                       .asCompletableFuture()
+                       .orTimeout(50, TimeUnit.MILLISECONDS)
+                       .join();
 
             // then
             assertThat(testSaga.invocationCount).isEqualTo(1);
@@ -95,10 +103,16 @@ class AnnotatedSagaTest {
             EventMessage eventWithMetadata = new GenericEventMessage(
                     new MessageType("event"), new EventWithoutProperties(), new Metadata(metadata)
             );
-            testSubject.handle(eventWithMetadata, StubProcessingContext.forMessage(eventWithMetadata)).asCompletableFuture().join();
+            testSubject.handle(eventWithMetadata, StubProcessingContext.forMessage(eventWithMetadata))
+                       .asCompletableFuture()
+                       .orTimeout(50, TimeUnit.MILLISECONDS)
+                       .join();
             EventMessage eventWithoutMetadata =
                     new GenericEventMessage(new MessageType("event"), new EventWithoutProperties());
-            testSubject.handle(eventWithoutMetadata, StubProcessingContext.forMessage(eventWithoutMetadata)).asCompletableFuture().join();
+            testSubject.handle(eventWithoutMetadata, StubProcessingContext.forMessage(eventWithoutMetadata))
+                       .asCompletableFuture()
+                       .orTimeout(50, TimeUnit.MILLISECONDS)
+                       .join();
 
             // then
             assertThat(testSaga.invocationCount).isEqualTo(1);
@@ -111,11 +125,20 @@ class AnnotatedSagaTest {
 
             // when
             var event1 = new GenericEventMessage(new MessageType("event"), new RegularEvent("id"));
-            testSubject.handle(event1, StubProcessingContext.forMessage(event1)).asCompletableFuture().join();
+            testSubject.handle(event1, StubProcessingContext.forMessage(event1))
+                       .asCompletableFuture()
+                       .orTimeout(50, TimeUnit.MILLISECONDS)
+                       .join();
             var event2 = new GenericEventMessage(new MessageType("event"), new Object());
-            testSubject.handle(event2, StubProcessingContext.forMessage(event2)).asCompletableFuture().join();
+            testSubject.handle(event2, StubProcessingContext.forMessage(event2))
+                       .asCompletableFuture()
+                       .orTimeout(50, TimeUnit.MILLISECONDS)
+                       .join();
             var event3 = new GenericEventMessage(new MessageType("event"), new SagaEndEvent("id"));
-            testSubject.handle(event3, StubProcessingContext.forMessage(event3)).asCompletableFuture().join();
+            testSubject.handle(event3, StubProcessingContext.forMessage(event3))
+                       .asCompletableFuture()
+                       .orTimeout(50, TimeUnit.MILLISECONDS)
+                       .join();
 
             // then
             assertThat(testSaga.invocationCount).isEqualTo(2);
@@ -136,9 +159,15 @@ class AnnotatedSagaTest {
 
             // when
             var event1 = new GenericEventMessage(new MessageType("event"), new RegularEvent("id"));
-            explicitRemovalSubject.handle(event1, StubProcessingContext.forMessage(event1)).asCompletableFuture().join();
+            explicitRemovalSubject.handle(event1, StubProcessingContext.forMessage(event1))
+                                  .asCompletableFuture()
+                                  .orTimeout(50, TimeUnit.MILLISECONDS)
+                                  .join();
             var event2 = new GenericEventMessage(new MessageType("event"), new SagaEndEvent("id"));
-            explicitRemovalSubject.handle(event2, StubProcessingContext.forMessage(event2)).asCompletableFuture().join();
+            explicitRemovalSubject.handle(event2, StubProcessingContext.forMessage(event2))
+                                  .asCompletableFuture()
+                                  .orTimeout(50, TimeUnit.MILLISECONDS)
+                                  .join();
 
             // then
             assertThat(explicitRemovalSaga.invocationCount).isEqualTo(2);
@@ -153,11 +182,20 @@ class AnnotatedSagaTest {
 
             // when
             var event1 = new GenericEventMessage(new MessageType("event"), new UniformAccessEvent("id"));
-            testSubject.handle(event1, StubProcessingContext.forMessage(event1)).asCompletableFuture().join();
+            testSubject.handle(event1, StubProcessingContext.forMessage(event1))
+                       .asCompletableFuture()
+                       .orTimeout(50, TimeUnit.MILLISECONDS)
+                       .join();
             var event2 = new GenericEventMessage(new MessageType("event"), new Object());
-            testSubject.handle(event2, StubProcessingContext.forMessage(event2)).asCompletableFuture().join();
+            testSubject.handle(event2, StubProcessingContext.forMessage(event2))
+                       .asCompletableFuture()
+                       .orTimeout(50, TimeUnit.MILLISECONDS)
+                       .join();
             var event3 = new GenericEventMessage(new MessageType("event"), new SagaEndEvent("id"));
-            testSubject.handle(event3, StubProcessingContext.forMessage(event3)).asCompletableFuture().join();
+            testSubject.handle(event3, StubProcessingContext.forMessage(event3))
+                       .asCompletableFuture()
+                       .orTimeout(50, TimeUnit.MILLISECONDS)
+                       .join();
 
             // then
             assertThat(testSaga.invocationCount).isEqualTo(2);
@@ -200,15 +238,9 @@ class AnnotatedSagaTest {
         void prepareResetDelegatesToPrepareResetWithNullResetContextAndThrowsResetNotSupportedException() {
             AnnotatedSaga<StubAnnotatedSaga> spiedTestSubject = spy(testSubject);
 
-            assertThatThrownBy(() -> spiedTestSubject.prepareReset(null))
+            assertThatThrownBy(() -> spiedTestSubject.handle((ResetContext) null, null))
                     .isInstanceOf(ResetNotSupportedException.class);
-            verify(spiedTestSubject).prepareReset(null, null);
-        }
-
-        @Test
-        void prepareResetWithResetContextThrowsResetNotSupportedException() {
-            assertThatThrownBy(() -> testSubject.prepareReset("some-reset-context", null))
-                    .isInstanceOf(ResetNotSupportedException.class);
+            verify(spiedTestSubject).handle((ResetContext) null, null);
         }
     }
 
@@ -256,8 +288,12 @@ class AnnotatedSagaTest {
             // AbstractSagaManager does when multiple sagas are associated with one event
             var event = new GenericEventMessage(new MessageType("event"), new RegularEvent("id"));
             ProcessingContext sharedContext = StubProcessingContext.forMessage(event);
-            subject1.handle(event, sharedContext).asCompletableFuture().join();
-            subject2.handle(event, sharedContext).asCompletableFuture().join();
+            subject1.handle(event, sharedContext).asCompletableFuture()
+                    .orTimeout(50, TimeUnit.MILLISECONDS)
+                    .join();
+            subject2.handle(event, sharedContext).asCompletableFuture()
+                    .orTimeout(50, TimeUnit.MILLISECONDS)
+                    .join();
 
             // then - each saga resolved a SagaLifecycle parameter bound to itself, not to the other saga
             assertThat(saga1.capturedLifecycle).isSameAs(subject1);

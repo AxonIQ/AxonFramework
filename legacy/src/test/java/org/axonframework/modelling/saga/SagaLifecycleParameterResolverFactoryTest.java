@@ -19,12 +19,12 @@ package org.axonframework.modelling.saga;
 import org.axonframework.messaging.core.annotation.ParameterResolver;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
-import org.junit.jupiter.api.Nested;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.*;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -99,12 +99,14 @@ class SagaLifecycleParameterResolverFactoryTest {
             assertThat(resolver.matches(context)).isFalse();
         }
 
-        @Test
+        @RepeatedTest(100)
         void resolveParameterValueReturnsSagaLifecycleRegisteredOnContext() {
             SagaLifecycle lifecycle = stubLifecycle();
             ProcessingContext context = new StubProcessingContext().withResource(SagaLifecycle.RESOURCE_KEY, lifecycle);
 
-            SagaLifecycle resolved = resolver.resolveParameterValue(context).join();
+            SagaLifecycle resolved = resolver.resolveParameterValue(context)
+                                             .orTimeout(50, TimeUnit.MILLISECONDS)
+                                             .join();
 
             assertThat(resolved).isSameAs(lifecycle);
         }
