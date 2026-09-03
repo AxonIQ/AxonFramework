@@ -123,6 +123,12 @@ This section contains four subsections, called:
 | `JdbcSagaStore.Builder#serializer(Serializer)`                                                                                  | `JdbcSagaStore.Builder#converter(Converter)`                                                                           |
 | `JpaSagaStore#createSagaEntry(Object, String, Serializer)`                                                                      | `JpaSagaStore#createSagaEntry(Object, String, Converter)`                                                              |
 | `SagaSqlSchema#sql_updateSaga(Connection, String, byte[], String, String)`                                                      | `SagaSqlSchema#sql_updateSaga(Connection, String, byte[], String)` - the saga revision is no longer written on update  |
+| `SagaRepository#find(AssociationValue)`                                                                                         | `SagaRepository#find(AssociationValue, ProcessingContext)`                                                             |
+| `SagaRepository#load(String)`                                                                                                   | `SagaRepository#load(String, ProcessingContext)`                                                                       |
+| `SagaRepository#createInstance(String, Supplier)`                                                                               | `SagaRepository#createInstance(String, Supplier, ProcessingContext)`                                                    |
+| `LockingSagaRepository#doLoad(String)`                                                                                          | `LockingSagaRepository#doLoad(String, ProcessingContext)`                                                              |
+| `LockingSagaRepository#doCreateInstance(String, Supplier)`                                                                      | `LockingSagaRepository#doCreateInstance(String, Supplier, ProcessingContext)`                                           |
+| `AnnotatedSagaRepository#unsavedSagaResource(UnitOfWork)`                                                                        | `AnnotatedSagaRepository#unsavedSagaResource(ProcessingContext)`                                                        |
 
 ### Removed Methods and Constructors
 
