@@ -130,3 +130,53 @@ provider from construction.
 
 We will provide a migration guide, as well as OpenWrite recipes for these scenarios.
 
+### SagaRepository
+
+Where the store needs no context, the repository does, and all three of its operations take one:
+
+```java
+Set<String> find(AssociationValue associationValue, ProcessingContext context);
+
+@Nullable
+Saga<T> load(String sagaIdentifier, ProcessingContext context);
+
+Saga<T> createInstance(String sagaIdentifier, Supplier<T> factoryMethod, ProcessingContext context);
+```
+
+Axon Framework 4 read the ambient unit of work from `CurrentUnitOfWork`, a thread local, and used it for the two things
+this layer does beyond storage: it writes the saga during the prepare-commit phase, which is what puts that write in
+the caller's transaction, and it releases the saga's lock when processing completes. `find` takes the context too, even
+though it does not use it, so that the interface does not leave an implementor guessing whether the omission means
+something.
+
+A repository never creates a context. The event processor does, and hands it down through the component that invokes
+the saga.
+
+Two consequences of the thread local being gone are worth knowing about.
+
+**Nested units of work are gone, and one scenario is not yet covered.** Axon Framework 4 distinguished the current unit
+of work from the outermost one, because a nested unit of work ran its own prepare-commit and commit early while its
+after-commit and rollback followed the root. Axon Framework 5 has nothing nested; a branched `ProcessingContext`
+forwards every lifecycle registration and every resource to the root, which gives the same result -- one saga instance
+per processing session, written once -- without the distinction. What it cannot reproduce is registering work for a
+phase that is already running: `ProcessingContext` rejects that, where Axon Framework 4 simply appended to the phase's
+handler queue. So loading or creating a saga from within `PREPARE_COMMIT` or later now fails with an
+`IllegalStateException`. That is reachable: `SimpleEventBus` publishes events that were published with a context during
+`PREPARE_COMMIT`, and `SubscribingEventProcessor` handles them in that same context, so a saga on a subscribing
+processor meets it on its first event. A saga on a `PooledStreamingEventProcessor` is unaffected, since it is invoked
+during `INVOCATION`. The fix belongs to the component that invokes the saga, which is the only layer that knows when
+handling has finished, and it is tracked with that work.
+
+**A saga event handler must complete on the thread that invoked it.** Axon Framework 4 could not express anything else:
+it invoked the handler and ignored its return value, so an asynchronous result was dropped and never took part in a
+transaction. `EventHandlingComponent#handle` can express one and the unit of work awaits it, which would move a saga's
+store write off the thread whose transaction it belongs to. `AnnotatedSaga` therefore fails handling with a
+`SagaExecutionException` when a handler returns a result that is not done yet. An already completed
+`CompletableFuture` is accepted, being indistinguishable from a synchronous return, and a handler that hands work to an
+executor and returns `void` is undetectable, as it was in Axon Framework 4.
+
+The same thread affinity applies to the saga's lock. `PessimisticLockFactory` hands out a lock owned by the thread that
+took it, and the repository releases it when the context completes, which runs on the invoking thread only when the
+`TransactionManager` requires same-thread invocations. `SpringTransactionManager` and `EntityManagerTransactionManager`
+both do; a custom one that does not would leak saga locks.
+
