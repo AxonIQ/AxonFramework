@@ -1,0 +1,9 @@
+ _     _ _                         _        _
+| |   (_) |                       | |      | |
+| |__  _| | _____   _ __ ___ _ __ | |_ __ _| |
+| '_ \| | |/ / _ \ | '__/ _ \ '_ \| __/ _` | |
+| |_) | |   <  __/ | | |  __/ | | | || (_| | |
+|_.__/|_|_|\_\___| |_|  \___|_| |_|\__\__,_|_|
+
+Powered by Spring Boot ${spring-boot.version}
+Swagger UI is available at http://localhost:8080/swagger-ui/index.html

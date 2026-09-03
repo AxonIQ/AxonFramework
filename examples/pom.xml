@@ -75,6 +75,8 @@
         <module>university-demo-kotlin</module>
         <module>university-message-transformation</module>
         <module>university-multi-tenancy-examples</module>
+        <module>workflow-bike-rental</module>
+        <module>workflow-simple</module>
     </modules>
 
     <build>
