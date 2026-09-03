@@ -33,7 +33,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Subclasses supply the store under test through {@link #testSubject()} and are otherwise free of setup: the tests here
  * exercise only the {@code SagaStore} API, so they say nothing about how a particular implementation persists.
  *
- * @author Allard Buijze
+ * @author Mateusz Nowak
  */
 public abstract class SagaStoreTestSuite {
 

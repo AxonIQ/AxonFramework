@@ -42,7 +42,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * Writes run inside an {@link EntityTransaction} because JPA requires one; reads run outside, which is what makes the
  * assertions reflect the database rather than the persistence context.
  *
- * @author Allard Buijze
+ * @author Mateusz Nowak
  */
 class JpaSagaStoreTest extends SagaStoreTestSuite {
 

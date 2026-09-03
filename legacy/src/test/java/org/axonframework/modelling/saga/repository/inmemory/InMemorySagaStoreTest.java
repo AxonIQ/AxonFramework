@@ -29,7 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Test class validating the {@link InMemorySagaStore}.
  *
- * @author Allard Buijze
+ * @author Mateusz Nowak
  */
 class InMemorySagaStoreTest extends SagaStoreTestSuite {
 

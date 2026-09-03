@@ -27,7 +27,7 @@ import java.util.Objects;
  * an entry, and {@link #equals(Object)} compares the recorded list, so a stored and reloaded instance is only equal to
  * the original if its state survived conversion.
  *
- * @author Allard Buijze
+ * @author Mateusz Nowak
  */
 public class StubSaga {
 
