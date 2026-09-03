@@ -21,16 +21,24 @@ import jakarta.persistence.EntityManagerFactory;
 import jakarta.persistence.EntityTransaction;
 import jakarta.persistence.Persistence;
 import jakarta.persistence.TransactionRequiredException;
+import org.axonframework.common.FutureUtils;
 import org.axonframework.common.jpa.SimpleEntityManagerProvider;
 import org.axonframework.conversion.jackson.JacksonConverter;
+import org.axonframework.messaging.core.EmptyApplicationContext;
+import org.axonframework.messaging.core.unitofwork.SimpleUnitOfWorkFactory;
+import org.axonframework.messaging.core.unitofwork.UnitOfWork;
+import org.axonframework.modelling.saga.AnnotatedSaga;
 import org.axonframework.modelling.saga.AssociationValue;
 import org.axonframework.modelling.saga.AssociationValuesImpl;
+import org.axonframework.modelling.saga.repository.AnnotatedSagaRepository;
 import org.axonframework.modelling.saga.repository.SagaStore;
 import org.axonframework.modelling.saga.repository.SagaStoreTestSuite;
 import org.axonframework.modelling.saga.repository.StubSaga;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
+import java.time.Duration;
 
 import static java.util.Collections.singleton;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -115,6 +123,36 @@ class JpaSagaStoreTest extends SagaStoreTestSuite {
                 StubSaga.class, "saga-1", new StubSaga(), singleton(ORDER_1)))
                 .isInstanceOf(TransactionRequiredException.class);
         assertThat(testSubject.loadSaga(StubSaga.class, "saga-1")).isNull();
+    }
+
+    /**
+     * Returned to the suite with {@link AnnotatedSagaRepository}, which it drives. The repository decides whether a
+     * saga is written at all, so the store cannot be held to this on its own.
+     */
+    @Test
+    void addingAnInactiveSagaDoesntStoreIt() {
+        // given a repository over this store
+        AnnotatedSagaRepository<StubSaga> repository = AnnotatedSagaRepository.<StubSaga>builder()
+                                                                             .sagaType(StubSaga.class)
+                                                                             .sagaStore(testSubject)
+                                                                             .build();
+
+        // when a saga is created and ended within one processing context
+        inTransaction(() -> {
+            UnitOfWork unitOfWork = new SimpleUnitOfWorkFactory(EmptyApplicationContext.INSTANCE).create();
+            unitOfWork.runOnInvocation(context -> {
+                AnnotatedSaga<StubSaga> saga =
+                        (AnnotatedSaga<StubSaga>) repository.createInstance("saga-1", StubSaga::new, context);
+                saga.associateWith(ORDER_1);
+                saga.end();
+            });
+            FutureUtils.joinAndUnwrap(unitOfWork.execute(), Duration.ofSeconds(5));
+        });
+
+        // then the database never saw it
+        assertThat(entityManager.createQuery("select count(*) from SagaEntry", Long.class).getSingleResult())
+                .isZero();
+        assertThat(testSubject.findSagas(StubSaga.class, ORDER_1)).isEmpty();
     }
 
     @Test
