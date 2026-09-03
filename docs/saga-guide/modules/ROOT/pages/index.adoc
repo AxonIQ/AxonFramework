@@ -13,6 +13,14 @@ component, and if the hotel comes back unavailable an hour later the flight is a
 rollback but another step of the process: the flight is cancelled by the same thing that booked it.
 That is *compensation*. Deciding when it is needed is most of what a saga does.
 
+[TIP]
+.Already know the pattern? Jump to the implementation
+====
+If you know what a saga or process manager is and only want to see how to implement one in Axon Framework, go straight
+to xref::choosing-an-approach.adoc[choosing an approach]. A decision tree and comparison tables route you directly to the right
+approach.
+====
+
 The same shape turns up well short of trip booking, inside a single application. A rental is not confirmed until its
 payment is. An order is not shipped until stock and payment both agree. A subscription is not active until the first
 charge clears. In Axon Framework such a process is an event handler: it remembers what it has seen so far and decides

@@ -61,7 +61,6 @@ public class RentalPaymentProcess {
     }
     // end::process-events[]
 
-    // tag::record-command[]
     public record RecordPaymentRequested(
             @TargetEntityId String rentalId,
             String bikeId,
@@ -70,7 +69,6 @@ public class RentalPaymentProcess {
     ) {
 
     }
-    // end::record-command[]
 
     // tag::translating[]
     @Component

@@ -24,11 +24,9 @@ import org.axonframework.modelling.annotation.TargetEntityId;
  */
 public class RentalPaymentApi {
 
-    // tag::tags[]
     public static final String BIKE_ID = "bikeId";
     public static final String RENTAL_ID = "rentalId";
     public static final String PAYMENT_REFERENCE = "paymentReference";
-    // end::tags[]
 
     // tag::rental-events[]
     public record BikeRequested(
@@ -87,7 +85,6 @@ public class RentalPaymentApi {
     }
     // end::payment-events[]
 
-    // tag::commands[]
     public record PreparePayment(@TargetEntityId String paymentReference, int amount) {
 
     }
@@ -103,7 +100,6 @@ public class RentalPaymentApi {
     public record RejectRequest(@TargetEntityId String bikeId, String renter) {
 
     }
-    // end::commands[]
 
     // tag::cancel-rental-payment[]
     public record CancelRentalPayment(@TargetEntityId String rentalId) {
@@ -111,7 +107,6 @@ public class RentalPaymentApi {
     }
     // end::cancel-rental-payment[]
 
-    // tag::correlation[]
     /**
      * The only place in the application that knows a rental identifier and a payment reference are the same value.
      */
@@ -122,7 +117,6 @@ public class RentalPaymentApi {
     public static String rentalIdFor(String paymentReference) {
         return paymentReference;
     }
-    // end::correlation[]
 
     public static final int PRICE = 10;
 }
