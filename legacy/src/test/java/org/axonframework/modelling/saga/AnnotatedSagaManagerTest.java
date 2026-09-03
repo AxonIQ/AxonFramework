@@ -16,20 +16,24 @@
 
 package org.axonframework.modelling.saga;
 
+import org.axonframework.common.FutureUtils;
+import org.axonframework.messaging.core.EmptyApplicationContext;
+import org.axonframework.messaging.core.MessageType;
+import org.axonframework.messaging.core.annotation.MetadataValue;
+import org.axonframework.messaging.core.unitofwork.SimpleUnitOfWorkFactory;
+import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
+import org.axonframework.messaging.core.unitofwork.UnitOfWork;
+import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.GenericEventMessage;
-import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
+import org.axonframework.messaging.eventhandling.replay.GenericResetContext;
 import org.axonframework.messaging.eventhandling.replay.ResetNotSupportedException;
-import org.axonframework.messaging.core.MessageType;
-import org.axonframework.messaging.core.ResultMessage;
-import org.axonframework.messaging.core.annotation.MetadataValue;
-import org.axonframework.messaging.unitofwork.LegacyDefaultUnitOfWork;
 import org.axonframework.modelling.saga.repository.AnnotatedSagaRepository;
 import org.axonframework.modelling.saga.repository.SagaStore;
 import org.axonframework.modelling.saga.repository.inmemory.InMemorySagaStore;
-import org.axonframework.common.util.StubDomainEvent;
 import org.junit.jupiter.api.*;
 
+import java.time.Duration;
 import java.util.Collection;
 import java.util.LinkedList;
 import java.util.List;
@@ -48,8 +52,11 @@ import static org.mockito.Mockito.*;
  */
 public class AnnotatedSagaManagerTest {
 
+    private static final Duration TIMEOUT = Duration.ofSeconds(5);
+
     private AnnotatedSagaRepository<MyTestSaga> sagaRepository;
     private InMemorySagaStore sagaStore;
+    private UnitOfWorkFactory unitOfWorkFactory;
 
     private AnnotatedSagaManager<MyTestSaga> testSubject;
 
@@ -62,6 +69,7 @@ public class AnnotatedSagaManagerTest {
                                        .sagaStore(sagaStore)
                                        .build()
         );
+        unitOfWorkFactory = new SimpleUnitOfWorkFactory(EmptyApplicationContext.INSTANCE);
         testSubject = AnnotatedSagaManager.<MyTestSaga>builder()
                                           .sagaRepository(sagaRepository)
                                           .sagaType(MyTestSaga.class)
@@ -85,7 +93,7 @@ public class AnnotatedSagaManagerTest {
     @Test
     void handleUnrelatedEvent() throws Exception {
         handle(new GenericEventMessage(new MessageType("event"), "Unrelated"));
-        verify(sagaRepository, never()).find(isNull());
+        verify(sagaRepository, never()).find(isNull(), any());
     }
 
     @Test
@@ -128,7 +136,7 @@ public class AnnotatedSagaManagerTest {
     void nullAssociationValueIsIgnored() throws Exception {
         handle(new GenericEventMessage(new MessageType("event"), new StartingEvent(null)));
 
-        verify(sagaRepository, never()).find(null);
+        verify(sagaRepository, never()).find(isNull(), any());
     }
 
     @Test
@@ -160,39 +168,36 @@ public class AnnotatedSagaManagerTest {
     @Test
     void lifeCycle_ExistingInstanceIgnoresEvent() throws Exception {
         handle(new GenericEventMessage(new MessageType("event"), new StartingEvent("12")));
-        handle(new GenericEventMessage(new MessageType("event"), new StubDomainEvent()));
+        handle(new GenericEventMessage(new MessageType("event"), new UnrelatedDomainEvent()));
         assertEquals(1, repositoryContents("12").size());
         assertEquals(1, repositoryContents("12").iterator().next().getCapturedEvents().size());
     }
 
     @Test
     void lifeCycle_IgnoredEventDoesNotCreateInstance() throws Exception {
-        handle(new GenericEventMessage(new MessageType("event"), new StubDomainEvent()));
+        handle(new GenericEventMessage(new MessageType("event"), new UnrelatedDomainEvent()));
         assertEquals(0, repositoryContents("12").size());
     }
 
     @Test
-    void performResetThrowsResetNotSupportedException() {
-        AnnotatedSagaManager<MyTestSaga> spiedTestSubject = spy(testSubject);
-
-        assertThrows(ResetNotSupportedException.class, () -> spiedTestSubject.performReset(null));
-
-        verify(spiedTestSubject).performReset(null, null);
+    void doesNotSupportReset() {
+        assertFalse(testSubject.supportsReset());
     }
 
     @Test
-    void performResetWithResetInfoThrowsResetNotSupportedException() {
-        assertThrows(ResetNotSupportedException.class, () -> testSubject.performReset("reset-info", null));
+    void handlingAResetContextThrowsResetNotSupportedException() {
+        var resetContext = new GenericResetContext(new MessageType(String.class), "reset-info");
+
+        assertThrows(
+                ResetNotSupportedException.class,
+                () -> testSubject.handle(resetContext, StubProcessingContext.forMessage(resetContext))
+        );
     }
 
-    private void handle(EventMessage event) throws Exception {
-        ResultMessage resultMessage = LegacyDefaultUnitOfWork.startAndGet(event).executeWithResult((ctx) -> {
-            testSubject.handle(event, ctx, Segment.ROOT_SEGMENT);
-            return null;
-        });
-        if (resultMessage.payload() instanceof Exception ex) {
-            throw ex;
-        }
+    private void handle(EventMessage event) {
+        UnitOfWork unitOfWork = unitOfWorkFactory.create();
+        unitOfWork.runOnInvocation(context -> testSubject.handle(event, context));
+        FutureUtils.joinAndUnwrap(unitOfWork.execute(), TIMEOUT);
     }
 
     private Collection<MyTestSaga> repositoryContents(String lookupValue) {
@@ -315,5 +320,9 @@ public class AnnotatedSagaManagerTest {
         public MiddleEvent(String myIdentifier) {
             super(myIdentifier);
         }
+    }
+
+    public static class UnrelatedDomainEvent {
+
     }
 }

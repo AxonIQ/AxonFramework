@@ -17,20 +17,20 @@
 package org.axonframework.modelling.saga;
 
 import org.axonframework.common.AxonConfigurationException;
+import org.axonframework.common.FutureUtils;
 import org.axonframework.common.IdentifierFactory;
-import org.axonframework.messaging.eventhandling.EventHandlerInvoker;
-import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.processing.errorhandling.ListenerInvocationErrorHandler;
-import org.axonframework.messaging.eventhandling.processing.errorhandling.LoggingErrorHandler;
-import org.axonframework.messaging.eventhandling.replay.ResetNotSupportedException;
-import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
+import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.messaging.core.Message;
+import org.axonframework.messaging.core.MessageStream;
+import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.ScopeAware;
 import org.axonframework.messaging.core.ScopeDescriptor;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
-import org.axonframework.messaging.tracing.NoOpSpanFactory;
-import org.axonframework.messaging.tracing.Span;
-import org.axonframework.messaging.tracing.SpanScope;
+import org.axonframework.messaging.eventhandling.EventHandlingComponent;
+import org.axonframework.messaging.eventhandling.EventMessage;
+import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
+import org.axonframework.messaging.eventhandling.replay.ResetContext;
+import org.axonframework.messaging.eventhandling.replay.ResetNotSupportedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -50,22 +50,19 @@ import static org.axonframework.common.BuilderUtils.assertNonNull;
  * @author Allard Buijze
  * @since 0.7
  */
-public abstract class AbstractSagaManager<T> implements EventHandlerInvoker, ScopeAware {
+public abstract class AbstractSagaManager<T> implements EventHandlingComponent, ScopeAware {
 
     private static final Logger logger = LoggerFactory.getLogger(AbstractSagaManager.class);
 
     private final SagaRepository<T> sagaRepository;
     private final Class<T> sagaType;
     private final Supplier<T> sagaFactory;
-    private final SagaManagerSpanFactory spanFactory;
-    private volatile ListenerInvocationErrorHandler listenerInvocationErrorHandler;
 
     /**
      * Instantiate a {@link AbstractSagaManager} based on the fields contained in the {@link Builder}.
      * <p>
-     * Will assert that the {@code sagaType}, {@code sagaFactory}, {@link SagaRepository},
-     * {@link SagaManagerSpanFactory} and {@link ListenerInvocationErrorHandler} are not {@code null}, and will throw an
-     * {@link AxonConfigurationException} if any of them is {@code null}.
+     * Will assert that the {@code sagaType}, {@code sagaFactory} and {@link SagaRepository} are not {@code null}, and
+     * will throw an {@link AxonConfigurationException} if any of them is {@code null}.
      *
      * @param builder the {@link Builder} used to instantiate a {@link AbstractSagaManager} instance
      */
@@ -74,36 +71,51 @@ public abstract class AbstractSagaManager<T> implements EventHandlerInvoker, Sco
         this.sagaRepository = builder.sagaRepository;
         this.sagaType = builder.sagaType;
         this.sagaFactory = builder.sagaFactory;
-        this.listenerInvocationErrorHandler = builder.listenerInvocationErrorHandler;
-        this.spanFactory = builder.spanFactory;
     }
 
+    /**
+     * {@inheritDoc}
+     * <p>
+     * As an {@link EventHandlingComponent}, this method does not receive the {@link Segment} to filter Saga instances
+     * with directly. Instead, the {@code EventProcessor} attaches the {@code Segment} it is currently processing to
+     * the given {@code context} as a resource, retrievable through
+     * {@link Segment#fromContext(org.axonframework.messaging.core.Context)}. When absent, for example when this
+     * method is invoked outside a segmented {@code EventProcessor}, the {@link Segment#ROOT_SEGMENT} is assumed,
+     * matching every Saga instance.
+     */
     @Override
-    public void handle(EventMessage event, ProcessingContext context, Segment segment)
-            throws Exception {
+    public MessageStream.Empty<Message> handle(EventMessage event, ProcessingContext context) {
+        Segment segment = Segment.fromContext(context).orElse(Segment.ROOT_SEGMENT);
         Set<AssociationValue> associationValues = extractAssociationValues(event, context);
         List<String> sagaIds =
                 associationValues.stream()
-                                 .flatMap(associationValue -> sagaRepository.find(associationValue).stream())
+                                 .flatMap(associationValue -> sagaRepository.find(associationValue, context).stream())
                                  .collect(Collectors.toList());
         Set<Saga<T>> sagas =
                 sagaIds.stream()
                        .filter(sagaId -> matchesSegment(segment, sagaId))
-                       .map(sagaRepository::load)
+                       .map(sagaId -> sagaRepository.load(sagaId, context))
                        .filter(Objects::nonNull)
                        .filter(Saga::isActive)
                        .collect(Collectors.toCollection(HashSet::new));
         boolean sagaMatchesOtherSegment = sagaIds.stream().anyMatch(sagaId -> !matchesSegment(segment, sagaId));
+
+        MessageStream<Message> result = MessageStream.empty();
         boolean sagaOfTypeInvoked = false;
-        for (Saga<T> saga : sagas) {
-            if (doInvokeSaga(event, context, saga)) {
+        if (!sagas.isEmpty() && canHandle(event, context)) {
+            for (Saga<T> saga : sagas) {
+                result = result.concatWith(saga.handle(event, context));
                 sagaOfTypeInvoked = true;
             }
         }
+
         SagaInitializationPolicy initializationPolicy = getSagaCreationPolicy(event, context);
         if (shouldCreateSaga(segment, sagaOfTypeInvoked || sagaMatchesOtherSegment, initializationPolicy)) {
-            startNewSaga(event, context, initializationPolicy.getInitialAssociationValue(), segment);
+            result = result.concatWith(
+                    startNewSaga(event, context, initializationPolicy.getInitialAssociationValue(), segment)
+            );
         }
+        return result.ignoreEntries().cast();
     }
 
     private boolean shouldCreateSaga(Segment segment, boolean sagaInvoked,
@@ -113,21 +125,13 @@ public abstract class AbstractSagaManager<T> implements EventHandlerInvoker, Sco
                 && segment.matches(initializationPolicy.getInitialAssociationValue());
     }
 
-    private void startNewSaga(EventMessage event,
-                              ProcessingContext context,
-                              AssociationValue associationValue,
-                              Segment segment
-    ) throws Exception {
-        String sagaIdentifier = createSagaIdentifier(segment);
-        Span span = spanFactory.createCreateSagaInstanceSpan(event, sagaType, sagaIdentifier);
-        try (SpanScope unused = span.start()) {
-            Saga<T> newSaga = sagaRepository.createInstance(sagaIdentifier, sagaFactory);
-            newSaga.getAssociationValues().add(associationValue);
-            doInvokeSaga(event, context, newSaga);
-        } catch (Exception e) {
-            span.recordException(e);
-            throw e;
-        }
+    private MessageStream<Message> startNewSaga(EventMessage event,
+                                                ProcessingContext context,
+                                                AssociationValue associationValue,
+                                                Segment segment) {
+        Saga<T> newSaga = sagaRepository.createInstance(createSagaIdentifier(segment), sagaFactory, context);
+        newSaga.getAssociationValues().add(associationValue);
+        return newSaga.handle(event, context);
     }
 
     /**
@@ -182,19 +186,23 @@ public abstract class AbstractSagaManager<T> implements EventHandlerInvoker, Sco
      */
     protected abstract Set<AssociationValue> extractAssociationValues(EventMessage event, ProcessingContext context);
 
-    private boolean doInvokeSaga(EventMessage event, ProcessingContext context, Saga<T> saga) throws Exception {
-        if (saga.canHandle(event, context)) {
-            Span span = spanFactory.createInvokeSagaSpan(event, sagaType, saga);
-            try (SpanScope unused = span.start()) {
-                saga.handleSync(event, context);
-            } catch (Exception e) {
-                span.recordException(e);
-                listenerInvocationErrorHandler.onError(e, event, saga);
-            }
-            return true;
-        }
-        return false;
-    }
+    /**
+     * Indicates whether a Saga of the given {@code sagaType} has a handler for the given {@code event}.
+     * <p>
+     * This check is independent of the {@link EventMessage#type()}: Sagas resolve their handlers by inspecting the
+     * {@link EventMessage#payload() payload's} runtime type, the same way a {@code @SagaEventHandler} method is
+     * matched, since the message name carried by a {@code MessageType} is not guaranteed to correlate with the
+     * payload's class.
+     *
+     * @param event   The event to check for a handler.
+     * @param context The {@link ProcessingContext} in which the event is being processed.
+     * @return {@code true} if a Saga of the given {@code sagaType} has a handler for the given {@code event},
+     * {@code false} otherwise.
+     */
+    protected abstract boolean canHandle(EventMessage event, ProcessingContext context);
+
+    @Override
+    public abstract Set<QualifiedName> supportedEvents();
 
     /**
      * Returns the class of Saga managed by this SagaManager
@@ -205,24 +213,25 @@ public abstract class AbstractSagaManager<T> implements EventHandlerInvoker, Sco
         return sagaType;
     }
 
+    @Override // TODO figure out if this suffices
+    public Object sequenceIdentifierFor(EventMessage event, ProcessingContext context) {
+        Set<AssociationValue> associationValues = extractAssociationValues(event, context);
+        return associationValues.isEmpty() ? event.identifier() : associationValues.iterator().next();
+    }
+
     @Override
     public boolean supportsReset() {
         return false;
     }
 
     @Override
-    public void performReset(ProcessingContext context) {
-        performReset(null, context);
-    }
-
-    @Override
-    public void performReset(Object resetContext, ProcessingContext context) {
+    public MessageStream.Empty<Message> handle(ResetContext resetContext, ProcessingContext context) {
         throw new ResetNotSupportedException("Sagas do no support resetting tokens");
     }
 
     @Override
     public void send(Message message, ProcessingContext context, ScopeDescriptor scopeDescription) throws Exception {
-        if (!(message instanceof EventMessage)) {
+        if (!(message instanceof EventMessage eventMessage)) {
             String exceptionMessage = String.format(
                     "Something else than an EventMessage was scheduled for Saga of type [%s], "
                             + "whilst Sagas can only handle EventMessages.",
@@ -233,9 +242,9 @@ public abstract class AbstractSagaManager<T> implements EventHandlerInvoker, Sco
 
         if (canResolve(scopeDescription)) {
             String sagaIdentifier = ((SagaScopeDescriptor) scopeDescription).getIdentifier().toString();
-            Saga<T> saga = sagaRepository.load(sagaIdentifier);
+            Saga<T> saga = sagaRepository.load(sagaIdentifier, context);
             if (saga != null) {
-                saga.handleSync((EventMessage) message, context);
+                FutureUtils.joinAndUnwrap(saga.handle(eventMessage, context).asCompletableFuture());
             } else {
                 logger.debug("Saga (with id: [{}]) cannot be loaded, as it most likely already ended."
                                      + " Hence, message [{}] cannot be handled.", sagaIdentifier, message);
@@ -250,18 +259,17 @@ public abstract class AbstractSagaManager<T> implements EventHandlerInvoker, Sco
     }
 
     @Override
-    public Set<Class<?>> supportedEventTypes() {
-        return Set.of(); // We don't support Saga in Axon Framework 5 yet, so I left it empty.
+    public void describeTo(ComponentDescriptor descriptor) {
+        descriptor.describeProperty("sagaType", sagaType);
+        descriptor.describeProperty("sagaRepository", sagaRepository);
     }
 
     /**
      * Abstract Builder class to instantiate {@link AbstractSagaManager} implementations.
      * <p>
      * The {@code sagaFactory} is defaulted to a {@code sagaType.newInstance()} call throwing a
-     * {@link SagaInstantiationException} if it fails, the {@link ListenerInvocationErrorHandler} is defaulted to a
-     * {@link LoggingErrorHandler} and the {@link SagaManagerSpanFactory} defaults to a
-     * {@link DefaultSagaManagerSpanFactory} backed by a {@link NoOpSpanFactory}. The {@link SagaRepository} and
-     * {@code sagaType} are <b>hard requirements</b> and as such should be provided.
+     * {@link SagaInstantiationException} if it fails. The {@link SagaRepository} and {@code sagaType} are
+     * <b>hard requirements</b> and as such should be provided.
      *
      * @param <T> a generic specifying the Saga type managed by this implementation
      */
@@ -270,10 +278,6 @@ public abstract class AbstractSagaManager<T> implements EventHandlerInvoker, Sco
         private SagaRepository<T> sagaRepository;
         protected Class<T> sagaType;
         private Supplier<T> sagaFactory = () -> newInstance(sagaType);
-        private ListenerInvocationErrorHandler listenerInvocationErrorHandler = new LoggingErrorHandler();
-        private SagaManagerSpanFactory spanFactory = DefaultSagaManagerSpanFactory.builder()
-                                                                                  .spanFactory(NoOpSpanFactory.INSTANCE)
-                                                                                  .build();
 
         private static <T> T newInstance(Class<T> type) {
             try {
@@ -322,41 +326,12 @@ public abstract class AbstractSagaManager<T> implements EventHandlerInvoker, Sco
         }
 
         /**
-         * Sets the {@link ListenerInvocationErrorHandler} invoked when an error occurs. Defaults to a
-         * {@link LoggingErrorHandler}.
-         *
-         * @param listenerInvocationErrorHandler a {@link ListenerInvocationErrorHandler} invoked when an error occurs
-         * @return the current Builder instance, for fluent interfacing
-         */
-        public Builder<T> listenerInvocationErrorHandler(
-                ListenerInvocationErrorHandler listenerInvocationErrorHandler) {
-            assertNonNull(listenerInvocationErrorHandler, "ListenerInvocationErrorHandler may not be null");
-            this.listenerInvocationErrorHandler = listenerInvocationErrorHandler;
-            return this;
-        }
-
-        /**
-         * Sets the {@link SagaManagerSpanFactory} implementation to use for providing tracing capabilities. Defaults to
-         * a {@link DefaultSagaManagerSpanFactory} backed by a {@link NoOpSpanFactory} by default, which provides no
-         * tracing capabilities.
-         *
-         * @param spanFactory The {@link SagaManagerSpanFactory} implementation
-         * @return The current Builder instance, for fluent interfacing.
-         */
-        public Builder<T> spanFactory(SagaManagerSpanFactory spanFactory) {
-            assertNonNull(spanFactory, "SpanFactory may not be null");
-            this.spanFactory = spanFactory;
-            return this;
-        }
-
-        /**
          * Validates whether the fields contained in this Builder are set accordingly.
          *
          * @throws AxonConfigurationException if one field is asserted to be incorrect according to the Builder's
          *                                    specifications
          */
         protected void validate() throws AxonConfigurationException {
-            assertNonNull(spanFactory, "The SpanFactory is a hard requirement and should be provided");
             assertNonNull(sagaRepository, "The SagaRepository is a hard requirement and should be provided");
             assertNonNull(sagaType, "The sagaType is a hard requirement and should be provided");
         }
