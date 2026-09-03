@@ -17,12 +17,14 @@
 package org.axonframework.modelling.saga.metamodel;
 
 import org.axonframework.messaging.eventhandling.EventMessage;
+import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.modelling.saga.AssociationValue;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Interface of a model that describes a Saga of type {@code T}. Use the SagaModel to obtain associations and
@@ -68,4 +70,14 @@ public interface SagaModel<T> {
      * @return The factory that made this model
      */
     SagaMetaModelFactory modelFactory();
+
+    /**
+     * Returns the {@link QualifiedName QualifiedNames} of all {@link EventMessage events} supported by the Saga
+     * described by this model, that is, the events for which the Saga declares a
+     * {@link org.axonframework.modelling.saga.SagaEventHandler @SagaEventHandler} method.
+     *
+     * @return the {@link QualifiedName QualifiedNames} of all {@link EventMessage events} supported by the Saga
+     * described by this model
+     */
+    Set<QualifiedName> supportedEvents();
 }

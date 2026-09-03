@@ -19,6 +19,7 @@ package org.axonframework.modelling.saga;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.Metadata;
+import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.core.interception.annotation.NoMoreInterceptors;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
@@ -265,6 +266,38 @@ class AnnotatedSagaTest {
                     new AssociationValue("propertyName", "id"),
                     new AssociationValue("someOtherProperty", "3")
             );
+        }
+    }
+
+    @Nested
+    class SupportedEvents {
+
+        @Test
+        void returnsQualifiedNamesOfAllSagaEventHandlerAnnotatedMethods() {
+            assertThat(testSubject.supportedEvents()).containsExactlyInAnyOrder(
+                    new QualifiedName(RegularEvent.class),
+                    new QualifiedName(UniformAccessEvent.class),
+                    new QualifiedName(EventWithoutProperties.class),
+                    new QualifiedName(SagaEndEvent.class)
+            );
+        }
+
+        @Test
+        void supportsReflectsSupportedEvents() {
+            assertThat(testSubject.supports(new QualifiedName(RegularEvent.class))).isTrue();
+            assertThat(testSubject.supports(new QualifiedName(Object.class))).isFalse();
+        }
+    }
+
+    @Nested
+    class Sequencing {
+
+        @Test
+        void sequenceIdentifierForThrowsUnsupportedOperationException() {
+            var event = new GenericEventMessage(new MessageType("event"), new RegularEvent("id"));
+
+            assertThatThrownBy(() -> testSubject.sequenceIdentifierFor(event, StubProcessingContext.forMessage(event)))
+                    .isInstanceOf(UnsupportedOperationException.class);
         }
     }
 

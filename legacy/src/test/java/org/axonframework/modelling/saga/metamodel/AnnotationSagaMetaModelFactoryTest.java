@@ -18,6 +18,7 @@ package org.axonframework.modelling.saga.metamodel;
 
 import org.axonframework.common.AxonException;
 import org.axonframework.common.FutureUtils;
+import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.core.interception.annotation.MessageHandlerInterceptorMemberChain;
@@ -33,7 +34,9 @@ import org.slf4j.LoggerFactory;
 
 import java.lang.invoke.MethodHandles;
 import java.util.Optional;
+import java.util.Set;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.axonframework.messaging.eventhandling.EventTestUtils.asEventMessage;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -100,6 +103,39 @@ class AnnotationSagaMetaModelFactoryTest {
         assertEquals(NoMoreInterceptors.class, testSubject.chainedInterceptor(MySaga.class).getClass());
     }
 
+    @Nested
+    class SupportedEvents {
+
+        @Test
+        void returnsAQualifiedNameForEverySagaEventHandlerAnnotatedMethod() {
+            SagaModel<MySaga> sagaModel = testSubject.modelOf(MySaga.class);
+
+            assertThat(sagaModel.supportedEvents()).containsExactlyInAnyOrder(
+                    new QualifiedName(MySagaStartEvent.class),
+                    new QualifiedName(MySagaUpdateEvent.class),
+                    new QualifiedName(MySagaEndEvent.class)
+            );
+        }
+
+        @Test
+        void returnsAnEmptySetForASagaWithoutEventHandlers() {
+            SagaModel<SagaWithoutEventHandlers> sagaModel = testSubject.modelOf(SagaWithoutEventHandlers.class);
+
+            assertThat(sagaModel.supportedEvents()).isEmpty();
+        }
+
+        @Test
+        void includesInheritedSagaEventHandlerAnnotatedMethods() {
+            SagaModel<MySagaWithErrorHandler> sagaModel = testSubject.modelOf(MySagaWithErrorHandler.class);
+
+            assertThat(sagaModel.supportedEvents()).containsExactlyInAnyOrder(
+                    new QualifiedName(MySagaStartEvent.class),
+                    new QualifiedName(MySagaUpdateEvent.class),
+                    new QualifiedName(MySagaEndEvent.class)
+            );
+        }
+    }
+
     public static class MySaga {
 
         @StartSaga
@@ -127,6 +163,10 @@ class AnnotationSagaMetaModelFactoryTest {
         public void on(Exception e) {
             logger.info("caught", e);
         }
+    }
+
+    public static class SagaWithoutEventHandlers {
+
     }
 
     public abstract static class MySagaEvent {
