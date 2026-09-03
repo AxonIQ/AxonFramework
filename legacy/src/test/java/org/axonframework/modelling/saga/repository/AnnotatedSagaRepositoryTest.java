@@ -31,6 +31,7 @@ import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.EventTestUtils;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
+import org.axonframework.modelling.saga.AnnotatedSaga;
 import org.axonframework.modelling.saga.AssociationValue;
 import org.axonframework.modelling.saga.Saga;
 import org.axonframework.modelling.saga.repository.inmemory.InMemorySagaStore;
@@ -39,6 +40,7 @@ import org.mockito.*;
 
 import java.time.Duration;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -239,6 +241,176 @@ class AnnotatedSagaRepositoryTest {
         FutureUtils.joinAndUnwrap(unitOfWork.execute(), TIMEOUT);
 
         assertEquals(1, CountingInterceptors.counter.get());
+    }
+
+    /**
+     * Behaviour inherited from Axon Framework 4 that is odd enough to be mistaken for a bug. It is pinned here so that
+     * a future reader can see it is deliberate rather than overlooked.
+     */
+    @Nested
+    class InheritedAxonFramework4Behaviour {
+
+        @Test
+        void aNewSagaThatEndsBeforeTheContextCommitsIsNeverInserted() {
+            // given a saga created and ended within one processing context
+            UnitOfWork unitOfWork = unitOfWorkFactory.create();
+            unitOfWork.runOnInvocation(context -> {
+                AnnotatedSaga<Object> saga = (AnnotatedSaga<Object>) testSubject.createInstance(
+                        "ended-before-commit", Object::new, context
+                );
+                saga.associateWith(new AssociationValue("test", "value"));
+                saga.end();
+            });
+
+            // when
+            FutureUtils.joinAndUnwrap(unitOfWork.execute(), TIMEOUT);
+
+            // then nothing was written: the repository only inserts a saga that is still active
+            verify(store, never()).insertSaga(any(), any(), any(), any());
+            verify(store, never()).deleteSaga(any(), any(), any());
+        }
+
+        @Test
+        void aLoadedSagaThatEndsIsDeleted() {
+            // given a stored saga
+            UnitOfWork creatingUnitOfWork = unitOfWorkFactory.create();
+            creatingUnitOfWork.runOnInvocation(context -> testSubject.createInstance("to-be-ended",
+                                                                                     Object::new,
+                                                                                     context));
+            FutureUtils.joinAndUnwrap(creatingUnitOfWork.execute(), TIMEOUT);
+
+            // when it is loaded and ended in a later context
+            UnitOfWork endingUnitOfWork = unitOfWorkFactory.create();
+            endingUnitOfWork.runOnInvocation(context -> {
+                AnnotatedSaga<Object> saga = (AnnotatedSaga<Object>) testSubject.load("to-be-ended", context);
+                saga.end();
+            });
+            FutureUtils.joinAndUnwrap(endingUnitOfWork.execute(), TIMEOUT);
+
+            // then it is deleted, unlike the created-and-ended saga above, which was never written at all
+            verify(store).deleteSaga(eq(Object.class), eq("to-be-ended"), any());
+        }
+
+        @Test
+        void anEndedNewSagaStaysInTheUnsavedSagaSetOfItsContext() {
+            // given a saga created and ended within one processing context, and one that stays active
+            UnitOfWork unitOfWork = unitOfWorkFactory.create();
+            Set<String> unsavedAfterPrepareCommit = new HashSet<>();
+            unitOfWork.runOnInvocation(context -> {
+                AnnotatedSaga<Object> ended = (AnnotatedSaga<Object>) testSubject.createInstance("ended",
+                                                                                                 Object::new,
+                                                                                                 context);
+                ended.end();
+                testSubject.createInstance("active", Object::new, context);
+                context.runOnCommit(c -> unsavedAfterPrepareCommit.addAll(testSubject.unsavedSagaResource(c)));
+            });
+
+            // when
+            FutureUtils.joinAndUnwrap(unitOfWork.execute(), TIMEOUT);
+
+            // then only the active one was cleared. doCreateInstance removes the identifier inside its
+            // "if (saga.isActive())" branch, where doLoad removes it unconditionally, so an ended new saga keeps
+            // its entry for the rest of the context.
+            assertEquals(singleton("ended"), unsavedAfterPrepareCommit);
+        }
+
+        @Test
+        void loadingAnUnknownSagaAsksTheStoreEveryTime() {
+            // given a context in which an unknown identifier is loaded twice
+            UnitOfWork unitOfWork = unitOfWorkFactory.create();
+            unitOfWork.runOnInvocation(context -> {
+                assertNull(testSubject.load("no-such-saga", context));
+                assertNull(testSubject.load("no-such-saga", context));
+            });
+
+            // when
+            FutureUtils.joinAndUnwrap(unitOfWork.execute(), TIMEOUT);
+
+            // then the miss is not remembered: computeIfAbsent does not store a null, so each call hits the store
+            verify(store, times(2)).loadSaga(eq(Object.class), eq("no-such-saga"));
+        }
+
+        @Test
+        void deletingASagaPassesTheAssociationsItStillHasAndTheOnesItLost() {
+            // given a stored saga associated with "first"
+            AssociationValue first = new AssociationValue("test", "first");
+            AssociationValue second = new AssociationValue("test", "second");
+            UnitOfWork creatingUnitOfWork = unitOfWorkFactory.create();
+            creatingUnitOfWork.runOnInvocation(context -> {
+                AnnotatedSaga<Object> saga = (AnnotatedSaga<Object>) testSubject.createInstance("re-associated",
+                                                                                                 Object::new,
+                                                                                                 context);
+                saga.associateWith(first);
+            });
+            FutureUtils.joinAndUnwrap(creatingUnitOfWork.execute(), TIMEOUT);
+
+            // when it swaps its association and ends
+            UnitOfWork endingUnitOfWork = unitOfWorkFactory.create();
+            endingUnitOfWork.runOnInvocation(context -> {
+                AnnotatedSaga<Object> saga = (AnnotatedSaga<Object>) testSubject.load("re-associated", context);
+                saga.removeAssociationWith(first);
+                saga.associateWith(second);
+                saga.end();
+            });
+            FutureUtils.joinAndUnwrap(endingUnitOfWork.execute(), TIMEOUT);
+
+            // then the delete cleans up both, so the removed association cannot outlive the saga
+            ArgumentCaptor<Set<AssociationValue>> deleted = ArgumentCaptor.forClass(Set.class);
+            verify(store).deleteSaga(eq(Object.class), eq("re-associated"), deleted.capture());
+            assertEquals(Set.of(first, second), deleted.getValue());
+        }
+
+        @Test
+        void findReportsASagaThatIsBothManagedAndStoredOnlyOnce() {
+            // given three stored sagas sharing an association value, created out of order
+            AssociationValue shared = new AssociationValue("test", "shared");
+            UnitOfWork creatingUnitOfWork = unitOfWorkFactory.create();
+            creatingUnitOfWork.runOnInvocation(context -> {
+                for (String identifier : new String[]{"c", "a", "b"}) {
+                    AnnotatedSaga<Object> saga = (AnnotatedSaga<Object>) testSubject.createInstance(identifier,
+                                                                                                    Object::new,
+                                                                                                    context);
+                    saga.associateWith(shared);
+                }
+            });
+            FutureUtils.joinAndUnwrap(creatingUnitOfWork.execute(), TIMEOUT);
+
+            // when one of them is also managed in the current context, so it is both in the map and in the store
+            UnitOfWork unitOfWork = unitOfWorkFactory.create();
+            Set<String> found = FutureUtils.joinAndUnwrap(
+                    unitOfWork.executeWithResult(context -> {
+                        testSubject.load("b", context);
+                        return CompletableFuture.completedFuture(testSubject.find(shared, context));
+                    }),
+                    TIMEOUT
+            );
+
+            // then it is reported once rather than twice, and the identifiers come back in the order of the TreeSet
+            // the repository merges them into
+            assertIterableEquals(List.of("a", "b", "c"), found);
+        }
+
+        @Test
+        void aFailingSagaFactoryIsReportedAsASagaCreationException() {
+            // given a factory that fails
+            UnitOfWork unitOfWork = unitOfWorkFactory.create();
+            IllegalArgumentException failure = new IllegalArgumentException("no saga for you");
+
+            // when creating an instance with it
+            unitOfWork.runOnInvocation(context -> {
+                SagaCreationException thrown = assertThrows(
+                        SagaCreationException.class,
+                        () -> testSubject.createInstance("never-created", () -> {
+                            throw failure;
+                        }, context)
+                );
+
+                // then the original failure is wrapped rather than propagated
+                assertSame(failure, thrown.getCause());
+            });
+
+            FutureUtils.joinAndUnwrap(unitOfWork.execute(), TIMEOUT);
+        }
     }
 
     private static void awaitOrFail(CountDownLatch latch) {
