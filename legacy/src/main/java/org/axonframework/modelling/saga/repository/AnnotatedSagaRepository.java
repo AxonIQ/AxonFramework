@@ -24,6 +24,7 @@ import org.axonframework.messaging.core.interception.annotation.MessageHandlerIn
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
 import org.axonframework.messaging.core.Context;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.core.unitofwork.ProcessingLifecycle;
 import org.axonframework.modelling.saga.AnnotatedSaga;
 import org.axonframework.modelling.saga.AssociationValue;
 import org.axonframework.modelling.saga.ResourceInjector;
@@ -50,20 +51,35 @@ import static org.axonframework.common.BuilderUtils.assertNonNull;
  * Will take care of the uniqueness of {@link Saga} instances in the JVM. That means it will prevent multiple instances
  * of the same conceptual Saga (i.e. with same identifier) to exist within the JVM.
  * <p>
- * A Saga loaded or created here is written back to the {@link SagaStore} during the
- * {@link org.axonframework.messaging.core.unitofwork.ProcessingLifecycle.DefaultPhases#PREPARE_COMMIT PREPARE_COMMIT}
- * phase of the {@link ProcessingContext} it was requested in, which is what makes the write part of the caller's
- * transaction. Registering for a phase that has already run is rejected, so a Saga cannot be loaded from within
- * {@code PREPARE_COMMIT} or later: that includes a Saga on a subscribing event processor handling events which were
- * published with a {@code ProcessingContext}, since those are delivered during that phase. Axon Framework 4 opened a
- * nested unit of work in that situation, which Axon Framework 5 has no equivalent for; the component that invokes the
- * Saga is the layer that can resolve it, and that is where it will be addressed.
+ * A Saga loaded or created here is written back to the {@link SagaStore} in the {@link #SAGA_WRITE} phase of the
+ * {@link ProcessingContext} it was requested in, which is what makes the write part of the caller's transaction.
  *
  * @param <T> generic type specifying the Saga type stored by this {@link SagaRepository}
  * @author Allard Buijze
  * @since 0.7
  */
 public class AnnotatedSagaRepository<T> extends LockingSagaRepository<T> {
+
+    /**
+     * The {@link ProcessingLifecycle.Phase phase} in which a Saga is written back to the {@link SagaStore}, ordered
+     * after {@link ProcessingLifecycle.DefaultPhases#PREPARE_COMMIT PREPARE_COMMIT} and before
+     * {@link ProcessingLifecycle.DefaultPhases#COMMIT COMMIT}.
+     * <p>
+     * The write has to happen after the event handler mutated the Saga, and before the caller's transaction commits.
+     * Registering it for {@code PREPARE_COMMIT} satisfies both only as long as the repository is called from an
+     * earlier phase, because a {@code ProcessingContext} rejects a registration for the phase it is already running.
+     * That rules out any Saga reached from within {@code PREPARE_COMMIT} itself, which is where a
+     * {@link org.axonframework.messaging.eventhandling.SimpleEventBus} delivers events published with a
+     * {@code ProcessingContext}, and therefore where a subscribing event processor invokes its components. Ordering
+     * the write into the gap above {@code PREPARE_COMMIT} keeps it after the handler and inside the transaction no
+     * matter which phase the repository was reached from.
+     * <p>
+     * Registered as a public constant so that surrounding code can order its own actions relative to the Saga write.
+     * Note that a {@code Phase} declaring this same {@link ProcessingLifecycle.Phase#order() order} shares a slot with
+     * it, and that a Saga reached from this phase or later cannot be written at all.
+     */
+    public static final ProcessingLifecycle.Phase SAGA_WRITE =
+            () -> ProcessingLifecycle.DefaultPhases.PREPARE_COMMIT.order() + 5_000;
 
     private final Class<T> sagaType;
     private final SagaStore<? super T> sagaStore;
@@ -126,7 +142,7 @@ public class AnnotatedSagaRepository<T> extends LockingSagaRepository<T> {
         });
 
         if (loadedSaga != null && unsavedSagaResource(context).add(sagaIdentifier)) {
-            context.runOnPrepareCommit(c -> {
+            context.runOn(SAGA_WRITE, c -> {
                 unsavedSagaResource(context).remove(sagaIdentifier);
                 commit(loadedSaga);
             });
@@ -149,7 +165,7 @@ public class AnnotatedSagaRepository<T> extends LockingSagaRepository<T> {
                                         chainedInterceptor);
 
             unsavedSagaResource(context).add(sagaIdentifier);
-            context.runOnPrepareCommit(c -> {
+            context.runOn(SAGA_WRITE, c -> {
                 if (saga.isActive()) {
                     storeSaga(saga);
                     saga.getAssociationValues().commit();
