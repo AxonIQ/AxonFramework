@@ -364,10 +364,10 @@ class SimpleEventBusTest {
             StubProcessingContext context = new StubProcessingContext();
             context.moveToPhase(DefaultPhases.COMMIT);
 
-            // when / then
+            // when / then the bus cannot register the prepare-commit hook that would deliver the events
             assertThatThrownBy(() -> testSubject.publish(context, List.of(newEvent("event1"))))
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("phase that has already passed");
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("ProcessingContext is already in phase COMMIT");
         }
     }
 
