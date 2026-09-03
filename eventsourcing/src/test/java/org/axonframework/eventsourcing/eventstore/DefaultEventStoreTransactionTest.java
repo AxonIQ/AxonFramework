@@ -45,6 +45,7 @@ import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -747,6 +748,114 @@ class DefaultEventStoreTransactionTest {
             });
             awaitSuccessfulCompletion(uow.execute());
         }
+    }
+
+    @Nested
+    class AppendingDuringPrepareCommit {
+
+        @Test
+        void aFirstEventAppendedDuringPrepareCommitIsStored() {
+            // given a unit of work whose first append happens while PREPARE_COMMIT is already running, which is
+            // where every component a SubscribingEventProcessor invokes finds itself: SimpleEventBus drains its
+            // queue in that phase, and the processor handles those events in that same context
+            var uow = aUnitOfWork();
+            uow.runOnPrepareCommit(context -> defaultEventStoreTransactionFor(context).appendEvent(eventMessage(0)));
+
+            // when
+            awaitSuccessfulCompletion(uow.execute());
+
+            // then appendEvent could attach its append step for the phase it was already in, and that step ran as
+            // a further pass of the phase
+            assertThat(sourcedPayloads(eventStorageEngine)).containsExactly("event-0");
+        }
+
+        @Test
+        void anEventAppendedByALaterPrepareCommitActionJoinsTheSameBatch() {
+            // given a first append during INVOCATION, and a second append from a prepare-commit action registered
+            // behind it, as a subscribing event handler appends after the command handler already did
+            var engine = new EagerFlushEventStorageEngine();
+            var uow = aUnitOfWork();
+            uow.runOnInvocation(context -> {
+                transactionFor(context, engine).appendEvent(eventMessage(0));
+                context.runOnPrepareCommit(c -> transactionFor(c, engine).appendEvent(eventMessage(1)));
+            });
+
+            // when
+            awaitSuccessfulCompletion(uow.execute());
+
+            // then the engine was handed both events at once, so an engine that flushes exactly what it is given
+            // stores them both. Handing over early loses the second one on such an engine, while SimpleEventBus has
+            // already delivered it to every subscriber.
+            assertThat(engine.recordedBatches).containsExactly(List.of("event-0", "event-1"));
+            assertThat(sourcedPayloads(engine)).containsExactly("event-0", "event-1");
+        }
+
+        @Test
+        void appendingOnceTheBatchWasHandedToTheStorageEngineIsRejected() {
+            // given a unit of work appending during INVOCATION, and again from a commit-phase action
+            var failure = new AtomicReference<Throwable>();
+            var uow = aUnitOfWork();
+            uow.runOnInvocation(context -> defaultEventStoreTransactionFor(context).appendEvent(eventMessage(0)));
+            uow.runOnCommit(context -> {
+                try {
+                    defaultEventStoreTransactionFor(context).appendEvent(eventMessage(1));
+                } catch (RuntimeException e) {
+                    failure.set(e);
+                }
+            });
+
+            // when
+            awaitSuccessfulCompletion(uow.execute());
+
+            // then the second append is refused rather than queued into a batch that was already handed over
+            assertThat(failure.get())
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("already handed to the EventStorageEngine");
+            assertThat(sourcedPayloads(eventStorageEngine)).containsExactly("event-0");
+        }
+    }
+
+    /**
+     * Stands in for a storage engine that flushes exactly the batch it is handed, as
+     * {@code AggregateBasedJpaEventStorageEngine} does by persisting and flushing inside {@code appendEvents}. The
+     * in-memory engine instead closes over the list it is given and re-reads it when committing, which hides a batch
+     * that was handed over too early.
+     */
+    private static class EagerFlushEventStorageEngine extends InMemoryEventStorageEngine {
+
+        private final List<List<String>> recordedBatches = new CopyOnWriteArrayList<>();
+
+        @Override
+        public CompletableFuture<AppendTransaction<?>> appendEvents(AppendCondition condition,
+                                                                    @Nullable ProcessingContext context,
+                                                                    List<TaggedEventMessage<?>> events) {
+            recordedBatches.add(events.stream().map(event -> (String) event.event().payload()).toList());
+            return super.appendEvents(condition, context, List.copyOf(events));
+        }
+    }
+
+    private List<String> sourcedPayloads(EventStorageEngine engine) {
+        var sourced = new AtomicReference<MessageStream<? extends EventMessage>>();
+        var uow = aUnitOfWork();
+        uow.runOnInvocation(context -> sourced.set(
+                transactionFor(context, engine).source(SourcingCondition.conditionFor(TEST_AGGREGATE_CRITERIA))
+        ));
+        awaitSuccessfulCompletion(uow.execute());
+
+        var payloads = new ArrayList<String>();
+        FluxUtils.of(sourced.get()).doOnNext(entry -> payloads.add((String) entry.message().payload())).blockLast();
+        return payloads;
+    }
+
+    private EventStoreTransaction transactionFor(ProcessingContext processingContext, EventStorageEngine engine) {
+        return processingContext.computeResourceIfAbsent(
+                testEventStoreTransactionKey,
+                () -> new DefaultEventStoreTransaction(
+                        engine,
+                        processingContext,
+                        event -> new GenericTaggedEventMessage<>(event, Set.of(AGGREGATE_ID_TAG))
+                )
+        );
     }
 
     private EventStoreTransaction defaultEventStoreTransactionFor(ProcessingContext processingContext) {

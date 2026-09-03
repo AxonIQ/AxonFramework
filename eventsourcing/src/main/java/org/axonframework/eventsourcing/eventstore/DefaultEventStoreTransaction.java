@@ -22,6 +22,7 @@ import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.core.Context.ResourceKey;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.core.unitofwork.ProcessingLifecycle;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.messaging.eventstreaming.Tag;
@@ -50,9 +51,11 @@ import static org.axonframework.common.ObjectUtils.getOrDefault;
  * <p>
  * While {@link #source(SourcingCondition) sourcing} it will map the {@link SourcingCondition} into an
  * {@link AppendCondition} for {@link #appendEvent(EventMessage) appending}, taking into account several sourcing
- * invocation might have occurred in the same {@link ProcessingContext}. During
- * {@link #appendEvent(EventMessage) appending} it will pass along a collection of {@link EventMessage events} to an
- * {@link EventStorageEngine} is part of the prepare commit phase of the {@link ProcessingContext}.
+ * invocation might have occurred in the same {@link ProcessingContext}. Every event that is
+ * {@link #appendEvent(EventMessage) appended} is collected, and the collection is handed to the
+ * {@link EventStorageEngine} as a single batch during the {@link Phases#APPEND_EVENTS} phase of the
+ * {@code ProcessingContext}. That phase follows prepare-commit, so a component invoked during prepare-commit can
+ * still append. Appending after it has run is rejected.
  *
  * @author Steven van Beelen
  * @author John Hendrikx
@@ -155,6 +158,14 @@ public class DefaultEventStoreTransaction implements EventStoreTransaction {
 
     @Override
     public void appendEvent(EventMessage eventMessage) {
+        if (Boolean.TRUE.equals(processingContext.getResource(prepareCommitExecuted))) {
+            throw new IllegalStateException(
+                    "Cannot append event [" + eventMessage.identifier() + "], as the events of this ProcessingContext "
+                            + "were already handed to the EventStorageEngine during the "
+                            + Phases.APPEND_EVENTS + " phase. Append events no later than the "
+                            + ProcessingLifecycle.DefaultPhases.PREPARE_COMMIT + " phase."
+            );
+        }
         List<TaggedEventMessage<?>> eventQueue = processingContext.computeResourceIfAbsent(
                 eventQueueKey,
                 () -> {
@@ -195,8 +206,20 @@ public class DefaultEventStoreTransaction implements EventStoreTransaction {
         return ObjectUtils.getOrDefault(processingContext.getResource(EntityMetamodel.CREATE_WITHOUT_LOAD), false);
     }
 
+    /**
+     * Registers the step handing every event appended within this {@link ProcessingContext} to the
+     * {@link EventStorageEngine}, as a single batch.
+     * <p>
+     * It runs in {@link Phases#APPEND_EVENTS}, the last phase before
+     * {@link ProcessingLifecycle.DefaultPhases#COMMIT COMMIT}, rather than during
+     * {@link ProcessingLifecycle.DefaultPhases#PREPARE_COMMIT PREPARE_COMMIT}, so that everything able to append has
+     * run by the time the batch is handed over. {@link org.axonframework.messaging.eventhandling.SimpleEventBus}
+     * delivers events published with a context during prepare-commit and a subscribing event processor hands them to
+     * its handlers there, so those handlers would otherwise be appending into a batch the engine already received.
+     */
     private void attachAppendEventsStep() {
-        processingContext.onPrepareCommit(
+        processingContext.on(
+                Phases.APPEND_EVENTS,
                 context -> {
                     AppendCondition appendCondition = resolveAppendCondition(context);
 
