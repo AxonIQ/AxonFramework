@@ -204,8 +204,7 @@ commands a process sends are idempotent, an event that arrives again re-dispatch
 the process catches up.
 
 What no redelivery corrects is state that survives a command that failed, because the process then skips work it
-never did. Keep the write inside the handler, where a failed command rolls it back, and out of a callback on the
-command's future, which runs on a thread with no transaction bound to it.
+never did. Keep the write inside the handler, where a failed command rolls it back.
 
 [IMPORTANT]
 ====
