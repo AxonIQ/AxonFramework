@@ -102,12 +102,12 @@ public class AnnotatedSaga<T> implements Saga<T>, SagaLifecycle {
 
     @Override
     public Set<QualifiedName> supportedEvents() {
-        throw new UnsupportedOperationException("TODO");
+        throw new UnsupportedOperationException("TODO #3728");
     }
 
     @Override
     public Object sequenceIdentifierFor(EventMessage event, ProcessingContext context) {
-        throw new UnsupportedOperationException("TODO");
+        throw new UnsupportedOperationException("TODO #3728");
     }
 
     @Override
