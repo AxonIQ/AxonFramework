@@ -91,6 +91,14 @@
             <type>test-jar</type>
             <scope>test</scope>
         </dependency>
+        <!-- EventTestUtils, for the sample events the saga repository tests handle. -->
+        <dependency>
+            <groupId>org.axonframework</groupId>
+            <artifactId>axon-messaging</artifactId>
+            <version>${project.version}</version>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.datatype</groupId>
             <artifactId>jackson-datatype-jsr310</artifactId>
