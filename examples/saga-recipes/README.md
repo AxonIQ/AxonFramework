@@ -35,7 +35,7 @@ Exactly one runs at a time, chosen with `saga.recipe`:
 
 | `saga.recipe`         | Where the process remembers                          | Package                 |
 |-----------------------|------------------------------------------------------|-------------------------|
-| `repository`          | a JPA row, committed with the tracking token          | `saga/repository`       |
+| `repository`          | a JPA row, committed with the [tracking token](https://docs.axoniq.io/axon-framework-reference/events/event-processors/streaming/#tracking_tokens) | `saga/repository`       |
 | `injectentity`        | nowhere, derived from both contexts' events           | `saga/injectentity`     |
 | `eventsourced`        | its own events, recorded through a command            | `saga/eventsourced`     |
 | `eventsourced-append` | its own events, appended from the event handler       | `saga/eventsourced`     |
@@ -84,7 +84,7 @@ sometimes be sent twice. Approving an already-approved request appends nothing a
 and "write down that I did". Recording first wedges the process permanently:
 
 - the dispatch fails
-- the token is not committed
+- the progress record is not committed
 - the event is redelivered
 - the record now says the work is done
 
