@@ -24,6 +24,15 @@ import org.axonframework.common.AxonException;
 public class SagaExecutionException extends AxonException {
 
     /**
+     * Initializes the exception using the given {@code message}.
+     *
+     * @param message the message describing the exception
+     */
+    public SagaExecutionException(String message) {
+        super(message);
+    }
+
+    /**
      * Initializes the exception using the given {@code message} and {@code cause}.
      *
      * @param message The message describing the exception

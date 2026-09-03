@@ -21,6 +21,7 @@ import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.QualifiedName;
+import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.core.interception.annotation.MessageHandlerInterceptorMemberChain;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
@@ -37,6 +38,11 @@ import java.util.function.Function;
  * a {@link SagaLifecycle}-typed parameter on its {@link SagaEventHandler @SagaEventHandler} method. This
  * {@code AnnotatedSaga} instance registers itself as the active {@link SagaLifecycle} on the {@link ProcessingContext}
  * for the duration of a single event handler invocation, so the parameter always resolves to this instance.
+ * <p>
+ * A {@link SagaEventHandler @SagaEventHandler} method must complete on the thread that invoked it. Returning a result
+ * that is not done yet fails handling with a {@link SagaExecutionException}, because the Saga is stored in the
+ * invoking thread's transaction and work continuing on another thread would fall outside it. Axon Framework 4 had no
+ * way to express an asynchronous handler at all, so nothing that worked there is refused here.
  *
  * @author Allard Buijze
  * @since 3.0
@@ -124,10 +130,38 @@ public class AnnotatedSaga<T> implements Saga<T>, SagaLifecycle {
                                                           .contains(sh.getAssociationValue(event)))
                                                   .orElse(true))
                         .findFirst()
-                        .map(handler -> chainedInterceptor.handle(event, sagaContext, sagaInstance, handler)
-                                                          .ignoreEntries()
-                                                          .cast())
+                        .map(handler -> requireCompleted(
+                                chainedInterceptor.handle(event, sagaContext, sagaInstance, handler)
+                                                  .ignoreEntries()
+                                                  .cast(),
+                                handler
+                        ))
                         .orElse(MessageStream.empty());
+    }
+
+    /**
+     * Fails handling when the given {@code result} is not done yet, meaning the handler handed work to another thread.
+     * <p>
+     * Axon Framework 4 sagas could not do this: the handler's return value was ignored, so anything asynchronous it
+     * started ran outside every unit of work and outside every transaction. Here the unit of work would await it, which
+     * looks like support but moves the Saga's store write off the thread that owns the transaction, breaking the
+     * mechanism by which a {@code SagaStore} joins it. Failing is what preserves the Axon Framework 4 contract.
+     * <p>
+     * This detects rather than prevents: the handler has already started whatever it started, and only the transaction
+     * can still be rolled back. A handler that hands work to an executor and returns {@code void} is not detectable at
+     * all, in Axon Framework 5 as much as in Axon Framework 4.
+     */
+    private MessageStream.Empty<Message> requireCompleted(MessageStream.Empty<Message> result,
+                                                          MessageHandlingMember<? super T> handler) {
+        if (result.isCompleted()) {
+            return result;
+        }
+        result.close();
+        return MessageStream.failed(new SagaExecutionException(
+                "Handler [" + handler.signature() + "] of Saga [" + sagaId + "] returned a result that is not "
+                        + "complete. A Saga event handler must complete on the thread that invoked it, since its Saga "
+                        + "is stored in that thread's transaction."
+        ));
     }
 
     /**
