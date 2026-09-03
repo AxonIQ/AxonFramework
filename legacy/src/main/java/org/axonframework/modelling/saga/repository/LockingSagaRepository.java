@@ -20,10 +20,10 @@ import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.lock.Lock;
 import org.axonframework.common.lock.LockFactory;
 import org.axonframework.common.lock.PessimisticLockFactory;
-import org.axonframework.messaging.unitofwork.CurrentUnitOfWork;
-import org.axonframework.messaging.unitofwork.LegacyUnitOfWork;
+import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.modelling.saga.Saga;
 import org.axonframework.modelling.saga.SagaRepository;
+import org.jspecify.annotations.Nullable;
 
 import java.util.function.Supplier;
 
@@ -31,6 +31,19 @@ import static org.axonframework.common.BuilderUtils.assertNonNull;
 
 /**
  * Abstract implementation of a saga repository that locks access to a saga while the saga is being operated on.
+ * <p>
+ * The lock is obtained before the saga is loaded or created and held until the {@link ProcessingContext} completes, so
+ * only one processing context at a time operates on a given saga.
+ * <p>
+ * The default {@link PessimisticLockFactory} hands out a lock owned by the thread that acquired it, which means the
+ * lock must be released on that same thread. Axon Framework 4 got that for free, because the unit of work was bound to
+ * the thread through a thread local. In Axon Framework 5 it holds when the {@code ProcessingContext} runs its
+ * completion handlers on the invoking thread, which is what a {@code TransactionManager} answering {@code true} to
+ * {@code requiresSameThreadInvocations()} arranges. Both {@code SpringTransactionManager} and
+ * {@code EntityManagerTransactionManager} do. Without one, the release can happen on another thread, the lock is never
+ * released, and the saga becomes permanently unreachable. A saga repository therefore needs a transaction manager that
+ * requires same-thread invocations, in the same way {@code JdbcSagaStore} needs a transaction-aware
+ * {@code ConnectionProvider}.
  *
  * @author Rene de Waele
  * @since 3.0
@@ -55,31 +68,31 @@ public abstract class LockingSagaRepository<T> implements SagaRepository<T> {
     /**
      * {@inheritDoc}
      * <p>
-     * This implementation locks access to sagas with the given {@code sagaIdentifier} and releases the lock in the
-     * clean-up phase of the current {@link LegacyUnitOfWork}.
+     * This implementation locks access to sagas with the given {@code sagaIdentifier} and releases the lock when the
+     * given {@code context} completes, on both commit and rollback.
      */
+    @Nullable
     @Override
-    public Saga<T> load(String sagaIdentifier) {
-        lockSagaAccess(sagaIdentifier);
-        return doLoad(sagaIdentifier);
+    public Saga<T> load(String sagaIdentifier, ProcessingContext context) {
+        lockSagaAccess(sagaIdentifier, context);
+        return doLoad(sagaIdentifier, context);
     }
 
     /**
      * {@inheritDoc}
      * <p>
-     * This implementation locks access to sagas with the given {@code sagaIdentifier} and releases the lock in the
-     * clean-up phase of the current {@link LegacyUnitOfWork}.
+     * This implementation locks access to sagas with the given {@code sagaIdentifier} and releases the lock when the
+     * given {@code context} completes, on both commit and rollback.
      */
     @Override
-    public Saga<T> createInstance(String sagaIdentifier, Supplier<T> factoryMethod) {
-        lockSagaAccess(sagaIdentifier);
-        return doCreateInstance(sagaIdentifier, factoryMethod);
+    public Saga<T> createInstance(String sagaIdentifier, Supplier<T> factoryMethod, ProcessingContext context) {
+        lockSagaAccess(sagaIdentifier, context);
+        return doCreateInstance(sagaIdentifier, factoryMethod, context);
     }
 
-    private void lockSagaAccess(String sagaIdentifier) {
-        LegacyUnitOfWork<?> unitOfWork = CurrentUnitOfWork.get();
+    private void lockSagaAccess(String sagaIdentifier, ProcessingContext context) {
         Lock lock = lockFactory.obtainLock(sagaIdentifier);
-        unitOfWork.root().onCleanup(u -> lock.release());
+        context.doFinally(c -> lock.release());
     }
 
     /**
@@ -88,9 +101,11 @@ public abstract class LockingSagaRepository<T> implements SagaRepository<T> {
      * return {@code null} in case a Saga doesn't exists, as opposed to throwing an exception.
      *
      * @param sagaIdentifier The unique identifier of the Saga to load
+     * @param context        the {@link ProcessingContext} the loaded Saga is managed in
      * @return The Saga instance, or {@code null} if no such saga exists
      */
-    protected abstract Saga<T> doLoad(String sagaIdentifier);
+    @Nullable
+    protected abstract Saga<T> doLoad(String sagaIdentifier, ProcessingContext context);
 
     /**
      * Creates a new Saga instance. The returned Saga will delegate event handling to the instance supplied by the given
@@ -98,9 +113,12 @@ public abstract class LockingSagaRepository<T> implements SagaRepository<T> {
      *
      * @param sagaIdentifier the identifier to use for the new saga instance
      * @param factoryMethod  Used to create a new Saga delegate
+     * @param context        the {@link ProcessingContext} the new Saga is managed in
      * @return a new Saga instance wrapping an instance of type {@code T}
      */
-    protected abstract Saga<T> doCreateInstance(String sagaIdentifier, Supplier<T> factoryMethod);
+    protected abstract Saga<T> doCreateInstance(String sagaIdentifier,
+                                                Supplier<T> factoryMethod,
+                                                ProcessingContext context);
 
     /**
      * Abstract Builder class to instantiate {@link LockingSagaRepository} implementations.
