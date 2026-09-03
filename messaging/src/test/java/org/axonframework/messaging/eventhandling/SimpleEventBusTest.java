@@ -532,6 +532,34 @@ class SimpleEventBusTest {
                                               "registered-work",
                                               "commit");
         }
+
+        @Test
+        void publishingOnceTheQueueWasDrainedIsRejectedRatherThanQueuedAgain() {
+            // given a context that already published, so the queue and the hook draining it both exist
+            RecordingEventListener listener = new RecordingEventListener();
+            testSubject.subscribe(listener);
+            AtomicReference<Throwable> failure = new AtomicReference<>();
+            UnitOfWork uow = unitOfWorkFactory.create();
+            uow.runOnInvocation(ctx -> testSubject.publish(ctx, List.of(newEvent("event1"))));
+            uow.runOnCommit(ctx -> {
+                try {
+                    testSubject.publish(ctx, List.of(newEvent("event2")));
+                } catch (RuntimeException e) {
+                    failure.set(e);
+                }
+            });
+
+            // when
+            FutureUtils.joinAndUnwrap(uow.execute(), TIMEOUT);
+
+            // then the late publish fails, instead of landing in a queue nothing will read again
+            assertThat(failure.get())
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("were delivered to their subscribers");
+            assertThat(listener.getReceivedEvents())
+                    .extracting(msg -> msg.type().qualifiedName().toString())
+                    .containsExactly("event1");
+        }
     }
 
     // Helper methods
