@@ -24,6 +24,8 @@ import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.modelling.saga.Saga;
 import org.axonframework.modelling.saga.SagaRepository;
 import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.function.Supplier;
 
@@ -41,14 +43,17 @@ import static org.axonframework.common.BuilderUtils.assertNonNull;
  * completion handlers on the invoking thread, which is what a {@code TransactionManager} answering {@code true} to
  * {@code requiresSameThreadInvocations()} arranges. Both {@code SpringTransactionManager} and
  * {@code EntityManagerTransactionManager} do. Without one, the release can happen on another thread, the lock is never
- * released, and the saga becomes permanently unreachable. A saga repository therefore needs a transaction manager that
- * requires same-thread invocations, in the same way {@code JdbcSagaStore} needs a transaction-aware
+ * released, and the saga becomes permanently unreachable; that failure is logged as an error naming the saga and both
+ * threads, since nothing can recover the lock at that point. A saga repository therefore needs a transaction manager
+ * that requires same-thread invocations, in the same way {@code JdbcSagaStore} needs a transaction-aware
  * {@code ConnectionProvider}.
  *
  * @author Rene de Waele
  * @since 3.0
  */
 public abstract class LockingSagaRepository<T> implements SagaRepository<T> {
+
+    private static final Logger logger = LoggerFactory.getLogger(LockingSagaRepository.class);
 
     private final LockFactory lockFactory;
 
@@ -92,7 +97,34 @@ public abstract class LockingSagaRepository<T> implements SagaRepository<T> {
 
     private void lockSagaAccess(String sagaIdentifier, ProcessingContext context) {
         Lock lock = lockFactory.obtainLock(sagaIdentifier);
-        context.doFinally(c -> lock.release());
+        Thread acquiringThread = Thread.currentThread();
+        context.doFinally(c -> releaseLock(lock, sagaIdentifier, acquiringThread));
+    }
+
+    /**
+     * Releases the given {@code lock}, reporting the saga it belongs to when that fails.
+     * <p>
+     * A {@link ProcessingContext} runs its completion handlers on its own work scheduler, which is the thread that
+     * invoked the saga only when the unit of work was configured for same-thread invocation. The lock of the default
+     * {@link PessimisticLockFactory} belongs to the thread that acquired it, so releasing it anywhere else throws and
+     * leaves the lock held. Without this, the exception is swallowed by the processing lifecycle and logged as an
+     * anonymous completion handler failure, which does not say which saga is now unreachable. Nothing here can release
+     * the lock; naming the saga and the two threads is what turns a silent hang into something diagnosable.
+     */
+    private void releaseLock(Lock lock, String sagaIdentifier, Thread acquiringThread) {
+        try {
+            lock.release();
+        } catch (RuntimeException e) {
+            logger.error(
+                    "Failed to release the lock on Saga [{}]. It was acquired on thread [{}] and released on thread "
+                            + "[{}]. The lock of the default PessimisticLockFactory belongs to the thread that "
+                            + "acquired it, so it is now held for the remainder of this JVM and this Saga can no "
+                            + "longer be loaded. A saga repository needs a unit of work that completes on the thread "
+                            + "that invoked the Saga: use a TransactionManager whose requiresSameThreadInvocations() "
+                            + "returns true, and make sure Saga event handlers complete before returning.",
+                    sagaIdentifier, acquiringThread.getName(), Thread.currentThread().getName(), e
+            );
+        }
     }
 
     /**
