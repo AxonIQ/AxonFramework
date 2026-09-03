@@ -26,14 +26,13 @@ import java.util.Set;
  * Component giving a Saga's event handler methods access to lifecycle operations, such as managing
  * {@link AssociationValue AssociationValues} and ending the Saga.
  * <p>
- * This is the {@link ProcessingContext}-scoped replacement for the Axon Framework 4 {@code SagaLifecycle}, which
- * exposed the very same operations as {@code static} methods resolved through a {@code ThreadLocal}. Axon Framework
- * does not use {@code ThreadLocal}s to make state available to message handlers; it instead consistently passes
- * around the {@link ProcessingContext}. A {@code SagaLifecycle} instance is therefore only reachable through the
- * {@code ProcessingContext} that is active while a specific Saga instance handles a specific event.
+ * A {@code SageLifecycle} is a {@link ProcessingContext}-scoped replacement for the Axon Framework 4
+ * {@code SagaLifecycle}, which exposed the very same operations as {@code static} methods resolved through a
+ * {@code ThreadLocal}. A {@code SagaLifecycle} instance is only reachable through the {@code ProcessingContext} that is
+ * active while a specific Saga instance handles a specific event.
  * <p>
- * To use this component, declare a {@code SagaLifecycle}-typed parameter on a {@link SagaEventHandler @SagaEventHandler}
- * method. The parameter is resolved automatically by the {@code SagaLifecycleParameterResolverFactory}:
+ * To access the {@code SageLifecycle}, declare a {@code SagaLifecycle}-typed parameter on a
+ * {@link SagaEventHandler @SagaEventHandler} method:
  * <pre>{@code
  * @SagaEventHandler(associationProperty = "orderId")
  * public void on(OrderShippedEvent event, SagaLifecycle lifecycle) {
@@ -44,13 +43,13 @@ import java.util.Set;
  *
  * @author Allard Buijze
  * @author Steven van Beelen
- * @since 5.4.0
+ * @since 3.0.0
  */
 public interface SagaLifecycle {
 
     /**
-     * The {@link Context.ResourceKey} under which the {@link SagaLifecycle} of the Saga instance currently handling
-     * an event is registered on the {@link ProcessingContext}.
+     * The {@link Context.ResourceKey} under which the {@link SagaLifecycle} of the Saga instance currently handling an
+     * event is registered on the {@link ProcessingContext}.
      */
     Context.ResourceKey<SagaLifecycle> RESOURCE_KEY = Context.ResourceKey.withLabel("sagaLifecycle");
 
@@ -97,16 +96,16 @@ public interface SagaLifecycle {
     }
 
     /**
-     * Registers the given {@code associationValue} with the current Saga. When the saga is committed, it can be
-     * found using the registered property. If the saga already has the given association, nothing happens.
+     * Registers the given {@code associationValue} with the current Saga. When the saga is committed, it can be found
+     * using the registered property. If the saga already has the given association, nothing happens.
      *
      * @param associationValue the association to associate this saga with
      */
     void associateWith(AssociationValue associationValue);
 
     /**
-     * Removes the given association from the current Saga. When the saga is committed, it can no longer be found
-     * using the given association value. If the given saga wasn't associated with given values, nothing happens.
+     * Removes the given association from the current Saga. When the saga is committed, it can no longer be found using
+     * the given association value. If the given saga wasn't associated with given values, nothing happens.
      *
      * @param associationKey   the key of the association value to remove from this saga
      * @param associationValue the value of the association value to remove from this saga
@@ -116,9 +115,9 @@ public interface SagaLifecycle {
     }
 
     /**
-     * Removes the given association from the current Saga. When the saga is committed, it can no longer be found
-     * using the given association value. If the given saga wasn't associated with given values, nothing happens. The
-     * number value will be converted to a string.
+     * Removes the given association from the current Saga. When the saga is committed, it can no longer be found using
+     * the given association value. If the given saga wasn't associated with given values, nothing happens. The number
+     * value will be converted to a string.
      *
      * @param associationKey   the key of the association value to remove from this saga
      * @param associationValue the value of the association value to remove from this saga
@@ -128,8 +127,8 @@ public interface SagaLifecycle {
     }
 
     /**
-     * Removes the given {@code associationValue} from the current Saga. When the saga is committed, it can no longer
-     * be found using the given association value. If the given saga wasn't associated with the given value, nothing
+     * Removes the given {@code associationValue} from the current Saga. When the saga is committed, it can no longer be
+     * found using the given association value. If the given saga wasn't associated with the given value, nothing
      * happens.
      *
      * @param associationValue the association value to remove from this saga
@@ -142,8 +141,8 @@ public interface SagaLifecycle {
     void end();
 
     /**
-     * Retrieves the {@link AssociationValue AssociationValues} that have been associated with the current Saga so
-     * far. This includes the uncommitted ones, so adding or removing an {@link AssociationValue} through
+     * Retrieves the {@link AssociationValue AssociationValues} that have been associated with the current Saga so far.
+     * This includes the uncommitted ones, so adding or removing an {@link AssociationValue} through
      * {@link #associateWith(AssociationValue)} or any other method will have an immediate effect.
      *
      * @return the {@link AssociationValue AssociationValues} that have been associated with the Saga so far
