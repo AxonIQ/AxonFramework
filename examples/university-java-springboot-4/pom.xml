@@ -30,6 +30,11 @@
     <description>Spring Boot Example application for demo and integration testing.</description>
 
     <properties>
+        <!--
+        Do not go back to 4.1.0. Combined with JPA and the Axon starter it fails to start the application
+        context, deadlocking on a circular reference between applicationTaskExecutor and Axon's
+        UnitOfWorkFactory. Spring Boot 4.1.1 resolves it.
+        -->
         <spring.boot.version>4.1.1</spring.boot.version>
         <springdoc-openapi.version>3.1.0</springdoc-openapi.version>
         <testcontainers.version>2.0.5</testcontainers.version>
