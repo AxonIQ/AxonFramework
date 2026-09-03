@@ -16,17 +16,17 @@
 
 package org.axonframework.modelling.saga.metamodel;
 
-import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
 import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.annotation.AnnotatedHandlerInspector;
 import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
 import org.axonframework.messaging.core.annotation.ClasspathParameterResolverFactory;
 import org.axonframework.messaging.core.annotation.HandlerDefinition;
-import org.axonframework.messaging.core.interception.annotation.MessageHandlerInterceptorMemberChain;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
+import org.axonframework.messaging.core.interception.annotation.MessageHandlerInterceptorMemberChain;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.modelling.saga.AssociationValue;
 import org.axonframework.modelling.saga.SagaMethodMessageHandlingMember;
 
@@ -90,8 +90,9 @@ public class AnnotationSagaMetaModelFactory implements SagaMetaModelFactory {
     @SuppressWarnings("unchecked")
     @Override
     public <T> MessageHandlerInterceptorMemberChain<T> chainedInterceptor(Class<T> sagaType) {
-        return (MessageHandlerInterceptorMemberChain<T>) interceptorRegistry.computeIfAbsent(sagaType,
-                                                                                             this::doCreateChain);
+        return (MessageHandlerInterceptorMemberChain<T>) interceptorRegistry.computeIfAbsent(
+                sagaType, this::doCreateChain
+        );
     }
 
     private <T> SagaModel<T> doCreateModel(Class<T> sagaType) {
@@ -101,9 +102,7 @@ public class AnnotationSagaMetaModelFactory implements SagaMetaModelFactory {
                                                       parameterResolverFactory,
                                                       handlerDefinition);
 
-        return new InspectedSagaModel<>(
-                handlerInspector.getHandlers(sagaType).stream().toList()
-        );
+        return new InspectedSagaModel<>(handlerInspector.getHandlers(sagaType).stream().toList());
     }
 
     private <T> MessageHandlerInterceptorMemberChain<T> doCreateChain(Class<T> sagaType) {

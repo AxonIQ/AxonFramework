@@ -86,6 +86,34 @@ public class MyInterceptingEventHandler {
 You are able inject the `ProcessingContext` in any message-handling method, so this is always available. Any code that
 uses the old `UnitOfWork` should be rewritten to put resources in this context.
 
+### SagaLifecycle
+
+The Axon Framework 4 `SagaLifecycle` was a `static` utility backed by a `ThreadLocal` (through its `Scope` base
+class), pushed onto the current thread for the duration of a single event handler invocation and popped off again
+afterward. Axon Framework 5 does not use `ThreadLocal`s, so `SagaLifecycle` in `axon-legacy` is now an **instance**,
+scoped to the `ProcessingContext` of the Saga currently handling an event, exposing the same operations
+(`associateWith`, `removeAssociationWith`, `end`, `associationValues`) as before, just non-static.
+
+To reach it, declare a `SagaLifecycle`-typed parameter on your `@SagaEventHandler` method; it is resolved
+automatically, the same way an `EventAppender` or `CommandDispatcher` parameter is:
+
+```java
+public class OrderSaga {
+
+    @SagaEventHandler(associationProperty = "orderId")
+    public void on(OrderShippedEvent event, SagaLifecycle lifecycle) {
+        lifecycle.associateWith("shipmentId", event.getShipmentId());
+        lifecycle.end();
+    }
+}
+```
+
+Old sagas that called `SagaLifecycle.associateWith(...)`, `.end()`, etc. statically from anywhere in the handler body
+need this small adjustment. The `Scope` class that backed the old `ThreadLocal` mechanism is removed entirely, since
+`SagaLifecycle` was its only remaining consumer.
+
+### SagaStore
+
 The saga stores in `axon-legacy` are an exception worth calling out, because the opposite would be a reasonable
 assumption. `SagaStore` keeps its Axon Framework 4 signatures and takes no `ProcessingContext` on any of its five
 operations, and neither `InMemorySagaStore`, `JdbcSagaStore`, `JpaSagaStore` nor `CachingSagaStore` is aware of the

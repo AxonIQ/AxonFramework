@@ -15,7 +15,8 @@
  */
 
 /**
- * This is part of a stashed module that is not actively maintained and just kept for reference.
+ * Meta-model support for describing the structure and event handling capabilities of Axon Framework 4 style
+ * annotated Sagas.
  */
 @NullMarked
 package org.axonframework.modelling.saga.metamodel;

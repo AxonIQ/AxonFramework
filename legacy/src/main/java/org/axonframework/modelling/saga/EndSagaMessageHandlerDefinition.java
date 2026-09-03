@@ -66,7 +66,7 @@ public class EndSagaMessageHandlerDefinition implements HandlerEnhancerDefinitio
         @Override
         public MessageStream<?> handle(Message message, ProcessingContext context, @Nullable T target) {
             return super.handle(message, context, target)
-                        .onComplete(SagaLifecycle::end);
+                        .onComplete(() -> SagaLifecycle.forContext(context).end());
         }
     }
 }
