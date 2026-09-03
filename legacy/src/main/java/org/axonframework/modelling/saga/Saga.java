@@ -18,17 +18,18 @@ package org.axonframework.modelling.saga;
 
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
+import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventHandlingComponent;
+import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.replay.ResetContext;
 import org.axonframework.messaging.eventhandling.replay.ResetNotSupportedException;
-import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 
 import java.util.function.Consumer;
 import java.util.function.Function;
 
 /**
- * Interface describing an implementation of a Saga. Sagas are instances that handle events and may possibly produce
- * new commands or have other side effects. Typically, Sagas are used to manage long running business transactions.
+ * Interface describing an implementation of a Saga. Sagas are instances that handle events and may possibly produce new
+ * commands or have other side effects. Typically, Sagas are used to manage long running business transactions.
  * <p/>
  * Multiple instances of a single type of Saga may exist. In that case, each Saga will be managing a different
  * transaction. Sagas need to be associated with concepts in order to receive specific events. These associations are
@@ -57,8 +58,8 @@ public interface Saga<T> extends EventHandlingComponent {
     /**
      * Execute the given {@code invocation} against the root object of this Saga instance.
      *
-     * @param invocation the function to invoke. The root object of the Saga is input to the function, the result is
-     *                   the result of the execution.
+     * @param invocation the function to invoke. The root object of the Saga is input to the function, the result is the
+     *                   result of the execution.
      * @param <R>        The type of return value expected
      * @return The result of the invocation on the Saga.
      */
@@ -78,6 +79,22 @@ public interface Saga<T> extends EventHandlingComponent {
      * @return {@code true} if this saga is active, {@code false} otherwise.
      */
     boolean isActive();
+
+    /**
+     * {@inheritDoc}
+     * <p>
+     * A single {@code Saga} instance never determines its own sequencing, as the component managing the sagas is in
+     * charge of the sequencing Hence, this method throws an {@link UnsupportedOperationException} whenever invoked.
+     *
+     * @throws UnsupportedOperationException since sequencing is dictated by the component managing the sagas, not the
+     *                                       saga itself
+     */
+    @Override
+    default Object sequenceIdentifierFor(EventMessage event, ProcessingContext context) {
+        throw new UnsupportedOperationException(
+                "Sequencing is a concern of the component managing Saga instances, not the Saga itself."
+        );
+    }
 
     @Override
     default boolean supportsReset() {

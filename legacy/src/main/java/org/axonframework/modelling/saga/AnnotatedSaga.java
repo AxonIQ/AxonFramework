@@ -106,11 +106,6 @@ public class AnnotatedSaga<T> implements Saga<T>, SagaLifecycle {
     }
 
     @Override
-    public Object sequenceIdentifierFor(EventMessage event, ProcessingContext context) {
-        throw new UnsupportedOperationException("TODO #3728");
-    }
-
-    @Override
     public MessageStream.Empty<Message> handle(EventMessage event, ProcessingContext context) {
         if (!isActive) {
             return MessageStream.empty();

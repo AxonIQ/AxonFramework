@@ -290,6 +290,18 @@ class AnnotatedSagaTest {
     }
 
     @Nested
+    class Sequencing {
+
+        @Test
+        void sequenceIdentifierForThrowsUnsupportedOperationException() {
+            var event = new GenericEventMessage(new MessageType("event"), new RegularEvent("id"));
+
+            assertThatThrownBy(() -> testSubject.sequenceIdentifierFor(event, StubProcessingContext.forMessage(event)))
+                    .isInstanceOf(UnsupportedOperationException.class);
+        }
+    }
+
+    @Nested
     class SagaLifecycleScoping {
 
         @Test
