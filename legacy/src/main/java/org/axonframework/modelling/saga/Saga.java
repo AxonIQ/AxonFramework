@@ -16,7 +16,10 @@
 
 package org.axonframework.modelling.saga;
 
+import org.axonframework.messaging.core.Message;
+import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.eventhandling.EventHandlingComponent;
+import org.axonframework.messaging.eventhandling.replay.ResetContext;
 import org.axonframework.messaging.eventhandling.replay.ResetNotSupportedException;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 
@@ -76,17 +79,14 @@ public interface Saga<T> extends EventHandlingComponent {
      */
     boolean isActive();
 
-    // TODO
-    // TODO
+    @Override
     default boolean supportsReset() {
         return false;
     }
 
-    default void prepareReset(ProcessingContext processingContext) {
-        prepareReset(null, processingContext);
-    }
-
-    default void prepareReset(Object resetContext, ProcessingContext processingContext) {
+    @Override
+    default MessageStream.Empty<Message> handle(ResetContext resetContext,
+                                                ProcessingContext context) {
         throw new ResetNotSupportedException("Sagas do not support reset");
     }
 }
