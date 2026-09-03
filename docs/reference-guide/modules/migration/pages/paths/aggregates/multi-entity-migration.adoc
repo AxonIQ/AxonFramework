@@ -1,14 +1,17 @@
 = Multi-Entity Migration
 :navtitle: Multi-Entity Migration
 
-In Domain-Driven Design (DDD), an **Aggregate** is a cluster of domain objects that can be treated as a single unit. Every aggregate has an **Aggregate Root**, which is an **Entity** that is responsible for maintaining the consistency of the entire cluster. All access to the aggregate's members is strictly through the aggregate root.
+In Domain-Driven Design (DDD), an **Aggregate** is a cluster of domain objects that can be treated as a single unit.
+Every aggregate has an **Aggregate Root**, which is an **Entity** that is responsible for maintaining the consistency of the entire cluster.
+All access to the aggregate's members is strictly through the aggregate root.
 
-In Axon Framework 4, this concept was explicitly modeled using the `@AggregateRoot` (or `@Aggregate`) annotation for the root entity, and `@AggregateMember` for any child entities. This structure enforced a clear hierarchy where the root entity acted as the primary entry point for commands and the orchestrator of state changes.
+In Axon Framework 4, this concept was explicitly modeled using the `@AggregateRoot` (or `@Aggregate`) annotation for the root entity, and `@AggregateMember` for any child entities.
+This structure enforced a clear hierarchy where the root entity acted as the primary entry point for commands and the orchestrator of state changes.
 
-However, dealing with hierarchical entity models and handling and correctly routing messages to the appropriate entity within an aggregate could become complex, especially in scenarios involving multiple child entities. This was one main reason for Axon Framework 5 towards the more flexible xref:migration:understanding-architecture-principles.adoc#moving-away-from-aggregates[Dynamic Context Boundaries (DCB)].
+However, dealing with hierarchical entity models and handling and correctly routing messages to the appropriate entity within an aggregate could become complex, especially in scenarios involving multiple child entities.
+This was one main reason for Axon Framework 5 towards the more flexible xref:migration:understanding-architecture-principles.adoc#moving-away-from-aggregates[Dynamic Context Boundaries (DCB)].
 
 Axon Framework 5 continues to support this hierarchical model but shifts the terminology towards a more generic **Entity** model, where the distinction between the "root" and "members" is expressed through `@EventSourcedEntity` and `@EntityMember`.
-
 
 == `@EntityMember` instead of `@AggregateMember`
 
@@ -25,6 +28,7 @@ Axon Framework 5::
 include::example$migration/paths/aggregates/multientitymigration/GiftCard.java[tag=gift-card-entity,indent=0]
 include::example$migration/paths/aggregates/multientitymigration/Transaction.java[tag=gift-card-transaction,indent=0]
 ----
+
 <1> `@EntityMember` replaces `@AggregateMember`.
 <2> The pattern for managing child entities in `@EventSourcingHandler` remains the same.
 <3> No specific annotation is required on the field if it's managed via the constructor or sourcing handlers.
@@ -67,13 +71,14 @@ public class Transaction {
     }
 }
 ----
+
 <1> `@AggregateMember` marks the collection of child entities.
 <2> Child entities are typically instantiated and added to the collection in an `@EventSourcingHandler`.
 <3> `@EntityId` is used to identify the child entity within the collection.
 
 ====
 
-
+Although this example shows a `List<Transaction>` field, `@EntityMember` works the same way for a single-object field (for example `private Transaction transaction;`) and for a `Map<Key,Value>` field (for example `private Map<String, Transaction> transactions;`, where the map's own key identifies each entry).
 
 == Event forwarding mode
 
@@ -96,15 +101,9 @@ include::example$migration/paths/aggregates/multientitymigration/GiftCardWithExp
 <1> `RoutingKeyEventTargetMatcherDefinition` routes events only to the child whose routing key matches a field on the event payload, preventing every child from receiving every event.
 
 There is no direct replacement for `ForwardNone`.
-If you need to suppress event forwarding entirely, do not declare `@EventSourcingHandler` methods on the child entity. Axon will offer events but nothing will handle them.
+If you need to suppress event forwarding entirely, do not declare `@EventSourcingHandler` methods on the child entity.
+Axon will offer events but nothing will handle them.
 
 == See also
 
 - xref:commands:entities/entity-hierarchies.adoc[Entity Hierarchies]: full reference for `@EntityMember`, routing key configuration, and event routing in Axon Framework 5
-
-[NOTE]
-.Maps are supported too
-====
-`@AggregateMember` on a `Map<Key,Value>` field maps directly to `@EntityMember` on the same `Map<Key,Value>` field.
-The map's own keys are preserved automatically as entries are added, evolved, or removed, so no extra identification logic is needed.
-====
