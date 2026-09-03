@@ -162,18 +162,37 @@ the configured factory to `AnnotatedSagaRepository.Builder#parameterResolverFact
 
 Two consequences of the thread local being gone are worth knowing about.
 
-**Nested units of work are gone, and one scenario is not yet covered.** Axon Framework 4 distinguished the current unit
-of work from the outermost one, because a nested unit of work ran its own prepare-commit and commit early while its
-after-commit and rollback followed the root. Axon Framework 5 has nothing nested; a branched `ProcessingContext`
-forwards every lifecycle registration and every resource to the root, which gives the same result -- one saga instance
-per processing session, written once -- without the distinction. What it cannot reproduce is registering work for a
-phase that is already running: `ProcessingContext` rejects that, where Axon Framework 4 simply appended to the phase's
-handler queue. So loading or creating a saga from within `PREPARE_COMMIT` or later now fails with an
-`IllegalStateException`. That is reachable: `SimpleEventBus` publishes events that were published with a context during
-`PREPARE_COMMIT`, and `SubscribingEventProcessor` handles them in that same context, so a saga on a subscribing
-processor meets it on its first event. A saga on a `PooledStreamingEventProcessor` is unaffected, since it is invoked
-during `INVOCATION`. The fix belongs to the component that invokes the saga, which is the only layer that knows when
-handling has finished, and it is tracked with that work.
+**Nested units of work are gone, and the saga write is ordered by a phase of its own instead.** Axon Framework 4
+distinguished the current unit of work from the outermost one, because a nested unit of work ran its own prepare-commit
+and commit early while its after-commit and rollback followed the root. Axon Framework 5 has nothing nested; a branched
+`ProcessingContext` forwards every lifecycle registration and every resource to the root, which gives the same result
+-- one saga instance per processing session, written once -- without the distinction. What it cannot reproduce is
+registering work for a phase that is already running: `ProcessingContext` rejects that, where Axon Framework 4 simply
+appended to the phase's handler queue.
+
+That matters because it is exactly what the repository would be doing. `SimpleEventBus` delivers events that were
+published with a context during `PREPARE_COMMIT`, and `SubscribingEventProcessor` handles them in that same context, so
+a saga behind a subscribing processor is reached from inside `PREPARE_COMMIT`. The repository therefore does not
+register its write for `PREPARE_COMMIT` at all. It registers for `AnnotatedSagaRepository.SAGA_WRITE`, a phase ordered
+above `PREPARE_COMMIT` and below `COMMIT`:
+
+```java
+public static final ProcessingLifecycle.Phase SAGA_WRITE =
+        () -> ProcessingLifecycle.DefaultPhases.PREPARE_COMMIT.order() + 5_000;
+```
+
+`ProcessingLifecycle.Phase` is an interface over an arbitrary order, so the gaps the default phases leave are usable.
+Ordering the write into the one above `PREPARE_COMMIT` keeps it after the handler finished mutating the saga and before
+the caller's transaction commits, whichever phase the repository was reached from. Both processors work: a
+`PooledStreamingEventProcessor` invokes its components during `INVOCATION`, a `SubscribingEventProcessor` during
+`PREPARE_COMMIT`, and both are below `SAGA_WRITE`. The constant is public so you can order your own actions relative to
+the write; note that a saga reached from `SAGA_WRITE` itself or later cannot be written.
+
+One difference in the number of writes survives, in a scenario where the stored result is the same either way. Axon
+Framework 4's nested unit of work carried its own unsaved-saga bookkeeping, so looking at the same saga again from
+inside a nested unit of work made the repository treat it as unsaved and schedule a second write, giving an insert
+followed by an update. Axon Framework 5 shares that bookkeeping with the root and orders the single write after every
+`PREPARE_COMMIT` action, so it writes once, carrying everything the saga accumulated in the meantime.
 
 **A saga event handler must complete on the thread that invoked it.** Axon Framework 4 could not express anything else:
 it invoked the handler and ignored its return value, so an asynchronous result was dropped and never took part in a

@@ -39,6 +39,7 @@ import org.junit.jupiter.api.*;
 import org.mockito.*;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -120,21 +121,41 @@ class AnnotatedSagaRepositoryTest {
         verify(store).insertSaga(eq(Object.class), any(), any(), anySet());
     }
 
+    /**
+     * Ported from Axon Framework 4's {@code loadedFromNestedUnitOfWorkAfterCreateAndStore}, and the one place in this
+     * repository where the outcome differs from Axon Framework 4. The difference is in how often the Saga is written,
+     * not in what ends up stored.
+     * <p>
+     * Axon Framework 4 had a nested unit of work: {@code DefaultUnitOfWork.startAndGet(null)} called while
+     * another unit of work was on the {@code CurrentUnitOfWork} thread-local adopted that one as its parent. The child
+     * had its own phase timeline and its own resources, and committing it ran its {@code PREPARE_COMMIT} and
+     * {@code COMMIT} immediately rather than waiting for the parent; only its {@code AFTER_COMMIT} was deferred up the
+     * ancestor chain, and its rollback was wired to the parent's. That is what the original test built at
+     * prepare-commit time, and it produced two writes:
+     * <ol>
+     *     <li>the repository's own action, registered when the Saga was created, inserted it with the one association
+     *     value it had at that point;</li>
+     *     <li>the nested unit of work then loaded the Saga again. Because the unsaved-Saga bookkeeping lives in the
+     *     unit of work's resources, and the child had a fresh set, the repository treated it as unsaved and scheduled
+     *     a second write on the child. Committing the child ran it right away, as an update.</li>
+     * </ol>
+     * Axon Framework 5 has no nesting. A {@code ProcessingContext} is one flat phase timeline, and a deeper scope
+     * (see {@link #loadedFromBranchedContextAfterCreate()}) shares its resources with the root rather than starting
+     * fresh ones. Two consequences meet here. The second {@code load} finds the identifier still in the unsaved set,
+     * so it schedules nothing extra, and the single write it did schedule is ordered after every
+     * {@code PREPARE_COMMIT} action, so by the time it runs the Saga already carries both association values. One
+     * insert, no update, and the same stored result Axon Framework 4 arrived at in two steps.
+     */
     @Test
-    @Disabled("Fails with \"Failed to register handler in phase PREPARE_COMMIT (20000). ProcessingContext is already "
-            + "in phase PREPARE_COMMIT (20000).\" Axon Framework 4 opened a nested unit of work here, whose "
-            + "prepare-commit ran immediately. The repository cannot reproduce that: the save has to run after the "
-            + "handler mutated the saga, and only the component invoking the saga knows when that is. Kept in its "
-            + "Axon Framework 4 form so it turns green once that component resolves it.")
-    void loadedFromNestedUnitOfWorkAfterCreateAndStore() {
+    void loadingAgainAfterCreateWritesTheSagaOnceWithEverythingItAccumulated() {
         UnitOfWork unitOfWork = unitOfWorkFactory.create();
         unitOfWork.runOnInvocation(context -> {
             Saga<Object> saga = testSubject.createInstance(IdentifierFactory.getInstance().generateIdentifier(),
                                                            Object::new,
                                                            context);
             saga.getAssociationValues().add(new AssociationValue("test", "value"));
-            // Registered from within the invocation, so it runs after the repository's own prepare-commit action,
-            // which is the order Axon Framework 4 had: the saga was inserted, and only then loaded again.
+            // Stands in for the nested unit of work Axon Framework 4 opened here: a second look at the same Saga,
+            // from a later point in the same processing session.
             context.runOnPrepareCommit(c -> {
                 Saga<Object> saga1 = testSubject.load(saga.getSagaIdentifier(), c);
                 saga1.getAssociationValues().add(new AssociationValue("second", "value"));
@@ -143,13 +164,35 @@ class AnnotatedSagaRepositoryTest {
 
         FutureUtils.joinAndUnwrap(unitOfWork.execute(), TIMEOUT);
 
-        InOrder inOrder = inOrder(store);
         Set<AssociationValue> associationValues = new HashSet<>();
         associationValues.add(new AssociationValue("test", "value"));
         associationValues.add(new AssociationValue("second", "value"));
-        inOrder.verify(store).insertSaga(eq(Object.class), any(), any(), eq(associationValues));
-        inOrder.verify(store).updateSaga(eq(Object.class), any(), any(), any());
-        inOrder.verifyNoMoreInteractions();
+        verify(store).insertSaga(eq(Object.class), any(), any(), eq(associationValues));
+        verify(store, never()).updateSaga(any(), any(), any(), any());
+        verifyNoMoreInteractions(store);
+    }
+
+    @Test
+    void theSagaIsWrittenAfterEveryPrepareCommitActionAndBeforeTheContextCommits() {
+        // given a context whose other work is spread across the phases around the write
+        List<String> order = new ArrayList<>();
+        UnitOfWork unitOfWork = unitOfWorkFactory.create();
+        unitOfWork.runOnInvocation(context -> {
+            testSubject.createInstance("write-phase", Object::new, context);
+            order.add("invocation");
+        });
+        unitOfWork.runOnPrepareCommit(context -> order.add("prepare-commit"));
+        unitOfWork.runOnCommit(context -> order.add("commit"));
+        doAnswer(invocation -> {
+            order.add("saga-inserted");
+            return null;
+        }).when(store).insertSaga(any(), any(), any(), any());
+
+        // when
+        FutureUtils.joinAndUnwrap(unitOfWork.execute(), TIMEOUT);
+
+        // then the write sees a Saga the handler is done with, and is still covered by whatever commits at COMMIT
+        assertIterableEquals(List.of("invocation", "prepare-commit", "saga-inserted", "commit"), order);
     }
 
     @Test
