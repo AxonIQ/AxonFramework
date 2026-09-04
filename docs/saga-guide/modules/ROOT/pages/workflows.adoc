@@ -11,7 +11,7 @@ top to bottom. The machinery that lets it survive a restart is provided rather t
 as a flow avoids the state-management concerns the other pages cover.
 
 The other approaches exist for cases where the reaction to events is not a single flow. A handful of independent
-reactions is better modelled as a handful of independent reactions; forcing them into one method gives them a centre
+reactions is better modelled as a handful of independent reactions; forcing them into one method gives them a center
 they do not need. Use this page when the process genuinely is one flow.
 
 [NOTE]
@@ -60,7 +60,7 @@ easier and stays easier, and the gap widens with every step.
 
 The deciding factor against a workflow is that the process is not a single flow. If what you have is a set of
 reactions that happen to share a subject, xref::vertical-slices.adoc[vertical slices] keep them independent; a
-workflow would give them a centre they do not need. That decision is about the shape of the work, not about the
+workflow would give them a center they do not need. That decision is about the shape of the work, not about the
 framework you are on.
 
 A preview dependency has to be acceptable in your build, and production use needs a licence. Neither affects trying
@@ -76,7 +76,7 @@ The other approaches differ in where the process lives and how it keeps its stat
 reconstructs the flow*.
 
 A process written as
-xref::vertical-slices.adoc[vertical slices] is the furthest from a workflow, because it has no centre. Converting
+xref::vertical-slices.adoc[vertical slices] is the furthest from a workflow, because it has no center. Converting
 it later means gathering the slices back into one flow. A process written as
 xref::state-from-process-events.adoc[state from its own events] is the closest, because it already records its own
 progress as facts. That is much the same information a workflow persists on your behalf.
