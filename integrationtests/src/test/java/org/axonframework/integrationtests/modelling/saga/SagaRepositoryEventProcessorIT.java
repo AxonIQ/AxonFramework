@@ -35,11 +35,14 @@ import org.axonframework.messaging.eventhandling.processing.streaming.pooled.Poo
 import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorConfiguration;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.inmemory.InMemoryTokenStore;
 import org.axonframework.messaging.eventhandling.processing.subscribing.SubscribingEventProcessor;
+import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.subscribing.SubscribingEventProcessorConfiguration;
 import org.axonframework.modelling.saga.AnnotatedSagaManager;
 import org.axonframework.modelling.saga.AssociationValue;
 import org.axonframework.modelling.saga.AssociationValues;
+import org.axonframework.modelling.saga.EndSaga;
 import org.axonframework.modelling.saga.SagaEventHandler;
+import org.axonframework.modelling.saga.SagaLifecycle;
 import org.axonframework.modelling.saga.StartSaga;
 import org.axonframework.modelling.saga.repository.AnnotatedSagaRepository;
 import org.axonframework.modelling.saga.repository.SagaStore;
@@ -166,6 +169,160 @@ class SagaRepositoryEventProcessorIT {
         }
     }
 
+    /**
+     * Segment ownership only exists once two work packages run against the same store, so it is out of reach of a unit
+     * test. It is also the part Axon Framework 5 changed most: admission moved from a check that ignored the
+     * {@code Segment} to a sequence identifier that decides it, while ownership stayed with the saga identifier.
+     * <p>
+     * The events here are chosen so the two association values of one saga hash into <b>different</b> segments, which
+     * is the case where a sequence identifier derived from the event would send the follow-up event to a segment that
+     * does not own the saga, and the owning segment would never be offered it.
+     */
+    @Nested
+    class AcrossTwoSegments {
+
+        private PooledStreamingEventProcessor processor;
+        private AsyncInMemoryStreamableEventSource eventSource;
+        private ScheduledExecutorService coordinatorExecutor;
+        private ScheduledExecutorService workerExecutor;
+
+        @BeforeEach
+        void createEventSource() {
+            eventSource = new AsyncInMemoryStreamableEventSource(true, true);
+        }
+
+        /**
+         * Starts the processor once the events are already on the stream. A work package processes its segment's
+         * events in order, so a saga is created by the event that starts it before the follow-up event reaches the
+         * same segment, whichever segment ends up owning it.
+         */
+        private void startProcessor() {
+            coordinatorExecutor = Executors.newScheduledThreadPool(1);
+            workerExecutor = Executors.newScheduledThreadPool(4);
+            processor = new PooledStreamingEventProcessor(
+                    "saga-processor",
+                    List.of(sagaComponent),
+                    new PooledStreamingEventProcessorConfiguration(
+                            new EventProcessorConfiguration("saga-processor", null)
+                    )
+                            .eventSource(eventSource)
+                            .unitOfWorkFactory(unitOfWorkFactory)
+                            .tokenStore(new InMemoryTokenStore())
+                            .coordinatorExecutor(coordinatorExecutor)
+                            .workerExecutor(workerExecutor)
+                            .initialSegmentCount(2)
+            );
+            FutureUtils.joinAndUnwrap(processor.start(), TIMEOUT);
+        }
+
+        @AfterEach
+        void tearDown() {
+            if (processor != null) {
+                FutureUtils.joinAndUnwrap(processor.shutdown(), TIMEOUT);
+            }
+            if (coordinatorExecutor != null) {
+                coordinatorExecutor.shutdownNow();
+            }
+            if (workerExecutor != null) {
+                workerExecutor.shutdownNow();
+            }
+        }
+
+        @Test
+        void aSagaCreatedInOneSegmentStillReceivesAnEventAssociatedByAnotherValue() {
+            // given an order whose two association values belong to different segments
+            String orderId = anOrderWhoseAssociationValuesSplitAcrossSegments();
+            AssociationValue shipment = new AssociationValue("shipmentId", shipmentIdFor(orderId));
+            eventSource.publishMessage(orderPlaced(orderId));
+
+            // when the follow-up event carries only the second association value
+            eventSource.publishMessage(orderShipped(shipmentIdFor(orderId)));
+            startProcessor();
+
+            // then the segment owning the saga handled it, exactly once, although the association value it arrived
+            // under belongs to the other segment
+            await().atMost(TIMEOUT)
+                   .untilAsserted(() -> assertThat(sagaFor(shipment).getShippedCount()).isEqualTo(1));
+        }
+
+        @Test
+        void twoSagasWithDifferentAssociationValuesLandInDifferentSegments() {
+            // given two orders claimed by different segments
+            Segment[] segments = Segment.ROOT_SEGMENT.split();
+            String firstOrderId = anOrderClaimedBy(segments[0]);
+            String secondOrderId = anOrderClaimedBy(segments[1]);
+
+            // when
+            eventSource.publishMessage(orderPlaced(firstOrderId));
+            eventSource.publishMessage(orderPlaced(secondOrderId));
+            startProcessor();
+
+            // then each is created once, by the single segment matching its initial association value
+            await().atMost(TIMEOUT).untilAsserted(() -> {
+                assertThat(sagaStore.findSagas(OrderSaga.class, orderAssociation(firstOrderId))).hasSize(1);
+                assertThat(sagaStore.findSagas(OrderSaga.class, orderAssociation(secondOrderId))).hasSize(1);
+            });
+            assertThat(segments[0].matches(sagaIdFor(orderAssociation(firstOrderId)))).isTrue();
+            assertThat(segments[1].matches(sagaIdFor(orderAssociation(secondOrderId)))).isTrue();
+        }
+
+        @Test
+        void theSagaEndsAndIsDeletedFromTheStore() {
+            // given a stored saga
+            String orderId = anOrderWhoseAssociationValuesSplitAcrossSegments();
+            AssociationValue shipment = new AssociationValue("shipmentId", shipmentIdFor(orderId));
+            eventSource.publishMessage(orderPlaced(orderId));
+
+            // when the ending event arrives, again under the association value of the other segment
+            eventSource.publishMessage(orderCompleted(shipmentIdFor(orderId)));
+            startProcessor();
+
+            // then
+            await().atMost(TIMEOUT).untilAsserted(() -> assertThat(sagaStore.findSagas(OrderSaga.class, shipment))
+                    .isEmpty());
+        }
+
+        private OrderSaga sagaFor(AssociationValue associationValue) {
+            Set<String> sagaIds = sagaStore.findSagas(OrderSaga.class, associationValue);
+            assertThat(sagaIds).hasSize(1);
+            return sagaStore.loadSaga(OrderSaga.class, sagaIds.iterator().next()).saga();
+        }
+
+        private String sagaIdFor(AssociationValue associationValue) {
+            return sagaStore.findSagas(OrderSaga.class, associationValue).iterator().next();
+        }
+    }
+
+    private static AssociationValue orderAssociation(String orderId) {
+        return new AssociationValue("orderId", orderId);
+    }
+
+    /**
+     * Finds an order whose {@code orderId} and {@code shipmentId} association values hash into different segments,
+     * which is what makes the follow-up event a genuine test of cross-segment delivery rather than a coincidence.
+     */
+    private static String anOrderWhoseAssociationValuesSplitAcrossSegments() {
+        Segment first = Segment.ROOT_SEGMENT.split()[0];
+        for (int i = 0; i < 10_000; i++) {
+            String orderId = "order-" + i;
+            AssociationValue shipment = new AssociationValue("shipmentId", shipmentIdFor(orderId));
+            if (first.matches(orderAssociation(orderId)) != first.matches(shipment)) {
+                return orderId;
+            }
+        }
+        throw new IllegalStateException("No order found whose association values land in different segments.");
+    }
+
+    private static String anOrderClaimedBy(Segment segment) {
+        for (int i = 0; i < 10_000; i++) {
+            String orderId = "order-" + i;
+            if (segment.matches(orderAssociation(orderId))) {
+                return orderId;
+            }
+        }
+        throw new IllegalStateException("No order found whose association value lands in segment " + segment);
+    }
+
     @Nested
     class BehindASubscribingEventProcessor {
 
@@ -267,17 +424,55 @@ class SagaRepositoryEventProcessorIT {
 
     }
 
+    private static EventMessage orderShipped(String shipmentId) {
+        return new GenericEventMessage(new MessageType(OrderShipped.class), new OrderShipped(shipmentId));
+    }
+
+    private static EventMessage orderCompleted(String shipmentId) {
+        return new GenericEventMessage(new MessageType(OrderCompleted.class), new OrderCompleted(shipmentId));
+    }
+
+    private static String shipmentIdFor(String orderId) {
+        return "shipment-of-" + orderId;
+    }
+
+    public record OrderShipped(String shipmentId) {
+
+    }
+
+    public record OrderCompleted(String shipmentId) {
+
+    }
+
     /**
-     * An ordinary Axon Framework 4 saga: a starting handler associated by a property of the event. The manager derives
-     * its identifier itself, so the store is asserted on the association value rather than on a caller-chosen id.
+     * An ordinary Axon Framework 4 saga: a starting handler associated by a property of the event, which then
+     * associates itself with a second value, as a saga tracking a longer process does. The manager derives the saga
+     * identifier itself, so the store is asserted on the association values rather than on a caller-chosen id.
      */
     @SuppressWarnings("unused")
     public static class OrderSaga {
 
+        private int shippedCount = 0;
+
         @StartSaga
         @SagaEventHandler(associationProperty = "orderId")
-        public void on(OrderPlaced event) {
-            // Associating and storing the saga is the whole point here; the saga itself has nothing else to do.
+        public void on(OrderPlaced event, SagaLifecycle lifecycle) {
+            lifecycle.associateWith("shipmentId", shipmentIdFor(event.orderId()));
+        }
+
+        @SagaEventHandler(associationProperty = "shipmentId")
+        public void on(OrderShipped event) {
+            shippedCount++;
+        }
+
+        @EndSaga
+        @SagaEventHandler(associationProperty = "shipmentId")
+        public void on(OrderCompleted event) {
+            // Ending the saga is the whole point here.
+        }
+
+        public int getShippedCount() {
+            return shippedCount;
         }
     }
 
