@@ -65,13 +65,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
 /**
- * Shows that an {@code axon-legacy} saga works behind either event processor, and that the write its repository
- * schedules stays inside the caller's transaction in both cases.
+ * Shows that an {@code axon-legacy} saga is processed correctly behind either event processor: that the write its
+ * repository schedules stays inside the caller's transaction, and that a saga spanning two segments is handled by the
+ * one segment that owns it.
  * <p>
  * The component under test is a real {@link AnnotatedSagaManager} over an annotated saga type, so these are
  * guarantees about the component an application actually registers rather than about a stand-in that reached the
  * repository on its behalf. The manager derives the saga identifier itself, which is why the store is asserted on the
- * association value rather than on an identifier the test chose.
+ * association values rather than on an identifier the test chose.
  * <p>
  * {@link AnnotatedSagaRepository} writes the saga in the {@link AnnotatedSagaRepository#WRITE_SAGA} phase of the
  * {@link org.axonframework.messaging.core.unitofwork.ProcessingContext} it was called in. That phase is ordered above
@@ -90,7 +91,7 @@ import static org.awaitility.Awaitility.await;
  *
  * @author Mateusz Nowak
  */
-class SagaRepositoryEventProcessorIT {
+class SagaEventProcessingIT {
 
     private static final Duration TIMEOUT = Duration.ofSeconds(10);
     private static final AssociationValue ORDER_1 = new AssociationValue("orderId", "order-1");
