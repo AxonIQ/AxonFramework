@@ -25,6 +25,7 @@ import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.ScopeAware;
 import org.axonframework.messaging.core.ScopeDescriptor;
+import org.axonframework.messaging.core.sequencing.SequencingPolicy;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventHandlingComponent;
 import org.axonframework.messaging.eventhandling.EventMessage;
@@ -233,10 +234,34 @@ public abstract class AbstractSagaManager<T> implements EventHandlingComponent, 
         return sagaType;
     }
 
-    @Override // TODO figure out if this suffices
+    /**
+     * {@inheritDoc}
+     * <p>
+     * Always the {@link SequencingPolicy#BROADCAST} sentinel, so every {@link Segment} of an {@code EventProcessor} is
+     * offered every event this Saga type handles. A Saga manager is never segment-routed by the event: which
+     * {@code Segment} owns a Saga follows from the Saga's identifier, which is only known after the association lookup
+     * in {@link #handle(EventMessage, ProcessingContext)}, and that lookup needs a {@link SagaRepository} and a unit of
+     * work that do not exist while an event is merely being scheduled. Axon Framework 4 reached the same arrangement
+     * from the other side, by answering its own admission check without consulting the {@code Segment} at all.
+     * <p>
+     * Deriving the identifier from the event instead would route each event to a single {@code Segment}, and that
+     * {@code Segment} need not be the one owning the Saga. A Saga that associates with a second value is enough to
+     * break it: the follow-up event carrying that value hashes elsewhere, the owning {@code Segment} is never offered
+     * it, and the {@code Segment} that is offered it filters the Saga out again by identifier. The event is dropped
+     * with nothing logged.
+     * <p>
+     * Broadcasting does not mean a Saga handles an event more than once. A {@code TokenStore} claim makes a
+     * {@code Segment} live on exactly one node, {@link #matchesSegment(Segment, String)} lets only the {@code Segment}
+     * owning the Saga identifier invoke it, and creation is claimed by the single {@code Segment} matching the initial
+     * {@link AssociationValue}. Two limits are inherited from Axon Framework 4 rather than introduced here: a
+     * subscribing {@code EventProcessor} has no segments and no token store, so every node falls back to
+     * {@link Segment#ROOT_SEGMENT} and starts its own Saga; and a {@link SagaStore} is keyed on the Saga identifier
+     * alone, with no uniqueness constraint over association values, so segment ownership is the only guard rather than
+     * a last line of defence at the storage layer.
+     */
+    @Override
     public Object sequenceIdentifierFor(EventMessage event, ProcessingContext context) {
-        Set<AssociationValue> associationValues = extractAssociationValues(event, context);
-        return associationValues.isEmpty() ? event.identifier() : associationValues.iterator().next();
+        return SequencingPolicy.BROADCAST;
     }
 
     @Override

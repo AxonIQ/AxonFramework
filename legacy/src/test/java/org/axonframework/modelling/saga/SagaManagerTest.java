@@ -20,6 +20,7 @@ import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.QualifiedName;
+import org.axonframework.messaging.core.sequencing.SequencingPolicy;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
@@ -307,6 +308,18 @@ class SagaManagerTest {
         testSubject.handle(event, contextFor(event, matchesValueSegment));
         verify(mockSagaRepository, never()).createInstance(any(), any(), any());
         verify(mockSaga1).handle(event, contextForIdSegment);
+    }
+
+    @Test
+    void sequenceIdentifierForIsTheBroadcastSentinel() {
+        EventMessage event = new GenericEventMessage(new MessageType("event"), new Object());
+
+        // Identity, not equality: the sentinel is recognized by reference, which is what stops an association value
+        // that merely reads like it from being treated as a broadcast
+        assertSame(
+                SequencingPolicy.BROADCAST,
+                testSubject.sequenceIdentifierFor(event, StubProcessingContext.forMessage(event))
+        );
     }
 
     private ProcessingContext contextFor(EventMessage event, Segment segment) {
