@@ -137,13 +137,6 @@ public class AnnotatedSaga<T> implements Saga<T>, SagaLifecycle {
     }
 
     /**
-     * Returns the handler this Saga instance would invoke for the given {@code event}, being the first handler for it
-     * whose {@link AssociationValue} this instance holds.
-     * <p>
-     * A handler that is not a {@link SagaMethodMessageHandlingMember} resolves no association value at all and is
-     * therefore never filtered out, which is how a plain event handler declared on a Saga keeps working.
-     */
-    /**
      * Returns the given {@code context} with this Saga registered as the active {@link SagaLifecycle}, which is what a
      * handler declaring a {@code SagaLifecycle} parameter resolves against.
      */
@@ -151,6 +144,13 @@ public class AnnotatedSaga<T> implements Saga<T>, SagaLifecycle {
         return context.withResource(SagaLifecycle.RESOURCE_KEY, this);
     }
 
+    /**
+     * Returns the handler this Saga instance would invoke for the given {@code event}, being the first handler for it
+     * whose {@link AssociationValue} this instance holds.
+     * <p>
+     * A handler that is not a {@link SagaMethodMessageHandlingMember} resolves no association value at all and is
+     * therefore never filtered out, which is how a plain event handler declared on a Saga keeps working.
+     */
     private Optional<MessageHandlingMember<? super T>> matchingHandler(EventMessage event, ProcessingContext context) {
         return metaModel.findHandlerMethods(event, context)
                         .stream()
