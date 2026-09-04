@@ -51,7 +51,7 @@ import static org.axonframework.common.BuilderUtils.assertNonNull;
  * Will take care of the uniqueness of {@link Saga} instances in the JVM. That means it will prevent multiple instances
  * of the same conceptual Saga (i.e. with same identifier) to exist within the JVM.
  * <p>
- * A Saga loaded or created here is written back to the {@link SagaStore} in the {@link #SAGA_WRITE} phase of the
+ * A Saga loaded or created here is written back to the {@link SagaStore} in the {@link #WRITE_SAGA} phase of the
  * {@link ProcessingContext} it was requested in, which is what makes the write part of the caller's transaction.
  *
  * @param <T> generic type specifying the Saga type stored by this {@link SagaRepository}
@@ -78,7 +78,7 @@ public class AnnotatedSagaRepository<T> extends LockingSagaRepository<T> {
      * Note that a {@code Phase} declaring this same {@link ProcessingLifecycle.Phase#order() order} shares a slot with
      * it, and that a Saga reached from this phase or later cannot be written at all.
      */
-    public static final ProcessingLifecycle.Phase SAGA_WRITE =
+    public static final ProcessingLifecycle.Phase WRITE_SAGA =
             () -> ProcessingLifecycle.DefaultPhases.PREPARE_COMMIT.order() + 5_000;
 
     private final Class<T> sagaType;
@@ -142,7 +142,7 @@ public class AnnotatedSagaRepository<T> extends LockingSagaRepository<T> {
         });
 
         if (loadedSaga != null && unsavedSagaResource(context).add(sagaIdentifier)) {
-            context.runOn(SAGA_WRITE, c -> {
+            context.runOn(WRITE_SAGA, c -> {
                 unsavedSagaResource(context).remove(sagaIdentifier);
                 commit(loadedSaga);
             });
@@ -165,7 +165,7 @@ public class AnnotatedSagaRepository<T> extends LockingSagaRepository<T> {
                                         chainedInterceptor);
 
             unsavedSagaResource(context).add(sagaIdentifier);
-            context.runOn(SAGA_WRITE, c -> {
+            context.runOn(WRITE_SAGA, c -> {
                 if (saga.isActive()) {
                     storeSaga(saga);
                     saga.getAssociationValues().commit();

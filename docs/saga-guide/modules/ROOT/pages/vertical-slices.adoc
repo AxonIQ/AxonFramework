@@ -1,0 +1,180 @@
+= Vertical Slices
+:navtitle: Vertical slices
+:reftext: Vertical slices
+
+The other approaches keep the process in one class. This one asks whether it needs to be a thing at all.
+
+Often the answer is no. What looks like a saga is a handful of independent reactions, each of the form "when this
+happens, do that". In Vertical Slice Architecture each is a folder, and nothing outside it needs to know it exists. If
+you model with Event Modelling you will recognize these as automation slices, drawn between an event and the command it
+triggers. This page treats the two as mostly the same thing.
+
+== When to use it
+
+Use this if you already structure your application in vertical slices, or if you model with Event Modelling and the
+process appears on the model as a series of automations rather than as one box.
+
+It also has the best transactional profile of the approaches in this guide, which makes it applicable even when the
+process feels like one thing.
+
+[TIP]
+====
+Where xref::workflows.adoc[[.advanced-framework]#Workflows#] are available to you they remain the recommended answer, whatever
+the process looks like. This page is what to write when they are not.
+
+Among the approaches that are, start here for new processes. A process class is easy to introduce later if you find you
+need one, whereas a process class written up front tends to accumulate responsibilities that were never really shared.
+====
+
+== A slice with no state
+
+The most instructive slice is the one that needs nothing:
+
+[source,java]
+----
+include::example$sagas/verticalslices/WhenBikeRequestedThenPreparePayment.java[tag=stateless,indent=0]
+----
+<1> Events of one rental are handled in order; different rentals still run in parallel.
+<2> Returning the result makes the processor await the command and treat a failed command as a failure of the
+event.
+
+There is no check for whether payment was already asked for. There is nowhere to check, and no need. The reference is
+derived from the rental, and the payment side refuses to prepare a second payment under a reference it already
+knows. Idempotency lives where the decision lives.
+
+That leaves xref::index.adoc#progress-record[the processor's own record of what it has handled] as the entire
+to-do list: what has been delivered is done, what has not is not. Handling the same event twice is harmless. No
+state object, no schema, no cleanup.
+
+[#lookups]
+== A slice that needs a lookup
+
+Not every slice can be stateless. A payment event carries only the reference, while approving a request needs the bike
+and the renter. This slice therefore has to look them up:
+
+[source,java]
+----
+include::example$sagas/verticalslices/WhenPaymentConfirmedThenApproveRequest.java[tag=with-lookup,indent=0]
+----
+<1> Sequenced on the property this slice's own event carries. Each slice handles one event type, so the built-in
+policy is enough, where a single process class handling both sides would need a policy spanning two correlation
+names.
+<2> The lookup is injected like any other entity.
+<3> A three-line decision model, selecting the single event that answers the question.
+
+This is still one effect. The lookup is a read, so nothing is written that could fall out of step with what the
+processor has recorded. No transaction has to span anything.
+
+[NOTE]
+.Slices do not share lookups
+====
+If three slices need the same lookup, each keeps its own copy rather than sharing one. Slices are independent. A
+shared lookup couples them, so a change made for one slice can break another. Duplication that becomes painful is a
+sign the slices are really one thing. A process class is the better shape in that case.
+====
+
+[#state-per-slice]
+== Each slice chooses its own state
+
+The lookup above is one answer to "where does this slice get what it needs". It is not the only one. The choice is
+made per slice rather than once for the whole process. That is the practical difference between this approach and a
+process class: there, one decision covers every reaction; here, each slice answers only for itself.
+
+All three approaches from the rest of this guide are available inside a slice:
+
+[cols="1,2,1",options="header"]
+|===
+| Inside a slice | Reach for it when | Works across
+
+| xref::state-in-a-repository.adoc[A repository]
+| The slice needs to remember something nothing else records, or you want its progress to be queryable.
+| Any number of event store contexts
+
+| xref::state-from-context-events.adoc[Context events]
+| What the slice needs is already implied by events in the same event store context. The lookup above is exactly this.
+| One event store context only
+
+| xref::state-from-process-events.adoc[Process events]
+| The slice must record something of its own, typically because the other side's events are out of reach.
+| Any number of event store contexts
+|===
+
+The last column counts event store contexts, not bounded contexts. It is the constraint an entity brings with it:
+a slice that injects one is sourcing from a single context, because no `EventCriteria` spans two.
+
+A process usually ends up mixing them. Choosing per slice is the advantage. In the rental example most slices need
+nothing. Three read a lookup from context events. None needs a repository. Had the payment side sat in a different
+Axon Server context, or been a third-party provider whose events never reached this application, those three would
+have had to record their own instead, and only those three. Nothing else about the process would change.
+
+[TIP]
+====
+Slices choosing differently is not inconsistency. A slice that needs a queryable record and one that needs a two-field
+lookup have different requirements; giving both the same answer would couple slices that this approach otherwise keeps
+independent.
+====
+
+== The whole process
+
+The rental payment process decomposes into six slices, split between stateless and not:
+
+[cols="2,1,1",options="header"]
+|===
+| Slice | Triggered by | State
+
+| When bike requested, then prepare payment | `BikeRequested` | none
+| When request rejected, then cancel payment | `RequestRejected` | none
+| When payment confirmed, then approve request | `PaymentConfirmed` | lookup
+| When payment rejected, then reject request | `PaymentRejected` | lookup
+| When payment cancelled, then reject request | `PaymentCancelled` | lookup
+| When cancel rental payment, then cancel payment | `CancelRentalPayment` command | none
+|===
+
+The rental-triggered slices are stateless because the trigger event carries everything the command needs. The
+payment-triggered ones are not, because a payment event knows only the reference.
+
+The last slice is stateless for a different reason: cancelling is not its decision to make. It does not check whether
+cancelling is still needed before passing the request on. That is a question about the payment, and the payment side
+answers it authoritatively. A check here would only be a stale copy of that answer. It would add no safety and could
+add confusion.
+
+== Compensation
+
+Nothing in this arrangement notices when a rental is rejected for reasons of its own, unless a slice says so. Without
+"when request rejected, then cancel payment", a rental turned down on other grounds leaves a payment outstanding
+forever.
+
+Cleanup like this is easy to leave implicit, buried in whatever code decides the process is over. Here it is a slice
+like any other, which makes it visible on the model and testable on its own.
+
+== Trade-offs
+
+|===
+| Good | Not so good
+
+a|
+* The best transactional profile: every slice does exactly one thing.
+* Most slices need no state at all.
+* Nothing to end, because nothing was ever running.
+* Slices are independently testable, deployable and deletable.
+
+a|
+* No single place describes the process. Only an event model shows it whole.
+* A reader has to find six files to understand one flow.
+* Duplication between slices that need the same lookup.
+|===
+
+If the process is something people reason about, discuss, and draw on a whiteboard as one unit, then scattering it
+across six files hides that unit. If it is really a set of independent rules that happen to concern the same
+identifier, this arrangement reflects that structure directly. A process class would not.
+
+The xref::bike-rental-event-model.adoc[bike rental event model] is that whole view: every slice on this page is one
+purple sticky on it, and the flow they add up to exists nowhere else. If your team keeps such a model, this drawback
+is largely offset. If it does not, the six files are the only description there is.
+
+== Where next
+
+If the process turns out to need a shared view of its own progress, see
+xref::state-in-a-repository.adoc[state in a repository] or
+xref::state-from-process-events.adoc[state from process events]. For the timeout slice, see
+xref::deadlines.adoc[deadlines].

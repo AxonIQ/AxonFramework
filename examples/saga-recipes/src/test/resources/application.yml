@@ -1,0 +1,44 @@
+# Test configuration. Shadows the main application.yml on the test classpath.
+#
+# Tests run entirely in memory: no Axon Server, no docker-compose. The in-memory event storage engine is a
+# Dynamic Consistency Boundary store, so the multi-tag criteria this example relies on behave the same way
+# they do against Axon Server.
+spring:
+  autoconfigure:
+    # This example needs a Dynamic Consistency Boundary event store. The request-bike slice tags events with
+    # bikeId, rentalId and renter at once, and the saga recipes correlate rental and payment events by tag.
+    # The aggregate-based JPA engine rejects multiple tags per event outright, and it is ordered ahead of the
+    # in-memory engine, so leaving it enabled makes every multi-tag append fail with
+    # TooManyTagsOnEventMessageException. JPA itself is still used, for the tracking token store and for the
+    # process state of the repository recipe.
+    exclude: org.axonframework.extension.springboot.autoconfig.JpaEventStoreAutoConfiguration
+  docker:
+    compose:
+      enabled: false
+  main:
+    web-application-type: none
+  datasource:
+    url: jdbc:h2:mem:sagarecipes-test;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: create-drop
+axon:
+  converter:
+    general: jackson
+  axonserver:
+    enabled: false
+saga:
+  # No recipe by default. A slice test exercises one slice, and an active process would react to the events its
+  # given phase publishes and append more of its own. The recipe contract test switches a recipe on explicitly,
+  # through @AxonSpringBootTest(properties = "saga.recipe=..."), which also gives each recipe its own cached
+  # Spring context.
+  recipe: none
+  deadline:
+    payment-timeout: PT30S
+    # Long enough that the scheduled sweep never fires during a test. Tests drive the sweeper directly
+    # instead, because AxonTestFixture cannot manipulate time.
+    sweep-interval: PT1H

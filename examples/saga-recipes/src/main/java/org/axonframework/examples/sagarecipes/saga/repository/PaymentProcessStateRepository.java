@@ -1,0 +1,36 @@
+/*
+ * Copyright (c) 2010-2026. Axon Framework
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.axonframework.examples.sagarecipes.saga.repository;
+
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+/**
+ * Stores what the rental payment process remembers.
+ * <p>
+ * Conditional on the same property as the process itself, so the table is only in play when this recipe is the one
+ * running.
+ *
+ * @author Mateusz Nowak
+ * @since 5.4.0
+ */
+@Repository
+@ConditionalOnProperty(name = "saga.recipe", havingValue = "repository")
+interface PaymentProcessStateRepository extends JpaRepository<PaymentProcessState, String> {
+
+}

@@ -62,7 +62,7 @@ import org.jspecify.annotations.Nullable;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.testcontainers.shaded.org.awaitility.Awaitility.await;
+import static org.awaitility.Awaitility.await;
 
 /**
  * Shows that an {@code axon-legacy} saga works behind either event processor, and that the write its repository
@@ -73,7 +73,7 @@ import static org.testcontainers.shaded.org.awaitility.Awaitility.await;
  * repository on its behalf. The manager derives the saga identifier itself, which is why the store is asserted on the
  * association value rather than on an identifier the test chose.
  * <p>
- * {@link AnnotatedSagaRepository} writes the saga in the {@link AnnotatedSagaRepository#SAGA_WRITE} phase of the
+ * {@link AnnotatedSagaRepository} writes the saga in the {@link AnnotatedSagaRepository#WRITE_SAGA} phase of the
  * {@link org.axonframework.messaging.core.unitofwork.ProcessingContext} it was called in. That phase is ordered above
  * {@code PREPARE_COMMIT} and below {@code COMMIT}, which is what makes the two processors equivalent here:
  * <ul>
@@ -82,7 +82,7 @@ import static org.testcontainers.shaded.org.awaitility.Awaitility.await;
  *     <li>A {@link SubscribingEventProcessor} handles events in the context they were published with, and
  *     {@link SimpleEventBus} delivers those during {@code PREPARE_COMMIT} of that context.</li>
  * </ul>
- * Either way the repository is reached from a phase below {@code SAGA_WRITE}, so it can register the write, the write
+ * Either way the repository is reached from a phase below {@code WRITE_SAGA}, so it can register the write, the write
  * runs after the handler mutated the saga, and it runs before the transaction commits.
  * <p>
  * Axon Framework 4 achieved the same ordering with a nested unit of work whose prepare-commit ran immediately. Axon

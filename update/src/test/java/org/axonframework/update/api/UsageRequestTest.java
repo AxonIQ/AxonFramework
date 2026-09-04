@@ -29,6 +29,7 @@ class UpdateCheckRequestTest {
     void toQueryString() {
         UpdateCheckRequest request = new UpdateCheckRequest(
                 "machine-1234",
+                "machine-user-name",
                 "instance-5678",
                 "Linux",
                 "6.11.0-26-generic",
@@ -66,6 +67,7 @@ class UpdateCheckRequestTest {
     void toUserAgent() {
         UpdateCheckRequest request = new UpdateCheckRequest(
                 "machine-1234",
+                "machine-user-name",
                 "instance-5678",
                 "Linux",
                 "6.11.0-26-generic",
