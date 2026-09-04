@@ -197,9 +197,21 @@ public class AnnotatedSagaManagerTest {
 
     /**
      * A {@link SagaLifecycle} parameter is how an Axon Framework 4 saga's calls to the static
-     * {@code SagaLifecycle.associateWith(...)} are expressed here, so a saga declaring one has to be as visible to the
-     * manager as any other. The manager resolves handlers to extract association values and a creation policy before
-     * any saga exists, which is where a resolver reporting no match would hide the handler completely.
+     * {@code SagaLifecycle.associateWith(...)} and {@code SagaLifecycle.end()} are expressed in Axon Framework 5, which
+     * has no thread local to read them from. It is therefore the migration path for every Axon Framework 4 saga that
+     * manages its own associations, and a saga declaring one has to be exactly as visible to the manager as any other.
+     * <p>
+     * It is easy to break without noticing. The manager resolves handlers through the metamodel to extract the
+     * {@link AssociationValue AssociationValues} it looks sagas up by and to read the
+     * {@link SagaCreationPolicy}, and it does so before any saga has registered itself on the
+     * {@link org.axonframework.messaging.core.unitofwork.ProcessingContext} - when starting one, before a saga exists
+     * at all. A {@code ParameterResolver} that reports no match until the {@link SagaLifecycle#RESOURCE_KEY} resource
+     * is present therefore removes the handler from the metamodel entirely, which leaves nothing to search on and a
+     * {@link SagaCreationPolicy#NONE} policy. The saga is never started and never found, with nothing thrown and
+     * nothing logged.
+     * <p>
+     * These tests exist because that is unobservable anywhere narrower: a resolver test can only exercise
+     * {@code matches} directly, and every other saga fixture in this module declares no such parameter.
      */
     @Nested
     class SagaLifecycleInjection {

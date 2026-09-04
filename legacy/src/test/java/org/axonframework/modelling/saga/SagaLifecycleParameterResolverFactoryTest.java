@@ -79,6 +79,18 @@ class SagaLifecycleParameterResolverFactoryTest {
         }
     }
 
+    /**
+     * The two halves of a {@link ParameterResolver} answer different questions, and a
+     * {@link SagaLifecycle} parameter is where confusing them is expensive.
+     * <p>
+     * {@link ParameterResolver#matches(ProcessingContext)} asks whether this resolver can supply the parameter at all,
+     * and is consulted while <b>selecting</b> handlers, not only before invoking one. The component managing the Sagas
+     * selects handlers to learn which {@link AssociationValue AssociationValues} to look Sagas up by and which
+     * {@link SagaCreationPolicy} applies, and it does that before any Saga is on the
+     * {@link ProcessingContext} - when starting one, before a Saga exists at all.
+     * {@link ParameterResolver#resolveParameterValue(ProcessingContext)} is the half that needs the resource, and it
+     * is only ever reached through an {@link AnnotatedSaga}, which registers the resource first.
+     */
     @Nested
     class Resolving {
 
@@ -92,11 +104,16 @@ class SagaLifecycleParameterResolverFactoryTest {
             assertThat(resolver.matches(context)).isTrue();
         }
 
+        /**
+         * Reporting the resource's presence here instead would read like a safety check and behave like a filter: the
+         * handler would be dropped from the metamodel, leaving no association value to search on and a
+         * {@link SagaCreationPolicy#NONE} creation policy, so a Saga declaring a {@link SagaLifecycle} parameter would
+         * never be started and never be found. Nothing would throw and nothing would be logged, which is why the
+         * regression net that matters sits at the manager level, in
+         * {@code AnnotatedSagaManagerTest.SagaLifecycleInjection}.
+         */
         @Test
         void matchesReturnsTrueBeforeAnySagaIsOnTheContext() {
-            // The component managing the sagas resolves handlers to extract association values and a creation policy
-            // while no saga exists yet. Reporting no match there would hide the handler from it entirely, so the saga
-            // could never be found or started.
             ProcessingContext context = new StubProcessingContext();
 
             assertThat(resolver.matches(context)).isTrue();
