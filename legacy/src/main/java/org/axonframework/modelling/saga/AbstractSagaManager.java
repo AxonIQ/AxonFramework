@@ -264,11 +264,28 @@ public abstract class AbstractSagaManager<T> implements EventHandlingComponent, 
         return SequencingPolicy.BROADCAST;
     }
 
+    /**
+     * {@inheritDoc}
+     * <p>
+     * Always {@code false}. Replaying events into Sagas would rerun their side effects, which is why Axon Framework 4
+     * refused a reset as well.
+     */
     @Override
     public boolean supportsReset() {
         return false;
     }
 
+    /**
+     * {@inheritDoc}
+     * <p>
+     * Throws a {@link ResetNotSupportedException} rather than returning a failed {@link MessageStream}, which the
+     * declared return type would otherwise invite. That is deliberate: an {@code EventProcessor} gates both its reset
+     * handling and its {@code resetTokens} call on {@link #supportsReset()}, which is {@code false} here, so this
+     * method is unreachable through one and only a direct caller can arrive at it. A caller reaching past the gate has
+     * made a programming error, and Axon Framework 4 threw for it too.
+     *
+     * @throws ResetNotSupportedException always, since Sagas cannot replay their side effects
+     */
     @Override
     public MessageStream.Empty<Message> handle(ResetContext resetContext, ProcessingContext context) {
         throw new ResetNotSupportedException("Sagas do no support resetting tokens");
