@@ -123,8 +123,10 @@ public abstract class AbstractSagaManager<T> implements EventHandlingComponent, 
 
         SagaInitializationPolicy initializationPolicy = getSagaCreationPolicy(event, context);
         if (shouldCreateSaga(segment, sagaOfTypeInvoked || sagaMatchesOtherSegment, initializationPolicy)) {
+            // Deferred on purpose: a lazily concatenated stream is only consumed once the preceding one completed
+            // successfully, so a Saga that failed above stops the new Saga from being created and invoked at all.
             result = result.concatWith(
-                    startNewSaga(event, context, initializationPolicy.getInitialAssociationValue(), segment)
+                    () -> startNewSaga(event, context, initializationPolicy.getInitialAssociationValue(), segment)
             );
         }
         return result.ignoreEntries().cast();

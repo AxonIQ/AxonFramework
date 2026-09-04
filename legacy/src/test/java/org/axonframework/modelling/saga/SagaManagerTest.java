@@ -116,6 +116,32 @@ class SagaManagerTest {
         verify(mockSaga3, never()).handle(eq(event), any());
     }
 
+    @SuppressWarnings("unchecked")
+    @Test
+    void noSagaIsCreatedWhenAnEarlierSagaFailed() {
+        // given a policy that always creates, and a saga whose handling fails before creation is reached
+        testSubject = TestableAbstractSagaManager.builder()
+                                                 .sagaRepository(mockSagaRepository)
+                                                 .sagaCreationPolicy(SagaCreationPolicy.ALWAYS)
+                                                 .associationValue(associationValue)
+                                                 .build();
+        EventMessage event = new GenericEventMessage(new MessageType("event"), new Object());
+        when(mockSaga1.handle(eq(event), any())).thenReturn(MessageStream.failed(new RuntimeException("Mock")));
+        Saga<Object> newSaga = mock(Saga.class);
+        when(newSaga.getAssociationValues()).thenReturn(new AssociationValuesImpl());
+        when(newSaga.canHandle(any(EventMessage.class), any())).thenReturn(true);
+        when(newSaga.handle(any(EventMessage.class), any())).thenReturn(MessageStream.empty());
+        when(mockSagaRepository.createInstance(any(), any(), any())).thenReturn(newSaga);
+
+        // when
+        MessageStream.Empty<Message> result = testSubject.handle(event, StubProcessingContext.forMessage(event));
+        assertThrows(CompletionException.class, () -> result.asCompletableFuture().join());
+
+        // then the new saga was never constructed, so neither its resources nor its handler have run. Axon
+        // Framework 4 got this from the exception leaving handle before creation was considered.
+        verify(mockSagaRepository, never()).createInstance(any(), any(), any());
+    }
+
     @Test
     void sagaCreatedWhenNoneFoundAndPolicyIsIfNoneFound() {
         testSubject = TestableAbstractSagaManager.builder()
