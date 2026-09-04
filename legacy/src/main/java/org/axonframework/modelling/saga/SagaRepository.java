@@ -16,6 +16,9 @@
 
 package org.axonframework.modelling.saga;
 
+import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.jspecify.annotations.Nullable;
+
 import java.util.Set;
 import java.util.function.Supplier;
 
@@ -23,6 +26,11 @@ import java.util.function.Supplier;
  * Interface towards the storage mechanism of Saga instances. Saga Repositories can find sagas either through the
  * values
  * they have been associated with (see {@link AssociationValue}) or via their unique identifier.
+ * <p>
+ * Every operation takes the {@link ProcessingContext} it is invoked in. Axon Framework 4 resolved the ambient unit of
+ * work from a thread local instead; Axon Framework 5 has no such global, so the context is passed explicitly. A
+ * repository never creates a context: it is created by the event processor and handed down through the component that
+ * invokes the Saga.
  *
  * @author Allard Buijze
  * @since 3.0
@@ -35,10 +43,11 @@ public interface SagaRepository<T> {
      * <p/>
      *
      * @param associationValue The value that the returned Sagas must be associated with
+     * @param context          the {@link ProcessingContext} this lookup is part of
      * @return A Set containing the found Saga instances. If none are found, an empty Set is returned. Will never return
      * {@code null}.
      */
-    Set<String> find(AssociationValue associationValue);
+    Set<String> find(AssociationValue associationValue, ProcessingContext context);
 
     /**
      * Loads a known Saga instance by its unique identifier.
@@ -47,9 +56,11 @@ public interface SagaRepository<T> {
      * exists, as opposed to throwing an exception.
      *
      * @param sagaIdentifier The unique identifier of the Saga to load
+     * @param context        the {@link ProcessingContext} the loaded Saga is managed in
      * @return The Saga instance, or {@code null} if no such saga exists
      */
-    Saga<T> load(String sagaIdentifier);
+    @Nullable
+    Saga<T> load(String sagaIdentifier, ProcessingContext context);
 
     /**
      * Creates a new Saga instance. The returned Saga will delegate event handling to the instance supplied by the given
@@ -57,8 +68,9 @@ public interface SagaRepository<T> {
      *
      * @param sagaIdentifier the identifier to use for the new saga instance
      * @param factoryMethod Used to create a new Saga delegate
+     * @param context        the {@link ProcessingContext} the new Saga is managed in
      * @return a new Saga instance wrapping an instance of type {@code T}
      */
-    Saga<T> createInstance(String sagaIdentifier, Supplier<T> factoryMethod);
+    Saga<T> createInstance(String sagaIdentifier, Supplier<T> factoryMethod, ProcessingContext context);
 
 }

@@ -22,8 +22,9 @@ import org.axonframework.common.lock.LockFactory;
 import org.axonframework.messaging.core.annotation.HandlerDefinition;
 import org.axonframework.messaging.core.interception.annotation.MessageHandlerInterceptorMemberChain;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
-import org.axonframework.messaging.unitofwork.CurrentUnitOfWork;
-import org.axonframework.messaging.unitofwork.LegacyUnitOfWork;
+import org.axonframework.messaging.core.Context;
+import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.core.unitofwork.ProcessingLifecycle;
 import org.axonframework.modelling.saga.AnnotatedSaga;
 import org.axonframework.modelling.saga.AssociationValue;
 import org.axonframework.modelling.saga.ResourceInjector;
@@ -31,6 +32,8 @@ import org.axonframework.modelling.saga.Saga;
 import org.axonframework.modelling.saga.SagaRepository;
 import org.axonframework.modelling.saga.metamodel.AnnotationSagaMetaModelFactory;
 import org.axonframework.modelling.saga.metamodel.SagaModel;
+
+import org.jspecify.annotations.Nullable;
 
 import java.util.Collections;
 import java.util.HashSet;
@@ -47,12 +50,36 @@ import static org.axonframework.common.BuilderUtils.assertNonNull;
  * {@link SagaRepository} implementation extending from the {@link LockingSagaRepository} dealing with annotated Sagas.
  * Will take care of the uniqueness of {@link Saga} instances in the JVM. That means it will prevent multiple instances
  * of the same conceptual Saga (i.e. with same identifier) to exist within the JVM.
+ * <p>
+ * A Saga loaded or created here is written back to the {@link SagaStore} in the {@link #WRITE_SAGA} phase of the
+ * {@link ProcessingContext} it was requested in, which is what makes the write part of the caller's transaction.
  *
  * @param <T> generic type specifying the Saga type stored by this {@link SagaRepository}
  * @author Allard Buijze
  * @since 0.7
  */
 public class AnnotatedSagaRepository<T> extends LockingSagaRepository<T> {
+
+    /**
+     * The {@link ProcessingLifecycle.Phase phase} in which a Saga is written back to the {@link SagaStore}, ordered
+     * after {@link ProcessingLifecycle.DefaultPhases#PREPARE_COMMIT PREPARE_COMMIT} and before
+     * {@link ProcessingLifecycle.DefaultPhases#COMMIT COMMIT}.
+     * <p>
+     * The write has to happen after the event handler mutated the Saga, and before the caller's transaction commits.
+     * Registering it for {@code PREPARE_COMMIT} satisfies both only as long as the repository is called from an
+     * earlier phase, because a {@code ProcessingContext} rejects a registration for the phase it is already running.
+     * That rules out any Saga reached from within {@code PREPARE_COMMIT} itself, which is where a
+     * {@link org.axonframework.messaging.eventhandling.SimpleEventBus} delivers events published with a
+     * {@code ProcessingContext}, and therefore where a subscribing event processor invokes its components. Ordering
+     * the write into the gap above {@code PREPARE_COMMIT} keeps it after the handler and inside the transaction no
+     * matter which phase the repository was reached from.
+     * <p>
+     * Registered as a public constant so that surrounding code can order its own actions relative to the Saga write.
+     * Note that a {@code Phase} declaring this same {@link ProcessingLifecycle.Phase#order() order} shares a slot with
+     * it, and that a Saga reached from this phase or later cannot be written at all.
+     */
+    public static final ProcessingLifecycle.Phase WRITE_SAGA =
+            () -> ProcessingLifecycle.DefaultPhases.PREPARE_COMMIT.order() + 5_000;
 
     private final Class<T> sagaType;
     private final SagaStore<? super T> sagaStore;
@@ -61,7 +88,7 @@ public class AnnotatedSagaRepository<T> extends LockingSagaRepository<T> {
     private final ResourceInjector resourceInjector;
 
     private final Map<String, AnnotatedSaga<T>> managedSagas;
-    private final String unsavedSagasResourceKey;
+    private final Context.ResourceKey<Set<String>> unsavedSagasResourceKey;
 
     /**
      * Instantiate a {@link AnnotatedSagaRepository} based on the fields contained in the {@link Builder}.
@@ -82,7 +109,8 @@ public class AnnotatedSagaRepository<T> extends LockingSagaRepository<T> {
         this.sagaStore = builder.sagaStore;
         this.resourceInjector = builder.resourceInjector;
         this.managedSagas = new ConcurrentHashMap<>();
-        this.unsavedSagasResourceKey = "Repository[" + sagaType.getSimpleName() + "]/UnsavedSagas";
+        this.unsavedSagasResourceKey =
+                Context.ResourceKey.withLabel("Repository[" + sagaType.getSimpleName() + "]/UnsavedSagas");
     }
 
     /**
@@ -102,22 +130,20 @@ public class AnnotatedSagaRepository<T> extends LockingSagaRepository<T> {
         return new Builder<>();
     }
 
+    @Nullable
     @Override
-    public AnnotatedSaga<T> doLoad(String sagaIdentifier) {
-        LegacyUnitOfWork<?> unitOfWork = CurrentUnitOfWork.get();
-        LegacyUnitOfWork<?> processRoot = unitOfWork.root();
-
+    public AnnotatedSaga<T> doLoad(String sagaIdentifier, ProcessingContext context) {
         AnnotatedSaga<T> loadedSaga = managedSagas.computeIfAbsent(sagaIdentifier, id -> {
             AnnotatedSaga<T> result = doLoadSaga(sagaIdentifier);
             if (result != null) {
-                processRoot.onCleanup(u -> managedSagas.remove(id));
+                context.doFinally(c -> managedSagas.remove(id));
             }
             return result;
         });
 
-        if (loadedSaga != null && unsavedSagaResource(processRoot).add(sagaIdentifier)) {
-            unitOfWork.onPrepareCommit(u -> {
-                unsavedSagaResource(processRoot).remove(sagaIdentifier);
+        if (loadedSaga != null && unsavedSagaResource(context).add(sagaIdentifier)) {
+            context.runOn(WRITE_SAGA, c -> {
+                unsavedSagaResource(context).remove(sagaIdentifier);
                 commit(loadedSaga);
             });
         }
@@ -125,9 +151,10 @@ public class AnnotatedSagaRepository<T> extends LockingSagaRepository<T> {
     }
 
     @Override
-    public AnnotatedSaga<T> doCreateInstance(String sagaIdentifier, Supplier<T> sagaFactory) {
+    public AnnotatedSaga<T> doCreateInstance(String sagaIdentifier,
+                                             Supplier<T> sagaFactory,
+                                             ProcessingContext context) {
         try {
-            LegacyUnitOfWork<?> unitOfWork = CurrentUnitOfWork.get(), processRoot = unitOfWork.root();
             T sagaRoot = sagaFactory.get();
             resourceInjector.injectResources(sagaRoot);
             AnnotatedSaga<T> saga =
@@ -137,17 +164,17 @@ public class AnnotatedSagaRepository<T> extends LockingSagaRepository<T> {
                                         sagaModel,
                                         chainedInterceptor);
 
-            unsavedSagaResource(processRoot).add(sagaIdentifier);
-            unitOfWork.onPrepareCommit(u -> {
+            unsavedSagaResource(context).add(sagaIdentifier);
+            context.runOn(WRITE_SAGA, c -> {
                 if (saga.isActive()) {
                     storeSaga(saga);
                     saga.getAssociationValues().commit();
-                    unsavedSagaResource(processRoot).remove(sagaIdentifier);
+                    unsavedSagaResource(context).remove(sagaIdentifier);
                 }
             });
 
             managedSagas.put(sagaIdentifier, saga);
-            processRoot.onCleanup(u -> managedSagas.remove(sagaIdentifier));
+            context.doFinally(c -> managedSagas.remove(sagaIdentifier));
             return saga;
         } catch (Exception e) {
             throw new SagaCreationException("An error occurred while attempting to create a new managed instance", e);
@@ -155,14 +182,14 @@ public class AnnotatedSagaRepository<T> extends LockingSagaRepository<T> {
     }
 
     /**
-     * Returns a set of identifiers of sagas that may have changed in the context of the given {@code unitOfWork} and
-     * have not been saved yet.
+     * Returns a set of identifiers of sagas that may have changed in the given {@code context} and have not been saved
+     * yet.
      *
-     * @param unitOfWork the unit of work to inspect for unsaved sagas
+     * @param context the processing context to inspect for unsaved sagas
      * @return set of saga identifiers of unsaved sagas
      */
-    protected Set<String> unsavedSagaResource(LegacyUnitOfWork<?> unitOfWork) {
-        return unitOfWork.getOrComputeResource(unsavedSagasResourceKey, i -> new HashSet<>());
+    protected Set<String> unsavedSagaResource(ProcessingContext context) {
+        return context.computeResourceIfAbsent(unsavedSagasResourceKey, HashSet::new);
     }
 
     /**
@@ -181,7 +208,7 @@ public class AnnotatedSagaRepository<T> extends LockingSagaRepository<T> {
     }
 
     @Override
-    public Set<String> find(AssociationValue associationValue) {
+    public Set<String> find(AssociationValue associationValue, ProcessingContext context) {
         Set<String> sagasFound = new TreeSet<>();
         sagasFound.addAll(managedSagas.values().stream()
                                       .filter(saga -> saga.getAssociationValues().contains(associationValue))

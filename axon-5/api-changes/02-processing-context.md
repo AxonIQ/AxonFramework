@@ -130,3 +130,82 @@ provider from construction.
 
 We will provide a migration guide, as well as OpenWrite recipes for these scenarios.
 
+### SagaRepository
+
+Where the store needs no context, the repository does, and all three of its operations take one:
+
+```java
+Set<String> find(AssociationValue associationValue, ProcessingContext context);
+
+@Nullable
+Saga<T> load(String sagaIdentifier, ProcessingContext context);
+
+Saga<T> createInstance(String sagaIdentifier, Supplier<T> factoryMethod, ProcessingContext context);
+```
+
+Axon Framework 4 read the ambient unit of work from `CurrentUnitOfWork`, a thread local, and used it for the two things
+this layer does beyond storage: it writes the saga during the prepare-commit phase, which is what puts that write in
+the caller's transaction, and it releases the saga's lock when processing completes. `find` takes the context too, even
+though it does not use it, so that the interface does not leave an implementor guessing whether the omission means
+something.
+
+A repository never creates a context. The event processor does, and hands it down through the component that invokes
+the saga.
+
+One wiring note if you modernise a saga while migrating it. An Axon Framework 4 saga received a `CommandGateway`
+through a `ResourceInjector` and kept it in a field; that still works, and the handler passes it the
+`ProcessingContext` it was invoked with. The Axon Framework 5 route is a `CommandDispatcher` parameter, already bound
+to that context, and it needs `CommandDispatcherParameterResolverFactory` to be part of the `ParameterResolverFactory`
+the saga's metamodel was built with. That resolver is contributed by a `ConfigurationEnhancer` rather than registered
+through `META-INF/services`, so the classpath default `AnnotationSagaMetaModelFactory` uses does not include it: hand
+the configured factory to `AnnotatedSagaRepository.Builder#parameterResolverFactory`.
+
+Two consequences of the thread local being gone are worth knowing about.
+
+**Nested units of work are gone, and the saga write is ordered by a phase of its own instead.** Axon Framework 4
+distinguished the current unit of work from the outermost one, because a nested unit of work ran its own prepare-commit
+and commit early while its after-commit and rollback followed the root. Axon Framework 5 has nothing nested; a branched
+`ProcessingContext` forwards every lifecycle registration and every resource to the root, which gives the same result
+-- one saga instance per processing session, written once -- without the distinction. What it cannot reproduce is
+registering work for a phase that is already running: `ProcessingContext` rejects that, where Axon Framework 4 simply
+appended to the phase's handler queue.
+
+That matters because it is exactly what the repository would be doing. `SimpleEventBus` delivers events that were
+published with a context during `PREPARE_COMMIT`, and `SubscribingEventProcessor` handles them in that same context, so
+a saga behind a subscribing processor is reached from inside `PREPARE_COMMIT`. The repository therefore does not
+register its write for `PREPARE_COMMIT` at all. It registers for `AnnotatedSagaRepository.SAGA_WRITE`, a phase ordered
+above `PREPARE_COMMIT` and below `COMMIT`:
+
+```java
+public static final ProcessingLifecycle.Phase SAGA_WRITE =
+        () -> ProcessingLifecycle.DefaultPhases.PREPARE_COMMIT.order() + 5_000;
+```
+
+`ProcessingLifecycle.Phase` is an interface over an arbitrary order, so the gaps the default phases leave are usable.
+Ordering the write into the one above `PREPARE_COMMIT` keeps it after the handler finished mutating the saga and before
+the caller's transaction commits, whichever phase the repository was reached from. Both processors work: a
+`PooledStreamingEventProcessor` invokes its components during `INVOCATION`, a `SubscribingEventProcessor` during
+`PREPARE_COMMIT`, and both are below `SAGA_WRITE`. The constant is public so you can order your own actions relative to
+the write; note that a saga reached from `SAGA_WRITE` itself or later cannot be written.
+
+One difference in the number of writes survives, in a scenario where the stored result is the same either way. Axon
+Framework 4's nested unit of work carried its own unsaved-saga bookkeeping, so looking at the same saga again from
+inside a nested unit of work made the repository treat it as unsaved and schedule a second write, giving an insert
+followed by an update. Axon Framework 5 shares that bookkeeping with the root and orders the single write after every
+`PREPARE_COMMIT` action, so it writes once, carrying everything the saga accumulated in the meantime.
+
+**A saga event handler must complete on the thread that invoked it.** Axon Framework 4 could not express anything else:
+it invoked the handler and ignored its return value, so an asynchronous result was dropped and never took part in a
+transaction. `EventHandlingComponent#handle` can express one and the unit of work awaits it, which would move a saga's
+store write off the thread whose transaction it belongs to. `AnnotatedSaga` therefore fails handling with a
+`SagaExecutionException` when a handler returns a result that is not done yet. An already completed
+`CompletableFuture` is accepted, being indistinguishable from a synchronous return, and a handler that hands work to an
+executor and returns `void` is undetectable, as it was in Axon Framework 4.
+
+The same thread affinity applies to the saga's lock. `PessimisticLockFactory` hands out a lock owned by the thread that
+took it, and the repository releases it when the context completes, which runs on the invoking thread only when the
+`TransactionManager` requires same-thread invocations. `SpringTransactionManager` and `EntityManagerTransactionManager`
+both do; a custom one that does not would leak saga locks. Nothing can release such a lock afterwards, so
+`LockingSagaRepository` logs an error naming the saga and both threads instead of letting the processing lifecycle
+swallow the failure as an anonymous completion handler problem.
+

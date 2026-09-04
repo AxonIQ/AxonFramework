@@ -36,6 +36,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -332,6 +333,94 @@ class AnnotatedSagaTest {
             assertThat(saga1.capturedLifecycle).isSameAs(subject1);
             assertThat(saga2.capturedLifecycle).isSameAs(subject2);
             assertThat(saga1.capturedLifecycle).isNotSameAs(saga2.capturedLifecycle);
+        }
+    }
+
+    /**
+     * Axon Framework 4 sagas were synchronous by construction: {@code EventMessageHandler#handleSync} returned the
+     * handler's value, which the framework ignored, so an asynchronous result was dropped and never took part in the
+     * transaction. {@link org.axonframework.messaging.eventhandling.EventHandlingComponent} can express one, and the
+     * unit of work awaits it, which would silently move a saga's store write off the transaction's thread. Rejecting
+     * it keeps the Axon Framework 4 contract.
+     */
+    @Nested
+    class SynchronousHandling {
+
+        @Test
+        void aHandlerReturningAnAlreadyCompletedResultIsAccepted() {
+            // given a saga whose handler returns a future that is already done
+            AsynchronousSaga saga = new AsynchronousSaga(CompletableFuture.completedFuture(null));
+            AnnotatedSaga<AsynchronousSaga> subject = asynchronousSagaSubject(saga);
+
+            // when
+            var event = new GenericEventMessage(new MessageType("event"), new RegularEvent("id"));
+            subject.handle(event, StubProcessingContext.forMessage(event))
+                   .asCompletableFuture()
+                   .orTimeout(50, TimeUnit.MILLISECONDS)
+                   .join();
+
+            // then it is handled like any synchronous handler
+            assertThat(saga.invoked).isTrue();
+        }
+
+        @Test
+        void aVoidHandlerIsAccepted() {
+            // given the ordinary case / when
+            testSubject.associateWith(new AssociationValue("propertyName", "id"));
+            var event = new GenericEventMessage(new MessageType("event"), new RegularEvent("id"));
+            testSubject.handle(event, StubProcessingContext.forMessage(event))
+                       .asCompletableFuture()
+                       .orTimeout(50, TimeUnit.MILLISECONDS)
+                       .join();
+
+            // then
+            assertThat(testSaga.invocationCount).isEqualTo(1);
+        }
+
+        @Test
+        void aHandlerWhoseResultIsStillPendingIsRejected() {
+            // given a saga whose handler returns a future that nothing has completed yet
+            CompletableFuture<Object> pending = new CompletableFuture<>();
+            AsynchronousSaga saga = new AsynchronousSaga(pending);
+            AnnotatedSaga<AsynchronousSaga> subject = asynchronousSagaSubject(saga);
+
+            // when
+            var event = new GenericEventMessage(new MessageType("event"), new RegularEvent("id"));
+            var result = subject.handle(event, StubProcessingContext.forMessage(event));
+
+            // then handling fails immediately rather than being awaited, because whatever the handler is doing is no
+            // longer on the thread that owns the transaction
+            assertThatThrownBy(() -> result.asCompletableFuture().orTimeout(50, TimeUnit.MILLISECONDS).join())
+                    .hasCauseInstanceOf(SagaExecutionException.class)
+                    .hasMessageContaining("must complete");
+            pending.complete(null);
+        }
+
+        private AnnotatedSaga<AsynchronousSaga> asynchronousSagaSubject(AsynchronousSaga saga) {
+            AnnotatedSaga<AsynchronousSaga> subject = new AnnotatedSaga<>(
+                    "id", Collections.emptySet(), saga,
+                    new AnnotationSagaMetaModelFactory().modelOf(AsynchronousSaga.class),
+                    NoMoreInterceptors.instance()
+            );
+            subject.associateWith(new AssociationValue("propertyName", "id"));
+            return subject;
+        }
+    }
+
+    @SuppressWarnings("unused")
+    private static class AsynchronousSaga {
+
+        private final CompletableFuture<Object> result;
+        private boolean invoked;
+
+        private AsynchronousSaga(CompletableFuture<Object> result) {
+            this.result = result;
+        }
+
+        @SagaEventHandler(associationProperty = "propertyName")
+        public CompletableFuture<Object> handle(RegularEvent event) {
+            invoked = true;
+            return result;
         }
     }
 

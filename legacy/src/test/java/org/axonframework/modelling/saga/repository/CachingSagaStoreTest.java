@@ -19,12 +19,18 @@ package org.axonframework.modelling.saga.repository;
 import org.axonframework.common.FutureUtils;
 import org.axonframework.common.IdentifierFactory;
 import org.axonframework.common.caching.Cache;
+import org.axonframework.messaging.core.EmptyApplicationContext;
+import org.axonframework.messaging.core.unitofwork.SimpleUnitOfWorkFactory;
+import org.axonframework.messaging.core.unitofwork.UnitOfWork;
+import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
 import org.axonframework.modelling.saga.AssociationValue;
 import org.axonframework.modelling.saga.AssociationValuesImpl;
+import org.axonframework.modelling.saga.SagaRepository;
 import org.axonframework.modelling.saga.repository.inmemory.InMemorySagaStore;
 import org.junit.jupiter.api.*;
 import org.mockito.*;
 
+import java.time.Duration;
 import java.util.Collections;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -48,6 +54,8 @@ import static org.mockito.Mockito.*;
  * @author Allard Buijze
  */
 public abstract class CachingSagaStoreTest extends SagaStoreTestSuite {
+
+    private static final Duration TIMEOUT = Duration.ofSeconds(5);
 
     private SagaStore<Object> delegate;
     private Cache sagaCache;
@@ -190,6 +198,51 @@ public abstract class CachingSagaStoreTest extends SagaStoreTestSuite {
         testSubject.deleteSaga(StubSaga.class, testSagaId, singleton(testAssociationValue));
         assertFalse(sagaCache.containsKey(testSagaId));
         assertFalse(associationsCache.containsKey(expectedAssociationKey));
+    }
+
+    @Test
+    void canHandleConcurrentReadsAndWritesThroughAnnotatedSagaRepository() {
+        SagaRepository<StubSaga> sagaRepository = AnnotatedSagaRepository.<StubSaga>builder()
+                                                                        .sagaType(StubSaga.class)
+                                                                        .sagaStore(testSubject)
+                                                                        .build();
+        UnitOfWorkFactory unitOfWorkFactory = new SimpleUnitOfWorkFactory(EmptyApplicationContext.INSTANCE);
+        int concurrentOperations = 32;
+        ExecutorService executor = Executors.newFixedThreadPool(16);
+        AssociationValue associationValue = new AssociationValue("StubSaga-id", "value");
+
+        try {
+            IntStream.range(0, concurrentOperations)
+                     .mapToObj(i -> CompletableFuture.runAsync(
+                             () -> {
+                                 String sagaId = IdentifierFactory.getInstance().generateIdentifier();
+                                 // Create an instance and associate it
+                                 UnitOfWork creating = unitOfWorkFactory.create();
+                                 creating.runOnInvocation(
+                                         context -> sagaRepository.createInstance(sagaId, StubSaga::new, context)
+                                                                  .getAssociationValues()
+                                                                  .add(associationValue)
+                                 );
+                                 FutureUtils.joinAndUnwrap(creating.execute(), TIMEOUT);
+
+                                 // Find saga identifiers, then load each of them
+                                 UnitOfWork loading = unitOfWorkFactory.create();
+                                 loading.runOnInvocation(context -> sagaRepository.find(associationValue, context)
+                                                                                  .forEach(id -> sagaRepository.load(
+                                                                                          id, context
+                                                                                  )));
+                                 FutureUtils.joinAndUnwrap(loading.execute(), TIMEOUT);
+                             },
+                             executor
+                     ))
+                     .reduce(CompletableFuture::allOf)
+                     .orElse(FutureUtils.emptyCompletedFuture())
+                     .get(10, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            fail("An unexpected exception occurred during concurrent invocations on the CachingSagaStore.", e);
+        } finally {
+            executor.shutdown();
+        }
     }
 
     @Test
