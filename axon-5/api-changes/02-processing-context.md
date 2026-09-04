@@ -209,3 +209,55 @@ both do; a custom one that does not would leak saga locks. Nothing can release s
 `LockingSagaRepository` logs an error naming the saga and both threads instead of letting the processing lifecycle
 swallow the failure as an anonymous completion handler problem.
 
+
+### SagaManager
+
+`AbstractSagaManager` is an `EventHandlingComponent` in Axon Framework 5, where it was an `EventHandlerInvoker` in
+Axon Framework 4. Three consequences are worth knowing before migrating a saga.
+
+**A failing `@SagaEventHandler` now stops its event processor.** Axon Framework 4 routed the failure to the saga
+manager's `ListenerInvocationErrorHandler`, whose default logged it and swallowed it, so the unit of work committed,
+the saga was stored as of the exception, and the token advanced past the event. Axon Framework 5 has no such contract:
+the failure travels out on the returned `MessageStream`, the unit of work rolls back, the saga is not written and the
+token is not advanced. Declaring an `@ExceptionHandler` method on the saga gives the Axon Framework 4 outcome back, and
+more precisely than the old handler could, since it is chosen per saga and per exception type rather than for every
+saga of a processing group:
+
+```java
+public class OrderSaga {
+
+    @SagaEventHandler(associationProperty = "orderId")
+    public void on(OrderShippedEvent event) {
+        throw new IllegalStateException("...");
+    }
+
+    @ExceptionHandler
+    public void on(EventMessage event, IllegalStateException exception) {
+        logger.error("Saga failed to handle [{}]", event.identifier(), exception);
+    }
+}
+```
+
+Returning normally suppresses the failure. Rethrowing propagates it. One inherited subtlety: when the failing handler
+was annotated `@EndSaga`, suppressing the failure does not end the saga, because the saga is ended only after the
+handler completes. Axon Framework 4 skipped its `SagaLifecycle.end()` call the same way.
+
+**A `@SagaEventHandler` on a supertype no longer receives its subtypes.** Axon Framework 4 matched handlers by payload
+assignability, so a handler for `OrderEvent` also handled `OrderPlaced extends OrderEvent`. An Axon Framework 5 event
+processor decides what to deliver from `EventHandlingComponent#supports(QualifiedName)`, which is a set of names
+derived from the declared payload types, so a subtype's name is not among them. Declare a handler per concrete event
+type. This is not saga-specific: an annotated event handling component behaves the same way.
+
+**Segments are decided by the saga identifier, not by the event.** Axon Framework 4 asked two separate questions, and a
+saga manager answered the admission one without consulting the `Segment` at all, leaving `AbstractSagaManager#handle` to
+filter saga instances by identifier. Axon Framework 5 folds admission and sequencing into
+`sequenceIdentifierFor`, so a saga manager answers `SequencingPolicy.BROADCAST`: every `Segment` is offered every event
+the saga type handles, and the one owning the saga identifier acts on it. Deriving the identifier from the event
+instead would route a saga's second association value to a segment that does not own the saga, and the event would be
+dropped silently.
+
+A saga is still handled once. A `TokenStore` claim makes a segment live on one node, the identifier filter picks one
+segment out of those offered the event, and creation is claimed by the single segment matching the initial
+`AssociationValue`. Two limits carry over from Axon Framework 4 unchanged: a `SubscribingEventProcessor` has no
+segments and no token store, so every node starts its own saga, and a `SagaStore` is keyed on the saga identifier
+alone, with no uniqueness constraint over association values.

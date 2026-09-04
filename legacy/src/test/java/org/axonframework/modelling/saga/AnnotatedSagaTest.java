@@ -21,6 +21,7 @@ import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.Metadata;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
+import org.axonframework.messaging.core.interception.annotation.ExceptionHandler;
 import org.axonframework.messaging.core.interception.annotation.NoMoreInterceptors;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
@@ -41,6 +42,7 @@ import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.Mockito.*;
 
 /**
@@ -202,6 +204,66 @@ class AnnotatedSagaTest {
             // then
             assertThat(testSaga.invocationCount).isEqualTo(2);
             assertThat(testSubject.isActive()).isFalse();
+        }
+    }
+
+    /**
+     * The instance-level question the saga manager asks before it invokes a Saga, and again to decide whether a
+     * {@link SagaCreationPolicy#IF_NONE_FOUND} policy should start a new one.
+     */
+    @Nested
+    class CanHandle {
+
+        @Test
+        void takesTheEventWhenTheSagaHoldsTheHandlersAssociationValue() {
+            // given
+            testSubject.associateWith(new AssociationValue("propertyName", "id"));
+
+            // when / then
+            var event = new GenericEventMessage(new MessageType("event"), new RegularEvent("id"));
+            assertThat(testSubject.canHandle(event, StubProcessingContext.forMessage(event))).isTrue();
+        }
+
+        @Test
+        void declinesTheEventWhenTheAssociationValueDiffers() {
+            // given
+            testSubject.associateWith(new AssociationValue("propertyName", "another-id"));
+
+            // when / then
+            var event = new GenericEventMessage(new MessageType("event"), new RegularEvent("id"));
+            assertThat(testSubject.canHandle(event, StubProcessingContext.forMessage(event))).isFalse();
+        }
+
+        @Test
+        void declinesTheEventOnceTheSagaEnded() {
+            // given
+            testSubject.associateWith(new AssociationValue("propertyName", "id"));
+            testSubject.end();
+
+            // when / then
+            var event = new GenericEventMessage(new MessageType("event"), new RegularEvent("id"));
+            assertThat(testSubject.canHandle(event, StubProcessingContext.forMessage(event))).isFalse();
+        }
+
+        @Test
+        void declinesTheEventAfterItsAssociationWasRemoved() {
+            // given an association the saga held and dropped again, which is the case where the store index and the
+            // live instance disagree until the saga is written
+            testSubject.associateWith(new AssociationValue("propertyName", "id"));
+            testSubject.removeAssociationWith(new AssociationValue("propertyName", "id"));
+
+            // when
+            var event = new GenericEventMessage(new MessageType("event"), new RegularEvent("id"));
+            ProcessingContext context = StubProcessingContext.forMessage(event);
+
+            // then the saga declines it and handling it does nothing, which is the pair the saga manager needs: a
+            // declining saga has not taken the event, so IF_NONE_FOUND must still start a new instance
+            assertThat(testSubject.canHandle(event, context)).isFalse();
+            testSubject.handle(event, context)
+                       .asCompletableFuture()
+                       .orTimeout(50, TimeUnit.MILLISECONDS)
+                       .join();
+            assertThat(testSaga.invocationCount).isZero();
         }
     }
 
@@ -404,6 +466,242 @@ class AnnotatedSagaTest {
             );
             subject.associateWith(new AssociationValue("propertyName", "id"));
             return subject;
+        }
+    }
+
+    /**
+     * Axon Framework 4 routed a failing handler through the saga manager's
+     * {@code ListenerInvocationErrorHandler}, whose default logged the failure and swallowed it. Axon Framework 5 has
+     * no equivalent, so a failure travels out on the returned stream unless the saga itself declares an
+     * {@link ExceptionHandler}, which reaches it through the same interceptor chain its handlers are invoked with.
+     */
+    @Nested
+    class HandlerFailures {
+
+        @Test
+        void aHandlerFailurePropagatesWhenTheSagaDeclaresNoExceptionHandler() {
+            // given
+            AnnotatedSaga<FailingSaga> subject = subjectFor(FailingSaga.class, new FailingSaga());
+
+            // when
+            var event = new GenericEventMessage(new MessageType("event"), new RegularEvent("id"));
+            var result = subject.handle(event, StubProcessingContext.forMessage(event));
+
+            // then
+            assertThatThrownBy(() -> result.asCompletableFuture().orTimeout(50, TimeUnit.MILLISECONDS).join())
+                    .hasCauseInstanceOf(SagaHandlerFailure.class);
+        }
+
+        @Test
+        void aCheckedExceptionFromAHandlerIsWrappedInASagaExecutionException() {
+            // given
+            AnnotatedSaga<CheckedFailingSaga> subject = subjectFor(CheckedFailingSaga.class, new CheckedFailingSaga());
+
+            // when
+            var event = new GenericEventMessage(new MessageType("event"), new RegularEvent("id"));
+            var result = subject.handle(event, StubProcessingContext.forMessage(event));
+
+            // then the checked exception rides the stream wrapped the way Axon Framework 4 rethrew it, so whatever
+            // matches on the failure's type sees the same SagaExecutionException it saw there. The runtime failure in
+            // the test above stays unwrapped for the same reason.
+            Throwable failure = catchThrowable(
+                    () -> result.asCompletableFuture().orTimeout(50, TimeUnit.MILLISECONDS).join());
+            assertThat(failure).hasCauseInstanceOf(SagaExecutionException.class);
+            assertThat(failure.getCause()).hasMessage("Exception while handling an Event in a Saga")
+                                          .hasRootCauseMessage("checked failure");
+        }
+
+        @Test
+        void anExceptionHandlerReturningNormallySuppressesTheFailure() {
+            // given
+            SuppressingSaga saga = new SuppressingSaga();
+            AnnotatedSaga<SuppressingSaga> subject = subjectFor(SuppressingSaga.class, saga);
+
+            // when
+            var event = new GenericEventMessage(new MessageType("event"), new RegularEvent("id"));
+            var result = subject.handle(event, StubProcessingContext.forMessage(event));
+            result.asCompletableFuture().orTimeout(50, TimeUnit.MILLISECONDS).join();
+
+            // then the stream carries no failure, which is what lets the saga manager count this saga as invoked and
+            // the unit of work commit, exactly as the Axon Framework 4 default did
+            assertThat(saga.exceptionHandlerInvoked).isTrue();
+            assertThat(result.error()).isEmpty();
+        }
+
+        @Test
+        void anExceptionHandlerRethrowingKeepsTheFailure() {
+            // given
+            RethrowingSaga saga = new RethrowingSaga();
+            AnnotatedSaga<RethrowingSaga> subject = subjectFor(RethrowingSaga.class, saga);
+
+            // when
+            var event = new GenericEventMessage(new MessageType("event"), new RegularEvent("id"));
+            var result = subject.handle(event, StubProcessingContext.forMessage(event));
+
+            // then
+            assertThatThrownBy(() -> result.asCompletableFuture().orTimeout(50, TimeUnit.MILLISECONDS).join())
+                    .hasCauseInstanceOf(SagaHandlerFailure.class);
+            assertThat(saga.exceptionHandlerInvoked).isTrue();
+        }
+
+        @Test
+        void anExceptionHandlerForAnotherExceptionTypeIsSkipped() {
+            // given
+            SelectiveSaga saga = new SelectiveSaga();
+            AnnotatedSaga<SelectiveSaga> subject = subjectFor(SelectiveSaga.class, saga);
+
+            // when
+            var event = new GenericEventMessage(new MessageType("event"), new RegularEvent("id"));
+            var result = subject.handle(event, StubProcessingContext.forMessage(event));
+
+            // then
+            assertThatThrownBy(() -> result.asCompletableFuture().orTimeout(50, TimeUnit.MILLISECONDS).join())
+                    .hasCauseInstanceOf(SagaHandlerFailure.class);
+            assertThat(saga.exceptionHandlerInvoked).isFalse();
+        }
+
+        @Test
+        void aThrowingEndSagaHandlerLeavesTheSagaActive() {
+            // given
+            AnnotatedSaga<FailingEndSaga> subject = subjectFor(FailingEndSaga.class, new FailingEndSaga());
+
+            // when
+            var event = new GenericEventMessage(new MessageType("event"), new RegularEvent("id"));
+            var result = subject.handle(event, StubProcessingContext.forMessage(event));
+
+            // then the saga is not ended, because EndSagaMessageHandlerDefinition ends it from a completion callback
+            // that a failed stream never reaches. Axon Framework 4 skipped its SagaLifecycle.end() call the same way.
+            assertThatThrownBy(() -> result.asCompletableFuture().orTimeout(50, TimeUnit.MILLISECONDS).join())
+                    .hasCauseInstanceOf(SagaHandlerFailure.class);
+            assertThat(subject.isActive()).isTrue();
+        }
+
+        @Test
+        void aSuppressedFailureInAnEndSagaHandlerLeavesTheSagaActive() {
+            // given
+            SuppressingEndSaga saga = new SuppressingEndSaga();
+            AnnotatedSaga<SuppressingEndSaga> subject = subjectFor(SuppressingEndSaga.class, saga);
+
+            // when
+            var event = new GenericEventMessage(new MessageType("event"), new RegularEvent("id"));
+            var result = subject.handle(event, StubProcessingContext.forMessage(event));
+            result.asCompletableFuture().orTimeout(50, TimeUnit.MILLISECONDS).join();
+
+            // then handling counts as successful, yet the saga is still active: suppression happens above the
+            // completion callback that ends the saga, so the callback never ran
+            assertThat(saga.exceptionHandlerInvoked).isTrue();
+            assertThat(result.error()).isEmpty();
+            assertThat(subject.isActive()).isTrue();
+        }
+
+        private <T> AnnotatedSaga<T> subjectFor(Class<T> sagaType, T sagaInstance) {
+            AnnotationSagaMetaModelFactory factory = new AnnotationSagaMetaModelFactory();
+            AnnotatedSaga<T> subject = new AnnotatedSaga<>(
+                    "id", Collections.emptySet(), sagaInstance,
+                    factory.modelOf(sagaType), factory.chainedInterceptor(sagaType)
+            );
+            subject.associateWith(new AssociationValue("propertyName", "id"));
+            return subject;
+        }
+    }
+
+    private static class SagaHandlerFailure extends RuntimeException {
+
+        private SagaHandlerFailure() {
+            super("handler failed");
+        }
+    }
+
+    @SuppressWarnings("unused")
+    private static class FailingSaga {
+
+        @SagaEventHandler(associationProperty = "propertyName")
+        public void handle(RegularEvent event) {
+            throw new SagaHandlerFailure();
+        }
+    }
+
+    private static class CheckedFailingSaga {
+
+        @SagaEventHandler(associationProperty = "propertyName")
+        public void handle(RegularEvent event) throws Exception {
+            throw new Exception("checked failure");
+        }
+    }
+
+    @SuppressWarnings("unused")
+    private static class SuppressingSaga {
+
+        private boolean exceptionHandlerInvoked = false;
+
+        @SagaEventHandler(associationProperty = "propertyName")
+        public void handle(RegularEvent event) {
+            throw new SagaHandlerFailure();
+        }
+
+        @ExceptionHandler
+        public void on(SagaHandlerFailure failure) {
+            exceptionHandlerInvoked = true;
+        }
+    }
+
+    @SuppressWarnings("unused")
+    private static class RethrowingSaga {
+
+        private boolean exceptionHandlerInvoked = false;
+
+        @SagaEventHandler(associationProperty = "propertyName")
+        public void handle(RegularEvent event) {
+            throw new SagaHandlerFailure();
+        }
+
+        @ExceptionHandler
+        public void on(SagaHandlerFailure failure) {
+            exceptionHandlerInvoked = true;
+            throw failure;
+        }
+    }
+
+    @SuppressWarnings("unused")
+    private static class SelectiveSaga {
+
+        private boolean exceptionHandlerInvoked = false;
+
+        @SagaEventHandler(associationProperty = "propertyName")
+        public void handle(RegularEvent event) {
+            throw new SagaHandlerFailure();
+        }
+
+        @ExceptionHandler(resultType = IllegalStateException.class)
+        public void on() {
+            exceptionHandlerInvoked = true;
+        }
+    }
+
+    @SuppressWarnings("unused")
+    private static class FailingEndSaga {
+
+        @EndSaga
+        @SagaEventHandler(associationProperty = "propertyName")
+        public void handle(RegularEvent event) {
+            throw new SagaHandlerFailure();
+        }
+    }
+
+    @SuppressWarnings("unused")
+    private static class SuppressingEndSaga {
+
+        private boolean exceptionHandlerInvoked = false;
+
+        @EndSaga
+        @SagaEventHandler(associationProperty = "propertyName")
+        public void handle(RegularEvent event) {
+            throw new SagaHandlerFailure();
+        }
+
+        @ExceptionHandler
+        public void on(SagaHandlerFailure failure) {
+            exceptionHandlerInvoked = true;
         }
     }
 

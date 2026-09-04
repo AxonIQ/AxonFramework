@@ -81,6 +81,28 @@ public interface Saga<T> extends EventHandlingComponent {
     boolean isActive();
 
     /**
+     * Indicates whether this saga instance takes the given {@code event}, which is the case when it is
+     * {@link #isActive() active} and holds the {@link AssociationValue} that one of its handlers for this event
+     * resolves from it.
+     * <p>
+     * This answers a different question than {@link #supports(org.axonframework.messaging.core.QualifiedName)}, which
+     * reports the events the saga type declares handlers for. Two saga instances of the same type therefore
+     * disagree here whenever they are associated with different values, and the component managing them needs that
+     * answer: a Saga that declines the event has not taken it, so a
+     * {@link SagaCreationPolicy#IF_NONE_FOUND} policy must still start a new instance. The returned
+     * {@link MessageStream} cannot express it, since a Saga that declines and a Saga that handled the event without
+     * producing anything both yield an empty stream.
+     * <p>
+     * In Axon Framework 4 this method was inherited from {@code MessageHandler}, which Axon Framework 5 reduced to a
+     * marker interface, so the declaration lives here instead.
+     *
+     * @param event   the event to check this saga instance against
+     * @param context the {@link ProcessingContext} in which the event is being processed
+     * @return {@code true} when this saga instance takes the given {@code event}, {@code false} otherwise
+     */
+    boolean canHandle(EventMessage event, ProcessingContext context);
+
+    /**
      * {@inheritDoc}
      * <p>
      * A single {@code Saga} instance never determines its own sequencing, as the component managing the sagas is in

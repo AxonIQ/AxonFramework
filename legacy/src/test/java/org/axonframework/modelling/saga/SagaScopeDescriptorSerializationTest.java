@@ -17,9 +17,9 @@
 package org.axonframework.modelling.saga;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.axonframework.conversion.Converter;
+import org.axonframework.conversion.jackson2.Jackson2Converter;
 import org.axonframework.modelling.OnlyAcceptConstructorPropertiesAnnotation;
-import org.axonframework.conversion.SerializedObject;
-import org.axonframework.conversion.json.JacksonSerializer;
 import org.junit.jupiter.api.*;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -43,10 +43,10 @@ class SagaScopeDescriptorSerializationTest {
 
     @Test
     void jacksonSerializationWorksAsExpected() {
-        JacksonSerializer jacksonSerializer = JacksonSerializer.defaultSerializer();
+        Converter converter = new Jackson2Converter();
 
-        SerializedObject<String> serializedObject = jacksonSerializer.serialize(testSubject, String.class);
-        SagaScopeDescriptor result = jacksonSerializer.deserialize(serializedObject);
+        byte[] serialized = converter.convert(testSubject, byte[].class);
+        SagaScopeDescriptor result = converter.convert(serialized, SagaScopeDescriptor.class);
 
         assertEquals(expectedType, result.getType());
         assertEquals(expectedIdentifier, result.getIdentifier());
@@ -55,10 +55,10 @@ class SagaScopeDescriptorSerializationTest {
     @Test
     void responseTypeShouldBeSerializableWithJacksonUsingConstructorProperties() {
         ObjectMapper objectMapper = OnlyAcceptConstructorPropertiesAnnotation.attachTo(new ObjectMapper());
-        JacksonSerializer jacksonSerializer = JacksonSerializer.builder().objectMapper(objectMapper).build();
+        Converter converter = new Jackson2Converter(objectMapper);
 
-        SerializedObject<String> serializedObject = jacksonSerializer.serialize(testSubject, String.class);
-        SagaScopeDescriptor result = jacksonSerializer.deserialize(serializedObject);
+        byte[] serialized = converter.convert(testSubject, byte[].class);
+        SagaScopeDescriptor result = converter.convert(serialized, SagaScopeDescriptor.class);
 
         assertEquals(expectedType, result.getType());
         assertEquals(expectedIdentifier, result.getIdentifier());

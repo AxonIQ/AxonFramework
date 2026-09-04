@@ -31,9 +31,11 @@ import org.junit.jupiter.api.*;
 import org.mockito.*;
 
 import java.time.Duration;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -57,6 +59,17 @@ public abstract class CachingSagaStoreTest extends SagaStoreTestSuite {
 
     private static final Duration TIMEOUT = Duration.ofSeconds(5);
 
+    /**
+     * Strong references to every value the caches under test accepted, keeping weakly referenced entries alive.
+     * <p>
+     * A {@link org.axonframework.common.caching.WeakReferenceCache} only weakly references its values, and the values
+     * this suite exercises are constructed inside the {@link CachingSagaStore} and reachable from nowhere else: the
+     * {@link SagaStore.Entry} it wraps a saga in, and the set of saga identifiers behind an association value. A
+     * garbage collection between a write and the assertion reading it back would therefore empty the cache and fail a
+     * test that has nothing to say about weak references, so this suite pins whatever the caches receive.
+     */
+    private final Collection<Object> pinnedCacheValues = new CopyOnWriteArrayList<>();
+
     private SagaStore<Object> delegate;
     private Cache sagaCache;
     private Cache associationsCache;
@@ -68,6 +81,8 @@ public abstract class CachingSagaStoreTest extends SagaStoreTestSuite {
         delegate = spy(new InMemorySagaStore());
         sagaCache = spy(sagaCache());
         associationsCache = spy(associationCache());
+        pinValuesOf(sagaCache);
+        pinValuesOf(associationsCache);
 
         testSubject = CachingSagaStore.builder()
                                       .delegateSagaStore(delegate)
@@ -94,6 +109,20 @@ public abstract class CachingSagaStoreTest extends SagaStoreTestSuite {
      * @return The association value entry {@link Cache} used for testing.
      */
     abstract Cache associationCache();
+
+    private void pinValuesOf(Cache cache) {
+        cache.registerCacheEntryListener(new Cache.EntryListenerAdapter() {
+            @Override
+            public void onEntryCreated(Object key, Object value) {
+                pinnedCacheValues.add(value);
+            }
+
+            @Override
+            public void onEntryUpdated(Object key, Object value) {
+                pinnedCacheValues.add(value);
+            }
+        });
+    }
 
     private void clearCaches() {
         sagaCache.removeAll();

@@ -79,7 +79,6 @@ class AnnotationSagaMetaModelFactoryTest {
     }
 
     @Test
-    @Disabled("TODO #3062 - Exception Handler support")
     void exceptionShouldBeCaughtByExceptionHandler() throws Exception {
         SagaModel<MySagaWithErrorHandler> sagaModel = testSubject.modelOf(MySagaWithErrorHandler.class);
 

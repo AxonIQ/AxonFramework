@@ -16,17 +16,13 @@
 
 package org.axonframework.modelling.saga;
 
-import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.processing.errorhandling.ListenerInvocationErrorHandler;
-import org.axonframework.messaging.eventhandling.processing.errorhandling.LoggingErrorHandler;
-import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
+import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.annotation.HandlerDefinition;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
-import org.axonframework.messaging.tracing.NoOpSpanFactory;
+import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.modelling.saga.metamodel.AnnotationSagaMetaModelFactory;
 import org.axonframework.modelling.saga.metamodel.SagaModel;
-import org.axonframework.messaging.tracing.SpanFactory;
 
 import java.util.Objects;
 import java.util.Set;
@@ -51,17 +47,14 @@ public class AnnotatedSagaManager<T> extends AbstractSagaManager<T> {
      * Instantiate a {@link AnnotatedSagaManager} based on the fields contained in the {@link Builder}.
      * <p>
      * The {@code sagaFactory} is defaulted to a {@code sagaType.newInstance()} call throwing a
-     * {@link SagaInstantiationException} if it fails, the {@link SagaManagerSpanFactory} defaults to a
-     * {@link DefaultSagaManagerSpanFactory} backed by a {@link NoOpSpanFactory}, and the
-     * {@link ListenerInvocationErrorHandler} is defaulted to a {@link LoggingErrorHandler}. The {@link SagaRepository}
-     * and {@code sagaType} are <b>hard requirements</b> and as such should be provided.
+     * {@link SagaInstantiationException} if it fails. The {@link SagaRepository} and {@code sagaType} are
+     * <b>hard requirements</b> and as such should be provided.
      * <p>
-     * Will assert that the {@link SagaRepository}, {@code sagaType}, {@code sagaFactory} and
-     * {@link ListenerInvocationErrorHandler} are not {@code null}, and will throw an
-     * {@link org.axonframework.common.AxonConfigurationException} if any of them is {@code null}. Additionally, the
-     * provided Builder's goal is to either build a {@link SagaModel} specifying generic {@code T} as the Saga type to
-     * be stored or derive it based on the given {@code sagaType}. All Sagas managed by this Saga manager must be
-     * {@code instanceOf} this Saga type.
+     * Will assert that the {@link SagaRepository}, {@code sagaType} and {@code sagaFactory} are not {@code null}, and
+     * will throw an {@link org.axonframework.common.AxonConfigurationException} if any of them is {@code null}.
+     * Additionally, the provided Builder's goal is to either build a {@link SagaModel} specifying generic {@code T}
+     * as the Saga type to be stored or derive it based on the given {@code sagaType}. All Sagas managed by this Saga
+     * manager must be {@code instanceOf} this Saga type.
      *
      * @param builder the {@link Builder} used to instantiate a {@link AnnotatedSagaManager} instance
      */
@@ -74,9 +67,7 @@ public class AnnotatedSagaManager<T> extends AbstractSagaManager<T> {
      * Instantiate a Builder to be able to create a {@link AnnotatedSagaManager}.
      * <p>
      * The {@code sagaFactory} is defaulted to a {@code sagaType.newInstance()} call throwing a
-     * {@link SagaInstantiationException} if it fails, the {@link ListenerInvocationErrorHandler} is defaulted to a
-     * {@link LoggingErrorHandler} and the {@link SagaManagerSpanFactory} is defaulted to a
-     * {@link DefaultSagaManagerSpanFactory} backed by a {@link NoOpSpanFactory}.
+     * {@link SagaInstantiationException} if it fails.
      * <p>
      * This Builder either allows directly setting a {@link SagaModel} of generic type {@code T}, or it will generate
      * one based of the required {@code sagaType} field of type {@link Class}. Thus, either the SagaModel <b>or</b> the
@@ -93,9 +84,13 @@ public class AnnotatedSagaManager<T> extends AbstractSagaManager<T> {
 
 
     @Override
-    public boolean canHandle(EventMessage eventMessage, ProcessingContext context, Segment segment) {
-        // The segment is used to filter Saga instances, so all events match when there's a handler
-        return sagaMetaModel.hasHandlerMethod(eventMessage, context);
+    protected boolean canHandle(EventMessage event, ProcessingContext context) {
+        return sagaMetaModel.hasHandlerMethod(event, context);
+    }
+
+    @Override
+    public Set<QualifiedName> supportedEvents() {
+        return sagaMetaModel.supportedEvents();
     }
 
     @SuppressWarnings("unchecked")
@@ -127,9 +122,7 @@ public class AnnotatedSagaManager<T> extends AbstractSagaManager<T> {
      * Builder class to instantiate a {@link AnnotatedSagaManager}.
      * <p>
      * The {@code sagaFactory} is defaulted to a {@code sagaType.newInstance()} call throwing a
-     * {@link SagaInstantiationException} if it fails, the {@link SpanFactory} defaults to a
-     * {@link NoOpSpanFactory}, and the {@link ListenerInvocationErrorHandler} is defaulted to
-     * a {@link LoggingErrorHandler}.
+     * {@link SagaInstantiationException} if it fails.
      * <p>
      * This Builder either allows directly setting a {@link SagaModel} of generic type {@code T}, or it will generate
      * one based of the required {@code sagaType} field of type {@link Class}. Thus, either the SagaModel <b>or</b> the
@@ -160,19 +153,6 @@ public class AnnotatedSagaManager<T> extends AbstractSagaManager<T> {
         @Override
         public Builder<T> sagaFactory(Supplier<T> sagaFactory) {
             super.sagaFactory(sagaFactory);
-            return this;
-        }
-
-        @Override
-        public Builder<T> listenerInvocationErrorHandler(
-                ListenerInvocationErrorHandler listenerInvocationErrorHandler) {
-            super.listenerInvocationErrorHandler(listenerInvocationErrorHandler);
-            return this;
-        }
-
-        @Override
-        public Builder<T> spanFactory(SagaManagerSpanFactory spanFactory) {
-            super.spanFactory(spanFactory);
             return this;
         }
 

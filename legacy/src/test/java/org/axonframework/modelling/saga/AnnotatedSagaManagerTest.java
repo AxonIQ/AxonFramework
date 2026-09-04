@@ -16,20 +16,25 @@
 
 package org.axonframework.modelling.saga;
 
+import org.axonframework.common.FutureUtils;
+import org.axonframework.messaging.core.EmptyApplicationContext;
+import org.axonframework.messaging.core.MessageType;
+import org.axonframework.messaging.core.annotation.MetadataValue;
+import org.axonframework.messaging.core.interception.annotation.ExceptionHandler;
+import org.axonframework.messaging.core.unitofwork.SimpleUnitOfWorkFactory;
+import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
+import org.axonframework.messaging.core.unitofwork.UnitOfWork;
+import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.GenericEventMessage;
-import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
+import org.axonframework.messaging.eventhandling.replay.GenericResetContext;
 import org.axonframework.messaging.eventhandling.replay.ResetNotSupportedException;
-import org.axonframework.messaging.core.MessageType;
-import org.axonframework.messaging.core.ResultMessage;
-import org.axonframework.messaging.core.annotation.MetadataValue;
-import org.axonframework.messaging.unitofwork.LegacyDefaultUnitOfWork;
 import org.axonframework.modelling.saga.repository.AnnotatedSagaRepository;
 import org.axonframework.modelling.saga.repository.SagaStore;
 import org.axonframework.modelling.saga.repository.inmemory.InMemorySagaStore;
-import org.axonframework.common.util.StubDomainEvent;
 import org.junit.jupiter.api.*;
 
+import java.time.Duration;
 import java.util.Collection;
 import java.util.LinkedList;
 import java.util.List;
@@ -48,8 +53,11 @@ import static org.mockito.Mockito.*;
  */
 public class AnnotatedSagaManagerTest {
 
+    private static final Duration TIMEOUT = Duration.ofSeconds(5);
+
     private AnnotatedSagaRepository<MyTestSaga> sagaRepository;
     private InMemorySagaStore sagaStore;
+    private UnitOfWorkFactory unitOfWorkFactory;
 
     private AnnotatedSagaManager<MyTestSaga> testSubject;
 
@@ -62,6 +70,7 @@ public class AnnotatedSagaManagerTest {
                                        .sagaStore(sagaStore)
                                        .build()
         );
+        unitOfWorkFactory = new SimpleUnitOfWorkFactory(EmptyApplicationContext.INSTANCE);
         testSubject = AnnotatedSagaManager.<MyTestSaga>builder()
                                           .sagaRepository(sagaRepository)
                                           .sagaType(MyTestSaga.class)
@@ -85,7 +94,7 @@ public class AnnotatedSagaManagerTest {
     @Test
     void handleUnrelatedEvent() throws Exception {
         handle(new GenericEventMessage(new MessageType("event"), "Unrelated"));
-        verify(sagaRepository, never()).find(isNull());
+        verify(sagaRepository, never()).find(isNull(), any());
     }
 
     @Test
@@ -128,7 +137,7 @@ public class AnnotatedSagaManagerTest {
     void nullAssociationValueIsIgnored() throws Exception {
         handle(new GenericEventMessage(new MessageType("event"), new StartingEvent(null)));
 
-        verify(sagaRepository, never()).find(null);
+        verify(sagaRepository, never()).find(isNull(), any());
     }
 
     @Test
@@ -160,39 +169,167 @@ public class AnnotatedSagaManagerTest {
     @Test
     void lifeCycle_ExistingInstanceIgnoresEvent() throws Exception {
         handle(new GenericEventMessage(new MessageType("event"), new StartingEvent("12")));
-        handle(new GenericEventMessage(new MessageType("event"), new StubDomainEvent()));
+        handle(new GenericEventMessage(new MessageType("event"), new UnrelatedDomainEvent()));
         assertEquals(1, repositoryContents("12").size());
         assertEquals(1, repositoryContents("12").iterator().next().getCapturedEvents().size());
     }
 
     @Test
     void lifeCycle_IgnoredEventDoesNotCreateInstance() throws Exception {
-        handle(new GenericEventMessage(new MessageType("event"), new StubDomainEvent()));
+        handle(new GenericEventMessage(new MessageType("event"), new UnrelatedDomainEvent()));
         assertEquals(0, repositoryContents("12").size());
     }
 
     @Test
-    void performResetThrowsResetNotSupportedException() {
-        AnnotatedSagaManager<MyTestSaga> spiedTestSubject = spy(testSubject);
-
-        assertThrows(ResetNotSupportedException.class, () -> spiedTestSubject.performReset(null));
-
-        verify(spiedTestSubject).performReset(null, null);
+    void doesNotSupportReset() {
+        assertFalse(testSubject.supportsReset());
     }
 
     @Test
-    void performResetWithResetInfoThrowsResetNotSupportedException() {
-        assertThrows(ResetNotSupportedException.class, () -> testSubject.performReset("reset-info", null));
+    void handlingAResetContextThrowsResetNotSupportedException() {
+        var resetContext = new GenericResetContext(new MessageType(String.class), "reset-info");
+
+        assertThrows(
+                ResetNotSupportedException.class,
+                () -> testSubject.handle(resetContext, StubProcessingContext.forMessage(resetContext))
+        );
     }
 
-    private void handle(EventMessage event) throws Exception {
-        ResultMessage resultMessage = LegacyDefaultUnitOfWork.startAndGet(event).executeWithResult((ctx) -> {
-            testSubject.handle(event, ctx, Segment.ROOT_SEGMENT);
-            return null;
-        });
-        if (resultMessage.payload() instanceof Exception ex) {
-            throw ex;
+    /**
+     * A {@link SagaLifecycle} parameter is how an Axon Framework 4 saga's calls to the static
+     * {@code SagaLifecycle.associateWith(...)} and {@code SagaLifecycle.end()} are expressed in Axon Framework 5, which
+     * has no thread local to read them from. It is therefore the migration path for every Axon Framework 4 saga that
+     * manages its own associations, and a saga declaring one has to be exactly as visible to the manager as any other.
+     * <p>
+     * It is easy to break without noticing. The manager resolves handlers through the metamodel to extract the
+     * {@link AssociationValue AssociationValues} it looks sagas up by and to read the
+     * {@link SagaCreationPolicy}, and it does so before any saga has registered itself on the
+     * {@link org.axonframework.messaging.core.unitofwork.ProcessingContext} - when starting one, before a saga exists
+     * at all. A {@code ParameterResolver} that reports no match until the {@link SagaLifecycle#RESOURCE_KEY} resource
+     * is present therefore removes the handler from the metamodel entirely, which leaves nothing to search on and a
+     * {@link SagaCreationPolicy#NONE} policy. The saga is never started and never found, with nothing thrown and
+     * nothing logged.
+     * <p>
+     * These tests exist because that is unobservable anywhere narrower: a resolver test can only exercise
+     * {@code matches} directly, and every other saga fixture in this module declares no such parameter.
+     */
+    @Nested
+    class SagaLifecycleInjection {
+
+        private AnnotatedSagaManager<LifecycleInjectingTestSaga> lifecycleTestSubject;
+
+        @BeforeEach
+        void setUp() {
+            lifecycleTestSubject =
+                    AnnotatedSagaManager.<LifecycleInjectingTestSaga>builder()
+                                        .sagaRepository(AnnotatedSagaRepository.<LifecycleInjectingTestSaga>builder()
+                                                                              .sagaType(LifecycleInjectingTestSaga.class)
+                                                                              .sagaStore(sagaStore)
+                                                                              .build())
+                                        .sagaType(LifecycleInjectingTestSaga.class)
+                                        .sagaFactory(LifecycleInjectingTestSaga::new)
+                                        .build();
         }
+
+        @Test
+        void aSagaWhoseStartingHandlerDeclaresASagaLifecycleIsStarted() {
+            handle(new GenericEventMessage(new MessageType("event"), new StartingEvent("123")));
+
+            assertEquals(1, sagaStore.findSagas(LifecycleInjectingTestSaga.class,
+                                                new AssociationValue("myIdentifier", "123")).size());
+        }
+
+        @Test
+        void theAssociationTheHandlerAddedThroughTheLifecycleIsStored() {
+            handle(new GenericEventMessage(new MessageType("event"), new StartingEvent("123")));
+
+            assertEquals(1, sagaStore.findSagas(LifecycleInjectingTestSaga.class,
+                                                new AssociationValue("secondaryIdentifier", "secondary-123")).size());
+        }
+
+        @Test
+        void theSagaIsFoundAgainByTheAssociationItAddedItself() {
+            handle(new GenericEventMessage(new MessageType("event"), new StartingEvent("123")));
+
+            // a second starting event for the same identifier must not create a second saga, which it only avoids if
+            // the manager could see the handler and find the existing saga through it
+            handle(new GenericEventMessage(new MessageType("event"), new StartingEvent("123")));
+
+            assertEquals(1, sagaStore.findSagas(LifecycleInjectingTestSaga.class,
+                                                new AssociationValue("myIdentifier", "123")).size());
+        }
+
+        private void handle(EventMessage event) {
+            UnitOfWork unitOfWork = unitOfWorkFactory.create();
+            unitOfWork.runOnInvocation(context -> lifecycleTestSubject.handle(event, context));
+            FutureUtils.joinAndUnwrap(unitOfWork.execute(), TIMEOUT);
+        }
+    }
+
+    /**
+     * A saga that suppresses its own handler failure through an {@link ExceptionHandler} reaches the outcome the Axon
+     * Framework 4 {@code ListenerInvocationErrorHandler} default produced: the unit of work commits, the saga is
+     * stored, and the saga counts as having taken the event so {@link SagaCreationPolicy#IF_NONE_FOUND} does not start
+     * a second one.
+     */
+    @Nested
+    class SuppressedHandlerFailures {
+
+        private AnnotatedSagaManager<SuppressingTestSaga> suppressingTestSubject;
+
+        @BeforeEach
+        void setUp() {
+            suppressingTestSubject =
+                    AnnotatedSagaManager.<SuppressingTestSaga>builder()
+                                        .sagaRepository(AnnotatedSagaRepository.<SuppressingTestSaga>builder()
+                                                                               .sagaType(SuppressingTestSaga.class)
+                                                                               .sagaStore(sagaStore)
+                                                                               .build())
+                                        .sagaType(SuppressingTestSaga.class)
+                                        .sagaFactory(SuppressingTestSaga::new)
+                                        .build();
+        }
+
+        @Test
+        void aSuppressedFailureStillStoresTheSaga() {
+            handle(new GenericEventMessage(new MessageType("event"), new StartingEvent("123")));
+
+            Collection<SuppressingTestSaga> sagas = suppressingRepositoryContents();
+            assertEquals(1, sagas.size());
+            SuppressingTestSaga saga = sagas.iterator().next();
+            assertEquals(1, saga.getHandlerInvocations());
+            assertEquals(1, saga.getSuppressedFailures());
+        }
+
+        @Test
+        void aSuppressedFailureStillCountsAsInvoked() {
+            handle(new GenericEventMessage(new MessageType("event"), new StartingEvent("123")));
+            handle(new GenericEventMessage(new MessageType("event"), new StartingEvent("123")));
+
+            Collection<SuppressingTestSaga> sagas = suppressingRepositoryContents();
+            assertEquals(1, sagas.size());
+            assertEquals(2, sagas.iterator().next().getHandlerInvocations());
+        }
+
+        private void handle(EventMessage event) {
+            UnitOfWork unitOfWork = unitOfWorkFactory.create();
+            unitOfWork.runOnInvocation(context -> suppressingTestSubject.handle(event, context));
+            FutureUtils.joinAndUnwrap(unitOfWork.execute(), TIMEOUT);
+        }
+
+        private Collection<SuppressingTestSaga> suppressingRepositoryContents() {
+            return sagaStore.findSagas(SuppressingTestSaga.class, new AssociationValue("myIdentifier", "123"))
+                            .stream()
+                            .map(id -> sagaStore.loadSaga(SuppressingTestSaga.class, id))
+                            .map(SagaStore.Entry::saga)
+                            .collect(Collectors.toList());
+        }
+    }
+
+    private void handle(EventMessage event) {
+        UnitOfWork unitOfWork = unitOfWorkFactory.create();
+        unitOfWork.runOnInvocation(context -> testSubject.handle(event, context));
+        FutureUtils.joinAndUnwrap(unitOfWork.execute(), TIMEOUT);
     }
 
     private Collection<MyTestSaga> repositoryContents(String lookupValue) {
@@ -314,6 +451,47 @@ public class AnnotatedSagaManagerTest {
 
         public MiddleEvent(String myIdentifier) {
             super(myIdentifier);
+        }
+    }
+
+    public static class UnrelatedDomainEvent {
+
+    }
+
+    @SuppressWarnings("unused")
+    public static class LifecycleInjectingTestSaga {
+
+        @StartSaga
+        @SagaEventHandler(associationProperty = "myIdentifier")
+        public void handleStartingEvent(StartingEvent event, SagaLifecycle lifecycle) {
+            lifecycle.associateWith("secondaryIdentifier", "secondary-" + event.getMyIdentifier());
+        }
+    }
+
+    @SuppressWarnings("unused")
+    public static class SuppressingTestSaga {
+
+        private int handlerInvocations = 0;
+        private int suppressedFailures = 0;
+
+        @StartSaga
+        @SagaEventHandler(associationProperty = "myIdentifier")
+        public void handleStartingEvent(StartingEvent event) {
+            handlerInvocations++;
+            throw new IllegalStateException("saga handler failed");
+        }
+
+        @ExceptionHandler
+        public void on(IllegalStateException failure) {
+            suppressedFailures++;
+        }
+
+        public int getHandlerInvocations() {
+            return handlerInvocations;
+        }
+
+        public int getSuppressedFailures() {
+            return suppressedFailures;
         }
     }
 }
