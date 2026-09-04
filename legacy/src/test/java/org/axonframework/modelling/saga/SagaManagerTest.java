@@ -32,6 +32,7 @@ import org.mockito.*;
 import java.util.Collections;
 import java.util.Set;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
 import static java.util.Collections.singleton;
@@ -101,19 +102,33 @@ class SagaManagerTest {
     }
 
     @Test
-    void exceptionFromOneSagaDoesNotPreventOthersFromBeingInvokedButFailsTheResult() {
+    void aFailingSagaFailsTheResultAndStopsTheRemainingSagasFromBeingInvoked() {
+        // given two active sagas whose handling fails, counting how many of them actually ran
         EventMessage event = new GenericEventMessage(new MessageType("event"), new Object());
         ProcessingContext context = StubProcessingContext.forMessage(event);
         RuntimeException toBeThrown = new RuntimeException("Mock");
-        when(mockSaga1.handle(eq(event), any())).thenReturn(MessageStream.failed(toBeThrown));
+        AtomicInteger invokedSagas = new AtomicInteger();
+        when(mockSaga1.handle(eq(event), any())).thenAnswer(invocation -> {
+            invokedSagas.incrementAndGet();
+            return MessageStream.failed(toBeThrown);
+        });
+        when(mockSaga2.handle(eq(event), any())).thenAnswer(invocation -> {
+            invokedSagas.incrementAndGet();
+            return MessageStream.failed(toBeThrown);
+        });
 
+        // when
         MessageStream.Empty<Message> result = testSubject.handle(event, context);
 
+        // then the failure surfaces, and only the saga that failed ran. Each invocation is deferred until the
+        // preceding saga's stream completed successfully, so a failed saga keeps the side effects of the remaining
+        // sagas from escaping a unit of work that is going to roll back, the way a failure in Axon Framework 4 left
+        // handle before the loop reached them. The manager offers the event to its sagas in no particular order,
+        // which is why both fail here and the count pins that exactly one of them ran.
         CompletionException exception =
                 assertThrows(CompletionException.class, () -> result.asCompletableFuture().join());
         assertEquals(toBeThrown, exception.getCause());
-        verify(mockSaga1).handle(eq(event), any());
-        verify(mockSaga2).handle(eq(event), any());
+        assertEquals(1, invokedSagas.get());
         verify(mockSaga3, never()).handle(eq(event), any());
     }
 

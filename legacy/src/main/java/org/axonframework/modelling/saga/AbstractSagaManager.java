@@ -115,8 +115,11 @@ public abstract class AbstractSagaManager<T> implements EventHandlingComponent, 
         boolean sagaOfTypeInvoked = false;
         for (Saga<T> saga : sagas) {
             if (saga.canHandle(event, context)) {
-                result = result.concatWith(saga.handle(event, context));
-                // Deliberately set before the stream is consumed: a Saga whose handler fails still took the event,
+                // Deferred on purpose: a lazily concatenated stream is only consumed once the preceding one completed
+                // successfully, so once one Saga fails, the remaining Sagas are not invoked and their side effects
+                // cannot escape a unit of work that is going to roll back.
+                result = result.concatWith(() -> saga.handle(event, context));
+                // Deliberately set before the Saga is invoked: a Saga whose handler fails still took the event,
                 // which is what Axon Framework 4's error handling meant by returning true from an invocation that threw.
                 sagaOfTypeInvoked = true;
             }
@@ -124,8 +127,8 @@ public abstract class AbstractSagaManager<T> implements EventHandlingComponent, 
 
         SagaInitializationPolicy initializationPolicy = getSagaCreationPolicy(event, context);
         if (shouldCreateSaga(segment, sagaOfTypeInvoked || sagaMatchesOtherSegment, initializationPolicy)) {
-            // Deferred on purpose: a lazily concatenated stream is only consumed once the preceding one completed
-            // successfully, so a Saga that failed above stops the new Saga from being created and invoked at all.
+            // Deferred for the same reason: a Saga that failed above stops the new Saga from being created and
+            // invoked at all.
             result = result.concatWith(
                     () -> startNewSaga(event, context, initializationPolicy.getInitialAssociationValue(), segment)
             );
