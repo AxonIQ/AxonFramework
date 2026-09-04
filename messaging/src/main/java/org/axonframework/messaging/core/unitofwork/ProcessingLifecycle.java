@@ -27,7 +27,7 @@ import java.util.function.Function;
  * <p/>
  * Throughout the lifecycle of any process, actions need to be taken in different phases. Numerous
  * {@link DefaultPhases default phases} are defined that are used throughout the framework for these actions. The
- * {@link ProcessingLifecycle} has shorthand operations corresponding to these {@code DefaultPhases}. For example, the
+ * {@code ProcessingLifecycle} has shorthand operations corresponding to these {@code DefaultPhases}. For example, the
  * {@link #onPreInvocation(Function)} uses the {@link DefaultPhases#PRE_INVOCATION} phase.
  * <p/>
  * When the {@link ProcessingLifecycle#isStarted() ProcessingLifecycle is started}, the phases are invoked beginning
@@ -49,34 +49,34 @@ import java.util.function.Function;
 public interface ProcessingLifecycle {
 
     /**
-     * Returns {@code true} when this {@link ProcessingLifecycle} is started, {@code false} otherwise.
+     * Returns {@code true} when this {@code ProcessingLifecycle} is started, {@code false} otherwise.
      *
-     * @return {@code true} when this {@link ProcessingLifecycle} is started, {@code false} otherwise.
+     * @return {@code true} when this {@code ProcessingLifecycle} is started, {@code false} otherwise
      */
     boolean isStarted();
 
     /**
-     * Returns {@code true} when this {@link ProcessingLifecycle} is in error, {@code false} otherwise.
+     * Returns {@code true} when this {@code ProcessingLifecycle} is in error, {@code false} otherwise.
      * <p>
      * When {@code true}, the {@link #onError(ErrorHandler) registered ErrorHandlers} will be invoked.
      *
-     * @return {@code true} when this {@link ProcessingLifecycle} is in error, {@code false} otherwise.
+     * @return {@code true} when this {@code ProcessingLifecycle} is in error, {@code false} otherwise
      */
     boolean isError();
 
     /**
-     * Returns {@code true} when this {@link ProcessingLifecycle} is committed, {@code false} otherwise.
+     * Returns {@code true} when this {@code ProcessingLifecycle} is committed, {@code false} otherwise.
      *
-     * @return {@code true} when this {@link ProcessingLifecycle} is committed, {@code false} otherwise.
+     * @return {@code true} when this {@code ProcessingLifecycle} is committed, {@code false} otherwise
      */
     boolean isCommitted();
 
     /**
-     * Returns {@code true} when this {@link ProcessingLifecycle} is completed, {@code false} otherwise.
+     * Returns {@code true} when this {@code ProcessingLifecycle} is completed, {@code false} otherwise.
      * <p>
      * Note that this {@code ProcessingLifecycle} is marked as completed for a successful and failed completion.
      *
-     * @return {@code true} when this {@link ProcessingLifecycle} is completed, {@code false} otherwise.
+     * @return {@code true} when this {@code ProcessingLifecycle} is completed, {@code false} otherwise
      */
     boolean isCompleted();
 
@@ -95,12 +95,12 @@ public interface ProcessingLifecycle {
      * interface over an arbitrary order and the {@link DefaultPhases} leave {@code 10000} between them, so such an
      * action still runs once the current {@code Phase} completed and before the next default one begins.
      *
-     * @param phase  The {@link Phase} to execute the given {@code action} in.
-     * @param action The {@link Function} that's given the active {@link ProcessingContext} and returns a
-     *               {@link CompletableFuture} for chaining purposes and to carry the action's result.
-     * @return This {@link ProcessingLifecycle} instance for fluent interfacing.
-     * @throws IllegalStateException when the given {@code phase} has an {@link Phase#order() order} at or below that
-     *                               of the {@code Phase} this {@link ProcessingLifecycle} is currently in
+     * @param phase  the {@link Phase} to execute the given {@code action} in
+     * @param action the {@link Function} that's given the active {@link ProcessingContext} and returns a
+     *               {@link CompletableFuture} for chaining purposes and to carry the action's result
+     * @return this {@code ProcessingLifecycle} instance for fluent interfacing
+     * @throws IllegalStateException when the given {@code phase} has an {@link Phase#order() order} at or below that of
+     *                               the {@code Phase} this {@code ProcessingLifecycle} is currently in
      */
     ProcessingLifecycle on(Phase phase, Function<ProcessingContext, CompletableFuture<?>> action);
 
@@ -110,8 +110,10 @@ public interface ProcessingLifecycle {
      * Use this operation when there is no need for a return value of the registered {@code action}.
      *
      * @param phase  The {@link Phase} to execute the given {@code action} in.
-     * @param action A {@link Consumer} that's given the active {@link ProcessingContext} to perform its action.
-     * @return This {@link ProcessingLifecycle} instance for fluent interfacing.
+     * @param action a {@link Consumer} that's given the active {@link ProcessingContext} to perform its action
+     * @return This {@code ProcessingLifecycle} instance for fluent interfacing.
+     * @throws IllegalStateException when the given {@code phase} has an {@link Phase#order() order} at or below that of
+     *                               the {@code Phase} this {@code ProcessingLifecycle} is currently in
      */
     default ProcessingLifecycle runOn(Phase phase, Consumer<ProcessingContext> action) {
         return on(phase, c -> {
@@ -126,9 +128,11 @@ public interface ProcessingLifecycle {
      * <p>
      * Use this operation when the return value of the {@code action} is important.
      *
-     * @param action The {@link Function} that's given the active {@link ProcessingContext} and returns a
-     *               {@link CompletableFuture} for chaining purposes and to carry the action's result.
-     * @return This {@link ProcessingLifecycle} instance for fluent interfacing.
+     * @param action the {@link Function} that's given the active {@link ProcessingContext} and returns a
+     *               {@link CompletableFuture} for chaining purposes and to carry the action's result
+     * @return this {@code ProcessingLifecycle} instance for fluent interfacing.
+     * @throws IllegalStateException when this {@code ProcessingLifecycle's} phase is on or below the
+     *                               {@link DefaultPhases#PRE_INVOCATION} phase
      */
     default ProcessingLifecycle onPreInvocation(Function<ProcessingContext, CompletableFuture<?>> action) {
         return on(DefaultPhases.PRE_INVOCATION, action);
@@ -140,8 +144,10 @@ public interface ProcessingLifecycle {
      * <p>
      * Use this operation when there is no need for a return value of the registered {@code action}.
      *
-     * @param action A {@link Consumer} that's given the active {@link ProcessingContext} to perform its action.
-     * @return This {@link ProcessingLifecycle} instance for fluent interfacing.
+     * @param action a {@link Consumer} that's given the active {@link ProcessingContext} to perform its action
+     * @return this {@code ProcessingLifecycle} instance for fluent interfacing.
+     * @throws IllegalStateException when this {@code ProcessingLifecycle's} phase is on or below the
+     *                               {@link DefaultPhases#PRE_INVOCATION} phase
      */
     default ProcessingLifecycle runOnPreInvocation(Consumer<ProcessingContext> action) {
         return runOn(DefaultPhases.PRE_INVOCATION, action);
@@ -152,9 +158,11 @@ public interface ProcessingLifecycle {
      * <p>
      * Use this operation when the return value of the {@code action} is important.
      *
-     * @param action The {@link Function} that's given the active {@link ProcessingContext} and returns a
-     *               {@link CompletableFuture} for chaining purposes and to carry the action's result.
-     * @return This {@link ProcessingLifecycle} instance for fluent interfacing.
+     * @param action the {@link Function} that's given the active {@link ProcessingContext} and returns a
+     *               {@link CompletableFuture} for chaining purposes and to carry the action's result
+     * @return this {@code ProcessingLifecycle} instance for fluent interfacing
+     * @throws IllegalStateException when this {@code ProcessingLifecycle's} phase is on or below the
+     *                               {@link DefaultPhases#INVOCATION} phase
      */
     default ProcessingLifecycle onInvocation(Function<ProcessingContext, CompletableFuture<?>> action) {
         return on(DefaultPhases.INVOCATION, action);
@@ -165,8 +173,10 @@ public interface ProcessingLifecycle {
      * <p>
      * Use this operation when there is no need for a return value of the registered {@code action}.
      *
-     * @param action A {@link Consumer} that's given the active {@link ProcessingContext} to perform its action.
-     * @return This {@link ProcessingLifecycle} instance for fluent interfacing.
+     * @param action a {@link Consumer} that's given the active {@link ProcessingContext} to perform its action
+     * @return this {@code ProcessingLifecycle} instance for fluent interfacing
+     * @throws IllegalStateException when this {@code ProcessingLifecycle's} phase is on or below the
+     *                               {@link DefaultPhases#INVOCATION} phase
      */
     default ProcessingLifecycle runOnInvocation(Consumer<ProcessingContext> action) {
         return runOn(DefaultPhases.INVOCATION, action);
@@ -178,9 +188,11 @@ public interface ProcessingLifecycle {
      * <p>
      * Use this operation when the return value of the {@code action} is important.
      *
-     * @param action The {@link Function} that's given the active {@link ProcessingContext} and returns a
-     *               {@link CompletableFuture} for chaining purposes and to carry the action's result.
-     * @return This {@link ProcessingLifecycle} instance for fluent interfacing.
+     * @param action the {@link Function} that's given the active {@link ProcessingContext} and returns a
+     *               {@link CompletableFuture} for chaining purposes and to carry the action's result
+     * @return this {@code ProcessingLifecycle} instance for fluent interfacing
+     * @throws IllegalStateException when this {@code ProcessingLifecycle's} phase is on or below the
+     *                               {@link DefaultPhases#POST_INVOCATION} phase
      */
     default ProcessingLifecycle onPostInvocation(Function<ProcessingContext, CompletableFuture<?>> action) {
         return on(DefaultPhases.POST_INVOCATION, action);
@@ -192,8 +204,10 @@ public interface ProcessingLifecycle {
      * <p>
      * Use this operation when there is no need for a return value of the registered {@code action}.
      *
-     * @param action A {@link Consumer} that's given the active {@link ProcessingContext} to perform its action.
-     * @return This {@link ProcessingLifecycle} instance for fluent interfacing.
+     * @param action a {@link Consumer} that's given the active {@link ProcessingContext} to perform its action
+     * @return this {@code ProcessingLifecycle} instance for fluent interfacing
+     * @throws IllegalStateException when this {@code ProcessingLifecycle's} phase is on or below the
+     *                               {@link DefaultPhases#POST_INVOCATION} phase
      */
     default ProcessingLifecycle runOnPostInvocation(Consumer<ProcessingContext> action) {
         return runOn(DefaultPhases.POST_INVOCATION, action);
@@ -205,9 +219,11 @@ public interface ProcessingLifecycle {
      * <p>
      * Use this operation when the return value of the {@code action} is important.
      *
-     * @param action The {@link Function} that's given the active {@link ProcessingContext} and returns a
-     *               {@link CompletableFuture} for chaining purposes and to carry the action's result.
-     * @return This {@link ProcessingLifecycle} instance for fluent interfacing.
+     * @param action the {@link Function} that's given the active {@link ProcessingContext} and returns a
+     *               {@link CompletableFuture} for chaining purposes and to carry the action's result
+     * @return this {@code ProcessingLifecycle} instance for fluent interfacing
+     * @throws IllegalStateException when this {@code ProcessingLifecycle's} phase is on or below the
+     *                               {@link DefaultPhases#PREPARE_COMMIT} phase
      */
     default ProcessingLifecycle onPrepareCommit(Function<ProcessingContext, CompletableFuture<?>> action) {
         return on(DefaultPhases.PREPARE_COMMIT, action);
@@ -219,8 +235,10 @@ public interface ProcessingLifecycle {
      * <p>
      * Use this operation when there is no need for a return value of the registered {@code action}.
      *
-     * @param action A {@link Consumer} that's given the active {@link ProcessingContext} to perform its action.
-     * @return This {@link ProcessingLifecycle} instance for fluent interfacing.
+     * @param action a {@link Consumer} that's given the active {@link ProcessingContext} to perform its action
+     * @return this {@code ProcessingLifecycle} instance for fluent interfacing
+     * @throws IllegalStateException when this {@code ProcessingLifecycle's} phase is on or below the
+     *                               {@link DefaultPhases#PREPARE_COMMIT} phase
      */
     default ProcessingLifecycle runOnPrepareCommit(Consumer<ProcessingContext> action) {
         return runOn(DefaultPhases.PREPARE_COMMIT, action);
@@ -231,9 +249,11 @@ public interface ProcessingLifecycle {
      * <p>
      * Use this operation when the return value of the {@code action} is important.
      *
-     * @param action The {@link Function} that's given the active {@link ProcessingContext} and returns a
-     *               {@link CompletableFuture} for chaining purposes and to carry the action's result.
-     * @return This {@link ProcessingLifecycle} instance for fluent interfacing.
+     * @param action the {@link Function} that's given the active {@link ProcessingContext} and returns a
+     *               {@link CompletableFuture} for chaining purposes and to carry the action's result
+     * @return this {@code ProcessingLifecycle} instance for fluent interfacing
+     * @throws IllegalStateException when this {@code ProcessingLifecycle's} phase is on or below the
+     *                               {@link DefaultPhases#COMMIT} phase
      */
     default ProcessingLifecycle onCommit(Function<ProcessingContext, CompletableFuture<?>> action) {
         return on(DefaultPhases.COMMIT, action);
@@ -244,8 +264,10 @@ public interface ProcessingLifecycle {
      * <p>
      * Use this operation when there is no need for a return value of the registered {@code action}.
      *
-     * @param action A {@link Consumer} that's given the active {@link ProcessingContext} to perform its action.
-     * @return This {@link ProcessingLifecycle} instance for fluent interfacing.
+     * @param action a {@link Consumer} that's given the active {@link ProcessingContext} to perform its action
+     * @return this {@code ProcessingLifecycle} instance for fluent interfacing
+     * @throws IllegalStateException when this {@code ProcessingLifecycle's} phase is on or below the
+     *                               {@link DefaultPhases#COMMIT} phase
      */
     default ProcessingLifecycle runOnCommit(Consumer<ProcessingContext> action) {
         return runOn(DefaultPhases.COMMIT, action);
@@ -257,9 +279,11 @@ public interface ProcessingLifecycle {
      * <p>
      * Use this operation when the return value of the {@code action} is important.
      *
-     * @param action The {@link Function} that's given the active {@link ProcessingContext} and returns a
-     *               {@link CompletableFuture} for chaining purposes and to carry the action's result.
-     * @return This {@link ProcessingLifecycle} instance for fluent interfacing.
+     * @param action the {@link Function} that's given the active {@link ProcessingContext} and returns a
+     *               {@link CompletableFuture} for chaining purposes and to carry the action's result
+     * @return this {@code ProcessingLifecycle} instance for fluent interfacing
+     * @throws IllegalStateException when this {@code ProcessingLifecycle's} phase is on or below the
+     *                               {@link DefaultPhases#AFTER_COMMIT} phase
      */
     default ProcessingLifecycle onAfterCommit(Function<ProcessingContext, CompletableFuture<?>> action) {
         return on(DefaultPhases.AFTER_COMMIT, action);
@@ -271,45 +295,47 @@ public interface ProcessingLifecycle {
      * <p>
      * Use this operation when there is no need for a return value of the registered {@code action}.
      *
-     * @param action A {@link Consumer} that's given the active {@link ProcessingContext} to perform its action.
-     * @return This {@link ProcessingLifecycle} instance for fluent interfacing.
+     * @param action a {@link Consumer} that's given the active {@link ProcessingContext} to perform its action
+     * @return this {@code ProcessingLifecycle} instance for fluent interfacing
+     * @throws IllegalStateException when this {@code ProcessingLifecycle's} phase is on or below the
+     *                               {@link DefaultPhases#AFTER_COMMIT} phase
      */
     default ProcessingLifecycle runOnAfterCommit(Consumer<ProcessingContext> action) {
         return runOn(DefaultPhases.AFTER_COMMIT, action);
     }
 
     /**
-     * Registers the provided {@code action} to be executed when this {@link ProcessingLifecycle} encounters an error
+     * Registers the provided {@code action} to be executed when this {@code ProcessingLifecycle} encounters an error
      * during the action of any {@link Phase}. This includes failures from actions registered through
      * {@link #whenComplete(Consumer)}.
      * <p>
      * When the given {@link ErrorHandler ErrorHandlers} are invoked {@link #isError()} and {@link #isCompleted()} will
      * return {@code true}.
      *
-     * @param action The error handler to execute when this {@link ProcessingLifecycle} encounters an error during phase
-     *               execution.
-     * @return This {@link ProcessingLifecycle} instance for fluent interfacing.
+     * @param action the error handler to execute when this {@code ProcessingLifecycle} encounters an error during phase
+     *               execution
+     * @return this {@code ProcessingLifecycle} instance for fluent interfacing
      */
     ProcessingLifecycle onError(ErrorHandler action);
 
     /**
-     * Registers the provided {@code action} to be executed when this {@link ProcessingLifecycle} completes <b>all</b>
+     * Registers the provided {@code action} to be executed when this {@code ProcessingLifecycle} completes <b>all</b>
      * registered actions.
      *
-     * @param action A {@link Consumer} that's given the active {@link ProcessingContext} to perform its action.
-     * @return This {@link ProcessingLifecycle} instance for fluent interfacing.
+     * @param action a {@link Consumer} that's given the active {@link ProcessingContext} to perform its action
+     * @return this {@code ProcessingLifecycle} instance for fluent interfacing
      */
     ProcessingLifecycle whenComplete(Consumer<ProcessingContext> action);
 
     /**
      * Registers the provided {@code action} to be executed {@link #onError(ErrorHandler) on error} of <b>and</b>
-     * {@link #whenComplete(Consumer) when completing} this {@link ProcessingLifecycle}.
+     * {@link #whenComplete(Consumer) when completing} this {@code ProcessingLifecycle}.
      * <p>
      * Note that if the given {@code action} throws an exception when completing this {@code ProcessingLifecycle} it
      * will be invoked <em>again</em> as an on {@link ErrorHandler}.
      *
-     * @param action A {@link Consumer} that's given the active {@link ProcessingContext} to perform its action.
-     * @return This {@link ProcessingLifecycle} instance for fluent interfacing.
+     * @param action a {@link Consumer} that's given the active {@link ProcessingContext} to perform its action
+     * @return this {@code ProcessingLifecycle} instance for fluent interfacing
      */
     default ProcessingLifecycle doFinally(Consumer<ProcessingContext> action) {
         onError((c, p, e) -> action.accept(c));
@@ -319,7 +345,7 @@ public interface ProcessingLifecycle {
 
     /**
      * Functional interface describing an operation that's invoked when an error is detected within the
-     * {@link ProcessingLifecycle}.
+     * {@code ProcessingLifecycle}.
      *
      * @author Allard Buijze
      * @author Gerard Klijs
@@ -333,21 +359,21 @@ public interface ProcessingLifecycle {
     interface ErrorHandler {
 
         /**
-         * Invoked when an error is detected in a {@link ProcessingLifecycle} and it has been aborted.
+         * Invoked when an error is detected in a {@code ProcessingLifecycle} and it has been aborted.
          * <p>
          * In this state, the lifecycle will <b>always</b> return {@code true} for {@link ProcessingContext#isError()}
          * and {@link ProcessingContext#isCompleted()}.
          *
-         * @param processingContext The context in which the error occurred.
-         * @param phase             The phase used to register the handler which caused the {@link ProcessingLifecycle}
-         *                          to fail.
-         * @param error             The exception or error describing the cause.
+         * @param processingContext the context in which the error occurred
+         * @param phase             the phase used to register the handler which caused the {@code ProcessingLifecycle}
+         *                          to fail
+         * @param error             the exception or error describing the cause
          */
         void handle(ProcessingContext processingContext, Phase phase, Throwable error);
     }
 
     /**
-     * Interface describing a possible phase for the {@link ProcessingLifecycle} to perform steps in.
+     * Interface describing a possible phase for the {@code ProcessingLifecycle} to perform steps in.
      * <p>
      * Lifecycle actions are invoked in the {@link #order()} of their respective phase, where action in phases with the
      * same order may be invoked in parallel.
@@ -366,7 +392,7 @@ public interface ProcessingLifecycle {
          * The order of this phase compared to other phases. Phases with the same order are considered "simultaneous"
          * and may have their handlers invoked in parallel.
          *
-         * @return The {@code int} describing the relative order of this phase.
+         * @return the {@code int} describing the relative order of this phase
          */
         int order();
 
@@ -374,10 +400,10 @@ public interface ProcessingLifecycle {
          * Checks if the {@link Phase#order()} of {@code this Phase} is <b>smaller</b> than the order of the
          * {@code other}. Returns {@code true} if this is the case and {@code false} otherwise.
          *
-         * @param other The {@link Phase} to validate if its {@link Phase#order() order} is larger than the order of
-         *              {@code this Phase}.
+         * @param other the {@code Phase} to validate if its {@link Phase#order() order} is larger than the order of
+         *              {@code this Phase}
          * @return {@code true} if the {@link Phase#order()} of {@code this Phase} is <b>smaller</b> than the order of
-         * the {@code other Phase}.
+         * the {@code other Phase}
          */
         default boolean isBefore(Phase other) {
             return this.order() < other.order();
@@ -387,10 +413,10 @@ public interface ProcessingLifecycle {
          * Checks if the {@link Phase#order()} of {@code this Phase} is <b>larger</b> than the order of the
          * {@code other}. Returns {@code true} if this is the case and {@code false} otherwise.
          *
-         * @param other The {@link Phase} to validate if its {@link Phase#order() order} is smaller than the order of
-         *              {@code this Phase}.
+         * @param other the {@code Phase} to validate if its {@link Phase#order() order} is smaller than the order of
+         *              {@code this Phase}
          * @return {@code true} if the {@link Phase#order()} of {@code this Phase} is <b>larger</b> than the order of
-         * the {@code other Phase}.
+         * the {@code other Phase}
          */
         default boolean isAfter(Phase other) {
             return this.order() > other.order();
@@ -398,7 +424,7 @@ public interface ProcessingLifecycle {
     }
 
     /**
-     * Default phases used for the shorthand methods in the {@link ProcessingLifecycle}.
+     * Default phases used for the shorthand methods in the {@code ProcessingLifecycle}.
      *
      * @author Allard Buijze
      * @author Gerard Klijs
@@ -423,16 +449,16 @@ public interface ProcessingLifecycle {
          */
         POST_INVOCATION(10000),
         /**
-         * Phase used to contain actions to prepare the commit of the {@link ProcessingLifecycle}. Has an order of
+         * Phase used to contain actions to prepare the commit of the {@code ProcessingLifecycle}. Has an order of
          * {@code 20000}.
          */
         PREPARE_COMMIT(20000),
         /**
-         * Phase used to contain actions to commit of the {@link ProcessingLifecycle}. Has an order of {@code 30000}.
+         * Phase used to contain actions to commit of the {@code ProcessingLifecycle}. Has an order of {@code 30000}.
          */
         COMMIT(30000),
         /**
-         * Phase used to contain actions to execute after the commit of the {@link ProcessingLifecycle}. Has an order of
+         * Phase used to contain actions to execute after the commit of the {@code ProcessingLifecycle}. Has an order of
          * {@code 40000}.
          */
         AFTER_COMMIT(40000);

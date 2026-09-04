@@ -793,24 +793,18 @@ class DefaultEventStoreTransactionTest {
         @Test
         void appendingOnceTheBatchWasHandedToTheStorageEngineIsRejected() {
             // given a unit of work appending during INVOCATION, and again from a commit-phase action
-            var failure = new AtomicReference<Throwable>();
             var uow = aUnitOfWork();
             uow.runOnInvocation(context -> defaultEventStoreTransactionFor(context).appendEvent(eventMessage(0)));
             uow.runOnCommit(context -> {
-                try {
-                    defaultEventStoreTransactionFor(context).appendEvent(eventMessage(1));
-                } catch (RuntimeException e) {
-                    failure.set(e);
-                }
+                assertThatThrownBy(() -> defaultEventStoreTransactionFor(context).appendEvent(eventMessage(1)))
+                        .isInstanceOf(IllegalStateException.class)
+                        .hasMessageContaining("already handed to the EventStorageEngine");
             });
 
             // when
             awaitSuccessfulCompletion(uow.execute());
 
             // then the second append is refused rather than queued into a batch that was already handed over
-            assertThat(failure.get())
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("already handed to the EventStorageEngine");
             assertThat(sourcedPayloads(eventStorageEngine)).containsExactly("event-0");
         }
     }
