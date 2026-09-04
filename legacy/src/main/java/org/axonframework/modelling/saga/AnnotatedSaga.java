@@ -114,7 +114,9 @@ public class AnnotatedSaga<T> implements Saga<T>, SagaLifecycle {
 
     @Override
     public boolean canHandle(EventMessage event, ProcessingContext context) {
-        return isActive && matchingHandler(event, context).isPresent();
+        // Resolved against the same context handle would use, so a handler declaring a SagaLifecycle parameter is
+        // considered here exactly as it is there.
+        return isActive && matchingHandler(event, sagaContext(context)).isPresent();
     }
 
     @Override
@@ -123,7 +125,7 @@ public class AnnotatedSaga<T> implements Saga<T>, SagaLifecycle {
             return MessageStream.empty();
         }
 
-        ProcessingContext sagaContext = context.withResource(SagaLifecycle.RESOURCE_KEY, this);
+        ProcessingContext sagaContext = sagaContext(context);
         return matchingHandler(event, sagaContext)
                 .map(handler -> requireCompleted(
                         chainedInterceptor.handle(event, sagaContext, sagaInstance, handler)
@@ -141,6 +143,14 @@ public class AnnotatedSaga<T> implements Saga<T>, SagaLifecycle {
      * A handler that is not a {@link SagaMethodMessageHandlingMember} resolves no association value at all and is
      * therefore never filtered out, which is how a plain event handler declared on a Saga keeps working.
      */
+    /**
+     * Returns the given {@code context} with this Saga registered as the active {@link SagaLifecycle}, which is what a
+     * handler declaring a {@code SagaLifecycle} parameter resolves against.
+     */
+    private ProcessingContext sagaContext(ProcessingContext context) {
+        return context.withResource(SagaLifecycle.RESOURCE_KEY, this);
+    }
+
     private Optional<MessageHandlingMember<? super T>> matchingHandler(EventMessage event, ProcessingContext context) {
         return metaModel.findHandlerMethods(event, context)
                         .stream()

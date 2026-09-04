@@ -51,9 +51,24 @@ public class SagaLifecycleParameterResolverFactory implements ParameterResolverF
                 return CompletableFuture.completedFuture(SagaLifecycle.forContext(context));
             }
 
+            /**
+             * Always {@code true}, since this resolver can supply the parameter for any
+             * {@link SagaEventHandler @SagaEventHandler} method that declares it.
+             * <p>
+             * Reporting the presence of the {@link SagaLifecycle#RESOURCE_KEY} resource here instead would make the
+             * handler invisible to the component that manages the Sagas, because that component resolves handlers to
+             * extract {@link AssociationValue AssociationValues} and a creation policy long before any Saga has put
+             * itself on the {@link ProcessingContext} - and when creating a Saga, before one even exists. A Saga whose
+             * handler declared a {@code SagaLifecycle} parameter would then never be found or started at all.
+             * <p>
+             * The resource is not optional at invocation time, and nothing here makes it so:
+             * {@link #resolveParameterValue(ProcessingContext)} goes through
+             * {@link SagaLifecycle#forContext(ProcessingContext)}, which fails loudly when it is absent. A handler is
+             * only ever invoked through its {@link AnnotatedSaga}, which registers the resource first.
+             */
             @Override
             public boolean matches(ProcessingContext context) {
-                return context.containsResource(SagaLifecycle.RESOURCE_KEY);
+                return true;
             }
         };
     }

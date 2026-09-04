@@ -196,6 +196,65 @@ public class AnnotatedSagaManagerTest {
     }
 
     /**
+     * A {@link SagaLifecycle} parameter is how an Axon Framework 4 saga's calls to the static
+     * {@code SagaLifecycle.associateWith(...)} are expressed here, so a saga declaring one has to be as visible to the
+     * manager as any other. The manager resolves handlers to extract association values and a creation policy before
+     * any saga exists, which is where a resolver reporting no match would hide the handler completely.
+     */
+    @Nested
+    class SagaLifecycleInjection {
+
+        private AnnotatedSagaManager<LifecycleInjectingTestSaga> lifecycleTestSubject;
+
+        @BeforeEach
+        void setUp() {
+            lifecycleTestSubject =
+                    AnnotatedSagaManager.<LifecycleInjectingTestSaga>builder()
+                                        .sagaRepository(AnnotatedSagaRepository.<LifecycleInjectingTestSaga>builder()
+                                                                              .sagaType(LifecycleInjectingTestSaga.class)
+                                                                              .sagaStore(sagaStore)
+                                                                              .build())
+                                        .sagaType(LifecycleInjectingTestSaga.class)
+                                        .sagaFactory(LifecycleInjectingTestSaga::new)
+                                        .build();
+        }
+
+        @Test
+        void aSagaWhoseStartingHandlerDeclaresASagaLifecycleIsStarted() {
+            handle(new GenericEventMessage(new MessageType("event"), new StartingEvent("123")));
+
+            assertEquals(1, sagaStore.findSagas(LifecycleInjectingTestSaga.class,
+                                                new AssociationValue("myIdentifier", "123")).size());
+        }
+
+        @Test
+        void theAssociationTheHandlerAddedThroughTheLifecycleIsStored() {
+            handle(new GenericEventMessage(new MessageType("event"), new StartingEvent("123")));
+
+            assertEquals(1, sagaStore.findSagas(LifecycleInjectingTestSaga.class,
+                                                new AssociationValue("secondaryIdentifier", "secondary-123")).size());
+        }
+
+        @Test
+        void theSagaIsFoundAgainByTheAssociationItAddedItself() {
+            handle(new GenericEventMessage(new MessageType("event"), new StartingEvent("123")));
+
+            // a second starting event for the same identifier must not create a second saga, which it only avoids if
+            // the manager could see the handler and find the existing saga through it
+            handle(new GenericEventMessage(new MessageType("event"), new StartingEvent("123")));
+
+            assertEquals(1, sagaStore.findSagas(LifecycleInjectingTestSaga.class,
+                                                new AssociationValue("myIdentifier", "123")).size());
+        }
+
+        private void handle(EventMessage event) {
+            UnitOfWork unitOfWork = unitOfWorkFactory.create();
+            unitOfWork.runOnInvocation(context -> lifecycleTestSubject.handle(event, context));
+            FutureUtils.joinAndUnwrap(unitOfWork.execute(), TIMEOUT);
+        }
+    }
+
+    /**
      * A saga that suppresses its own handler failure through an {@link ExceptionHandler} reaches the outcome the Axon
      * Framework 4 {@code ListenerInvocationErrorHandler} default produced: the unit of work commits, the saga is
      * stored, and the saga counts as having taken the event so {@link SagaCreationPolicy#IF_NONE_FOUND} does not start
@@ -385,6 +444,16 @@ public class AnnotatedSagaManagerTest {
 
     public static class UnrelatedDomainEvent {
 
+    }
+
+    @SuppressWarnings("unused")
+    public static class LifecycleInjectingTestSaga {
+
+        @StartSaga
+        @SagaEventHandler(associationProperty = "myIdentifier")
+        public void handleStartingEvent(StartingEvent event, SagaLifecycle lifecycle) {
+            lifecycle.associateWith("secondaryIdentifier", "secondary-" + event.getMyIdentifier());
+        }
     }
 
     @SuppressWarnings("unused")

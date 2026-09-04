@@ -93,10 +93,13 @@ class SagaLifecycleParameterResolverFactoryTest {
         }
 
         @Test
-        void matchesReturnsFalseWhenSagaLifecycleIsNotRegisteredOnContext() {
+        void matchesReturnsTrueBeforeAnySagaIsOnTheContext() {
+            // The component managing the sagas resolves handlers to extract association values and a creation policy
+            // while no saga exists yet. Reporting no match there would hide the handler from it entirely, so the saga
+            // could never be found or started.
             ProcessingContext context = new StubProcessingContext();
 
-            assertThat(resolver.matches(context)).isFalse();
+            assertThat(resolver.matches(context)).isTrue();
         }
 
         @RepeatedTest(100)
