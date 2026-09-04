@@ -226,6 +226,102 @@ class SagaManagerTest {
     }
 
     @Test
+    void everySagaIsInvokedWhenNoSegmentIsOnTheContext() {
+        // given no Segment resource, as a subscribing EventProcessor leaves it, where AF4 always had one
+        EventMessage event = new GenericEventMessage(new MessageType("event"), new Object());
+
+        // when
+        testSubject.handle(event, StubProcessingContext.forMessage(event));
+
+        // then ROOT_SEGMENT is assumed, which matches every Saga instance
+        verify(mockSaga1).handle(eq(event), any());
+        verify(mockSaga2).handle(eq(event), any());
+    }
+
+    @Test
+    void aSagaIsCreatedWhenNoSegmentIsOnTheContext() {
+        testSubject = TestableAbstractSagaManager.builder()
+                                                 .sagaRepository(mockSagaRepository)
+                                                 .sagaCreationPolicy(SagaCreationPolicy.IF_NONE_FOUND)
+                                                 .associationValue(new AssociationValue("someKey", "someValue"))
+                                                 .build();
+        when(mockSagaRepository.createInstance(any(), any(), any())).thenReturn(mockSaga1);
+        when(mockSagaRepository.find(any(), any())).thenReturn(Collections.emptySet());
+
+        EventMessage event = new GenericEventMessage(new MessageType("event"), new Object());
+        testSubject.handle(event, StubProcessingContext.forMessage(event)).asCompletableFuture().join();
+
+        verify(mockSagaRepository).createInstance(any(), any(), any());
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void aForcedSagaIsCreatedEvenWhenAnotherSagaWasAlreadyInvoked() {
+        // given a policy that forces creation, and sagas that do take the event
+        testSubject = TestableAbstractSagaManager.builder()
+                                                 .sagaRepository(mockSagaRepository)
+                                                 .sagaCreationPolicy(SagaCreationPolicy.ALWAYS)
+                                                 .associationValue(associationValue)
+                                                 .build();
+        Saga<Object> newSaga = mock(Saga.class);
+        when(newSaga.getAssociationValues()).thenReturn(new AssociationValuesImpl());
+        when(newSaga.canHandle(any(EventMessage.class), any())).thenReturn(true);
+        when(newSaga.handle(any(EventMessage.class), any())).thenReturn(MessageStream.empty());
+        when(mockSagaRepository.createInstance(any(), any(), any())).thenReturn(newSaga);
+
+        // when, consuming the result as an EventProcessor does, since creation is deferred until the stream is read
+        EventMessage event = new GenericEventMessage(new MessageType("event"), new Object());
+        testSubject.handle(event, StubProcessingContext.forMessage(event)).asCompletableFuture().join();
+
+        // then ALWAYS never consults whether a saga took the event, which is why the instance-level check only ever
+        // changes the IF_NONE_FOUND outcome
+        verify(mockSaga1).handle(eq(event), any());
+        verify(mockSagaRepository).createInstance(any(), any(), any());
+        verify(newSaga).handle(eq(event), any());
+    }
+
+    @Test
+    void aForcedSagaIsStillOnlyCreatedInTheSegmentMatchingItsAssociationValue() {
+        // given a policy that forces creation
+        AssociationValue initialAssociationValue = new AssociationValue("someKey", "someValue");
+        testSubject = TestableAbstractSagaManager.builder()
+                                                 .sagaRepository(mockSagaRepository)
+                                                 .sagaCreationPolicy(SagaCreationPolicy.ALWAYS)
+                                                 .associationValue(initialAssociationValue)
+                                                 .build();
+        Segment[] segments = Segment.ROOT_SEGMENT.split();
+        Segment matchingSegment = segments[0].matches(initialAssociationValue) ? segments[0] : segments[1];
+        Segment otherSegment = segments[0].matches(initialAssociationValue) ? segments[1] : segments[0];
+        when(mockSagaRepository.createInstance(any(), any(), any())).thenReturn(mockSaga1);
+        when(mockSagaRepository.find(any(), any())).thenReturn(Collections.emptySet());
+
+        // when / then the segment gate applies to ALWAYS as much as to IF_NONE_FOUND, so exactly one segment creates
+        EventMessage event = new GenericEventMessage(new MessageType("event"), new Object());
+        testSubject.handle(event, contextFor(event, otherSegment)).asCompletableFuture().join();
+        verify(mockSagaRepository, never()).createInstance(any(), any(), any());
+
+        testSubject.handle(event, contextFor(event, matchingSegment)).asCompletableFuture().join();
+        verify(mockSagaRepository).createInstance(any(), any(), any());
+    }
+
+    @Test
+    void noSagaIsCreatedWhenThePolicyIsNoneRegardlessOfTheSegment() {
+        // given the default policy, which is NONE
+        testSubject = TestableAbstractSagaManager.builder()
+                                                 .sagaRepository(mockSagaRepository)
+                                                 .associationValue(new AssociationValue("someKey", "someValue"))
+                                                 .build();
+        when(mockSagaRepository.find(any(), any())).thenReturn(Collections.emptySet());
+
+        // when / then neither with a segment nor without one
+        EventMessage event = new GenericEventMessage(new MessageType("event"), new Object());
+        testSubject.handle(event, StubProcessingContext.forMessage(event)).asCompletableFuture().join();
+        testSubject.handle(event, contextFor(event, Segment.ROOT_SEGMENT)).asCompletableFuture().join();
+
+        verify(mockSagaRepository, never()).createInstance(any(), any(), any());
+    }
+
+    @Test
     void sagaIsCreatedInRootSegment() {
         testSubject = TestableAbstractSagaManager.builder()
                                                  .sagaRepository(mockSagaRepository)
