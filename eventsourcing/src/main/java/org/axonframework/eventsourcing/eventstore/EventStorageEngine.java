@@ -61,7 +61,8 @@ public interface EventStorageEngine extends DescribableComponent {
      * By default, this method creates a {@link List} of the offered events and then invokes
      * {@link #appendEvents(AppendCondition, ProcessingContext, List)}.
      * <p>
-     * Called during the {@link org.axonframework.messaging.core.unitofwork.ProcessingLifecycle.DefaultPhases#PREPARE_COMMIT PREPARE_COMMIT} phase.
+     * Called during the {@link EventStoreTransaction.Phases#APPEND_EVENTS APPEND_EVENTS} phase, which follows
+     * {@link org.axonframework.messaging.core.unitofwork.ProcessingLifecycle.DefaultPhases#PREPARE_COMMIT PREPARE_COMMIT}.
      *
      * @param condition The condition describing the transactional requirements for the append transaction
      * @param context   The current {@link ProcessingContext}, if any.
@@ -85,7 +86,8 @@ public interface EventStorageEngine extends DescribableComponent {
      * future will complete exceptionally, indicating such conflict. Other implementations may delay such checks until
      * the {@link AppendTransaction#commit()} is called.
      * <p>
-     * Called during the {@link org.axonframework.messaging.core.unitofwork.ProcessingLifecycle.DefaultPhases#PREPARE_COMMIT PREPARE_COMMIT} phase.
+     * Called during the {@link EventStoreTransaction.Phases#APPEND_EVENTS APPEND_EVENTS} phase, which follows
+     * {@link org.axonframework.messaging.core.unitofwork.ProcessingLifecycle.DefaultPhases#PREPARE_COMMIT PREPARE_COMMIT}.
      *
      * @param condition The condition describing the transactional requirements for the append transaction
      * @param context   The current {@link ProcessingContext}, if any.

@@ -364,10 +364,10 @@ class SimpleEventBusTest {
             StubProcessingContext context = new StubProcessingContext();
             context.moveToPhase(DefaultPhases.COMMIT);
 
-            // when / then
+            // when / then the bus cannot register the prepare-commit hook that would deliver the events
             assertThatThrownBy(() -> testSubject.publish(context, List.of(newEvent("event1"))))
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("phase that has already passed");
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("ProcessingContext is already in phase COMMIT");
         }
     }
 
@@ -531,6 +531,34 @@ class SimpleEventBusTest {
                                               "subscriber-invoked",
                                               "registered-work",
                                               "commit");
+        }
+
+        @Test
+        void publishingOnceTheQueueWasDrainedIsRejectedRatherThanQueuedAgain() {
+            // given a context that already published, so the queue and the hook draining it both exist
+            RecordingEventListener listener = new RecordingEventListener();
+            testSubject.subscribe(listener);
+            AtomicReference<Throwable> failure = new AtomicReference<>();
+            UnitOfWork uow = unitOfWorkFactory.create();
+            uow.runOnInvocation(ctx -> testSubject.publish(ctx, List.of(newEvent("event1"))));
+            uow.runOnCommit(ctx -> {
+                try {
+                    testSubject.publish(ctx, List.of(newEvent("event2")));
+                } catch (RuntimeException e) {
+                    failure.set(e);
+                }
+            });
+
+            // when
+            FutureUtils.joinAndUnwrap(uow.execute(), TIMEOUT);
+
+            // then the late publish fails, instead of landing in a queue nothing will read again
+            assertThat(failure.get())
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("were delivered to their subscribers");
+            assertThat(listener.getReceivedEvents())
+                    .extracting(msg -> msg.type().qualifiedName().toString())
+                    .containsExactly("event1");
         }
     }
 
