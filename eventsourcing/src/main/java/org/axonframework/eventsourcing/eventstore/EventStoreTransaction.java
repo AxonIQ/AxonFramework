@@ -40,6 +40,24 @@ import java.util.function.UnaryOperator;
 public interface EventStoreTransaction {
 
     /**
+     * Phase in which the events {@link #appendEvent(EventMessage) appended} within a
+     * {@link org.axonframework.messaging.core.unitofwork.ProcessingContext} are handed to the
+     * {@link EventStorageEngine} as a single batch. Has an order of {@code 29000}.
+     * <p>
+     * It is deliberately the last phase before {@link ProcessingLifecycle.DefaultPhases#COMMIT COMMIT}, so that
+     * everything able to append in this context has run by the time the batch is handed over. That includes the
+     * actions of {@link ProcessingLifecycle.DefaultPhases#PREPARE_COMMIT PREPARE_COMMIT}, where a subscribing
+     * event processor invokes its components, and any phase callers put in the gap above it, such as the write
+     * of an {@code axon-legacy} saga. Handing the batch over any earlier makes an append from one of those
+     * phases arrive too late to be stored.
+     * <p>
+     * Appending is no longer possible once this phase has run. Doing so is rejected rather than silently
+     * queued, since the batch has been handed to the {@code EventStorageEngine} at that point and an engine
+     * that flushes what it was given will never see the addition.
+     */
+    ProcessingLifecycle.Phase APPEND_EVENTS = () -> 29000;
+
+    /**
      * Sources a {@link MessageStream} of type {@link EventMessage} based on the given {@code condition} that can be
      * used to rehydrate a model.
      * <p>
@@ -155,43 +173,4 @@ public interface EventStoreTransaction {
      * transaction.
      */
     ConsistencyMarker appendPosition();
-
-    /**
-     * The {@link ProcessingLifecycle.Phase phases} an {@code EventStoreTransaction} uses on top of the
-     * {@link ProcessingLifecycle.DefaultPhases default phases}.
-     *
-     * @author Mateusz Nowak
-     * @since 5.0.0
-     */
-    enum Phases implements ProcessingLifecycle.Phase {
-
-        /**
-         * Phase in which the events {@link #appendEvent(EventMessage) appended} within a
-         * {@link org.axonframework.messaging.core.unitofwork.ProcessingContext} are handed to the
-         * {@link EventStorageEngine} as a single batch. Has an order of {@code 29000}.
-         * <p>
-         * It is deliberately the last phase before {@link ProcessingLifecycle.DefaultPhases#COMMIT COMMIT}, so that
-         * everything able to append in this context has run by the time the batch is handed over. That includes the
-         * actions of {@link ProcessingLifecycle.DefaultPhases#PREPARE_COMMIT PREPARE_COMMIT}, where a subscribing
-         * event processor invokes its components, and any phase callers put in the gap above it, such as the write
-         * of an {@code axon-legacy} saga. Handing the batch over any earlier makes an append from one of those
-         * phases arrive too late to be stored.
-         * <p>
-         * Appending is no longer possible once this phase has run. Doing so is rejected rather than silently
-         * queued, since the batch has been handed to the {@code EventStorageEngine} at that point and an engine
-         * that flushes what it was given will never see the addition.
-         */
-        APPEND_EVENTS(29000);
-
-        private final int order;
-
-        Phases(int order) {
-            this.order = order;
-        }
-
-        @Override
-        public int order() {
-            return order;
-        }
-    }
 }

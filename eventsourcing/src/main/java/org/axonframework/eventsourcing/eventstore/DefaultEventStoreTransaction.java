@@ -162,7 +162,7 @@ public class DefaultEventStoreTransaction implements EventStoreTransaction {
             throw new IllegalStateException(
                     "Cannot append event [" + eventMessage.identifier() + "], as the events of this ProcessingContext "
                             + "were already handed to the EventStorageEngine during the "
-                            + Phases.APPEND_EVENTS + " phase. Append events no later than the "
+                            + EventStoreTransaction.APPEND_EVENTS + " phase. Append events no later than the "
                             + ProcessingLifecycle.DefaultPhases.PREPARE_COMMIT + " phase."
             );
         }
@@ -210,7 +210,7 @@ public class DefaultEventStoreTransaction implements EventStoreTransaction {
      * Registers the step handing every event appended within this {@link ProcessingContext} to the
      * {@link EventStorageEngine}, as a single batch.
      * <p>
-     * It runs in {@link Phases#APPEND_EVENTS}, the last phase before
+     * It runs in {@link EventStoreTransaction#APPEND_EVENTS}, the last phase before
      * {@link ProcessingLifecycle.DefaultPhases#COMMIT COMMIT}, rather than during
      * {@link ProcessingLifecycle.DefaultPhases#PREPARE_COMMIT PREPARE_COMMIT}, so that everything able to append has
      * run by the time the batch is handed over. {@link org.axonframework.messaging.eventhandling.SimpleEventBus}
@@ -219,7 +219,7 @@ public class DefaultEventStoreTransaction implements EventStoreTransaction {
      */
     private void attachAppendEventsStep() {
         processingContext.on(
-                Phases.APPEND_EVENTS,
+                EventStoreTransaction.APPEND_EVENTS,
                 context -> {
                     AppendCondition appendCondition = resolveAppendCondition(context);
 
