@@ -42,6 +42,7 @@ import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.Mockito.*;
 
 /**
@@ -492,6 +493,25 @@ class AnnotatedSagaTest {
         }
 
         @Test
+        void aCheckedExceptionFromAHandlerIsWrappedInASagaExecutionException() {
+            // given
+            AnnotatedSaga<CheckedFailingSaga> subject = subjectFor(CheckedFailingSaga.class, new CheckedFailingSaga());
+
+            // when
+            var event = new GenericEventMessage(new MessageType("event"), new RegularEvent("id"));
+            var result = subject.handle(event, StubProcessingContext.forMessage(event));
+
+            // then the checked exception rides the stream wrapped the way Axon Framework 4 rethrew it, so whatever
+            // matches on the failure's type sees the same SagaExecutionException it saw there. The runtime failure in
+            // the test above stays unwrapped for the same reason.
+            Throwable failure = catchThrowable(
+                    () -> result.asCompletableFuture().orTimeout(50, TimeUnit.MILLISECONDS).join());
+            assertThat(failure).hasCauseInstanceOf(SagaExecutionException.class);
+            assertThat(failure.getCause()).hasMessage("Exception while handling an Event in a Saga")
+                                          .hasRootCauseMessage("checked failure");
+        }
+
+        @Test
         void anExceptionHandlerReturningNormallySuppressesTheFailure() {
             // given
             SuppressingSaga saga = new SuppressingSaga();
@@ -598,6 +618,14 @@ class AnnotatedSagaTest {
         @SagaEventHandler(associationProperty = "propertyName")
         public void handle(RegularEvent event) {
             throw new SagaHandlerFailure();
+        }
+    }
+
+    private static class CheckedFailingSaga {
+
+        @SagaEventHandler(associationProperty = "propertyName")
+        public void handle(RegularEvent event) throws Exception {
+            throw new Exception("checked failure");
         }
     }
 

@@ -129,11 +129,24 @@ public class AnnotatedSaga<T> implements Saga<T>, SagaLifecycle {
         return matchingHandler(event, sagaContext)
                 .map(handler -> requireCompleted(
                         chainedInterceptor.handle(event, sagaContext, sagaInstance, handler)
+                                          .onErrorContinue(failure -> MessageStream.failed(wrapIfChecked(failure)))
                                           .ignoreEntries()
                                           .cast(),
                         handler
                 ))
                 .orElse(MessageStream.empty());
+    }
+
+    /**
+     * Returns the given {@code failure} as Axon Framework 4 rethrew it: a {@link RuntimeException} or an
+     * {@link Error} stays what it is, while a checked exception is wrapped in a {@link SagaExecutionException}, so
+     * whatever matches on the failure's type sees the type it saw in Axon Framework 4. The wrap sits outside the
+     * interceptor chain, as it did there, so an exception handler on the Saga still sees the checked exception itself.
+     */
+    private static Throwable wrapIfChecked(Throwable failure) {
+        return failure instanceof Exception && !(failure instanceof RuntimeException)
+                ? new SagaExecutionException("Exception while handling an Event in a Saga", failure)
+                : failure;
     }
 
     /**
