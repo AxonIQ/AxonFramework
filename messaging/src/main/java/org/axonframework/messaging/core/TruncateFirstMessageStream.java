@@ -63,6 +63,11 @@ class TruncateFirstMessageStream<M extends Message>
     }
 
     @Override
+    protected FetchResult<Entry<M>> terminalState() {
+        return consumed ? FetchResult.completed() : terminalStateOf(delegate);
+    }
+
+    @Override
     protected void onCompleted() {
         delegate.close();
     }
