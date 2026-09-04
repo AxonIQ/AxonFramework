@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright (c) 2010-2026. Axon Framework
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~    http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+  -->
+
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>org.axonframework.examples</groupId>
+        <artifactId>axon-framework-examples</artifactId>
+        <version>${revision}</version>
+    </parent>
+
+    <artifactId>saga-recipes</artifactId>
+
+    <name>Axon Example - Saga Recipes</name>
+    <description>
+        Four approaches to implementing an Axon Framework 4 Saga in Axon Framework 5, applied to the bike-rental
+        payment process. Demonstrates process state held in a repository, derived through @InjectEntity, event-sourced
+        from the process's own events, and decomposed into vertical slices.
+    </description>
+
+    <properties>
+        <!--
+        Spring Boot 4.1.0 is deliberately skipped. Combined with JPA and the Axon starter it deadlocks on a
+        circular reference between applicationTaskExecutor and Axon's UnitOfWorkFactory; 4.1.1 resolves it.
+        -->
+        <spring.boot.version>4.1.1</spring.boot.version>
+        <jackson.version>3.2.1</jackson.version>
+        <archunit.version>1.5.0</archunit.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!--
+            Imported first, and ahead of the Axoniq Framework BOM inherited from the examples parent, so every
+            org.axonframework artifact resolves to the version built from this branch. The Axoniq BOM pins a
+            released Axon Framework instead, which would silently test the example against a different build.
+            -->
+            <dependency>
+                <groupId>org.axonframework</groupId>
+                <artifactId>axon-framework-bom</artifactId>
+                <version>${project.version}</version>
+                <scope>import</scope>
+                <type>pom</type>
+            </dependency>
+            <!-- Jackson 3 BOM before Spring Boot to ensure jackson-annotations
+                 is at the version required by Jackson 3 (not the older one managed by Spring Boot). -->
+            <dependency>
+                <groupId>tools.jackson</groupId>
+                <artifactId>jackson-bom</artifactId>
+                <version>${jackson.version}</version>
+                <scope>import</scope>
+                <type>pom</type>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>${spring.boot.version}</version>
+                <scope>import</scope>
+                <type>pom</type>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <!-- Spring Boot -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webmvc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jackson</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-docker-compose</artifactId>
+        </dependency>
+
+        <!-- Axon -->
+        <dependency>
+            <groupId>io.axoniq.framework</groupId>
+            <artifactId>axoniq-spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.axoniq.framework</groupId>
+            <artifactId>axon-server-connector</artifactId>
+        </dependency>
+
+        <!-- Database -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+        </dependency>
+
+        <!-- Testing -->
+        <dependency>
+            <groupId>org.axonframework</groupId>
+            <artifactId>axon-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.axonframework.extensions.spring</groupId>
+            <artifactId>axon-spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.awaitility</groupId>
+            <artifactId>awaitility</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5</artifactId>
+            <version>${archunit.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+</project>

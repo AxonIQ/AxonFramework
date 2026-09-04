@@ -1,0 +1,90 @@
+[.axoniq-feature]
+= Workflows
+:navtitle: Workflows
+:reftext: Workflows
+
+Every other approach in this guide builds a process out of parts you assemble yourself: an event handler, some form of
+state, a command. Workflows take the opposite position. The process is written as a single method that reads
+top to bottom. The machinery that lets it survive a restart is provided rather than assembled.
+
+*This is the recommended way to orchestrate a business process, and the first option to consider.* Writing the flow
+as a flow avoids the state-management concerns the other pages cover.
+
+The other approaches exist for cases where the reaction to events is not a single flow. A handful of independent
+reactions is better modelled as a handful of independent reactions; forcing them into one method gives them a centre
+they do not need. Use this page when the process genuinely is one flow.
+
+[NOTE]
+====
+Workflows are part of Axoniq Framework rather than Axon Framework, and are available as a preview rather than a
+production release. Trying them out is free; running them in production needs an Axoniq licence.
+====
+
+Consult the
+link:https://docs.axoniq.io/axon-framework-reference/development/workflows/[Workflows documentation,role=external,window=_blank]
+for the API and current status.
+
+== What changes
+
+The approaches on the other pages are all *reactive*. Each event arrives independently. The process reconstructs
+enough context to decide what to do. The flow between steps exists only in the reader's head or on an event model.
+That reconstruction is the shared burden the state-management pages address.
+
+A workflow inverts that. The sequence is written as a sequence. Waiting is an ordinary statement rather than the
+end of one handler and the start of another. Where a reactive process spreads "ask for payment, then wait, then
+approve or reject" across three handlers and a stored correlation, a workflow expresses it as three lines.
+
+The code is close to ordinary imperative code, in a place where the framework usually asks you to think in reactions.
+Correctness is unaffected; what changes is that the persistence of the flow's position is no longer yours to design.
+
+That inversion has four consequences:
+
+* *The process is legible.* One method describes the whole flow, which is what people usually want when they ask where
+  the process is.
+* *State stops being your problem.* No repository, no derived model, no process events. The position within the
+  flow is the state, and it is persisted for you.
+* *Waiting becomes a first-class concept.* A timeout is part of the flow rather than a projection and a sweep, so
+  xref::deadlines.adoc[the deadline pattern] is not needed.
+* *You take on a dependency.* Workflows live in Axoniq Framework, so the process is written against that rather than
+  against Axon Framework alone.
+
+== When it is the right answer
+
+Whenever it is available to you. The recommendation does not depend on the size or shape of the process, and there is
+no threshold below which one of the other approaches becomes the better choice.
+
+It holds for small processes too because processes grow. Adding a step to a workflow is adding a line in the
+middle of a method. Adding one to any of the other approaches means a new handler, a piece of state to carry the new
+information, and a correlation to get right, all of it spread across files. A process written as a workflow starts
+easier and stays easier, and the gap widens with every step.
+
+The deciding factor against a workflow is that the process is not a single flow. If what you have is a set of
+reactions that happen to share a subject, xref::vertical-slices.adoc[vertical slices] keep them independent; a
+workflow would give them a centre they do not need. That decision is about the shape of the work, not about the
+framework you are on.
+
+A preview dependency has to be acceptable in your build, and production use needs a licence. Neither affects trying
+it.
+
+The bike rental example running through the rest of this guide is not written as a workflow, so that the other
+approaches can be compared line for line against the same process. This is not a suggestion that a process this small
+is better off without one.
+
+== Relationship to the other approaches
+
+The other approaches differ in where the process lives and how it keeps its state; a workflow differs in *who
+reconstructs the flow*.
+
+A process written as
+xref::vertical-slices.adoc[vertical slices] is the furthest from a workflow, because it has no centre. Converting
+it later means gathering the slices back into one flow. A process written as
+xref::state-from-process-events.adoc[state from its own events] is the closest, because it already records its own
+progress as facts. That is much the same information a workflow persists on your behalf.
+
+If you expect to adopt workflows later, that is an argument for keeping the process in one class now.
+
+== Replacing a process that is already running
+
+If you are replacing an existing process rather than writing a new one, the
+xref:{page-component-version}@axon-framework-reference:migration:paths/sagas.adoc#workflows[saga migration path] covers how the pieces
+translate, and why a process already under way has to finish before a workflow can take over from it.

@@ -1,0 +1,236 @@
+= Saga Migration
+:navtitle: Sagas
+:reftext: Saga migration
+
+Axon Framework 5 has no `Saga` construct. Replace it with existing core framework building blocks.
+The familiar `@Saga` stereotype and related APIs will not be ported to the Axon Framework 5 core.
+The same applies to the `DeadlineManager` and related APIs.
+A legacy layer allows migrating running sagas and deadlines.
+
+For *new* processes, Axon Framework 5 provides several ways to implement them with the existing framework building blocks.
+The xref:{page-component-version}@saga-guide:ROOT:index.adoc[Sagas and Process Managers] guide describes them in detail.
+
+For sagas that are *already running* (considering business processes running for months), rewriting is not an option.
+That case is served by the `axon-legacy` module, described in <<legacy-module>>.
+
+[IMPORTANT]
+====
+For saga migration you need to consider two scenarios:
+
+*Writing new processes:* Pick an approach from the
+xref:{page-component-version}@saga-guide:ROOT:index.adoc[Sagas and Process Managers] guide and write it today.
+
+*Migrating running sagas:* Use the Axon Framework 4 compatible APIs of the `axon-legacy` module to keep existing saga classes running until all legacy saga instances are drained naturally.
+The legacy module should be treated as a way to finish existing instances, not to keep sagas in Axon Framework 5.
+====
+
+[#legacy-module]
+== Running existing sagas on Axon Framework 5
+
+The `axon-legacy` module allows migrating to Axon Framework 5 while saga instances started on Axon Framework 4 are still running.
+Business processes covered by sagas can span weeks or months.
+`axon-legacy` lets running saga instances continue while new instances start on an Axon Framework 5 native implementation of the business process.
+
+The `axon-legacy` module brings forward the following Axon Framework 4 saga and deadline infrastructure, adapted to the Axon Framework 5 APIs:
+
+* `@Saga`, `@SagaEventHandler`, `@StartSaga`, `@EndSaga`, `SagaLifecycle` and the association-value mechanism
+* `SagaStore` and its concrete implementations, to support existing saga stores
+* `DeadlineManager` and `@DeadlineHandler`
+
+The legacy module supports existing saga classes as-is. Add `axon-legacy` as a dependency to your project.
+
+[NOTE]
+====
+The `axon-legacy` module is *under development* and scheduled for 5.4.0. Until it lands, there is no supported way to upgrade an application with sagas in flight.
+
+link:https://github.com/AxonFramework/AxonFramework/issues/3728[GitHub Issue #3728] tracks the saga side and
+link:https://github.com/AxonFramework/AxonFramework/issues/3065[GitHub Issue #3065] the deadline side. Until they are
+released, plan on the code-level migration below and on the drainage strategy in <<strategy>>.
+====
+
+The `axon-legacy` module is a migration aid, not a supported way to write new processes. `@StartSaga` is deprecated.
+The legacy module does not start new saga instances.
+Existing instances receive their events and run to completion; new work goes to the Axon Framework 5 implementation written alongside it.
+
+== Mapping Axon Framework 4 saga concepts to Axon Framework 5
+
+An Axon Framework 4 saga provides opinionated technical infrastructure to implement long-running business processes:
+
+* State is *state-sourced*: the saga instance is serialized into a `SagaStore` as an opaque blob
+* Correlation requires *association values*, maintained with `SagaLifecycle.associateWith(...)`.
+* Life cycle is framework-managed, through `@StartSaga` and `@EndSaga`.
+
+Axon Framework 5 provides several ways to implement long-running processes, described in
+xref:{page-component-version}@saga-guide:ROOT:index.adoc[Sagas and Process Managers].
+The following table maps Axon Framework 4 saga concepts to their Axon Framework 5 equivalents.
+
+[cols="1,2",options="header"]
+|===
+| Axon Framework 4 | Axon Framework 5
+
+| `@Saga`
+| A `@Workflow` (see <<workflows,Workflows>>), or an ordinary component with `@EventHandler` methods.
+
+| `@SagaEventHandler(associationProperty = "...")`
+| `awaitEvent(...)` in combination with `associate(...)` for a <<workflows,Workflow>>, or a plain `@EventHandler` resolving correlation by the entity identifier, a property, or your own `EntityIdResolver`.
+
+| `@StartSaga`
+| `@Workflow(startOnEvent = "...")` for a <<workflows,Workflow>>. For a plain `@EventHandler` approach, the first event that concerns a process creates its state.
+
+| `@EndSaga`
+| The end of the workflow definition for a <<workflows,Workflow>>. For a plain `@EventHandler`, depending on the approach: delete the row, append a completion event, or do nothing when state is derived.
+
+| `SagaLifecycle.associateWith(...)`
+| `awaitEvent(...)` in combination with `associate(...)` for a <<workflows,Workflow>>, a tag on the event, or a derived correlation value.
+
+| `SagaLifecycle.end()`
+| a `return` statement in the workflow definition for a <<workflows,Workflow>>, or whatever the chosen approach records as "finished".
+
+| `SagaStore`, `SagaRepository`
+| Your regular event store for a <<workflows,Workflow>>, a repository of your own, an event-sourced entity, or nothing.
+
+| `DeadlineManager`, `@DeadlineHandler`
+| `sleep(...)` for a <<workflows,Workflow>>, or a projection of outstanding work plus a scheduled sweep that sends a command. See
+xref:{page-component-version}@saga-guide:ROOT:deadlines.adoc[deadlines].
+
+| `SagaTestFixture`
+| The dedicated <<workflows,Workflows>> Test infrastructure, or `AxonTestFixture` publishing events in the given phase and asserting on dispatched commands for a plain `@EventHandler` approach.
+|===
+
+[#workflows]
+[.axoniq-feature]
+== Replacing a saga with a workflow
+
+The recommended replacement for sagas is xref:{page-component-version}@saga-guide:ROOT:workflows.adoc[Workflows]: a process is written as a
+single method that reads top to bottom, using the regular event store for event-sourced persistence.
+
+[NOTE]
+====
+Workflows are an Axoniq Framework feature and require an Axoniq license to run in production.
+Workflows are currently available as a preview and can be tried out without a license.
+====
+
+Saga concepts map onto Workflow concepts:
+
+* The association value becomes the workflow's identifier and manual `associate(...)` invocations when waiting on events.
+* Each `@SagaEventHandler` becomes a step.
+* `@EndSaga` becomes the end of the workflow definition method.
+* Deadlines are expressed as explicit wait or timeout on an event in the workflow.
+
+Workflows differ from Axon Framework 4 sagas in how they hold state: they source it from dedicated workflow events in
+the regular event store instead of a persistent `SagaStore` blob.
+A running saga holding a serialized instance in a `SagaStore` cannot be handed to a workflow. It must drain as
+described in <<strategy>>, whichever replacement you pick.
+
+[#deadlines]
+== Migrating deadlines
+
+Axon Framework 4 scheduled deadlines to defer reactions for sagas.
+Axon Framework 5 has no built-in deadline scheduling. Use other capabilities to get the same effect.
+
+In Axon Framework 4, `DeadlineManager` schedules a deadline to trigger in the future; `@DeadlineHandler` handles the
+trigger, typically by sending a command.
+
+In Axon Framework 5, use a scheduling library of your choice: wire in the `CommandGateway`, and send the command
+through the gateway when the scheduled task triggers.
+An idempotent command handler ignores an action scheduled for a process that has already progressed.
+
+See xref:{page-component-version}@saga-guide:ROOT:deadlines.adoc[deadlines] for details on deadlines for long-running processes in Axon
+Framework 5.
+
+[#choosing]
+== Choosing a replacement
+
+Not every saga should become a workflow.
+Simple processes consisting of a limited set of independent reactions can use regular Axon Framework 5 event and
+command handlers.
+The xref:{page-component-version}@saga-guide:ROOT:choosing-an-approach.adoc[guide] compares the alternatives in detail:
+
+* xref:{page-component-version}@saga-guide:ROOT:state-in-a-repository.adoc[State in a repository] is the closest to how an Axon Framework 4 saga worked.
+Start here if you are porting an existing saga.
+* xref:{page-component-version}@saga-guide:ROOT:state-from-context-events.adoc[State from context events] avoids persistent state in a repository.
+This is only possible if all involved contexts write to one event store and their events carry a tag you can select on.
+* xref:{page-component-version}@saga-guide:ROOT:state-from-process-events.adoc[State from process events] suits integration with systems whose
+events are not yours, and gives an audit trail of the process.
+* xref:{page-component-version}@saga-guide:ROOT:vertical-slices.adoc[Vertical slices] break the process into independent reactions. This fits
+Vertical Slice Architecture and Event Modelling.
+
+[#strategy]
+== Migrating an application with running sagas
+
+Whether or not you use the <<legacy-module,legacy module>>, migrate running saga instances by *drainage*: let saga
+instances created by Axon Framework 4 finish normally, while new process instances start on an Axon Framework 5
+implementation.
+
+Without the legacy module, drain old saga instances in an Axon Framework 4 deployment kept alive alongside the Axon
+Framework 5 application running the migrated process.
+The legacy module allows you to drain the old saga instances alongside the upgraded application in a single Axon Framework 5 application.
+Either way (using the legacy-module for drainage or not), new sagas must not be started from the Axon Framework 4 legacy code.
+
+The main steps for migrating running sagas:
+
+. *Stop starting new sagas.* Remove the `@StartSaga` annotation from the Axon Framework 4 saga.
+Existing instances keep receiving their events and run to completion; no new ones are created.
+
++
+[source,java]
+----
+@Saga
+public class PaymentSaga {
+
+    // @StartSaga  <1>
+    @SagaEventHandler(associationProperty = "bikeId")
+    public void on(BikeRequestedEvent event) {
+        // ...
+    }
+}
+----
+<1> Removing this annotation stops new instances from starting; existing instances can still advance and end.
+
+. *Keep the old saga running.* With the legacy module, add the dependency and let the existing class continue against its existing saga store in the upgraded application.
+Without it, keep the Axon Framework 4 deployment alive to drain existing saga instances without creating new ones.
+. *Implement the process in Axon Framework 5* using one of the approaches above, and let it handle the same trigger
+event.
+. *Wait for the old instances to drain.* Monitor the `SagaStore` for active instances and watch the count fall to zero.
+How long that takes depends on your longest-running process.
+. *Retire the Axon Framework 4 saga* once there are no more active instances in the `SagaStore`: remove the legacy saga code, the `SagaStore` table, its deadline scheduler, and the legacy dependency.
+
+Scheduled deadlines drain the same way: keep the Axon Framework 4 `DeadlineManager`, or the legacy module's port of
+it, online as long as saga instances still rely on it for deadlines.
+
+== Testing
+
+A saga kept running on the <<legacy-module,legacy module>> keeps its existing tests.
+Write new tests for the process migrated to Axon Framework 5 with `AxonTestFixture`: publish events that drive the
+process and assert on the commands it sends.
+
+The mapping below covers the common cases:
+
+[cols="1,2",options="header"]
+|===
+| `SagaTestFixture` | `AxonTestFixture`
+
+| `givenNoPriorActivity()`
+| `given().noPriorActivity()`
+
+| `givenAPublished(event)` / `andThenAPublished(event)`
+| `given().events(event, ...)`
+
+| `whenPublishingA(event)`
+| `when().event(event)`, or include it in `given().events(...)` and assert with `await`
+
+| `expectDispatchedCommands(command)`
+| `then().await(result -> result.commandsSatisfy(...))`
+
+| `expectActiveSagas(n)`
+| No equivalent. Assert on the observable outcome, or on your own state if the approach keeps any.
+
+| `whenTimeElapses(duration)`
+| No equivalent. Structure the timeout so it can be invoked directly; see xref:{page-component-version}@saga-guide:ROOT:deadlines.adoc[deadlines].
+|===
+
+
+== A working example
+
+`examples/saga-recipes` in the
+link:https://github.com/AxonFramework/AxonFramework[Axon Framework repository,role=external,window=_blank] implements the bike-rental payment saga from an Axon Framework 4 sample application, using every approach described here.
