@@ -6,7 +6,7 @@ The other approaches keep the process in one class. This one asks whether it nee
 
 Often the answer is no. What looks like a saga is a handful of independent reactions, each of the form "when this
 happens, do that". In Vertical Slice Architecture each is a folder, and nothing outside it needs to know it exists. If
-you model with Event Modelling you will recognise these as automation slices, drawn between an event and the command it
+you model with Event Modelling you will recognize these as automation slices, drawn between an event and the command it
 triggers. This page treats the two as mostly the same thing.
 
 == When to use it
