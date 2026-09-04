@@ -59,13 +59,13 @@ import org.jspecify.annotations.Nullable;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.testcontainers.shaded.org.awaitility.Awaitility.await;
+import static org.awaitility.Awaitility.await;
 
 /**
  * Shows that an {@code axon-legacy} saga repository works behind either event processor, and that the write it
  * schedules stays inside the caller's transaction in both cases.
  * <p>
- * {@link AnnotatedSagaRepository} writes the saga in the {@link AnnotatedSagaRepository#SAGA_WRITE} phase of the
+ * {@link AnnotatedSagaRepository} writes the saga in the {@link AnnotatedSagaRepository#WRITE_SAGA} phase of the
  * {@link org.axonframework.messaging.core.unitofwork.ProcessingContext} it was called in. That phase is ordered above
  * {@code PREPARE_COMMIT} and below {@code COMMIT}, which is what makes the two processors equivalent here:
  * <ul>

@@ -260,7 +260,7 @@ class AnnotatedSagaRepositoryTest {
             assertEquals(singleton(sagaId), found);
         } finally {
             letTheOtherProcessFinish.countDown();
-            otherProcess.join();
+            otherProcess.join(Duration.ofMillis(50));
         }
     }
 
