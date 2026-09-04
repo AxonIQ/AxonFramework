@@ -84,9 +84,9 @@ In Axon Framework 4, `@AggregateMember` had an `eventForwardingMode` attribute c
 * `ForwardNone`: no events were forwarded automatically.
 
 In Axon Framework 5, this attribute does not exist.
-The default behaviour is equivalent to `ForwardAll`: every event is offered to every child's `@EventSourcingHandler`.
+Delivery is controlled by the `eventTargetMatcher` on `@EntityMember`, which defaults to `RoutingKeyEventTargetMatcherDefinition`: a single child declared without a `routingKey` receives every event (equivalent to `ForwardAll`), while a `routingKey` (required for a collection) delivers an event only to the child whose routing key matches a field on the event (equivalent to `ForwardMatchingInstances`).
 
-To replicate `ForwardMatchingInstances`, configure `eventTargetMatcher` on `@EntityMember`:
+To set this matcher explicitly, configure `eventTargetMatcher` on `@EntityMember`:
 
 [source,java]
 ----
@@ -97,6 +97,17 @@ include::example$migration/paths/aggregates/multientitymigration/GiftCardWithExp
 
 There is no direct replacement for `ForwardNone`.
 If you need to suppress event forwarding entirely, do not declare `@EventSourcingHandler` methods on the child entity. Axon will offer events but nothing will handle them.
+
+[WARNING]
+.Child `@EventSourcingHandler` not called after migration?
+====
+An event only evolves a child if it passes two checks:
+
+. It is sourced into the parent: the parent loads only events tagged with its `tagKey`, so every event, parent-level and child-level, must carry that tag. The OpenRewrite migration adds these `@EventTag` annotations for you, leaving a `// TODO(axon4to5)` comment where it cannot determine the field with certainty.
+. It is routed to the child: with a `routingKey`, the event must carry a field named like the `routingKey` holding the child's value; for a single child, dropping the `routingKey` forwards every event.
+
+Because these are resolved separately, a child's `@CommandHandler` can run while its `@EventSourcingHandler` is skipped.
+====
 
 == See also
 
