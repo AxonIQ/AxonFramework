@@ -18,9 +18,7 @@ package org.axonframework.integrationtests.modelling.saga;
 
 import org.axonframework.common.FutureUtils;
 import org.axonframework.messaging.core.EmptyApplicationContext;
-import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
-import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.unitofwork.SimpleUnitOfWorkFactory;
 import org.axonframework.messaging.core.unitofwork.TransactionalUnitOfWorkFactory;
 import org.axonframework.messaging.core.unitofwork.UnitOfWork;
@@ -32,15 +30,17 @@ import org.axonframework.messaging.eventhandling.EventHandlingComponent;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.messaging.eventhandling.SimpleEventBus;
-import org.axonframework.messaging.eventhandling.SimpleEventHandlingComponent;
 import org.axonframework.messaging.eventhandling.configuration.EventProcessorConfiguration;
 import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessor;
 import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorConfiguration;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.inmemory.InMemoryTokenStore;
 import org.axonframework.messaging.eventhandling.processing.subscribing.SubscribingEventProcessor;
 import org.axonframework.messaging.eventhandling.processing.subscribing.SubscribingEventProcessorConfiguration;
+import org.axonframework.modelling.saga.AnnotatedSagaManager;
 import org.axonframework.modelling.saga.AssociationValue;
 import org.axonframework.modelling.saga.AssociationValues;
+import org.axonframework.modelling.saga.SagaEventHandler;
+import org.axonframework.modelling.saga.StartSaga;
 import org.axonframework.modelling.saga.repository.AnnotatedSagaRepository;
 import org.axonframework.modelling.saga.repository.SagaStore;
 import org.axonframework.modelling.saga.repository.inmemory.InMemorySagaStore;
@@ -62,8 +62,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.testcontainers.shaded.org.awaitility.Awaitility.await;
 
 /**
- * Shows that an {@code axon-legacy} saga repository works behind either event processor, and that the write it
+ * Shows that an {@code axon-legacy} saga works behind either event processor, and that the write its repository
  * schedules stays inside the caller's transaction in both cases.
+ * <p>
+ * The component under test is a real {@link AnnotatedSagaManager} over an annotated saga type, so these are
+ * guarantees about the component an application actually registers rather than about a stand-in that reached the
+ * repository on its behalf. The manager derives the saga identifier itself, which is why the store is asserted on the
+ * association value rather than on an identifier the test chose.
  * <p>
  * {@link AnnotatedSagaRepository} writes the saga in the {@link AnnotatedSagaRepository#SAGA_WRITE} phase of the
  * {@link org.axonframework.messaging.core.unitofwork.ProcessingContext} it was called in. That phase is ordered above
@@ -85,36 +90,28 @@ import static org.testcontainers.shaded.org.awaitility.Awaitility.await;
 class SagaRepositoryEventProcessorIT {
 
     private static final Duration TIMEOUT = Duration.ofSeconds(10);
-    private static final QualifiedName ORDER_PLACED = new QualifiedName(OrderPlaced.class);
     private static final AssociationValue ORDER_1 = new AssociationValue("orderId", "order-1");
 
     private SagaStore<Object> sagaStore;
-    private AnnotatedSagaRepository<Object> repository;
+    private List<String> storeAndTransactionOrder;
     private UnitOfWorkFactory unitOfWorkFactory;
     private EventHandlingComponent sagaComponent;
 
     @BeforeEach
     void setUp() {
-        sagaStore = new InMemorySagaStore();
-        repository = AnnotatedSagaRepository.builder()
-                                            .sagaType(Object.class)
-                                            .sagaStore(sagaStore)
-                                            .build();
+        storeAndTransactionOrder = new CopyOnWriteArrayList<>();
+        sagaStore = new RecordingSagaStore(new InMemorySagaStore(), storeAndTransactionOrder);
+        AnnotatedSagaRepository<OrderSaga> repository = AnnotatedSagaRepository.<OrderSaga>builder()
+                                                                              .sagaType(OrderSaga.class)
+                                                                              .sagaStore(sagaStore)
+                                                                              .build();
         unitOfWorkFactory = new SimpleUnitOfWorkFactory(EmptyApplicationContext.INSTANCE);
 
-        // Stands in for the saga event handling component that will replace AnnotatedSagaManager: it does the one
-        // thing that component has to do, which is reach the repository with the context it was invoked in.
-        sagaComponent = SimpleEventHandlingComponent.create("saga-component")
-                                                    .subscribe(ORDER_PLACED, (event, context) -> {
-                                                        repository.createInstance(
-                                                                          ((OrderPlaced) event.payload()).orderId(),
-                                                                          Object::new,
-                                                                          context
-                                                                  )
-                                                                  .getAssociationValues()
-                                                                  .add(ORDER_1);
-                                                        return MessageStream.empty();
-                                                    });
+        sagaComponent = AnnotatedSagaManager.<OrderSaga>builder()
+                                            .sagaRepository(repository)
+                                            .sagaType(OrderSaga.class)
+                                            .sagaFactory(OrderSaga::new)
+                                            .build();
     }
 
     @Nested
@@ -165,8 +162,7 @@ class SagaRepositoryEventProcessorIT {
             // then the saga was created and written: the processor's own unit of work invoked the component during
             // INVOCATION, well below the phase the repository writes in
             await().atMost(TIMEOUT)
-                   .untilAsserted(() -> assertThat(sagaStore.findSagas(Object.class, ORDER_1))
-                           .containsExactly("order-1"));
+                   .untilAsserted(() -> assertThat(sagaStore.findSagas(OrderSaga.class, ORDER_1)).hasSize(1));
         }
     }
 
@@ -204,7 +200,7 @@ class SagaRepositoryEventProcessorIT {
             FutureUtils.joinAndUnwrap(eventBus.publish(null, List.of(orderPlaced("order-1"))), TIMEOUT);
 
             // then the processor created a unit of work of its own, so the repository could write as usual
-            assertThat(sagaStore.findSagas(Object.class, ORDER_1)).containsExactly("order-1");
+            assertThat(sagaStore.findSagas(OrderSaga.class, ORDER_1)).hasSize(1);
         }
 
         @Test
@@ -220,18 +216,13 @@ class SagaRepositoryEventProcessorIT {
             FutureUtils.joinAndUnwrap(publishingUnitOfWork.execute(), TIMEOUT);
 
             // then the saga was written anyway: the phase it registers for is ordered above the one it was called from
-            assertThat(sagaStore.findSagas(Object.class, ORDER_1)).containsExactly("order-1");
+            assertThat(sagaStore.findSagas(OrderSaga.class, ORDER_1)).hasSize(1);
         }
 
         @Test
         void theSagaIsWrittenBeforeTheTransactionOfThePublishingContextCommits() {
-            // given a transactional unit of work, and a store that records when it is written relative to the commit
-            List<String> order = new CopyOnWriteArrayList<>();
-            sagaStore = new RecordingSagaStore(new InMemorySagaStore(), order);
-            repository = AnnotatedSagaRepository.builder()
-                                                .sagaType(Object.class)
-                                                .sagaStore(sagaStore)
-                                                .build();
+            // given a transactional unit of work, recorded into the same list the saga store writes to
+            List<String> order = storeAndTransactionOrder;
             UnitOfWork publishingUnitOfWork = new TransactionalUnitOfWorkFactory(
                     new RecordingTransactionManager(order),
                     new SimpleUnitOfWorkFactory(EmptyApplicationContext.INSTANCE)
@@ -264,7 +255,7 @@ class SagaRepositoryEventProcessorIT {
                     .hasMessage("something else in this context failed");
 
             // then the saga write never ran, so it cannot outlive the context that produced it
-            assertThat(sagaStore.findSagas(Object.class, ORDER_1)).isEmpty();
+            assertThat(sagaStore.findSagas(OrderSaga.class, ORDER_1)).isEmpty();
         }
     }
 
@@ -274,6 +265,20 @@ class SagaRepositoryEventProcessorIT {
 
     public record OrderPlaced(String orderId) {
 
+    }
+
+    /**
+     * An ordinary Axon Framework 4 saga: a starting handler associated by a property of the event. The manager derives
+     * its identifier itself, so the store is asserted on the association value rather than on a caller-chosen id.
+     */
+    @SuppressWarnings("unused")
+    public static class OrderSaga {
+
+        @StartSaga
+        @SagaEventHandler(associationProperty = "orderId")
+        public void on(OrderPlaced event) {
+            // Associating and storing the saga is the whole point here; the saga itself has nothing else to do.
+        }
     }
 
     private record RecordingTransactionManager(List<String> order) implements TransactionManager {
