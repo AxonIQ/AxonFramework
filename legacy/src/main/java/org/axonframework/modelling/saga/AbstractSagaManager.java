@@ -82,9 +82,19 @@ public abstract class AbstractSagaManager<T> implements EventHandlingComponent, 
      * {@link Segment#fromContext(org.axonframework.messaging.core.Context)}. When absent, for example when this
      * method is invoked outside a segmented {@code EventProcessor}, the {@link Segment#ROOT_SEGMENT} is assumed,
      * matching every Saga instance.
+     * <p>
+     * Two distinct questions decide what happens here. {@link #canHandle(EventMessage, ProcessingContext)} asks whether
+     * the Saga <b>type</b> declares a handler for this event at all, and {@link Saga#canHandle(EventMessage,
+     * ProcessingContext)} asks whether an individual instance holds the {@link AssociationValue} its handler resolves
+     * from the event. Only the second decides whether a Saga counts as having taken the event, which is what a
+     * {@link SagaCreationPolicy#IF_NONE_FOUND} policy consults before starting a new instance.
      */
     @Override
     public MessageStream.Empty<Message> handle(EventMessage event, ProcessingContext context) {
+        if (!canHandle(event, context)) {
+            return MessageStream.empty();
+        }
+
         Segment segment = Segment.fromContext(context).orElse(Segment.ROOT_SEGMENT);
         Set<AssociationValue> associationValues = extractAssociationValues(event, context);
         List<String> sagaIds =
@@ -102,9 +112,11 @@ public abstract class AbstractSagaManager<T> implements EventHandlingComponent, 
 
         MessageStream<Message> result = MessageStream.empty();
         boolean sagaOfTypeInvoked = false;
-        if (!sagas.isEmpty() && canHandle(event, context)) {
-            for (Saga<T> saga : sagas) {
+        for (Saga<T> saga : sagas) {
+            if (saga.canHandle(event, context)) {
                 result = result.concatWith(saga.handle(event, context));
+                // Deliberately set before the stream is consumed: a Saga whose handler fails still took the event,
+                // which is what Axon Framework 4's error handling meant by returning true from an invocation that threw.
                 sagaOfTypeInvoked = true;
             }
         }
@@ -131,7 +143,9 @@ public abstract class AbstractSagaManager<T> implements EventHandlingComponent, 
                                                 Segment segment) {
         Saga<T> newSaga = sagaRepository.createInstance(createSagaIdentifier(segment), sagaFactory, context);
         newSaga.getAssociationValues().add(associationValue);
-        return newSaga.handle(event, context);
+        return newSaga.canHandle(event, context)
+                ? newSaga.handle(event, context)
+                : MessageStream.empty();
     }
 
     /**
@@ -192,7 +206,11 @@ public abstract class AbstractSagaManager<T> implements EventHandlingComponent, 
      * This check is independent of the {@link EventMessage#type()}: Sagas resolve their handlers by inspecting the
      * {@link EventMessage#payload() payload's} runtime type, the same way a {@code @SagaEventHandler} method is
      * matched, since the message name carried by a {@code MessageType} is not guaranteed to correlate with the
-     * payload's class.
+     * payload's class. That makes it stricter than {@link #supports(QualifiedName)}, which the
+     * {@code EventProcessor} consults before it delivers an event, so this method is asked again on the way in.
+     * <p>
+     * This is a question about the Saga type, not about any one instance. For the instance-level question, see
+     * {@link Saga#canHandle(EventMessage, ProcessingContext)}.
      *
      * @param event   The event to check for a handler.
      * @param context The {@link ProcessingContext} in which the event is being processed.

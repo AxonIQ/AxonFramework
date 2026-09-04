@@ -27,6 +27,7 @@ import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.modelling.saga.metamodel.SagaModel;
 
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -112,26 +113,42 @@ public class AnnotatedSaga<T> implements Saga<T>, SagaLifecycle {
     }
 
     @Override
+    public boolean canHandle(EventMessage event, ProcessingContext context) {
+        return isActive && matchingHandler(event, context).isPresent();
+    }
+
+    @Override
     public MessageStream.Empty<Message> handle(EventMessage event, ProcessingContext context) {
         if (!isActive) {
             return MessageStream.empty();
         }
 
         ProcessingContext sagaContext = context.withResource(SagaLifecycle.RESOURCE_KEY, this);
-        return metaModel.findHandlerMethods(event, sagaContext)
+        return matchingHandler(event, sagaContext)
+                .map(handler -> requireCompleted(
+                        chainedInterceptor.handle(event, sagaContext, sagaInstance, handler)
+                                          .ignoreEntries()
+                                          .cast(),
+                        handler
+                ))
+                .orElse(MessageStream.empty());
+    }
+
+    /**
+     * Returns the handler this Saga instance would invoke for the given {@code event}, being the first handler for it
+     * whose {@link AssociationValue} this instance holds.
+     * <p>
+     * A handler that is not a {@link SagaMethodMessageHandlingMember} resolves no association value at all and is
+     * therefore never filtered out, which is how a plain event handler declared on a Saga keeps working.
+     */
+    private Optional<MessageHandlingMember<? super T>> matchingHandler(EventMessage event, ProcessingContext context) {
+        return metaModel.findHandlerMethods(event, context)
                         .stream()
                         .filter(handler -> handler.unwrap(SagaMethodMessageHandlingMember.class)
                                                   .map(sh -> getAssociationValues()
                                                           .contains(sh.getAssociationValue(event)))
                                                   .orElse(true))
-                        .findFirst()
-                        .map(handler -> requireCompleted(
-                                chainedInterceptor.handle(event, sagaContext, sagaInstance, handler)
-                                                  .ignoreEntries()
-                                                  .cast(),
-                                handler
-                        ))
-                        .orElse(MessageStream.empty());
+                        .findFirst();
     }
 
     /**

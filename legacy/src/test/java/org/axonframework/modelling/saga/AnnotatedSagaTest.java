@@ -206,6 +206,66 @@ class AnnotatedSagaTest {
         }
     }
 
+    /**
+     * The instance-level question the saga manager asks before it invokes a Saga, and again to decide whether a
+     * {@link SagaCreationPolicy#IF_NONE_FOUND} policy should start a new one.
+     */
+    @Nested
+    class CanHandle {
+
+        @Test
+        void takesTheEventWhenTheSagaHoldsTheHandlersAssociationValue() {
+            // given
+            testSubject.associateWith(new AssociationValue("propertyName", "id"));
+
+            // when / then
+            var event = new GenericEventMessage(new MessageType("event"), new RegularEvent("id"));
+            assertThat(testSubject.canHandle(event, StubProcessingContext.forMessage(event))).isTrue();
+        }
+
+        @Test
+        void declinesTheEventWhenTheAssociationValueDiffers() {
+            // given
+            testSubject.associateWith(new AssociationValue("propertyName", "another-id"));
+
+            // when / then
+            var event = new GenericEventMessage(new MessageType("event"), new RegularEvent("id"));
+            assertThat(testSubject.canHandle(event, StubProcessingContext.forMessage(event))).isFalse();
+        }
+
+        @Test
+        void declinesTheEventOnceTheSagaEnded() {
+            // given
+            testSubject.associateWith(new AssociationValue("propertyName", "id"));
+            testSubject.end();
+
+            // when / then
+            var event = new GenericEventMessage(new MessageType("event"), new RegularEvent("id"));
+            assertThat(testSubject.canHandle(event, StubProcessingContext.forMessage(event))).isFalse();
+        }
+
+        @Test
+        void declinesTheEventAfterItsAssociationWasRemoved() {
+            // given an association the saga held and dropped again, which is the case where the store index and the
+            // live instance disagree until the saga is written
+            testSubject.associateWith(new AssociationValue("propertyName", "id"));
+            testSubject.removeAssociationWith(new AssociationValue("propertyName", "id"));
+
+            // when
+            var event = new GenericEventMessage(new MessageType("event"), new RegularEvent("id"));
+            ProcessingContext context = StubProcessingContext.forMessage(event);
+
+            // then the saga declines it and handling it does nothing, which is the pair the saga manager needs: a
+            // declining saga has not taken the event, so IF_NONE_FOUND must still start a new instance
+            assertThat(testSubject.canHandle(event, context)).isFalse();
+            testSubject.handle(event, context)
+                       .asCompletableFuture()
+                       .orTimeout(50, TimeUnit.MILLISECONDS)
+                       .join();
+            assertThat(testSaga.invocationCount).isZero();
+        }
+    }
+
     @Nested
     class MetaModelValidation {
 

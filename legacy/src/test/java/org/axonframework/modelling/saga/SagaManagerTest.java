@@ -70,6 +70,10 @@ class SagaManagerTest {
         when(mockSaga2.getAssociationValues()).thenReturn(associationValues);
         when(mockSaga3.getAssociationValues()).thenReturn(associationValues);
 
+        when(mockSaga1.canHandle(any(EventMessage.class), any())).thenReturn(true);
+        when(mockSaga2.canHandle(any(EventMessage.class), any())).thenReturn(true);
+        when(mockSaga3.canHandle(any(EventMessage.class), any())).thenReturn(true);
+
         when(mockSaga1.handle(any(EventMessage.class), any())).thenReturn(MessageStream.empty());
         when(mockSaga2.handle(any(EventMessage.class), any())).thenReturn(MessageStream.empty());
 
@@ -130,6 +134,52 @@ class SagaManagerTest {
 
         verify(mockSagaRepository).createInstance(any(), any(), any());
         verify(mockSaga1).handle(eq(event), any());
+    }
+
+    @Test
+    void sagaIsCreatedWhenTheLoadedSagaDeclinesTheEventAndPolicyIsIfNoneFound() {
+        // given a saga the repository finds by an association value it no longer holds, so it declines the event
+        testSubject = TestableAbstractSagaManager.builder()
+                                                 .sagaRepository(mockSagaRepository)
+                                                 .sagaCreationPolicy(SagaCreationPolicy.IF_NONE_FOUND)
+                                                 .associationValue(associationValue)
+                                                 .build();
+        when(mockSaga1.canHandle(any(EventMessage.class), any())).thenReturn(false);
+        when(mockSaga2.canHandle(any(EventMessage.class), any())).thenReturn(false);
+        when(mockSagaRepository.createInstance(any(), any(), any())).thenReturn(mockSaga1);
+
+        // when
+        EventMessage event = new GenericEventMessage(new MessageType("event"), new Object());
+        testSubject.handle(event, StubProcessingContext.forMessage(event));
+
+        // then no saga of this type took the event, so IF_NONE_FOUND starts a new one
+        verify(mockSaga1, never()).handle(eq(event), any());
+        verify(mockSaga2, never()).handle(eq(event), any());
+        verify(mockSagaRepository).createInstance(any(), any(), any());
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void aNewSagaThatDeclinesTheEventIsNotInvoked() {
+        // given a policy that always creates, and a new saga that declines the event it was created for
+        testSubject = TestableAbstractSagaManager.builder()
+                                                 .sagaRepository(mockSagaRepository)
+                                                 .sagaCreationPolicy(SagaCreationPolicy.ALWAYS)
+                                                 .associationValue(new AssociationValue("someKey", "someValue"))
+                                                 .build();
+        Saga<Object> newSaga = mock(Saga.class);
+        when(newSaga.getAssociationValues()).thenReturn(new AssociationValuesImpl());
+        when(newSaga.canHandle(any(EventMessage.class), any())).thenReturn(false);
+        when(mockSagaRepository.createInstance(any(), any(), any())).thenReturn(newSaga);
+        when(mockSagaRepository.find(any(), any())).thenReturn(Collections.emptySet());
+
+        // when
+        EventMessage event = new GenericEventMessage(new MessageType("event"), new Object());
+        testSubject.handle(event, StubProcessingContext.forMessage(event));
+
+        // then the saga is created and associated, but not invoked
+        verify(mockSagaRepository).createInstance(any(), any(), any());
+        verify(newSaga, never()).handle(eq(event), any());
     }
 
     @Test
