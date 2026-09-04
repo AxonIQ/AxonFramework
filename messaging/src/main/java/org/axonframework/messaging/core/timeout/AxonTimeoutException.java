@@ -19,9 +19,8 @@ import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.unitofwork.UnitOfWork;
 
 /**
- * Exception indicated that an Axon-specific task has timed out. This task can represent an entire
- * {@link UnitOfWork} or the handling of a specific
- * {@link Message}.
+ * Exception indicated that an Axon-specific task has timed out. This task can represent an entire {@link UnitOfWork} or
+ * the handling of a specific {@link Message}.
  *
  * @author Mitchell Herrijgers
  * @see AxonTimeLimitedTask
@@ -31,9 +30,9 @@ import org.axonframework.messaging.core.unitofwork.UnitOfWork;
 public class AxonTimeoutException extends RuntimeException {
 
     /**
-     * Initializes an {@link AxonTimeoutException} with the given {@code message}.
+     * Initializes an {@code AxonTimeoutException} with the given {@code message}.
      *
-     * @param message The message describing the cause of the timeout.
+     * @param message the message describing the cause of the timeout
      */
     public AxonTimeoutException(String message) {
         super(message);

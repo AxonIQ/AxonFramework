@@ -24,7 +24,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 
 /**
- * Container of unique {@link ScheduledExecutorService} and {@link Logger } instances for the
+ * Container of unique {@link ScheduledExecutorService} and {@link Logger} instances for the
  * {@link AxonTimeLimitedTask}.
  *
  * @author Mitchell Herrijgers

@@ -26,8 +26,10 @@ import java.util.concurrent.TimeoutException;
 
 /**
  * Represents a {@link MessageHandlingMember} that wraps another {@link MessageHandlingMember} and enforces a timeout on
- * the invocation of the wrapped member. It does this by starting a {@link AxonTimeLimitedTask} and completes this upon
- * completion. When the execution takes too long, it will throw a {@link TimeoutException}.
+ * the invocation of the wrapped member.
+ * <p>
+ * It does this by starting a {@link AxonTimeLimitedTask} and completes this upon completion. When the execution takes
+ * too long, it will throw a {@link TimeoutException}.
  * <p>
  * If the {@code warningThreshold} is lower than the {@code timeout}, warnings will be logged at the configured
  * {@code warningInterval} before the timeout is reached.
@@ -43,14 +45,14 @@ class TimeoutWrappedMessageHandlingMember<T> extends WrappedMessageHandlingMembe
     private final int warningInterval;
 
     /**
-     * Creates a new {@link TimeoutWrappedMessageHandlingMember} for the given {@code original} handler with the given
+     * Creates a new {@code TimeoutWrappedMessageHandlingMember} for the given {@code original} handler with the given
      * {@code timeout}, {@code warningThreshold} and {@code warningInterval}.
      *
-     * @param original         The original handler to wrap
-     * @param timeout          The timeout in milliseconds
-     * @param warningThreshold The threshold in milliseconds after which a warning is logged. Setting this to a value
-     *                         higher than or equal to {@code timeout} will disable warnings.
-     * @param warningInterval  The interval in milliseconds between warnings.
+     * @param original         the original handler to wrap
+     * @param timeout          the timeout in milliseconds
+     * @param warningThreshold the threshold in milliseconds after which a warning is logged. Setting this to a value
+     *                         higher than or equal to {@code timeout} will disable warnings
+     * @param warningInterval  the interval in milliseconds between warnings.
      */
     TimeoutWrappedMessageHandlingMember(MessageHandlingMember<T> original,
                                         int timeout,
@@ -67,13 +69,8 @@ class TimeoutWrappedMessageHandlingMember<T> extends WrappedMessageHandlingMembe
         String taskName = String.format("Message [%s] for handler [%s]",
                                         message.type().name(),
                                         target != null ? target.getClass().getName() : null);
-        AxonTimeLimitedTask task = new AxonTimeLimitedTask(
-                taskName,
-                timeout,
-                warningThreshold,
-                warningInterval,
-                getClass()
-        );
+        AxonTimeLimitedTask task =
+                new AxonTimeLimitedTask(taskName, timeout, warningThreshold, warningInterval, getClass());
         task.start();
         try {
             MessageStream<?> result = super.handle(message, context, target);
