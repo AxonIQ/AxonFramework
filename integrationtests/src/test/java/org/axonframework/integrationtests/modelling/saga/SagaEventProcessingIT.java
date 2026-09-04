@@ -278,9 +278,11 @@ class SagaEventProcessingIT {
             eventSource.publishMessage(orderCompleted(shipmentIdFor(orderId)));
             startProcessor();
 
-            // then
-            await().atMost(TIMEOUT).untilAsserted(() -> assertThat(sagaStore.findSagas(OrderSaga.class, shipment))
-                    .isEmpty());
+            // then the saga was inserted and then deleted, in that order. The recorded writes are what prove the
+            // saga existed at all: the store being empty is also the state before the processor ran.
+            await().atMost(TIMEOUT).untilAsserted(
+                    () -> assertThat(storeAndTransactionOrder).containsSubsequence("saga-inserted", "saga-deleted"));
+            assertThat(sagaStore.findSagas(OrderSaga.class, shipment)).isEmpty();
         }
 
         private OrderSaga sagaFor(AssociationValue associationValue) {
