@@ -20,6 +20,7 @@ import org.axonframework.common.FutureUtils;
 import org.axonframework.messaging.core.EmptyApplicationContext;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.annotation.MetadataValue;
+import org.axonframework.messaging.core.interception.annotation.ExceptionHandler;
 import org.axonframework.messaging.core.unitofwork.SimpleUnitOfWorkFactory;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.core.unitofwork.UnitOfWork;
@@ -194,6 +195,66 @@ public class AnnotatedSagaManagerTest {
         );
     }
 
+    /**
+     * A saga that suppresses its own handler failure through an {@link ExceptionHandler} reaches the outcome the Axon
+     * Framework 4 {@code ListenerInvocationErrorHandler} default produced: the unit of work commits, the saga is
+     * stored, and the saga counts as having taken the event so {@link SagaCreationPolicy#IF_NONE_FOUND} does not start
+     * a second one.
+     */
+    @Nested
+    class SuppressedHandlerFailures {
+
+        private AnnotatedSagaManager<SuppressingTestSaga> suppressingTestSubject;
+
+        @BeforeEach
+        void setUp() {
+            suppressingTestSubject =
+                    AnnotatedSagaManager.<SuppressingTestSaga>builder()
+                                        .sagaRepository(AnnotatedSagaRepository.<SuppressingTestSaga>builder()
+                                                                               .sagaType(SuppressingTestSaga.class)
+                                                                               .sagaStore(sagaStore)
+                                                                               .build())
+                                        .sagaType(SuppressingTestSaga.class)
+                                        .sagaFactory(SuppressingTestSaga::new)
+                                        .build();
+        }
+
+        @Test
+        void aSuppressedFailureStillStoresTheSaga() {
+            handle(new GenericEventMessage(new MessageType("event"), new StartingEvent("123")));
+
+            Collection<SuppressingTestSaga> sagas = suppressingRepositoryContents();
+            assertEquals(1, sagas.size());
+            SuppressingTestSaga saga = sagas.iterator().next();
+            assertEquals(1, saga.getHandlerInvocations());
+            assertEquals(1, saga.getSuppressedFailures());
+        }
+
+        @Test
+        void aSuppressedFailureStillCountsAsInvoked() {
+            handle(new GenericEventMessage(new MessageType("event"), new StartingEvent("123")));
+            handle(new GenericEventMessage(new MessageType("event"), new StartingEvent("123")));
+
+            Collection<SuppressingTestSaga> sagas = suppressingRepositoryContents();
+            assertEquals(1, sagas.size());
+            assertEquals(2, sagas.iterator().next().getHandlerInvocations());
+        }
+
+        private void handle(EventMessage event) {
+            UnitOfWork unitOfWork = unitOfWorkFactory.create();
+            unitOfWork.runOnInvocation(context -> suppressingTestSubject.handle(event, context));
+            FutureUtils.joinAndUnwrap(unitOfWork.execute(), TIMEOUT);
+        }
+
+        private Collection<SuppressingTestSaga> suppressingRepositoryContents() {
+            return sagaStore.findSagas(SuppressingTestSaga.class, new AssociationValue("myIdentifier", "123"))
+                            .stream()
+                            .map(id -> sagaStore.loadSaga(SuppressingTestSaga.class, id))
+                            .map(SagaStore.Entry::saga)
+                            .collect(Collectors.toList());
+        }
+    }
+
     private void handle(EventMessage event) {
         UnitOfWork unitOfWork = unitOfWorkFactory.create();
         unitOfWork.runOnInvocation(context -> testSubject.handle(event, context));
@@ -324,5 +385,32 @@ public class AnnotatedSagaManagerTest {
 
     public static class UnrelatedDomainEvent {
 
+    }
+
+    @SuppressWarnings("unused")
+    public static class SuppressingTestSaga {
+
+        private int handlerInvocations = 0;
+        private int suppressedFailures = 0;
+
+        @StartSaga
+        @SagaEventHandler(associationProperty = "myIdentifier")
+        public void handleStartingEvent(StartingEvent event) {
+            handlerInvocations++;
+            throw new IllegalStateException("saga handler failed");
+        }
+
+        @ExceptionHandler
+        public void on(IllegalStateException failure) {
+            suppressedFailures++;
+        }
+
+        public int getHandlerInvocations() {
+            return handlerInvocations;
+        }
+
+        public int getSuppressedFailures() {
+            return suppressedFailures;
+        }
     }
 }
