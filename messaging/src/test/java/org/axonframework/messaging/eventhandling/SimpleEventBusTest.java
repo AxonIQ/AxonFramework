@@ -16,10 +16,12 @@
 
 package org.axonframework.messaging.eventhandling;
 
+import org.axonframework.common.FutureUtils;
 import org.axonframework.common.Registration;
 import org.axonframework.messaging.core.ApplicationContext;
 import org.axonframework.messaging.core.EmptyApplicationContext;
 import org.axonframework.messaging.core.MessageType;
+import org.axonframework.messaging.core.unitofwork.ProcessingLifecycle;
 import org.axonframework.messaging.core.unitofwork.ProcessingLifecycle.DefaultPhases;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.SimpleUnitOfWorkFactory;
@@ -33,6 +35,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -44,6 +47,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * @since 5.0.0
  */
 class SimpleEventBusTest {
+
+    private static final Duration TIMEOUT = Duration.ofSeconds(5);
 
     private EventBus testSubject;
 
@@ -359,10 +364,10 @@ class SimpleEventBusTest {
             StubProcessingContext context = new StubProcessingContext();
             context.moveToPhase(DefaultPhases.COMMIT);
 
-            // when / then
+            // when / then the bus cannot register the prepare-commit hook that would deliver the events
             assertThatThrownBy(() -> testSubject.publish(context, List.of(newEvent("event1"))))
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("phase that has already passed");
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("ProcessingContext is already in phase COMMIT");
         }
     }
 
@@ -447,6 +452,113 @@ class SimpleEventBusTest {
             // then
             assertThat(result).isDone();
             assertThat(result).isCompletedExceptionally();
+        }
+    }
+
+    /**
+     * Events published with a {@link ProcessingContext} are delivered during that context's
+     * {@link DefaultPhases#PREPARE_COMMIT} phase, so a subscriber runs inside that phase. What such a subscriber may
+     * still register for decides what work it can add to the publisher's transaction.
+     */
+    @Nested
+    class PhaseAvailableToSubscribersOfEventsPublishedWithAContext {
+
+        /**
+         * A phase between {@link DefaultPhases#PREPARE_COMMIT} (20000) and {@link DefaultPhases#COMMIT} (30000).
+         * {@code Phase} is an interface over an arbitrary order, so the gaps the default phases leave are usable.
+         */
+        private static final ProcessingLifecycle.Phase AFTER_PREPARE_COMMIT = () -> 25_000;
+
+        private UnitOfWorkFactory unitOfWorkFactory;
+
+        @BeforeEach
+        void setUpUnitOfWork() {
+            unitOfWorkFactory = new SimpleUnitOfWorkFactory(EmptyApplicationContext.INSTANCE);
+        }
+
+        @Test
+        void prepareCommitIsRejectedBecauseThatIsThePhaseTheSubscriberRunsIn() {
+            // given a subscriber that wants work done in the publisher's PREPARE_COMMIT phase
+            AtomicReference<Throwable> failure = new AtomicReference<>();
+            testSubject.subscribe((events, context) -> {
+                try {
+                    context.runOnPrepareCommit(c -> {
+                    });
+                } catch (RuntimeException e) {
+                    failure.set(e);
+                }
+                return FutureUtils.emptyCompletedFuture();
+            });
+            UnitOfWork uow = unitOfWorkFactory.create();
+            uow.runOnInvocation(ctx -> testSubject.publish(ctx, List.of(newEvent("event1"))));
+
+            // when
+            FutureUtils.joinAndUnwrap(uow.execute(), TIMEOUT);
+
+            // then the phase it asked for is the phase it is already in
+            assertThat(failure.get())
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("ProcessingContext is already in phase PREPARE_COMMIT");
+        }
+
+        @Test
+        void aPhaseOrderedAfterPrepareCommitIsAcceptedAndRunsBeforeTheContextCommits() {
+            // given a subscriber that registers its work for the phase right after PREPARE_COMMIT
+            List<String> order = new CopyOnWriteArrayList<>();
+            AtomicReference<Throwable> failure = new AtomicReference<>();
+            testSubject.subscribe((events, context) -> {
+                order.add("subscriber-invoked");
+                try {
+                    context.runOn(AFTER_PREPARE_COMMIT, c -> order.add("registered-work"));
+                } catch (RuntimeException e) {
+                    failure.set(e);
+                }
+                return FutureUtils.emptyCompletedFuture();
+            });
+            UnitOfWork uow = unitOfWorkFactory.create();
+            uow.runOnPreInvocation(ctx -> order.add("pre-invocation"));
+            uow.runOnInvocation(ctx -> testSubject.publish(ctx, List.of(newEvent("event1"))));
+            uow.runOnPrepareCommit(ctx -> order.add("other-prepare-commit-action"));
+            uow.runOnCommit(ctx -> order.add("commit"));
+
+            // when
+            FutureUtils.joinAndUnwrap(uow.execute(), TIMEOUT);
+
+            // then the work runs once every PREPARE_COMMIT action is done, and still before the context commits
+            assertThat(failure.get()).isNull();
+            assertThat(order).containsExactly("pre-invocation",
+                                              "other-prepare-commit-action",
+                                              "subscriber-invoked",
+                                              "registered-work",
+                                              "commit");
+        }
+
+        @Test
+        void publishingOnceTheQueueWasDrainedIsRejectedRatherThanQueuedAgain() {
+            // given a context that already published, so the queue and the hook draining it both exist
+            RecordingEventListener listener = new RecordingEventListener();
+            testSubject.subscribe(listener);
+            AtomicReference<Throwable> failure = new AtomicReference<>();
+            UnitOfWork uow = unitOfWorkFactory.create();
+            uow.runOnInvocation(ctx -> testSubject.publish(ctx, List.of(newEvent("event1"))));
+            uow.runOnCommit(ctx -> {
+                try {
+                    testSubject.publish(ctx, List.of(newEvent("event2")));
+                } catch (RuntimeException e) {
+                    failure.set(e);
+                }
+            });
+
+            // when
+            FutureUtils.joinAndUnwrap(uow.execute(), TIMEOUT);
+
+            // then the late publish fails, instead of landing in a queue nothing will read again
+            assertThat(failure.get())
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("were delivered to their subscribers");
+            assertThat(listener.getReceivedEvents())
+                    .extracting(msg -> msg.type().qualifiedName().toString())
+                    .containsExactly("event1");
         }
     }
 

@@ -413,7 +413,7 @@ class SimpleEventStoreTest {
         }
 
         @Test
-        void subscriberExceptionRollsBackTransaction() {
+        void subscriberExceptionPreventsTheEventsFromReachingTheStorageEngine() {
             // given
             EventStorageEngine.AppendTransaction<?> mockAppendTransaction = mock();
             when(mockStorageEngine.appendEvents(any(), any(ProcessingContext.class), anyList()))
@@ -430,12 +430,13 @@ class SimpleEventStoreTest {
             uow.onPreInvocation(context -> testSubject.publish(context, testEvent));
             CompletableFuture<Void> result = uow.execute();
 
-            // then
+            // then subscribers are notified during prepare-commit, and the batch is handed over only after that
+            // phase, so a failing subscriber means the storage engine is never asked for a transaction at all
             ExecutionException exception = assertThrows(ExecutionException.class, () -> result.get(5, TimeUnit.SECONDS));
             assertSame(subscriberException, exception.getCause());
             assertThat(listener.getInvocationCount()).isEqualTo(1);
-            verify(mockAppendTransaction, never()).commit();
-            verify(mockAppendTransaction).rollback();
+            verify(mockStorageEngine, never()).appendEvents(any(), any(ProcessingContext.class), anyList());
+            verifyNoInteractions(mockAppendTransaction);
         }
 
         @Test
