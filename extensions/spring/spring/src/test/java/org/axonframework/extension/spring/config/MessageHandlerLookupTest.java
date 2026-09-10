@@ -20,7 +20,8 @@ import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.modelling.saga.SagaEventHandler;
 import org.axonframework.modelling.saga.StartSaga;
 import org.axonframework.spring.stereotype.Saga;
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.support.BeanDefinitionBuilder;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
@@ -36,11 +37,29 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class MessageHandlerLookupTest {
 
+    private static final String EVENT_CONFIGURER = "MessageHandlerConfigurer$$Axon$$EVENT";
+
+    @Nested
+    class EventConfigurerRegistration {
+
+        @Test
+        void registersWithoutOrdinaryHandlersSoPreconfiguredComponentsCanJoinLater() {
+            // given
+            DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory();
+
+            // when
+            new MessageHandlerLookup().postProcessBeanFactory(beanFactory);
+
+            // then
+            assertThat(beanFactory.containsBeanDefinition(EVENT_CONFIGURER)).isTrue();
+        }
+    }
+
     /**
      * A Saga carries {@link SagaEventHandler @SagaEventHandler} methods, which are meta-annotated with
      * {@link org.axonframework.messaging.eventhandling.annotation.EventHandler @EventHandler} and therefore with
      * {@link org.axonframework.messaging.core.annotation.MessageHandler @MessageHandler}. The lookup would happily
-     * wire a Saga up as a plain event handling component, on top of the processor its own configurer registers, if
+     * wire a Saga up as a plain annotated event handling component in addition to its declarative Saga component if
      * {@link Saga @Saga} did not make the bean a prototype. That single scope check is the whole guard.
      */
     @Nested

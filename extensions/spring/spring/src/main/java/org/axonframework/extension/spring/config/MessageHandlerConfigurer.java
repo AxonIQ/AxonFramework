@@ -16,7 +16,6 @@
 
 package org.axonframework.extension.spring.config;
 
-import org.jspecify.annotations.Nullable;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.annotation.RegistrationScope;
 import org.axonframework.common.configuration.ComponentBuilder;
@@ -31,6 +30,7 @@ import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.configuration.EventProcessorModule;
 import org.axonframework.messaging.queryhandling.QueryMessage;
 import org.axonframework.messaging.queryhandling.configuration.QueryHandlingModule;
+import org.jspecify.annotations.Nullable;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
@@ -38,7 +38,8 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
 import org.springframework.context.ConfigurableApplicationContext;
 
-
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -93,16 +94,20 @@ public class MessageHandlerConfigurer implements ConfigurationEnhancer, Applicat
     }
 
     private void configureEventHandlers(ComponentRegistry registry) {
-        if (handlerBeansRefs.isEmpty()) {
-            // no action needed if there are no handler beans found
+        var beanFactory = ((ConfigurableApplicationContext) applicationContext).getBeanFactory();
+        Map<String, EventProcessorDefinition.EventHandlerDescriptor> uniqueHandlers = new LinkedHashMap<>();
+        handlerBeansRefs.stream()
+                        .map(name -> new SimpleEventHandlerDescriptor(name, beanFactory))
+                        .forEach(handler -> uniqueHandlers.put("bean:" + handler.beanName(), handler));
+        applicationContext.getBeansOfType(PreconfiguredEventHandlerDescriptor.class)
+                          .values()
+                          .forEach(handler -> uniqueHandlers.put("component:" + handler.deduplicationKey(), handler));
+        if (uniqueHandlers.isEmpty()) {
+            // no action needed if there are no handler beans or preconfigured components found
             return;
         }
-        var beanFactory = ((ConfigurableApplicationContext) applicationContext).getBeanFactory();
         ProcessorModuleFactory processorModuleFactory = applicationContext.getBean(ProcessorModuleFactory.class);
-        Set<EventProcessorDefinition.EventHandlerDescriptor> handlers =
-                handlerBeansRefs.stream()
-                                .map(name -> new SimpleEventHandlerDescriptor(name, beanFactory))
-                                .collect(Collectors.toSet());
+        Set<EventProcessorDefinition.EventHandlerDescriptor> handlers = new LinkedHashSet<>(uniqueHandlers.values());
         for (EventProcessorModule processorModule : processorModuleFactory.buildProcessorModules(handlers)) {
             registry.registerModule(processorModule);
         }

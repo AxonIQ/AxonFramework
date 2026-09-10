@@ -72,7 +72,9 @@ public class SpringSagaLookup implements BeanDefinitionRegistryPostProcessor {
 
             BeanDefinitionBuilder beanDefinitionBuilder =
                     BeanDefinitionBuilder.genericBeanDefinition(SpringSagaConfigurer.class)
-                                         .addConstructorArgValue(sagaType);
+                                         .addConstructorArgValue(saga)
+                                         .addConstructorArgValue(sagaType)
+                                         .addConstructorArgValue(beanFactory.getBeanDefinition(saga));
 
             if (sagaAnnotation != null && !"".equals(sagaAnnotation.sagaStore())) {
                 beanDefinitionBuilder.addPropertyValue("sagaStore", sagaAnnotation.sagaStore());

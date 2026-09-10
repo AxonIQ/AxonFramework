@@ -22,7 +22,9 @@ import org.axonframework.common.configuration.Configuration;
 import org.axonframework.messaging.core.annotation.Namespace;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventHandlingComponent;
+import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.annotation.AnnotatedEventHandlingComponent;
+import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorConfiguration;
 import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorModule;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.GlobalSequenceTrackingToken;
@@ -37,7 +39,8 @@ import org.axonframework.modelling.saga.StartSaga;
 import org.axonframework.modelling.saga.repository.SagaStore;
 import org.axonframework.modelling.saga.repository.inmemory.InMemorySagaStore;
 import org.jspecify.annotations.Nullable;
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.support.BeanDefinitionBuilder;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.context.support.GenericApplicationContext;
@@ -53,8 +56,8 @@ import java.util.function.Consumer;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Test class validating the {@link SpringSagaConfigurer}, the enhancer registering an event processor module for every
- * Saga discovered in a Spring application context.
+ * Test class validating the {@link SpringSagaConfigurer} descriptor contributed for every Saga discovered in a Spring
+ * application context.
  * <p>
  * The tests pin the Axon Framework 4 behavior the configurer reproduces: the derived processor name, the head-token
  * default with its back-off on an explicit processor entry, and the co-location of Sagas deriving the same processor
@@ -94,7 +97,6 @@ class SpringSagaConfigurerTest {
                 // then - a Saga is its own event handling component, not an annotated handler bean
                 Map<String, EventHandlingComponent> components = module.getComponents(EventHandlingComponent.class);
                 assertThat(components).hasSize(1);
-                assertThat(components.keySet().iterator().next()).contains("Saga[MySaga]");
                 EventHandlingComponent component = components.values().iterator().next();
                 assertThat(component.unwrap(AnnotatedSagaManager.class)).isPresent();
                 assertThat(component.unwrap(AnnotatedEventHandlingComponent.class)).isEmpty();
@@ -112,6 +114,27 @@ class SpringSagaConfigurerTest {
                 // then
                 assertThat(configuration.getModuleConfiguration(SHARED_MODULE)).isPresent();
                 assertThat(configuration.getModuleConfiguration("EventProcessor[NamespacedSagaProcessor]")).isEmpty();
+            }
+        }
+
+        @Test
+        void anEventProcessorDefinitionCanSelectASaga() {
+            // given
+            try (GenericApplicationContext context = springContext(ctx -> {
+                registrar(ctx, "mySaga", MySaga.class);
+                processorDefinition(
+                        ctx,
+                        EventProcessorDefinition.pooledStreaming("selected")
+                                                .assigningHandlers(handler -> handler.beanType() == MySaga.class)
+                                                .notCustomized()
+                );
+            })) {
+                // when
+                AxonConfiguration configuration = axonConfiguration(context);
+
+                // then - Sagas use the same explicit selector pipeline as ordinary event handlers
+                assertThat(configuration.getModuleConfiguration("EventProcessor[selected]")).isPresent();
+                assertThat(configuration.getModuleConfiguration(MY_SAGA_MODULE)).isEmpty();
             }
         }
 
@@ -189,6 +212,31 @@ class SpringSagaConfigurerTest {
                 assertThat(pooled.batchSize()).isEqualTo(9);
             }
         }
+
+        @Test
+        void keepsTheGenericDefaultWhenANamedProcessorDefinitionExists() {
+            // given
+            try (GenericApplicationContext context = springContext(ctx -> {
+                registrar(ctx, "mySaga", MySaga.class);
+                processorDefinition(
+                        ctx,
+                        EventProcessorDefinition.pooledStreaming("MySagaProcessor")
+                                                .assigningHandlers(handler -> false)
+                                                .customized(configuration -> configuration.batchSize(42))
+                );
+            })) {
+                Configuration module = moduleConfiguration(axonConfiguration(context), MY_SAGA_MODULE);
+
+                // when
+                RecordingTrackingTokenSource source = new RecordingTrackingTokenSource();
+                PooledStreamingEventProcessorConfiguration pooled = pooledConfiguration(module);
+                pooled.initialToken().apply(source);
+
+                // then - a named definition is an explicit processor customization, as it was in Axon Framework 4
+                assertThat(source.invocations()).containsExactly("firstToken");
+                assertThat(pooled.batchSize()).isEqualTo(42);
+            }
+        }
     }
 
     @Nested
@@ -207,8 +255,26 @@ class SpringSagaConfigurerTest {
                 // then
                 Configuration module = moduleConfiguration(configuration, SHARED_MODULE);
                 assertThat(module.getComponents(EventHandlingComponent.class)).hasSize(2);
-                assertThat(componentNames(module)).anyMatch(name -> name.contains("Saga[NamespacedSaga]"))
-                                                  .anyMatch(name -> name.contains("Saga[OtherNamespacedSaga]"));
+                assertThat(componentNames(module)).anyMatch(name -> name.contains("NamespacedSaga"))
+                                                  .anyMatch(name -> name.contains("OtherNamespacedSaga"));
+            }
+        }
+
+        @Test
+        void sharesOneProcessorBetweenASagaAndAnOrdinaryEventHandler() {
+            // given - Axon Framework 4 put every invoker assigned to one processing group on one processor
+            try (GenericApplicationContext context = springContext(ctx -> {
+                registrar(ctx, "namespacedSaga", NamespacedSaga.class);
+                ctx.registerBean("namespacedProjection", NamespacedProjection.class);
+            })) {
+                // when
+                Configuration module = moduleConfiguration(axonConfiguration(context), SHARED_MODULE);
+
+                // then
+                assertThat(module.getComponents(EventHandlingComponent.class).values())
+                        .hasSize(2)
+                        .anyMatch(component -> component.unwrap(AnnotatedSagaManager.class).isPresent())
+                        .anyMatch(component -> component.unwrap(AnnotatedEventHandlingComponent.class).isPresent());
             }
         }
 
@@ -227,10 +293,8 @@ class SpringSagaConfigurerTest {
                 // then
                 assertThat(module.getComponents(EventHandlingComponent.class)).hasSize(2);
                 assertThat(componentNames(module))
-                        .anyMatch(name -> name.contains(
-                                "Saga[org.axonframework.extension.spring.config.saga.alpha.SharedNameSaga]"))
-                        .anyMatch(name -> name.contains(
-                                "Saga[org.axonframework.extension.spring.config.saga.beta.SharedNameSaga]"));
+                        .anyMatch(name -> name.contains("config.saga.alpha.SharedNameSaga"))
+                        .anyMatch(name -> name.contains("config.saga.beta.SharedNameSaga"));
             }
         }
 
@@ -338,6 +402,27 @@ class SpringSagaConfigurerTest {
                 assertThat(module.getOptionalComponent(SubscribingEventProcessorConfiguration.class)).isPresent();
             }
         }
+
+        @Test
+        void switchesToSubscribingThroughANamedProcessorDefinition() {
+            // given
+            try (GenericApplicationContext context = springContext(ctx -> {
+                registrar(ctx, "mySaga", MySaga.class);
+                processorDefinition(
+                        ctx,
+                        EventProcessorDefinition.subscribing("MySagaProcessor")
+                                                .assigningHandlers(handler -> false)
+                                                .notCustomized()
+                );
+            })) {
+                // when
+                Configuration module = moduleConfiguration(axonConfiguration(context), MY_SAGA_MODULE);
+
+                // then - definitions configure a processor by name; their handler selector does not own Saga discovery
+                assertThat(module.getOptionalComponent(SubscribingEventProcessorConfiguration.class)).isPresent();
+                assertThat(module.getOptionalComponent(PooledStreamingEventProcessorConfiguration.class)).isEmpty();
+            }
+        }
     }
 
     @Nested
@@ -364,6 +449,30 @@ class SpringSagaConfigurerTest {
     private static GenericApplicationContext springContext(Consumer<GenericApplicationContext> beans) {
         GenericApplicationContext context = new GenericApplicationContext();
         beans.accept(context);
+        if (!context.containsBeanDefinition("eventProcessorSettings")) {
+            settings(context, Map.of(EventProcessorSettings.DEFAULT, new TestPooledSettings(1)));
+        }
+        context.registerBean(
+                "processorModuleFactory",
+                ProcessorModuleFactory.class,
+                () -> new DefaultProcessorModuleFactory(
+                        context.getBeanProvider(EventProcessorDefinition.class).orderedStream().toList(),
+                        context.getBean(EventProcessorSettings.MapWrapper.class).settings(),
+                        context.getBeanProvider(PooledStreamingEventProcessorModule.Customization.class)
+                               .orderedStream()
+                               .toList()
+                )
+        );
+        context.registerBean(
+                "sagaEventHandlerConfigurer",
+                MessageHandlerConfigurer.class,
+                () -> new MessageHandlerConfigurer(
+                        MessageHandlerConfigurer.Type.EVENT,
+                        MessageHandlerLookup.messageHandlerBeans(
+                                EventMessage.class, context.getDefaultListableBeanFactory()
+                        )
+                )
+        );
         context.refresh();
         return context;
     }
@@ -388,6 +497,11 @@ class SpringSagaConfigurerTest {
         context.registerBean("eventProcessorSettings",
                              EventProcessorSettings.MapWrapper.class,
                              () -> new EventProcessorSettings.MapWrapper(settings));
+    }
+
+    private static void processorDefinition(GenericApplicationContext context,
+                                            EventProcessorDefinition definition) {
+        context.registerBean("sagaProcessorDefinition", EventProcessorDefinition.class, () -> definition);
     }
 
     private static void sagaStoreBean(GenericApplicationContext context, String beanName, AtomicInteger counter) {
@@ -458,7 +572,14 @@ class SpringSagaConfigurerTest {
         }
     }
 
-    private record TestPooledSettings(int batchSize) implements EventProcessorSettings.PooledEventProcessorSettings {
+    private record TestPooledSettings(int batchSize)
+            implements EventProcessorSettings.PooledEventProcessorSettings,
+            EventProcessorSettings.SubscribingEventProcessorSettings {
+
+        @Override
+        public EventProcessorSettings.ProcessorMode processorMode() {
+            return EventProcessorSettings.ProcessorMode.POOLED;
+        }
 
         @Override
         public @Nullable String source() {
@@ -529,6 +650,15 @@ class SpringSagaConfigurerTest {
         @SagaEventHandler(associationProperty = "id")
         void on(SagaStarted event) {
             // Intentionally empty; the Saga only needs a handler to be a valid event handling component.
+        }
+    }
+
+    @Namespace("shared")
+    static class NamespacedProjection {
+
+        @EventHandler
+        void on(SagaStarted event) {
+            // Intentionally empty; component registration is the behavior under test.
         }
     }
 

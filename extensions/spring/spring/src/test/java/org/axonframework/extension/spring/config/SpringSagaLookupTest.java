@@ -17,7 +17,8 @@
 package org.axonframework.extension.spring.config;
 
 import org.axonframework.spring.stereotype.Saga;
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.beans.factory.support.BeanDefinitionBuilder;
@@ -26,7 +27,9 @@ import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 /**
  * Test class validating the {@link SpringSagaLookup}, the post processor turning every
@@ -52,6 +55,7 @@ class SpringSagaLookupTest {
             // then
             assertThat(sagaTypeOf(beanFactory, "fooSaga$$Registrar")).isEqualTo(FooSaga.class);
             assertThat(sagaTypeOf(beanFactory, "barSaga$$Registrar")).isEqualTo(BarSaga.class);
+            assertThat(sagaBeanNameOf(beanFactory, "fooSaga$$Registrar")).isEqualTo("fooSaga");
         }
 
         @Test
@@ -144,8 +148,15 @@ class SpringSagaLookupTest {
         BeanDefinition registrar = beanFactory.getBeanDefinition(registrarBeanName);
         assertThat(registrar.getBeanClassName()).isEqualTo(SpringSagaConfigurer.class.getName());
         return (Class<?>) registrar.getConstructorArgumentValues()
-                                   .getArgumentValue(0, Class.class)
+                                   .getArgumentValue(1, Class.class)
                                    .getValue();
+    }
+
+    private static String sagaBeanNameOf(DefaultListableBeanFactory beanFactory, String registrarBeanName) {
+        BeanDefinition registrar = beanFactory.getBeanDefinition(registrarBeanName);
+        return (String) registrar.getConstructorArgumentValues()
+                                 .getArgumentValue(0, String.class)
+                                 .getValue();
     }
 
     @Saga

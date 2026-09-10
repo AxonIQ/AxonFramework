@@ -124,7 +124,8 @@ public class MessageHandlerLookup implements BeanDefinitionRegistryPostProcessor
             }
 
             List<String> found = messageHandlerBeans(value.getMessageType(), beanFactory);
-            if (!found.isEmpty()) {
+            // The event configurer also assembles preconfigured components contributed by other post-processors.
+            if (!found.isEmpty() || value == MessageHandlerConfigurer.Type.EVENT) {
                 List<String> sortedFound = sortByOrder(found, beanFactory);
                 AbstractBeanDefinition beanDefinition =
                         BeanDefinitionBuilder.genericBeanDefinition(MessageHandlerConfigurer.class)
