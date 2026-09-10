@@ -27,7 +27,10 @@ import org.axonframework.messaging.core.annotation.Namespace;
 import org.axonframework.messaging.eventhandling.EventHandlingComponent;
 import org.axonframework.messaging.eventhandling.configuration.EventHandlingComponentsConfigurer;
 import org.axonframework.messaging.eventhandling.configuration.EventProcessorModule;
+import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorConfiguration;
 import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorModule;
+import org.axonframework.messaging.eventhandling.processing.subscribing.SubscribingEventProcessorConfiguration;
+import org.axonframework.messaging.eventhandling.processing.subscribing.SubscribingEventProcessorModule;
 import org.axonframework.modelling.saga.configuration.Sagas;
 import org.axonframework.modelling.saga.repository.SagaStore;
 import org.jspecify.annotations.Nullable;
@@ -40,6 +43,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Function;
 
 /**
@@ -65,9 +69,16 @@ import java.util.function.Function;
  * initial token, so an entry that only tunes the processor carries no intent to replay. This deliberately deviates
  * from Axon Framework 4, where any customization of a Saga's processor name replaced the Saga defaults with the
  * generic read-from-the-start default, whose historic events arrived flagged as replay and were handled by Sagas
- * unless annotated {@code @DisallowReplay}. Replaying into a Saga requires code: a
- * {@link PooledStreamingEventProcessorModule.Customization} bean overriding the initial token, applied after this
- * configurer's base customization.
+ * unless annotated {@code @DisallowReplay}. Replaying into a Saga requires code: an
+ * {@link EventProcessorDefinition} bean matching the Saga's processor name and overriding the initial token, applied
+ * after this configurer's base customization.
+ * <p>
+ * Generic {@link PooledStreamingEventProcessorModule.Customization} beans are deliberately NOT applied to Saga
+ * processors, unlike the processors built by the {@link DefaultProcessorModuleFactory}. Platform-wide extensions
+ * attach cross-cutting behavior through those beans, dead-letter queues among them, and a Saga must never be
+ * dead-lettered, matching Axon Framework 4, which never wrapped the Saga invoker in dead-lettering. Reconfiguring a
+ * Saga's processor from code therefore always goes through an {@code EventProcessorDefinition}, which names the one
+ * processor it targets.
  * <p>
  * This class is internal wiring: it is instantiated by {@code SpringSagaLookup} as a bean definition and never
  * referenced from application code, so its shape may change with the Saga support it serves.
@@ -171,7 +182,10 @@ public class SpringSagaConfigurer implements ConfigurationEnhancer, ApplicationC
                 ? explicitSettings
                 : allSettings.getOrDefault(EventProcessorSettings.DEFAULT, DefaultSagaProcessorSettings.INSTANCE);
 
-        return switch (settings.processorMode()) {
+        Optional<EventProcessorDefinition> definition = definitionFor(processorName);
+        EventProcessorSettings.ProcessorMode mode = definition.map(EventProcessorDefinition::mode)
+                                                              .orElse(settings.processorMode());
+        return switch (mode) {
             case POOLED -> {
                 var pooledSettings = (EventProcessorSettings.PooledEventProcessorSettings) settings;
                 var baseCustomization = SpringCustomizations.pooledStreamingCustomizations(
@@ -181,7 +195,7 @@ public class SpringSagaConfigurer implements ConfigurationEnhancer, ApplicationC
                 PooledStreamingEventProcessorModule.Customization customization =
                         (axonConfig, processorConfig) -> {
                             // Always start at the head: the settings cannot express an initial token, so no entry
-                            // carries an intent to replay. A Customization bean below may still override this.
+                            // carries an intent to replay. A definition below may still override this.
                             var result = processorConfig.initialToken(source -> source.latestToken(null));
                             result = baseCustomization.apply(axonConfig, result);
                             if (!explicitEntry) {
@@ -191,8 +205,13 @@ public class SpringSagaConfigurer implements ConfigurationEnhancer, ApplicationC
                                 // regular property semantics instead.
                                 result = result.initialSegmentCount(1);
                             }
-                            for (var extension : extensionCustomizations()) {
-                                result = extension.apply(axonConfig, result);
+                            // Deliberately no generic PooledStreamingEventProcessorModule.Customization beans here:
+                            // platform-wide extensions attach cross-cutting behavior through them, dead-letter
+                            // queues among others, and a Saga must never be dead-lettered, as in Axon Framework 4.
+                            // An EventProcessorDefinition targets this processor by name and is applied instead.
+                            if (definition.isPresent()) {
+                                result = (PooledStreamingEventProcessorConfiguration)
+                                        definition.get().applySettings(result);
                             }
                             SpringCustomizations.requireResolvedTokenStore(processorName, result);
                             return result;
@@ -205,14 +224,41 @@ public class SpringSagaConfigurer implements ConfigurationEnhancer, ApplicationC
             }
             case SUBSCRIBING -> {
                 var subscribingSettings = (EventProcessorSettings.SubscribingEventProcessorSettings) settings;
+                var baseCustomization = SpringCustomizations.subscribingCustomizations(processorName,
+                                                                                       subscribingSettings);
+                SubscribingEventProcessorModule.Customization customization = definition.isEmpty()
+                        ? baseCustomization
+                        : baseCustomization.andThen(
+                                (axonConfig, config) -> (SubscribingEventProcessorConfiguration) definition.get()
+                                                                                                           .applySettings(config));
                 yield EventProcessorModule
                         .subscribing(processorName)
                         .eventHandlingComponents(components)
-                        .customized(SpringCustomizations.subscribingCustomizations(processorName,
-                                                                                   subscribingSettings))
+                        .customized(customization)
                         .build();
             }
         };
+    }
+
+    /**
+     * The {@link EventProcessorDefinition} bean matching the given {@code processorName}, if any.
+     * <p>
+     * A definition is the supported way to reconfigure a Saga's processor from code, targeted at one processor by
+     * name, typically built with
+     * {@link EventProcessorDefinition#pooledStreamingMatching(String) pooledStreamingMatching} or
+     * {@link EventProcessorDefinition#subscribingMatching(String) subscribingMatching}. Its
+     * {@link EventProcessorDefinition#mode() mode} takes precedence over the settings, as it does for processors
+     * built by the {@link DefaultProcessorModuleFactory}.
+     *
+     * @param processorName the name of the Saga's event processor
+     * @return the {@link EventProcessorDefinition} bean matching the given {@code processorName}, if any
+     */
+    private Optional<EventProcessorDefinition> definitionFor(String processorName) {
+        return requireApplicationContext()
+                .getBeanProvider(EventProcessorDefinition.class)
+                .orderedStream()
+                .filter(candidate -> processorName.equals(candidate.name()))
+                .findFirst();
     }
 
     private static Function<EventHandlingComponentsConfigurer.RequiredComponentPhase,
@@ -273,21 +319,6 @@ public class SpringSagaConfigurer implements ConfigurationEnhancer, ApplicationC
                 .getBeanProvider(EventProcessorSettings.MapWrapper.class)
                 .getIfAvailable();
         return settings == null ? Map.of() : settings.settings();
-    }
-
-    /**
-     * The {@link PooledStreamingEventProcessorModule.Customization} beans of the application context.
-     * <p>
-     * Resolved while the processor configuration is built rather than while enhancing, so declaring a customization
-     * does not force its dependencies to be instantiated during the context refresh.
-     *
-     * @return the {@link PooledStreamingEventProcessorModule.Customization} beans of the application context
-     */
-    private List<PooledStreamingEventProcessorModule.Customization> extensionCustomizations() {
-        return requireApplicationContext()
-                .getBeanProvider(PooledStreamingEventProcessorModule.Customization.class)
-                .orderedStream()
-                .toList();
     }
 
     private ApplicationContext requireApplicationContext() {

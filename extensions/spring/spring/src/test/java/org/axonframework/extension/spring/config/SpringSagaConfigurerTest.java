@@ -215,28 +215,6 @@ class SpringSagaConfigurerTest {
         }
 
         @Test
-        void aCustomizationBeanOverridesTheHeadToken() {
-            // given - replaying into a Saga is possible, but only as an explicit code-level decision
-            PooledStreamingEventProcessorModule.Customization replayFromStart =
-                    (axonConfig, processorConfig) -> processorConfig.initialToken(source -> source.firstToken(null));
-            try (GenericApplicationContext context = springContext(ctx -> {
-                registrar(ctx, "mySaga", MySaga.class);
-                ctx.registerBean("replayFromStart",
-                                 PooledStreamingEventProcessorModule.Customization.class,
-                                 () -> replayFromStart);
-            })) {
-                Configuration module = moduleConfiguration(axonConfiguration(context), MY_SAGA_MODULE);
-
-                // when
-                RecordingTrackingTokenSource source = new RecordingTrackingTokenSource();
-                pooledConfiguration(module).initialToken().apply(source);
-
-                // then - the customization runs after the head-token base and wins
-                assertThat(source.invocations()).containsExactly("firstToken");
-            }
-        }
-
-        @Test
         void keepsTheHeadTokenWhenOnlyDefaultSettingsExist() {
             // given
             try (GenericApplicationContext context = springContext(ctx -> {
@@ -407,11 +385,16 @@ class SpringSagaConfigurerTest {
     }
 
     @Nested
-    class ExtensionCustomizations {
+    class CodeLevelOverrides {
 
+        /**
+         * Platform-wide extensions attach cross-cutting behavior through {@code Customization} beans, dead-letter
+         * queues among them. A Saga must never be dead-lettered, matching Axon Framework 4, which never wrapped the
+         * Saga invoker in dead-lettering, so those beans must not reach a Saga's processor.
+         */
         @Test
-        void appliesCustomizationBeansToTheSagaProcessor() {
-            // given - the hook applications use to share one executor across all Saga processors
+        void genericCustomizationBeansDoNotReachTheSagaProcessor() {
+            // given
             try (GenericApplicationContext context = springContext(ctx -> {
                 registrar(ctx, "mySaga", MySaga.class);
                 ctx.registerBean("batchSizeCustomization",
@@ -421,8 +404,93 @@ class SpringSagaConfigurerTest {
                 // when
                 Configuration module = moduleConfiguration(axonConfiguration(context), MY_SAGA_MODULE);
 
+                // then - the generic bean is ignored; the batch size stays at its default
+                assertThat(pooledConfiguration(module).batchSize()).isEqualTo(1);
+            }
+        }
+
+        @Test
+        void anEventProcessorDefinitionCustomizesTheSagaProcessor() {
+            // given - a definition names the one processor it targets, so it is the supported code-level override
+            try (GenericApplicationContext context = springContext(ctx -> {
+                registrar(ctx, "mySaga", MySaga.class);
+                ctx.registerBean("mySagaProcessorDefinition",
+                                 EventProcessorDefinition.class,
+                                 () -> EventProcessorDefinition
+                                         .pooledStreamingMatching("MySagaProcessor")
+                                         .customized(config -> config.batchSize(21)));
+            })) {
+                // when
+                Configuration module = moduleConfiguration(axonConfiguration(context), MY_SAGA_MODULE);
+
                 // then
-                assertThat(pooledConfiguration(module).batchSize()).isEqualTo(42);
+                assertThat(pooledConfiguration(module).batchSize()).isEqualTo(21);
+            }
+        }
+
+        @Test
+        void aDefinitionLeavesUntouchedSagaDefaultsInPlace() {
+            // given - a definition customizing only the batch size
+            try (GenericApplicationContext context = springContext(ctx -> {
+                registrar(ctx, "mySaga", MySaga.class);
+                ctx.registerBean("mySagaProcessorDefinition",
+                                 EventProcessorDefinition.class,
+                                 () -> EventProcessorDefinition
+                                         .pooledStreamingMatching("MySagaProcessor")
+                                         .customized(config -> config.batchSize(21)));
+            })) {
+                Configuration module = moduleConfiguration(axonConfiguration(context), MY_SAGA_MODULE);
+
+                // when
+                RecordingTrackingTokenSource source = new RecordingTrackingTokenSource();
+                PooledStreamingEventProcessorConfiguration pooled = pooledConfiguration(module);
+                pooled.initialToken().apply(source);
+
+                // then - the head token and the single segment stay; the definition overrides only what it defines
+                assertThat(source.invocations()).containsExactly("latestToken");
+                assertThat(pooled.initialSegmentCount()).isEqualTo(1);
+            }
+        }
+
+        @Test
+        void aDefinitionOverridesTheHeadToken() {
+            // given - replaying into a Saga is possible, but only as an explicit code-level decision
+            try (GenericApplicationContext context = springContext(ctx -> {
+                registrar(ctx, "mySaga", MySaga.class);
+                ctx.registerBean("replayFromStart",
+                                 EventProcessorDefinition.class,
+                                 () -> EventProcessorDefinition
+                                         .pooledStreamingMatching("MySagaProcessor")
+                                         .customized(config -> config.initialToken(
+                                                 source -> source.firstToken(null))));
+            })) {
+                Configuration module = moduleConfiguration(axonConfiguration(context), MY_SAGA_MODULE);
+
+                // when
+                RecordingTrackingTokenSource source = new RecordingTrackingTokenSource();
+                pooledConfiguration(module).initialToken().apply(source);
+
+                // then - the definition runs after the head-token base and wins
+                assertThat(source.invocations()).containsExactly("firstToken");
+            }
+        }
+
+        @Test
+        void aDefinitionSwitchesTheSagaProcessorToSubscribing() {
+            // given
+            try (GenericApplicationContext context = springContext(ctx -> {
+                registrar(ctx, "mySaga", MySaga.class);
+                ctx.registerBean("subscribingDefinition",
+                                 EventProcessorDefinition.class,
+                                 () -> EventProcessorDefinition
+                                         .subscribingMatching("MySagaProcessor")
+                                         .customized(config -> config));
+            })) {
+                // when
+                Configuration module = moduleConfiguration(axonConfiguration(context), MY_SAGA_MODULE);
+
+                // then - the definition's mode wins over the settings, as for factory-built processors
+                assertThat(module.getOptionalComponent(SubscribingEventProcessorConfiguration.class)).isPresent();
             }
         }
     }

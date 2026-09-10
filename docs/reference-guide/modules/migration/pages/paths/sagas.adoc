@@ -86,20 +86,27 @@ first event. Those historic events arrived flagged as replay, and saga handlers 
 Framework 5 removes that trap. An application that relied on it - customizing a saga's processor in yaml specifically
 to bootstrap new sagas from history - no longer gets the replay from a property and needs the customization below.
 
-Making a saga process the stream from the start requires an explicit, code-level decision: a
-`PooledStreamingEventProcessorModule.Customization` bean overriding the initial token for that processor by name.
+Making a saga process the stream from the start requires an explicit, code-level decision: an
+`EventProcessorDefinition` bean matching the saga's processor name and overriding the initial token.
 `@DisallowReplay` on the saga still excludes it from such a replay, as it did in Axon Framework 4:
 
 [source,java]
 ----
 @Bean
-PooledStreamingEventProcessorModule.Customization replayIntoOrderSaga() {
-    return (axonConfig, processorConfig) -> "OrderSagaProcessor".equals(processorConfig.processorName())
-            ? processorConfig.initialToken(source -> source.firstToken(null))
-            : processorConfig;
+EventProcessorDefinition replayIntoOrderSaga() {
+    return EventProcessorDefinition.pooledStreamingMatching("OrderSagaProcessor")
+            .customized(config -> config.initialToken(source -> source.firstToken(null)));
 }
 ----
 ====
+
+An `EventProcessorDefinition` bean whose name matches the saga's processor is the code-level way to reconfigure that
+processor: its mode takes precedence over the properties, and its `customized(..)` function runs after the saga
+defaults, so it overrides only what it defines. Generic `PooledStreamingEventProcessorModule.Customization` beans, in
+contrast, are not applied to saga processors: platform-wide extensions attach cross-cutting behavior through them,
+dead-letter queues among others, and dead-letter queues are not supported for sagas (see
+<<behavior-changes>>). A definition targeting a saga's processor causes a startup log warning that no handlers are
+assigned to it; the definition still applies to the saga's processor.
 
 The head token reads from the token store's state at first start. A migrated deployment that does not carry over the
 Axon Framework 4 token store starts its saga processors at the head of the stream, skipping events that were published
@@ -173,15 +180,16 @@ non-saga processor module fails fast with a `DuplicateModuleRegistrationExceptio
 processing-group co-location existed to group sagas together for threading, not to mix them with plain handlers, so
 mixing is rejected. Two sagas sharing a processor name still work as in Axon Framework 4.
 +
-For threading, share one `ScheduledExecutorService` across all saga processors with a
-`PooledStreamingEventProcessorModule.Customization` bean instead:
+For threading, share one `ScheduledExecutorService` across saga processors with an `EventProcessorDefinition` bean
+per saga processor, each referencing the same executor:
 +
 [source,java]
 ----
 @Bean
-PooledStreamingEventProcessorModule.Customization sagaExecutorCustomization(ScheduledExecutorService sagaExecutor) {
-    return (axonConfig, processorConfig) -> processorConfig.workerExecutor(sagaExecutor)
-                                                             .coordinatorExecutor(sagaExecutor);
+EventProcessorDefinition orderSagaExecutor(ScheduledExecutorService sagaExecutor) {
+    return EventProcessorDefinition.pooledStreamingMatching("OrderSagaProcessor")
+            .customized(config -> config.workerExecutor(sagaExecutor)
+                                        .coordinatorExecutor(sagaExecutor));
 }
 ----
 +
@@ -203,7 +211,10 @@ Module billingModule() {
 Do not component-scan the plain handlers combined this way; instantiate them inside `autodetected(...)` so they are
 not also picked up as a second processor.
 * *Dead-letter queues are not supported for sagas*, as in Axon Framework 4: the saga invoker was never wrapped in
-dead-lettering there either.
+dead-lettering there either. This is enforced by not applying generic
+`PooledStreamingEventProcessorModule.Customization` beans to saga processors, since dead-letter support attaches to
+processors through that hook. Code-level reconfiguration of a saga's processor goes through an
+`EventProcessorDefinition` matching its name instead.
 * *Deadlines are not ported yet* (see the note in <<legacy-module>>).
 * *The in-memory saga store is an explicit, overridable bean*, not an internal default. An application that wants a
 default store alongside named per-saga stores declares the default store itself.
