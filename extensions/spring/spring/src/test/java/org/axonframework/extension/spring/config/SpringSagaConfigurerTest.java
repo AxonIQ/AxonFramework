@@ -200,8 +200,8 @@ class SpringSagaConfigurerTest {
         }
 
         @Test
-        void aCustomizationBeanOverridesTheHeadToken() {
-            // given - replaying into a Saga is possible, but only as an explicit code-level decision
+        void aCustomizationBeanDoesNotOverrideTheHeadToken() {
+            // given - Customization beans do not reach a Saga's processor, so this is not the way to replay
             try (GenericApplicationContext context = springContext(ctx -> {
                 registrar(ctx, "mySaga", MySaga.class);
                 ctx.registerBean("replayFromStart",
@@ -215,8 +215,8 @@ class SpringSagaConfigurerTest {
                 RecordingTrackingTokenSource source = new RecordingTrackingTokenSource();
                 pooledConfiguration(module).initialToken().apply(source);
 
-                // then - the customization runs after the head-token default and wins
-                assertThat(source.invocations()).containsExactly("firstToken");
+                // then - use an EventProcessorDefinition to replay; see the ProcessorDefinition test below
+                assertThat(source.invocations()).containsExactly("latestToken");
             }
         }
 
@@ -548,16 +548,36 @@ class SpringSagaConfigurerTest {
     class ExtensionCustomizations {
 
         @Test
-        void appliesCustomizationBeansToTheSagaProcessor() {
-            // given - the hook applications use to share one executor across all Saga processors
+        void doesNotApplyCustomizationBeansToTheSagaProcessor() {
+            // given - the channel cross-cutting Axon Framework 5 infrastructure attaches itself through, including
+            // the dead-lettering a Saga never had in Axon Framework 4
             try (GenericApplicationContext context = springContext(ctx -> {
                 registrar(ctx, "mySaga", MySaga.class);
+                settings(ctx, Map.of(EventProcessorSettings.DEFAULT, new TestPooledSettings(9)));
                 ctx.registerBean("batchSizeCustomization",
                                  PooledStreamingEventProcessorModule.Customization.class,
                                  () -> (axonConfig, processorConfig) -> processorConfig.batchSize(42));
             })) {
                 // when
                 Configuration module = moduleConfiguration(axonConfiguration(context), MY_SAGA_MODULE);
+
+                // then - the Saga keeps the settings value, untouched by the customization bean
+                assertThat(pooledConfiguration(module).batchSize()).isEqualTo(9);
+            }
+        }
+
+        @Test
+        void stillAppliesCustomizationBeansToOrdinaryProcessors() {
+            // given - only Sagas opt out; the regular pipeline is untouched
+            try (GenericApplicationContext context = springContext(ctx -> {
+                ctx.registerBean("namespacedProjection", NamespacedProjection.class);
+                settings(ctx, Map.of(EventProcessorSettings.DEFAULT, new TestPooledSettings(9)));
+                ctx.registerBean("batchSizeCustomization",
+                                 PooledStreamingEventProcessorModule.Customization.class,
+                                 () -> (axonConfig, processorConfig) -> processorConfig.batchSize(42));
+            })) {
+                // when
+                Configuration module = moduleConfiguration(axonConfiguration(context), SHARED_MODULE);
 
                 // then
                 assertThat(pooledConfiguration(module).batchSize()).isEqualTo(42);

@@ -75,8 +75,7 @@ The head token survives anything that configures the processor without setting a
 a saga's processor never changes which events the saga sees.
 
 Making a saga process the stream from the start requires setting an initial token explicitly, through an
-`EventProcessorDefinition` or a `PooledStreamingEventProcessorModule.Customization` bean naming that processor. Both
-run after the head-token default.
+`EventProcessorDefinition` naming that processor. It runs after the head-token default.
 
 [source,java]
 ----
@@ -157,10 +156,29 @@ through `assignProcessingGroup` or a hand-registered `SagaConfiguration`.
 ====
 
 Sagas are assembled separately from ordinary Spring event handlers, so that no part of saga support has to be
-threaded through the handler discovery every Axon Framework 5 application uses. Processor settings,
-`EventProcessorDefinition` beans and `PooledStreamingEventProcessorModule.Customization` beans still apply to a
-saga's processor as they apply to any other, and an `EventProcessorDefinition` selector can assign a saga to its
-named processor.
+threaded through the handler discovery every Axon Framework 5 application uses. Processor settings and
+`EventProcessorDefinition` beans still apply to a saga's processor as they apply to any other, and an
+`EventProcessorDefinition` selector can assign a saga to its named processor.
+
+=== Configuring a saga's processor
+
+Use an `EventProcessorDefinition` naming the processor. It reaches the same
+`PooledStreamingEventProcessorConfiguration` an ordinary processor exposes, and runs after the saga defaults, so it
+can set the initial token, the segment count, an executor, or anything else.
+
+`PooledStreamingEventProcessorModule.Customization` beans are the one mechanism that does *not* apply to a saga's
+processor. That channel is how cross-cutting Axon Framework 5 infrastructure attaches itself to every processor in
+an application. Dead-lettering is enabled that way, for one, and Axon Framework 4 never dead-lettered a saga: it
+never wrapped a saga manager in its dead-lettering invoker. A saga would otherwise silently acquire behavior the
+original never had, so a saga's processor opts out of the channel entirely rather than guessing which customization
+was meant for it.
+
+[NOTE]
+====
+An `EventProcessorDefinition` also fixes the processor's mode. A definition built with
+`EventProcessorDefinition.pooledStreaming(...)` overrules `mode=subscribing` on that processor, even when it only
+sets an unrelated value such as a batch size.
+====
 
 One consequence: a saga and an ordinary event handler resolving to the same processor name are rejected, and startup
 fails with a `DuplicateModuleRegistrationException`. Axon Framework 4 co-located them on one processor when they
@@ -209,7 +227,9 @@ beans.
 processor. It co-locates sagas with each other only: a saga and an ordinary event handler resolving to one processor
 name fail at startup, where Axon Framework 4 put both on one processor. See <<spring-boot-sagas>> for the workaround.
 * *Dead-letter queues are not supported for sagas*, as in Axon Framework 4: the saga invoker was never wrapped in
-dead-lettering there either.
+dead-lettering there either. Enabling a dead letter queue for a saga's processor by name has no effect, because a
+saga's processor does not take part in the `PooledStreamingEventProcessorModule.Customization` channel that turns
+dead-lettering on, see <<spring-boot-sagas>>.
 * *Deadlines are not ported yet* (see the note in <<legacy-module>>).
 * *The in-memory saga store is an explicit, overridable bean*, not an internal default. An application that wants a
 default store alongside named per-saga stores declares the default store itself.

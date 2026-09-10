@@ -62,9 +62,20 @@ import java.util.function.UnaryOperator;
  * {@link org.axonframework.common.configuration.DuplicateModuleRegistrationException} rather than as a silent merge.
  * Several Sagas resolving to the same name do still share one processor.
  * <p>
- * Processor settings, {@link EventProcessorDefinition}s and
- * {@link PooledStreamingEventProcessorModule.Customization} beans apply to a Saga's processor exactly as they apply to
- * any other, because this class reads the same beans the regular pipeline reads.
+ * Processor settings and {@link EventProcessorDefinition}s apply to a Saga's processor as they apply to any other,
+ * because this class reads the same beans the regular pipeline reads.
+ * {@link PooledStreamingEventProcessorModule.Customization} beans are the exception: they are deliberately not
+ * applied to a Saga's processor. That channel is how cross-cutting Axon Framework 5 infrastructure attaches itself
+ * to every processor in an application -- dead-lettering, for one, is enabled by a Customization bean that puts a
+ * dead letter queue extension on the processor configuration -- and Axon Framework 4 never dead-lettered a Saga: it
+ * never wrapped a Saga manager in its dead-lettering invoker. Silently acquiring behaviour the original never had is
+ * the opposite of what a migration aid should do, so a Saga processor opts out of the channel as a whole rather than
+ * guessing which customization means well.
+ * <p>
+ * Configure a Saga's processor with an {@link EventProcessorDefinition} naming it instead. A definition reaches the
+ * same {@link PooledStreamingEventProcessorConfiguration} and runs after the defaults here, so it can set an initial
+ * token, a segment count, or an executor. Note that a definition also fixes the processor's mode, so a definition
+ * built with {@link EventProcessorDefinition#pooledStreaming(String)} overrules a {@code mode=subscribing} property.
  * <p>
  * Registered as a bean by the Saga auto configuration; an application never creates this itself.
  *
@@ -91,14 +102,10 @@ public class SagaProcessorConfigurer implements ConfigurationEnhancer, Applicati
                                                             .toList();
         Map<String, EventProcessorSettings> allSettings =
                 context.getBean(EventProcessorSettings.MapWrapper.class).settings();
-        List<PooledStreamingEventProcessorModule.Customization> extensionsCustomizations =
-                context.getBeanProvider(PooledStreamingEventProcessorModule.Customization.class)
-                       .orderedStream()
-                       .toList();
 
         sagasByProcessor(discovered.values(), definitions).forEach(
                 (processorName, sagas) -> registry.registerModule(
-                        module(processorName, sagas, definitions, allSettings, extensionsCustomizations)
+                        module(processorName, sagas, definitions, allSettings)
                 )
         );
     }
@@ -163,8 +170,7 @@ public class SagaProcessorConfigurer implements ConfigurationEnhancer, Applicati
             String processorName,
             List<SpringSagaConfigurer> sagas,
             List<EventProcessorDefinition> definitions,
-            Map<String, EventProcessorSettings> allSettings,
-            List<PooledStreamingEventProcessorModule.Customization> extensionsCustomizations
+            Map<String, EventProcessorSettings> allSettings
     ) {
         EventProcessorSettings settings = Optional.ofNullable(allSettings.get(processorName))
                                                   .orElseGet(() -> allSettings.get(EventProcessorSettings.DEFAULT));
@@ -195,10 +201,9 @@ public class SagaProcessorConfigurer implements ConfigurationEnhancer, Applicati
                             var result = headToken.apply(processorConfig);
                             result = baseCustomization.apply(axonConfig, result);
                             result = singleSegmentDefault(result);
+                            // Deliberately no PooledStreamingEventProcessorModule.Customization beans here; see the
+                            // class javadoc.
                             result = definitionCustomization.apply(result);
-                            for (var extension : extensionsCustomizations) {
-                                result = extension.apply(axonConfig, result);
-                            }
                             SpringCustomizations.requireResolvedTokenStore(processorName, result);
                             return result;
                         };

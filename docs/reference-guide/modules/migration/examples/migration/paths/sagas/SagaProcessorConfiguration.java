@@ -16,7 +16,6 @@
 package migration.paths.sagas;
 
 import org.axonframework.extension.spring.config.EventProcessorDefinition;
-import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorModule;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -25,10 +24,12 @@ class SagaProcessorConfiguration {
 
     // tag::replay-into-saga[]
     @Bean
-    PooledStreamingEventProcessorModule.Customization replayIntoOrderSaga() {
-        return (axonConfig, processorConfig) -> "OrderSagaProcessor".equals(processorConfig.processorName())
-                ? processorConfig.initialToken(source -> source.firstToken(null))
-                : processorConfig;
+    EventProcessorDefinition replayIntoOrderSaga() {
+        return EventProcessorDefinition.pooledStreaming("OrderSagaProcessor")
+                                       .assigningHandlers(handler -> false)
+                                       .customized(configuration -> configuration.initialToken(
+                                               source -> source.firstToken(null)
+                                       ));
     }
     // end::replay-into-saga[]
 
