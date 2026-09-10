@@ -107,6 +107,28 @@ public final class Sagas {
 
     /**
      * A builder of the {@link EventHandlingComponent} handling events for Sagas of the given {@code sagaType},
+     * constructing each instance through the Saga's no-argument constructor and storing them in the given
+     * {@code sagaStore}.
+     * <p>
+     * Use this when the Sagas of this type belong in another store than the one registered as a component, without
+     * having to also supply a Saga factory just to reach that store.
+     *
+     * @param sagaType  the type of Saga the resulting component manages
+     * @param sagaStore a builder of the store the Sagas of this type are kept in
+     * @param <T>       the type of Saga the resulting component manages
+     * @return a builder of the {@link EventHandlingComponent} handling events for Sagas of the given {@code sagaType}
+     */
+    public static <T> ComponentBuilder<EventHandlingComponent> of(
+            Class<T> sagaType,
+            ComponentBuilder<SagaStore<? super T>> sagaStore
+    ) {
+        Objects.requireNonNull(sagaType, "The sagaType may not be null.");
+        Objects.requireNonNull(sagaStore, "The sagaStore may not be null.");
+        return configuration -> managerFor(sagaType, null, sagaStore.build(configuration), configuration);
+    }
+
+    /**
+     * A builder of the {@link EventHandlingComponent} handling events for Sagas of the given {@code sagaType},
      * constructing each instance through the given {@code sagaFactory} and storing them in the given
      * {@code sagaStore}.
      * <p>

@@ -231,6 +231,44 @@ class SagasTest {
     }
 
     @Nested
+    class ExplicitSagaStoreWithDefaultFactory {
+
+        @Test
+        void theGivenStoreIsUsedWithoutARegisteredSagaStoreComponent() {
+            // given a store handed to the component builder directly and no SagaStore component registered
+            InMemorySagaStore otherStore = new InMemorySagaStore();
+            configuration = MessagingConfigurer
+                    .create()
+                    .eventProcessing(processing -> processing.subscribing(
+                            subscribing -> subscribing.defaultProcessor(
+                                    "saga-processor",
+                                    components -> components.declarative(
+                                            "Saga", Sagas.of(OrderSaga.class, c -> otherStore)))
+                    ))
+                    .start();
+
+            // when
+            publish(orderPlaced("order-1"));
+
+            // then the saga was created through its no-argument constructor and stored in the given store
+            assertThat(otherStore.findSagas(OrderSaga.class, ORDER_1)).hasSize(1);
+        }
+
+        @Test
+        void nullSagaTypeIsRejected() {
+            assertThatThrownBy(() -> Sagas.of(null, c -> new InMemorySagaStore()))
+                    .isInstanceOf(NullPointerException.class);
+        }
+
+        @Test
+        void nullSagaStoreIsRejected() {
+            ComponentBuilder<SagaStore<? super OrderSaga>> nullStore = null;
+            assertThatThrownBy(() -> Sagas.of(OrderSaga.class, nullStore))
+                    .isInstanceOf(NullPointerException.class);
+        }
+    }
+
+    @Nested
     class WithoutASagaStore {
 
         @Test
