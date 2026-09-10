@@ -33,6 +33,7 @@ org.axonframework.extension.springboot.autoconfig.JdbcTransactionAutoConfigurati
 org.axonframework.extension.springboot.autoconfig.JpaAutoConfiguration
 org.axonframework.extension.springboot.autoconfig.JpaEventStoreAutoConfiguration
 org.axonframework.extension.springboot.autoconfig.JpaTransactionAutoConfiguration
+org.axonframework.extension.springboot.autoconfig.LegacySagaAutoConfiguration
 org.axonframework.extension.springboot.autoconfig.NoOpTransactionAutoConfiguration
 org.axonframework.extension.springboot.autoconfig.ObjectMapperAutoConfiguration
 org.axonframework.extension.springboot.autoconfig.QueryShutdownAutoConfiguration
