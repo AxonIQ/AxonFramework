@@ -70,25 +70,31 @@ Each `@Saga` class gets its own pooled streaming event processor, named `<Simple
 ignores events that occurred before the processor first starts, matching the Axon Framework 4
 `TrackingEventProcessor` default for sagas.
 
-The head token survives `axon.eventhandling.processors.<name>.*` entries. Those properties cannot express an initial
-token, so an entry that only tunes `thread-count` or `batch-size` carries no intent to replay, and tuning a saga's
-processor never changes which events the saga sees. A named `EventProcessorDefinition` does replace the default,
-because it can set an initial token itself.
+The head token survives anything that configures the processor without setting an initial token of its own:
+`axon.eventhandling.processors.<name>.*` entries, and an `EventProcessorDefinition` that only tunes settings. Tuning
+a saga's processor never changes which events the saga sees.
 
-[NOTE]
-====
-This is a deliberate deviation from Axon Framework 4, where any customization of a saga's processor name, a yaml
-entry included, replaced the saga defaults. The generic default token then processed the event store from the first
-event: historic events started new saga instances with all their side effects re-executed. Axon Framework 5 removes
-that trap.
-
-Making a saga process the stream from the start therefore requires an explicit, code-level decision: a
-`PooledStreamingEventProcessorModule.Customization` bean overriding the initial token for that processor by name.
+Making a saga process the stream from the start requires setting an initial token explicitly, through an
+`EventProcessorDefinition` or a `PooledStreamingEventProcessorModule.Customization` bean naming that processor. Both
+run after the head-token default.
 
 [source,java]
 ----
 include::example$migration/paths/sagas/SagaProcessorConfiguration.java[tag=replay-into-saga,indent=0]
 ----
+
+[NOTE]
+====
+Axon Framework 4 reached the same outcome by a different route. There, customizing a saga's processor dropped the
+saga's head-token default, and the processor fell back to the generic tracking processor default of
+`createReplayToken(createHeadToken())`: it read from the start of the stream, but flagged every event up to the head
+as a replay, and a saga manager reports `supportsReset() == false`, so those events were never delivered to it.
+Either way, a saga saw only new events.
+
+The Axon Framework 5 generic default resolves to `createReplayToken(firstToken)`, whose replay window is empty, so
+that fallback no longer protects a saga: without the head-token default an existing stream reaches the saga as
+ordinary events and re-executes its side effects. Keeping the head token in place is what preserves the Axon
+Framework 4 behavior.
 ====
 
 Every `axon.eventhandling.processors.<name>.*` property (`mode`, `source`, `initial-segment-count`,
@@ -153,10 +159,9 @@ discovered.
 == Behavior changes from Axon Framework 4
 
 * *Pooled streaming replaces the tracking processor.* A saga's processor is pooled streaming, not a
-`TrackingEventProcessor`. The head-token default reproduces the old behavior; a `TokenStore` bean is required, as for
-any pooled processor. Unlike Axon Framework 4, the head token survives `axon.eventhandling.processors.<name>.*`
-entries: tuning a saga's processor through properties never switches it to processing the event store from the first
-event. Replaying into a saga requires a code-level customization, see <<spring-boot-sagas>>.
+`TrackingEventProcessor`. A `TokenStore` bean is required, as for any pooled processor. The head-token default
+preserves the Axon Framework 4 outcome that a saga only ever sees new events, and it survives tuning; replaying into
+a saga requires setting an initial token explicitly, see <<spring-boot-sagas>>.
 * *No resource injection.* `ResourceInjector` and `SpringResourceInjector` are not ported. A saga's collaborators
 arrive as handler method parameters instead, resolved the same way as for any other event handler, including Spring
 beans.

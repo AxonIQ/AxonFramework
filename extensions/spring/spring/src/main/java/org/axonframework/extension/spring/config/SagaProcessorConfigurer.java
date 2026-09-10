@@ -187,8 +187,7 @@ public class SagaProcessorConfigurer implements ConfigurationEnhancer, Applicati
                 var baseCustomization = SpringCustomizations.pooledStreamingCustomizations(
                         processorName, moduleSettings
                 );
-                UnaryOperator<PooledStreamingEventProcessorConfiguration> headToken =
-                        headTokenDefault(definition);
+                UnaryOperator<PooledStreamingEventProcessorConfiguration> headToken = headTokenDefault();
                 UnaryOperator<PooledStreamingEventProcessorConfiguration> definitionCustomization =
                         customizeConfiguration(definition);
                 PooledStreamingEventProcessorModule.Customization customization =
@@ -223,25 +222,21 @@ public class SagaProcessorConfigurer implements ConfigurationEnhancer, Applicati
     }
 
     /**
-     * Starts a Saga's processor at the head of the stream, so that it ignores events published before it first ran,
-     * as the Axon Framework 4 tracking processor default for Sagas did.
+     * Starts a Saga's processor at the head of the stream, so that it ignores events published before it first ran.
      * <p>
-     * Unlike Axon Framework 4, an {@code axon.eventhandling.processors.<name>.*} entry does not drop this default.
-     * Those properties cannot express an initial token, so an entry that tunes a thread count carries no intent to
-     * replay, and honouring it as one would turn tuning into a destructive change. A named
-     * {@link EventProcessorDefinition} does still drop the default, because it can set an initial token itself and
-     * so speaks for the whole processor.
+     * This holds whatever else configures the processor, which is what Axon Framework 4 effectively did. There, a
+     * customized Saga processor fell back to the generic tracking processor default of
+     * {@code createReplayToken(createHeadToken())}: it read from the start of the stream, but every event up to the
+     * head was flagged as a replay, and a Saga manager reports {@code supportsReset() == false}, so those events
+     * were never delivered to it. The Axon Framework 5 generic default instead resolves to
+     * {@code createReplayToken(firstToken)}, whose replay window is empty, so without this default an existing
+     * stream reaches the Saga as ordinary events and re-executes its side effects.
      * <p>
-     * Either way this is only a default: it is applied before processor settings, the definition's own
+     * This is only a default. It is applied before processor settings, an {@link EventProcessorDefinition}'s own
      * customization, and {@link PooledStreamingEventProcessorModule.Customization} beans, so any of those may
-     * override the initial token.
+     * override the initial token and replay into a Saga deliberately.
      */
-    private UnaryOperator<PooledStreamingEventProcessorConfiguration> headTokenDefault(
-            Optional<EventProcessorDefinition> definition
-    ) {
-        if (definition.isPresent()) {
-            return UnaryOperator.identity();
-        }
+    private UnaryOperator<PooledStreamingEventProcessorConfiguration> headTokenDefault() {
         return configuration -> configuration.initialToken(source -> source.latestToken(null));
     }
 

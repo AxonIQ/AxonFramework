@@ -19,6 +19,7 @@ package org.axonframework.extension.springboot.autoconfig;
 import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.common.lifecycle.Phase;
+import org.axonframework.extension.spring.config.EventProcessorDefinition;
 import org.axonframework.messaging.core.annotation.Namespace;
 import org.axonframework.messaging.eventhandling.EventHandlingComponent;
 import org.axonframework.messaging.eventhandling.gateway.EventGateway;
@@ -74,7 +75,8 @@ import static org.awaitility.Awaitility.await;
  */
 class SagaAutoConfigurationIT {
 
-    private static final String SIMPLE_SAGA_PROCESSOR = "EventProcessor[SimpleSagaProcessor]";
+    private static final String SIMPLE_SAGA_PROCESSOR_NAME = "SimpleSagaProcessor";
+    private static final String SIMPLE_SAGA_PROCESSOR = "EventProcessor[" + SIMPLE_SAGA_PROCESSOR_NAME + "]";
     private static final String SHARED_PROCESSOR = "EventProcessor[shared-saga-processor]";
     private static final Duration TIMEOUT = Duration.ofSeconds(10);
     private static final String HISTORIC_EVENT_ID = "historic-event";
@@ -211,6 +213,36 @@ class SagaAutoConfigurationIT {
 
     @Nested
     @SpringBootTest(
+            classes = {TestContext.class, HistorySeedingContext.class, TuningDefinitionContext.class,
+                    SimpleSaga.class},
+            webEnvironment = SpringBootTest.WebEnvironment.NONE
+    )
+    class TuningDefinitionHistoryTest {
+
+        @Autowired
+        private ApplicationContext context;
+
+        @Test
+        void anEventProcessorDefinitionThatOnlyTunesDoesNotReplayHistoryIntoTheSaga() {
+            // given - the same seeded history, with a named definition that only sets a batch size
+            String id = UUID.randomUUID().toString();
+            EventRecorder recorder = context.getBean(EventRecorder.class);
+
+            // when
+            publish(context, new EchoEvent(id));
+
+            // then - the definition applied, and the Saga still ignores everything published before start-up
+            await().atMost(TIMEOUT).until(() -> recorder.handled("SimpleSaga", id));
+            assertThat(recorder.handled()).doesNotContain("SimpleSaga:" + HISTORIC_EVENT_ID);
+            assertThat(context.getBean("sagaStore", InMemorySagaStore.class).size()).isEqualTo(1);
+            assertThat(moduleConfiguration(context, SIMPLE_SAGA_PROCESSOR)
+                               .getComponent(PooledStreamingEventProcessorConfiguration.class)
+                               .batchSize()).isEqualTo(5);
+        }
+    }
+
+    @Nested
+    @SpringBootTest(
             classes = {TestContext.class, TwoStoresContext.class, StoredSaga.class},
             webEnvironment = SpringBootTest.WebEnvironment.NONE
     )
@@ -334,6 +366,17 @@ class SagaAutoConfigurationIT {
         @Bean
         public InMemorySagaStore secondaryStore() {
             return new InMemorySagaStore();
+        }
+    }
+
+    @org.springframework.context.annotation.Configuration
+    static class TuningDefinitionContext {
+
+        @Bean
+        public EventProcessorDefinition tuningOnlyDefinition() {
+            return EventProcessorDefinition.pooledStreaming(SIMPLE_SAGA_PROCESSOR_NAME)
+                                           .assigningHandlers(handler -> false)
+                                           .customized(configuration -> configuration.batchSize(5));
         }
     }
 
