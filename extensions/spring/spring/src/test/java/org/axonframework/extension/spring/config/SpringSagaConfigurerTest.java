@@ -19,6 +19,7 @@ package org.axonframework.extension.spring.config;
 import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.Configuration;
+import org.axonframework.common.configuration.DuplicateModuleRegistrationException;
 import org.axonframework.messaging.core.annotation.Namespace;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventHandlingComponent;
@@ -54,21 +55,24 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Test class validating the {@link SpringSagaConfigurer} descriptor contributed for every Saga discovered in a Spring
- * application context.
+ * application context, and the processor {@link SagaProcessorConfigurer} assembles from it.
  * <p>
- * The tests pin the Axon Framework 4 behavior the configurer reproduces: the derived processor name, the head-token
- * default with its back-off on an explicit processor entry, and the co-location of Sagas deriving the same processor
- * name on one processor.
+ * The tests pin the Axon Framework 4 behavior these reproduce: the derived processor name, the head-token default
+ * with its back-off on an explicit processor entry, and the co-location of Sagas deriving the same processor name on
+ * one processor. They also pin the one deliberate departure, that a Saga and an ordinary event handler resolving to
+ * the same processor name are rejected rather than merged.
  *
  * @author Mateusz Nowak
  */
 class SpringSagaConfigurerTest {
 
     private static final String MY_SAGA_MODULE = "EventProcessor[MySagaProcessor]";
-    private static final String SHARED_MODULE = "EventProcessor[shared]";
+    private static final String SHARED_PROCESSOR = "shared";
+    private static final String SHARED_MODULE = "EventProcessor[" + SHARED_PROCESSOR + "]";
     private static final String SHARED_NAME_MODULE = "EventProcessor[SharedNameSagaProcessor]";
 
     @Nested
@@ -261,20 +265,17 @@ class SpringSagaConfigurerTest {
         }
 
         @Test
-        void sharesOneProcessorBetweenASagaAndAnOrdinaryEventHandler() {
-            // given - Axon Framework 4 put every invoker assigned to one processing group on one processor
+        void rejectsASagaAndAnOrdinaryEventHandlerResolvingToOneProcessor() {
+            // given - Axon Framework 4 put every invoker of one processing group on one processor; Sagas are
+            // assembled separately here, so the same collision surfaces as two modules of one name instead
             try (GenericApplicationContext context = springContext(ctx -> {
                 registrar(ctx, "namespacedSaga", NamespacedSaga.class);
                 ctx.registerBean("namespacedProjection", NamespacedProjection.class);
             })) {
-                // when
-                Configuration module = moduleConfiguration(axonConfiguration(context), SHARED_MODULE);
-
-                // then
-                assertThat(module.getComponents(EventHandlingComponent.class).values())
-                        .hasSize(2)
-                        .anyMatch(component -> component.unwrap(AnnotatedSagaManager.class).isPresent())
-                        .anyMatch(component -> component.unwrap(AnnotatedEventHandlingComponent.class).isPresent());
+                // when / then - a loud startup failure, never a silent merge or a silently dropped handler
+                assertThatThrownBy(() -> axonConfiguration(context))
+                        .isInstanceOf(DuplicateModuleRegistrationException.class)
+                        .hasMessageContaining(SHARED_PROCESSOR);
             }
         }
 
@@ -464,7 +465,7 @@ class SpringSagaConfigurerTest {
                 )
         );
         context.registerBean(
-                "sagaEventHandlerConfigurer",
+                "eventHandlerConfigurer",
                 MessageHandlerConfigurer.class,
                 () -> new MessageHandlerConfigurer(
                         MessageHandlerConfigurer.Type.EVENT,
@@ -473,6 +474,7 @@ class SpringSagaConfigurerTest {
                         )
                 )
         );
+        context.registerBean("sagaProcessorConfigurer", SagaProcessorConfigurer.class, SagaProcessorConfigurer::new);
         context.refresh();
         return context;
     }

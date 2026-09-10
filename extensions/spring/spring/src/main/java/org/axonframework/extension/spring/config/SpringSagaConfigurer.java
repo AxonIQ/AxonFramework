@@ -20,7 +20,6 @@ import org.axonframework.common.StringUtils;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.configuration.ComponentBuilder;
 import org.axonframework.messaging.eventhandling.EventHandlingComponent;
-import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorConfiguration;
 import org.axonframework.modelling.saga.SagaInstantiationException;
 import org.axonframework.modelling.saga.configuration.Sagas;
 import org.axonframework.modelling.saga.repository.SagaStore;
@@ -32,14 +31,16 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
 
 import java.util.Objects;
-import java.util.Optional;
 import java.util.function.Supplier;
-import java.util.function.UnaryOperator;
 
 /**
- * Describes an Axon Framework 4 Saga discovered in a Spring application context. The descriptor contributes the
- * already assembled Saga manager to the regular Spring event processor configuration, allowing Sagas and ordinary
- * event handlers to share a processor as they did in Axon Framework 4.
+ * Describes an Axon Framework 4 Saga discovered in a Spring application context, carrying everything
+ * {@link SagaProcessorConfigurer} needs to assemble that Saga's event processor.
+ * <p>
+ * Implements {@link EventProcessorDefinition.EventHandlerDescriptor} so that an
+ * {@link EventProcessorDefinition}'s handler selector can pick a Saga the same way it picks an ordinary event
+ * handler bean. The Saga itself is assembled separately from ordinary handlers, though: see
+ * {@link SagaProcessorConfigurer}.
  * <p>
  * This class is internal wiring created by {@link SpringSagaLookup}. Spring discovers only the Saga type; Axon creates
  * Saga instances itself, without applying Spring bean post-processors or injecting Saga fields.
@@ -49,7 +50,8 @@ import java.util.function.UnaryOperator;
  * @since 5.4.0
  */
 @Internal
-public class SpringSagaConfigurer implements PreconfiguredEventHandlerDescriptor, ApplicationContextAware {
+public class SpringSagaConfigurer
+        implements EventProcessorDefinition.EventHandlerDescriptor, ApplicationContextAware {
 
     private final String sagaBeanName;
     private final Class<?> sagaType;
@@ -120,22 +122,37 @@ public class SpringSagaConfigurer implements PreconfiguredEventHandlerDescriptor
     }
 
     @Override
-    public ComponentBuilder<EventHandlingComponent> eventHandlingComponent() {
+    public ComponentBuilder<Object> component() {
+        return eventHandlingComponent()::build;
+    }
+
+    /**
+     * Returns the builder for the already assembled Saga manager, to be registered declaratively rather than
+     * inspected for annotated handler methods.
+     *
+     * @return the event handling component builder wrapping this Saga's manager
+     */
+    ComponentBuilder<EventHandlingComponent> eventHandlingComponent() {
         return sagaComponent(sagaType);
     }
 
-    @Override
-    public Optional<String> preferredProcessorName() {
-        return Optional.of(sagaType.getSimpleName() + "Processor");
+    /**
+     * Returns the processor name derived from the Saga type, used when neither a selector nor a
+     * {@link org.axonframework.messaging.core.annotation.Namespace} assigns the Saga.
+     *
+     * @return the derived processor name, {@code <SagaSimpleName>Processor}
+     */
+    String derivedProcessorName() {
+        return sagaType.getSimpleName() + "Processor";
     }
 
-    @Override
-    public UnaryOperator<PooledStreamingEventProcessorConfiguration> pooledStreamingDefaults() {
-        return configuration -> configuration.initialToken(source -> source.latestToken(null));
-    }
-
-    @Override
-    public String deduplicationKey() {
+    /**
+     * Returns the key collapsing repeated registrations of the same Saga type, so that declaring one Saga twice
+     * yields a single component rather than two.
+     *
+     * @return the deduplication key
+     */
+    String deduplicationKey() {
         return sagaType.getName();
     }
 

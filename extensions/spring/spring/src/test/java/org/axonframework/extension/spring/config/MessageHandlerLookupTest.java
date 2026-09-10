@@ -37,24 +37,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class MessageHandlerLookupTest {
 
-    private static final String EVENT_CONFIGURER = "MessageHandlerConfigurer$$Axon$$EVENT";
-
-    @Nested
-    class EventConfigurerRegistration {
-
-        @Test
-        void registersWithoutOrdinaryHandlersSoPreconfiguredComponentsCanJoinLater() {
-            // given
-            DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory();
-
-            // when
-            new MessageHandlerLookup().postProcessBeanFactory(beanFactory);
-
-            // then
-            assertThat(beanFactory.containsBeanDefinition(EVENT_CONFIGURER)).isTrue();
-        }
-    }
-
     /**
      * A Saga carries {@link SagaEventHandler @SagaEventHandler} methods, which are meta-annotated with
      * {@link org.axonframework.messaging.eventhandling.annotation.EventHandler @EventHandler} and therefore with

@@ -16,6 +16,7 @@
 
 package org.axonframework.extension.springboot.autoconfig;
 
+import org.axonframework.extension.spring.config.SagaProcessorConfigurer;
 import org.axonframework.extension.spring.config.SpringSagaLookup;
 import org.axonframework.modelling.saga.repository.SagaStore;
 import org.axonframework.modelling.saga.repository.inmemory.InMemorySagaStore;
@@ -65,6 +66,22 @@ public class LegacySagaAutoConfiguration {
     @Bean
     public static SpringSagaLookup springSagaLookup() {
         return new SpringSagaLookup();
+    }
+
+    /**
+     * Provides the {@link SagaProcessorConfigurer} that assembles the event processors carrying the discovered
+     * Sagas.
+     * <p>
+     * Sagas get their own assembly rather than riding the regular
+     * {@link org.axonframework.extension.spring.config.DefaultProcessorModuleFactory} pipeline, so that no part of
+     * Saga support has to be threaded through the handler discovery every Axon Framework 5 Spring application uses.
+     * Dropping {@code axon-legacy} therefore removes Saga support whole.
+     *
+     * @return the enhancer assembling the event processors for discovered Sagas
+     */
+    @Bean
+    public SagaProcessorConfigurer sagaProcessorConfigurer() {
+        return new SagaProcessorConfigurer();
     }
 
     /**
