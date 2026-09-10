@@ -110,10 +110,16 @@ axon.eventhandling.processors[SimpleSagaProcessor].mode=subscribing
 carrying the same `@Namespace` value (or deriving the same default name) share one processor, reproducing the Axon
 Framework 4 behavior of co-locating sagas in one processing group.
 
-Saga descriptors take part in the same processor assignment pass as ordinary Spring event handlers. An
-`EventProcessorDefinition` selector can therefore assign a saga to its named processor, and its mode and customization
-apply normally. A saga and ordinary event handlers resolving to the same processor name share that processor, as they
-did when assigned to the same processing group in Axon Framework 4.
+Sagas are assembled separately from ordinary Spring event handlers, so that no part of saga support has to be
+threaded through the handler discovery every Axon Framework 5 application uses. Processor settings,
+`EventProcessorDefinition` beans and `PooledStreamingEventProcessorModule.Customization` beans still apply to a
+saga's processor as they apply to any other, and an `EventProcessorDefinition` selector can assign a saga to its
+named processor.
+
+One consequence: a saga and an ordinary event handler resolving to the same processor name are rejected, and startup
+fails with a `DuplicateModuleRegistrationException`. Axon Framework 4 co-located them on one processor when they
+shared a processing group. To combine them on purpose, drop `@Saga` from the class and register a `Module` bean
+directly, combining a declarative saga component with autodetected handlers.
 
 === Saga store selection
 
@@ -156,7 +162,8 @@ new-events-only behavior.
 arrive as handler method parameters instead, resolved the same way as for any other event handler, including Spring
 beans.
 * *No `@ProcessingGroup`.* `@Namespace` on the saga type is the replacement for renaming or co-locating a saga's
-processor.
+processor. It co-locates sagas with each other only: a saga and an ordinary event handler resolving to one processor
+name fail at startup, where Axon Framework 4 put both on one processor. See <<spring-boot-sagas>> for the workaround.
 * *Dead-letter queues are not supported for sagas*, as in Axon Framework 4: the saga invoker was never wrapped in
 dead-lettering there either.
 * *Deadlines are not ported yet* (see the note in <<legacy-module>>).
