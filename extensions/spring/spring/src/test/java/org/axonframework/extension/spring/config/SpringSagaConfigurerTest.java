@@ -61,10 +61,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * Test class validating the {@link SpringSagaConfigurer} descriptor contributed for every Saga discovered in a Spring
  * application context, and the processor {@link SagaProcessorConfigurer} assembles from it.
  * <p>
- * The tests pin the Axon Framework 4 behavior these reproduce: the derived processor name, the head-token default
- * with its back-off on an explicit processor entry, and the co-location of Sagas deriving the same processor name on
- * one processor. They also pin the one deliberate departure, that a Saga and an ordinary event handler resolving to
- * the same processor name are rejected rather than merged.
+ * The tests pin the Axon Framework 4 behavior these reproduce: the derived processor name, the head-token default,
+ * and the co-location of Sagas deriving the same processor name on one processor. They also pin the two deliberate
+ * departures: the head token survives an explicit processor entry, since the properties cannot express an initial
+ * token and only a code-level customization may switch a Saga to replaying the stream, and a Saga and an ordinary
+ * event handler resolving to the same processor name are rejected rather than merged.
  *
  * @author Mateusz Nowak
  */
@@ -178,7 +179,7 @@ class SpringSagaConfigurerTest {
         }
 
         @Test
-        void keepsTheGenericDefaultWhenAnExplicitProcessorEntryExists() {
+        void keepsTheHeadTokenWhenAnExplicitProcessorEntryExists() {
             // given
             try (GenericApplicationContext context = springContext(ctx -> {
                 registrar(ctx, "mySaga", MySaga.class);
@@ -191,9 +192,32 @@ class SpringSagaConfigurerTest {
                 PooledStreamingEventProcessorConfiguration pooled = pooledConfiguration(module);
                 pooled.initialToken().apply(source);
 
-                // then - configuring the Saga's processor replaces the Saga defaults, as in Axon Framework 4
-                assertThat(source.invocations()).containsExactly("firstToken");
+                // then - the entry tunes the processor without expressing an initial token, so tuning must not flip
+                // the Saga into processing the stream from the start (deliberate deviation from Axon Framework 4,
+                // where any customization of the processor name replaced the Saga defaults)
+                assertThat(source.invocations()).containsExactly("latestToken");
                 assertThat(pooled.batchSize()).isEqualTo(7);
+            }
+        }
+
+        @Test
+        void aCustomizationBeanOverridesTheHeadToken() {
+            // given - replaying into a Saga is possible, but only as an explicit code-level decision
+            try (GenericApplicationContext context = springContext(ctx -> {
+                registrar(ctx, "mySaga", MySaga.class);
+                ctx.registerBean("replayFromStart",
+                                 PooledStreamingEventProcessorModule.Customization.class,
+                                 () -> (axonConfig, processorConfig) ->
+                                         processorConfig.initialToken(source -> source.firstToken(null)));
+            })) {
+                Configuration module = moduleConfiguration(axonConfiguration(context), MY_SAGA_MODULE);
+
+                // when
+                RecordingTrackingTokenSource source = new RecordingTrackingTokenSource();
+                pooledConfiguration(module).initialToken().apply(source);
+
+                // then - the customization runs after the head-token default and wins
+                assertThat(source.invocations()).containsExactly("firstToken");
             }
         }
 
@@ -236,7 +260,8 @@ class SpringSagaConfigurerTest {
                 PooledStreamingEventProcessorConfiguration pooled = pooledConfiguration(module);
                 pooled.initialToken().apply(source);
 
-                // then - a named definition is an explicit processor customization, as it was in Axon Framework 4
+                // then - unlike a yaml entry, a definition can set an initial token itself, so it speaks for the
+                // whole processor and drops the Saga default, as any customization did in Axon Framework 4
                 assertThat(source.invocations()).containsExactly("firstToken");
                 assertThat(pooled.batchSize()).isEqualTo(42);
             }

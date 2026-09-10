@@ -188,7 +188,7 @@ public class SagaProcessorConfigurer implements ConfigurationEnhancer, Applicati
                         processorName, moduleSettings
                 );
                 UnaryOperator<PooledStreamingEventProcessorConfiguration> headToken =
-                        headTokenDefault(processorName, allSettings, definition);
+                        headTokenDefault(definition);
                 UnaryOperator<PooledStreamingEventProcessorConfiguration> definitionCustomization =
                         customizeConfiguration(definition);
                 PooledStreamingEventProcessorModule.Customization customization =
@@ -226,16 +226,20 @@ public class SagaProcessorConfigurer implements ConfigurationEnhancer, Applicati
      * Starts a Saga's processor at the head of the stream, so that it ignores events published before it first ran,
      * as the Axon Framework 4 tracking processor default for Sagas did.
      * <p>
-     * Ported with the Axon Framework 4 back-off intact: any explicit processor entry or named
-     * {@link EventProcessorDefinition} drops this default entirely, leaving the generic Axon Framework 5 default of
-     * replaying the stream from its first event.
+     * Unlike Axon Framework 4, an {@code axon.eventhandling.processors.<name>.*} entry does not drop this default.
+     * Those properties cannot express an initial token, so an entry that tunes a thread count carries no intent to
+     * replay, and honouring it as one would turn tuning into a destructive change. A named
+     * {@link EventProcessorDefinition} does still drop the default, because it can set an initial token itself and
+     * so speaks for the whole processor.
+     * <p>
+     * Either way this is only a default: it is applied before processor settings, the definition's own
+     * customization, and {@link PooledStreamingEventProcessorModule.Customization} beans, so any of those may
+     * override the initial token.
      */
     private UnaryOperator<PooledStreamingEventProcessorConfiguration> headTokenDefault(
-            String processorName,
-            Map<String, EventProcessorSettings> allSettings,
             Optional<EventProcessorDefinition> definition
     ) {
-        if (allSettings.containsKey(processorName) || definition.isPresent()) {
+        if (definition.isPresent()) {
             return UnaryOperator.identity();
         }
         return configuration -> configuration.initialToken(source -> source.latestToken(null));

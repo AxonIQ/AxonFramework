@@ -22,12 +22,12 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 class SagaProcessorConfiguration {
 
-    // tag::keep-saga-at-head[]
+    // tag::replay-into-saga[]
     @Bean
-    PooledStreamingEventProcessorModule.Customization keepOrderSagaAtHead() {
+    PooledStreamingEventProcessorModule.Customization replayIntoOrderSaga() {
         return (axonConfig, processorConfig) -> "OrderSagaProcessor".equals(processorConfig.processorName())
-                ? processorConfig.initialToken(source -> source.latestToken(null))
+                ? processorConfig.initialToken(source -> source.firstToken(null))
                 : processorConfig;
     }
-    // end::keep-saga-at-head[]
+    // end::replay-into-saga[]
 }

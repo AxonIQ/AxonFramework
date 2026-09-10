@@ -181,6 +181,36 @@ class SagaAutoConfigurationIT {
 
     @Nested
     @SpringBootTest(
+            classes = {TestContext.class, HistorySeedingContext.class, SimpleSaga.class},
+            webEnvironment = SpringBootTest.WebEnvironment.NONE,
+            properties = "axon.eventhandling.processors[SimpleSagaProcessor].batch-size=5"
+    )
+    class TunedProcessorHistoryTest {
+
+        @Autowired
+        private ApplicationContext context;
+
+        @Test
+        void tuningTheProcessorThroughPropertiesDoesNotReplayHistoryIntoTheSaga() {
+            // given - the same seeded history, with a property entry that only tunes the batch size
+            String id = UUID.randomUUID().toString();
+            EventRecorder recorder = context.getBean(EventRecorder.class);
+
+            // when
+            publish(context, new EchoEvent(id));
+
+            // then - the tuning applied, and the Saga still ignores everything published before start-up
+            await().atMost(TIMEOUT).until(() -> recorder.handled("SimpleSaga", id));
+            assertThat(recorder.handled()).doesNotContain("SimpleSaga:" + HISTORIC_EVENT_ID);
+            assertThat(context.getBean("sagaStore", InMemorySagaStore.class).size()).isEqualTo(1);
+            assertThat(moduleConfiguration(context, SIMPLE_SAGA_PROCESSOR)
+                               .getComponent(PooledStreamingEventProcessorConfiguration.class)
+                               .batchSize()).isEqualTo(5);
+        }
+    }
+
+    @Nested
+    @SpringBootTest(
             classes = {TestContext.class, TwoStoresContext.class, StoredSaga.class},
             webEnvironment = SpringBootTest.WebEnvironment.NONE
     )
