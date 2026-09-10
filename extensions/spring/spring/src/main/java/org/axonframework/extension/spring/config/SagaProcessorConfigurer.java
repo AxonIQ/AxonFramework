@@ -30,6 +30,8 @@ import org.axonframework.messaging.eventhandling.processing.streaming.pooled.Poo
 import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorModule;
 import org.axonframework.messaging.eventhandling.processing.subscribing.SubscribingEventProcessorConfiguration;
 import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.BeansException;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
@@ -72,10 +74,11 @@ import java.util.function.UnaryOperator;
  * the opposite of what a migration aid should do, so a Saga processor opts out of the channel as a whole rather than
  * guessing which customization means well.
  * <p>
- * Configure a Saga's processor with an {@link EventProcessorDefinition} naming it instead. A definition reaches the
- * same {@link PooledStreamingEventProcessorConfiguration} and runs after the defaults here, so it can set an initial
- * token, a segment count, or an executor. Note that a definition also fixes the processor's mode, so a definition
- * built with {@link EventProcessorDefinition#pooledStreaming(String)} overrules a {@code mode=subscribing} property.
+ * Declare a {@link SagaProcessorDefinition} bean instead. It is the same capability scoped to Sagas, so no Axon
+ * Framework 5 extension can arrive through it, and it neither assigns handlers nor fixes the processor's mode the
+ * way an {@link EventProcessorDefinition} does. An {@link EventProcessorDefinition} naming the processor still
+ * applies as well, for an application that wants to configure a Saga's processor the same way it configures every
+ * other one.
  * <p>
  * Registered as a bean by the Saga auto configuration; an application never creates this itself.
  *
@@ -86,6 +89,8 @@ import java.util.function.UnaryOperator;
 @RegistrationScope("Copying this enhancer into a module's own registry would make it build a fresh set of Saga "
         + "processor modules for every module it already built, without ever terminating.")
 public class SagaProcessorConfigurer implements ConfigurationEnhancer, ApplicationContextAware {
+
+    private static final Logger logger = LoggerFactory.getLogger(SagaProcessorConfigurer.class);
 
     private @Nullable ApplicationContext applicationContext;
 
@@ -102,10 +107,13 @@ public class SagaProcessorConfigurer implements ConfigurationEnhancer, Applicati
                                                             .toList();
         Map<String, EventProcessorSettings> allSettings =
                 context.getBean(EventProcessorSettings.MapWrapper.class).settings();
+        List<SagaProcessorDefinition> sagaDefinitions = context.getBeanProvider(SagaProcessorDefinition.class)
+                                                               .orderedStream()
+                                                               .toList();
 
         sagasByProcessor(discovered.values(), definitions).forEach(
                 (processorName, sagas) -> registry.registerModule(
-                        module(processorName, sagas, definitions, allSettings)
+                        module(processorName, sagas, definitions, allSettings, sagaDefinitions)
                 )
         );
     }
@@ -170,11 +178,16 @@ public class SagaProcessorConfigurer implements ConfigurationEnhancer, Applicati
             String processorName,
             List<SpringSagaConfigurer> sagas,
             List<EventProcessorDefinition> definitions,
-            Map<String, EventProcessorSettings> allSettings
+            Map<String, EventProcessorSettings> allSettings,
+            List<SagaProcessorDefinition> sagaDefinitions
     ) {
         EventProcessorSettings settings = Optional.ofNullable(allSettings.get(processorName))
                                                   .orElseGet(() -> allSettings.get(EventProcessorSettings.DEFAULT));
         Optional<EventProcessorDefinition> definition = definitionFor(processorName, definitions);
+        List<Class<?>> sagaTypes = sagas.stream().<Class<?>>map(SpringSagaConfigurer::beanType).toList();
+        List<SagaProcessorDefinition> matching = sagaDefinitions.stream()
+                                                                .filter(d -> d.matches(processorName, sagaTypes))
+                                                                .toList();
         Function<EventHandlingComponentsConfigurer.RequiredComponentPhase, EventHandlingComponentsConfigurer.CompletePhase>
                 componentRegistration = phase -> {
             EventHandlingComponentsConfigurer.ComponentsPhase result = phase;
@@ -202,8 +215,11 @@ public class SagaProcessorConfigurer implements ConfigurationEnhancer, Applicati
                             result = baseCustomization.apply(axonConfig, result);
                             result = singleSegmentDefault(result);
                             // Deliberately no PooledStreamingEventProcessorModule.Customization beans here; see the
-                            // class javadoc.
+                            // class javadoc. SagaProcessorDefinition is the Saga-scoped replacement.
                             result = definitionCustomization.apply(result);
+                            for (SagaProcessorDefinition sagaDefinition : matching) {
+                                result = sagaDefinition.customization().apply(result);
+                            }
                             SpringCustomizations.requireResolvedTokenStore(processorName, result);
                             return result;
                         };
@@ -214,6 +230,11 @@ public class SagaProcessorConfigurer implements ConfigurationEnhancer, Applicati
                         .build();
             }
             case SUBSCRIBING -> {
+                if (!matching.isEmpty()) {
+                    logger.warn("Ignoring {} SagaProcessorDefinition bean(s) for Saga processor [{}]: it runs in "
+                                        + "subscribing mode, and a SagaProcessorDefinition customizes a pooled "
+                                        + "streaming processor configuration.", matching.size(), processorName);
+                }
                 var moduleSettings = (EventProcessorSettings.SubscribingEventProcessorSettings) settings;
                 UnaryOperator<SubscribingEventProcessorConfiguration> definitionCustomization =
                         customizeConfiguration(definition);

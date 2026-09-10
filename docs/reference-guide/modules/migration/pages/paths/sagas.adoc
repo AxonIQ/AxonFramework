@@ -74,8 +74,8 @@ The head token survives anything that configures the processor without setting a
 `axon.eventhandling.processors.<name>.*` entries, and an `EventProcessorDefinition` that only tunes settings. Tuning
 a saga's processor never changes which events the saga sees.
 
-Making a saga process the stream from the start requires setting an initial token explicitly, through an
-`EventProcessorDefinition` naming that processor. It runs after the head-token default.
+Making a saga process the stream from the start requires setting an initial token explicitly, through a
+`SagaProcessorDefinition`. It runs after the head-token default.
 
 [source,java]
 ----
@@ -105,13 +105,8 @@ processor defaults derive from single-threaded processing. A saga manager sequen
 reads every event and then keeps only the sagas whose identifier it owns; extra segments multiply reads of the whole
 event stream and token store rows without splitting the stream. The property cannot raise it, because the properties
 always carry a segment count and cannot express "leave it alone", so honoring them would fan a saga out over sixteen
-segments as soon as an unrelated property such as `batch-size` was set. Raise it deliberately with an
-`EventProcessorDefinition`:
-
-[source,java]
-----
-include::example$migration/paths/sagas/SagaProcessorConfiguration.java[tag=saga-segments,indent=0]
-----
+segments as soon as an unrelated property such as `batch-size` was set. Raise it deliberately with a
+`SagaProcessorDefinition`, see <<configuring-a-sagas-processor>>.
 
 [WARNING]
 ====
@@ -160,24 +155,42 @@ threaded through the handler discovery every Axon Framework 5 application uses. 
 `EventProcessorDefinition` beans still apply to a saga's processor as they apply to any other, and an
 `EventProcessorDefinition` selector can assign a saga to its named processor.
 
+[#configuring-a-sagas-processor]
 === Configuring a saga's processor
 
-Use an `EventProcessorDefinition` naming the processor. It reaches the same
-`PooledStreamingEventProcessorConfiguration` an ordinary processor exposes, and runs after the saga defaults, so it
-can set the initial token, the segment count, an executor, or anything else.
+Declare a `SagaProcessorDefinition` bean. It reaches the same `PooledStreamingEventProcessorConfiguration` an
+ordinary processor exposes, and runs after everything else, so it can set the initial token, the segment count, an
+executor, or anything else:
+
+[source,java]
+----
+include::example$migration/paths/sagas/SagaProcessorConfiguration.java[tag=saga-segments,indent=0]
+----
+
+`forSaga(OrderSaga.class)` follows the saga wherever its processor ended up, including onto a `@Namespace`-renamed
+one, so it never has to restate how the name was derived. Use `forProcessor("orders")` to configure a processor
+several sagas share.
 
 `PooledStreamingEventProcessorModule.Customization` beans are the one mechanism that does *not* apply to a saga's
-processor. That channel is how cross-cutting Axon Framework 5 infrastructure attaches itself to every processor in
-an application. Dead-lettering is enabled that way, for one, and Axon Framework 4 never dead-lettered a saga: it
-never wrapped a saga manager in its dead-lettering invoker. A saga would otherwise silently acquire behavior the
-original never had, so a saga's processor opts out of the channel entirely rather than guessing which customization
-was meant for it.
+processor, and `SagaProcessorDefinition` is their saga-scoped replacement. That channel is how cross-cutting Axon
+Framework 5 infrastructure attaches itself to every processor in an application. Dead-lettering is enabled that way,
+for one, and Axon Framework 4 never dead-lettered a saga: it never wrapped a saga manager in its dead-lettering
+invoker. A saga would otherwise silently acquire behavior the original never had, so a saga's processor opts out of
+the channel entirely rather than guessing which customization was meant for it. Nothing declares a
+`SagaProcessorDefinition` except a saga's own configuration, so the same cannot happen through it.
+
+An `EventProcessorDefinition` naming the processor applies as well, for an application that configures sagas the way
+it configures every other processor.
 
 [NOTE]
 ====
-An `EventProcessorDefinition` also fixes the processor's mode. A definition built with
-`EventProcessorDefinition.pooledStreaming(...)` overrules `mode=subscribing` on that processor, even when it only
-sets an unrelated value such as a batch size.
+Prefer `SagaProcessorDefinition` for a saga. An `EventProcessorDefinition` has to answer two questions a saga has
+already settled: which handlers it assigns, which for a saga is nobody, and the processor's mode. A definition built
+with `EventProcessorDefinition.pooledStreaming(...)` therefore overrules `mode=subscribing` on that processor, even
+when it only sets an unrelated value such as a batch size.
+
+A `SagaProcessorDefinition` customizes a pooled streaming configuration, so it is ignored, with a warning, on a saga
+running in subscribing mode.
 ====
 
 One consequence: a saga and an ordinary event handler resolving to the same processor name are rejected, and startup

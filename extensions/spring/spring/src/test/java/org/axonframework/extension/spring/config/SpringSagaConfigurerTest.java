@@ -529,6 +529,126 @@ class SpringSagaConfigurerTest {
     }
 
     @Nested
+    class SagaProcessorDefinitions {
+
+        @Test
+        void customizesTheProcessorOfTheNamedSagaType() {
+            // given - no handler selector and no mode to state, unlike an EventProcessorDefinition
+            try (GenericApplicationContext context = springContext(ctx -> {
+                registrar(ctx, "mySaga", MySaga.class);
+                ctx.registerBean("mySagaDefinition", SagaProcessorDefinition.class,
+                                 () -> SagaProcessorDefinition.forSaga(MySaga.class)
+                                                              .customized(c -> c.batchSize(42)));
+            })) {
+                // when
+                Configuration module = moduleConfiguration(axonConfiguration(context), MY_SAGA_MODULE);
+
+                // then
+                assertThat(pooledConfiguration(module).batchSize()).isEqualTo(42);
+            }
+        }
+
+        @Test
+        void appliesOnlyToTheProcessorOfItsOwnSaga() {
+            // given
+            try (GenericApplicationContext context = springContext(ctx -> {
+                registrar(ctx, "mySaga", MySaga.class);
+                registrar(ctx, "otherSaga", OtherSaga.class);
+                ctx.registerBean("mySagaDefinition", SagaProcessorDefinition.class,
+                                 () -> SagaProcessorDefinition.forSaga(MySaga.class)
+                                                              .customized(c -> c.batchSize(42)));
+            })) {
+                AxonConfiguration configuration = axonConfiguration(context);
+
+                // when
+                Configuration mySagaModule = moduleConfiguration(configuration, MY_SAGA_MODULE);
+                Configuration otherModule = moduleConfiguration(configuration, "EventProcessor[OtherSagaProcessor]");
+
+                // then
+                assertThat(pooledConfiguration(mySagaModule).batchSize()).isEqualTo(42);
+                assertThat(pooledConfiguration(otherModule).batchSize()).isNotEqualTo(42);
+            }
+        }
+
+        @Test
+        void followsASagaOntoItsNamespacedProcessor() {
+            // given - forSaga does not need to know how the processor name was derived
+            try (GenericApplicationContext context = springContext(ctx -> {
+                registrar(ctx, "namespacedSaga", NamespacedSaga.class);
+                ctx.registerBean("namespacedDefinition", SagaProcessorDefinition.class,
+                                 () -> SagaProcessorDefinition.forSaga(NamespacedSaga.class)
+                                                              .customized(c -> c.batchSize(42)));
+            })) {
+                // when
+                Configuration module = moduleConfiguration(axonConfiguration(context), SHARED_MODULE);
+
+                // then
+                assertThat(pooledConfiguration(module).batchSize()).isEqualTo(42);
+            }
+        }
+
+        @Test
+        void targetsASharedProcessorByName() {
+            // given - one definition configuring the processor two Sagas share
+            try (GenericApplicationContext context = springContext(ctx -> {
+                registrar(ctx, "namespacedSaga", NamespacedSaga.class);
+                registrar(ctx, "otherNamespacedSaga", OtherNamespacedSaga.class);
+                ctx.registerBean("sharedDefinition", SagaProcessorDefinition.class,
+                                 () -> SagaProcessorDefinition.forProcessor(SHARED_PROCESSOR)
+                                                              .customized(c -> c.batchSize(42)));
+            })) {
+                // when
+                Configuration module = moduleConfiguration(axonConfiguration(context), SHARED_MODULE);
+
+                // then
+                assertThat(pooledConfiguration(module).batchSize()).isEqualTo(42);
+                assertThat(module.getComponents(EventHandlingComponent.class)).hasSize(2);
+            }
+        }
+
+        @Test
+        void overridesTheHeadTokenWhenItSetsAnInitialToken() {
+            // given - the sanctioned way to replay into a Saga
+            try (GenericApplicationContext context = springContext(ctx -> {
+                registrar(ctx, "mySaga", MySaga.class);
+                ctx.registerBean("replayDefinition", SagaProcessorDefinition.class,
+                                 () -> SagaProcessorDefinition.forSaga(MySaga.class)
+                                                              .customized(c -> c.initialToken(
+                                                                      source -> source.firstToken(null)
+                                                              )));
+            })) {
+                Configuration module = moduleConfiguration(axonConfiguration(context), MY_SAGA_MODULE);
+
+                // when
+                RecordingTrackingTokenSource source = new RecordingTrackingTokenSource();
+                pooledConfiguration(module).initialToken().apply(source);
+
+                // then - it runs after the Saga defaults
+                assertThat(source.invocations()).containsExactly("firstToken");
+            }
+        }
+
+        @Test
+        void doesNotFixTheProcessorMode() {
+            // given - unlike an EventProcessorDefinition, which would force the processor back to pooled
+            try (GenericApplicationContext context = springContext(ctx -> {
+                registrar(ctx, "mySaga", MySaga.class);
+                settings(ctx, Map.of("MySagaProcessor", new TestSubscribingSettings()));
+                ctx.registerBean("mySagaDefinition", SagaProcessorDefinition.class,
+                                 () -> SagaProcessorDefinition.forSaga(MySaga.class)
+                                                              .customized(c -> c.batchSize(42)));
+            })) {
+                // when
+                Configuration module = moduleConfiguration(axonConfiguration(context), MY_SAGA_MODULE);
+
+                // then - the property still decides the mode; the definition is ignored with a warning
+                assertThat(module.getOptionalComponent(SubscribingEventProcessorConfiguration.class)).isPresent();
+                assertThat(module.getOptionalComponent(PooledStreamingEventProcessorConfiguration.class)).isEmpty();
+            }
+        }
+    }
+
+    @Nested
     class BeanResolution {
 
         @Test
