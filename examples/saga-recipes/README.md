@@ -40,6 +40,7 @@ Exactly one runs at a time, chosen with `saga.recipe`:
 | `eventsourced`        | its own events, recorded through a command            | `saga/eventsourced`     |
 | `eventsourced-append` | its own events, appended from the event handler       | `saga/eventsourced`     |
 | `verticalslices`      | mostly nowhere, six independent slices                | `saga/verticalslices`   |
+| `legacy`              | mutable fields on the saga, in `axon-legacy`'s `SagaStore` | `saga/legacy`      |
 
 Read the class-level Javadoc of each `PaymentProcess` for what it buys, what it costs, and how the process ends. The
 two event-sourced variants share a package, their events, and their `ProcessState`; they differ only in the two lines
@@ -48,6 +49,17 @@ document.
 
 `saga/deadline` sits outside the recipes. It replaces Axon Framework 4's `DeadlineManager` with a projection of outstanding
 payments plus a scheduled sweep. It applies to every recipe equally.
+
+`legacy` is not a recipe either, despite sitting in the table. It is the bike rental sample application's Axon
+Framework 4 `PaymentSaga`, moved across as literally as `axon-legacy` allows and still annotated with `@Saga`,
+`@StartSaga` and `@SagaEventHandler`. It exists so the migration guide can show real "before" code, running and
+tested, next to the recipes rather than as a quotation.
+
+It is deliberately outside the shared contract. Four of those seven scenarios cover behaviour the original does not
+have, because it leaned on a payment timeout for all of it: cancelling an outstanding payment, handling
+`PaymentCancelled`, answering `CancelRentalPayment`, and the redelivery bug the recipes fix. Its own tests assert
+the part it does satisfy. Everything the original did with a `DeadlineManager` is left in place as commented-out
+Axon Framework 4 code, so porting deadlines later changes bodies rather than design.
 
 ## Running the tests
 
