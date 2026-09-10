@@ -15,6 +15,7 @@
  */
 package migration.paths.sagas;
 
+import org.axonframework.extension.spring.config.EventProcessorDefinition;
 import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorModule;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -30,4 +31,13 @@ class SagaProcessorConfiguration {
                 : processorConfig;
     }
     // end::replay-into-saga[]
+
+    // tag::saga-segments[]
+    @Bean
+    EventProcessorDefinition orderSagaSegments() {
+        return EventProcessorDefinition.pooledStreaming("OrderSagaProcessor")
+                                       .assigningHandlers(handler -> false)
+                                       .customized(configuration -> configuration.initialSegmentCount(4));
+    }
+    // end::saga-segments[]
 }

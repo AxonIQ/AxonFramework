@@ -97,11 +97,30 @@ ordinary events and re-executes its side effects. Keeping the head token in plac
 Framework 4 behavior.
 ====
 
-Every `axon.eventhandling.processors.<name>.*` property (`mode`, `source`, `initial-segment-count`,
-`token-claim-interval`, `thread-count`, `batch-size`, and `token-store`) applies to a saga's processor as it applies to
-any other processor, including
-`mode=subscribing` to switch the saga to a subscribing processor. A pooled saga processor needs a `TokenStore` bean,
-as does any other pooled processor.
+Every `axon.eventhandling.processors.<name>.*` property (`mode`, `source`, `token-claim-interval`, `thread-count`,
+`batch-size`, and `token-store`) applies to a saga's processor as it applies to any other processor. A pooled saga
+processor needs a `TokenStore` bean, as does any other pooled processor.
+
+`initial-segment-count` is the exception: a saga's processor runs one segment, as in Axon Framework 4, whose saga
+processor defaults derive from single-threaded processing. A saga manager sequences as `BROADCAST`, so every segment
+reads every event and then keeps only the sagas whose identifier it owns; extra segments multiply reads of the whole
+event stream and token store rows without splitting the stream. The property cannot raise it, because the properties
+always carry a segment count and cannot express "leave it alone", so honoring them would fan a saga out over sixteen
+segments as soon as an unrelated property such as `batch-size` was set. Raise it deliberately with an
+`EventProcessorDefinition`:
+
+[source,java]
+----
+include::example$migration/paths/sagas/SagaProcessorConfiguration.java[tag=saga-segments,indent=0]
+----
+
+[WARNING]
+====
+`mode=subscribing` switches the saga to a subscribing processor, which has no segments and no token store. Every
+application instance then falls back to the root segment and starts its own instance of the same saga. This limit is
+inherited from Axon Framework 4, where a subscribing processor behaved the same way. Keep sagas on a pooled
+streaming processor in a multi-instance deployment.
+====
 
 Processor names derived from a saga's simple name are mixed-case (for example, `SimpleSagaProcessor`). Relaxed
 property binding lowercases a dotted key and silently fails to match, so target the processor with bracket notation
@@ -115,6 +134,27 @@ axon.eventhandling.processors[SimpleSagaProcessor].mode=subscribing
 `@Namespace` on the saga type replaces `@ProcessingGroup`: it overrides the derived processor name. Two saga classes
 carrying the same `@Namespace` value (or deriving the same default name) share one processor, reproducing the Axon
 Framework 4 behavior of co-locating sagas in one processing group.
+
+[WARNING]
+====
+Keep the Axon Framework 4 processor name, or in-flight sagas lose events.
+
+`@ProcessingGroup` does not exist in Axon Framework 5, so a saga carrying it no longer compiles. Removing the
+annotation renames the processor to `<SimpleName>Processor`. A `TokenStore` is keyed on the processor name, so the
+Axon Framework 4 token is then orphaned, the renamed processor starts at the head of the stream, and every event
+between the old token position and start-up is never delivered. Sagas already in flight, the ones this module exists
+to carry across, silently miss them.
+
+Replace `@ProcessingGroup("orders")` with `@Namespace("orders")`, keeping the value, so the existing token is found:
+
+[source,java]
+----
+include::example$migration/paths/sagas/OrderSaga.java[tag=namespace-preserves-token,indent=0]
+----
+
+This applies to any saga whose Axon Framework 4 processor name was not `<SimpleName>Processor`, including one named
+through `assignProcessingGroup` or a hand-registered `SagaConfiguration`.
+====
 
 Sagas are assembled separately from ordinary Spring event handlers, so that no part of saga support has to be
 threaded through the handler discovery every Axon Framework 5 application uses. Processor settings,
