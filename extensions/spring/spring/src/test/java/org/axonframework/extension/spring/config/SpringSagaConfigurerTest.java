@@ -134,7 +134,7 @@ class SpringSagaConfigurerTest {
     }
 
     @Nested
-    class InitialToken {
+    class SagaProcessorDefaults {
 
         @Test
         void startsAtTheHeadOfTheStreamWithoutAnExplicitProcessorEntry() {
@@ -170,6 +170,47 @@ class SpringSagaConfigurerTest {
                 // where any customization of the processor name replaced the Saga defaults)
                 assertThat(source.invocations()).containsExactly("latestToken");
                 assertThat(pooled.batchSize()).isEqualTo(7);
+            }
+        }
+
+        @Test
+        void startsWithASingleSegmentWithoutAnExplicitProcessorEntry() {
+            // given
+            try (GenericApplicationContext context = springContext(ctx -> registrar(ctx, "mySaga", MySaga.class))) {
+                Configuration module = moduleConfiguration(axonConfiguration(context), MY_SAGA_MODULE);
+
+                // then - Axon Framework 4 gave a Saga a single-threaded tracking processor with one segment, not the
+                // generic 16-segment pooled default
+                assertThat(pooledConfiguration(module).initialSegmentCount()).isEqualTo(1);
+            }
+        }
+
+        @Test
+        void anExplicitProcessorEntryAppliesTheRegularSegmentSemantics() {
+            // given
+            try (GenericApplicationContext context = springContext(ctx -> {
+                registrar(ctx, "mySaga", MySaga.class);
+                settings(ctx, Map.of("MySagaProcessor", new TestPooledSettings(7)));
+            })) {
+                Configuration module = moduleConfiguration(axonConfiguration(context), MY_SAGA_MODULE);
+
+                // then - segment count is expressible in the properties, so an explicit entry opts the processor into
+                // the regular property semantics (the entry's segment count, here the test settings' 4)
+                assertThat(pooledConfiguration(module).initialSegmentCount()).isEqualTo(4);
+            }
+        }
+
+        @Test
+        void defaultSettingsDoNotChangeTheSingleSegment() {
+            // given
+            try (GenericApplicationContext context = springContext(ctx -> {
+                registrar(ctx, "mySaga", MySaga.class);
+                settings(ctx, Map.of(EventProcessorSettings.DEFAULT, new TestPooledSettings(9)));
+            })) {
+                Configuration module = moduleConfiguration(axonConfiguration(context), MY_SAGA_MODULE);
+
+                // then - like the head token, the default entry carries no Saga-specific intent
+                assertThat(pooledConfiguration(module).initialSegmentCount()).isEqualTo(1);
             }
         }
 

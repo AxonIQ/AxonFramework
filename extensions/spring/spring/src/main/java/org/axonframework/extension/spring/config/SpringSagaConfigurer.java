@@ -57,7 +57,10 @@ import java.util.function.Function;
  * {@code axon.eventhandling.processors.*} settings exactly like any other processor, so {@code mode=subscribing}
  * switches a Saga to a subscribing processor. A pooled Saga processor additionally starts at the head of the stream
  * (the {@link org.axonframework.messaging.eventstreaming.TrackingTokenSource#latestToken latest token}) instead of
- * replaying it, reproducing the Axon Framework 4 default that new Sagas ignore history.
+ * replaying it, reproducing the Axon Framework 4 default that new Sagas ignore history. Without an explicit
+ * {@code axon.eventhandling.processors.<name>} entry the processor also starts with a single segment, matching the
+ * single-threaded tracking processor Axon Framework 4 gave a Saga by default; an explicit entry applies the regular
+ * property semantics, including the generic segment-count default.
  * The head token survives {@code axon.eventhandling.processors.<name>} entries: those properties cannot express an
  * initial token, so an entry that only tunes the processor carries no intent to replay. This deliberately deviates
  * from Axon Framework 4, where any customization of a Saga's processor name replaced the Saga defaults with the
@@ -174,12 +177,20 @@ public class SpringSagaConfigurer implements ConfigurationEnhancer, ApplicationC
                 var baseCustomization = SpringCustomizations.pooledStreamingCustomizations(
                         processorName, pooledSettings
                 );
+                boolean explicitEntry = explicitSettings != null;
                 PooledStreamingEventProcessorModule.Customization customization =
                         (axonConfig, processorConfig) -> {
                             // Always start at the head: the settings cannot express an initial token, so no entry
                             // carries an intent to replay. A Customization bean below may still override this.
                             var result = processorConfig.initialToken(source -> source.latestToken(null));
                             result = baseCustomization.apply(axonConfig, result);
+                            if (!explicitEntry) {
+                                // A single segment, as Axon Framework 4's single-threaded tracking default gave
+                                // Sagas. Applied after the settings customization, which would otherwise impose the
+                                // generic 16-segment default; an explicit entry for this processor opts into the
+                                // regular property semantics instead.
+                                result = result.initialSegmentCount(1);
+                            }
                             for (var extension : extensionCustomizations()) {
                                 result = extension.apply(axonConfig, result);
                             }

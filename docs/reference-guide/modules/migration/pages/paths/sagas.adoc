@@ -68,7 +68,10 @@ start receiving events.
 Each `@Saga` class gets its own pooled streaming event processor, named `<SimpleName>Processor` (for example,
 `OrderSagaProcessor` for `OrderSaga`). The processor starts at the head of the stream (the latest token), so a saga
 ignores events that occurred before the processor first starts, matching the Axon Framework 4
-`TrackingEventProcessor` default for sagas.
+`TrackingEventProcessor` default for sagas. It also starts with a single segment, matching the single-threaded
+tracking processor Axon Framework 4 gave a saga by default. An explicit `axon.eventhandling.processors.<name>.*`
+entry applies the regular property semantics to the segment count instead: its `initial-segment-count`, or the
+generic default of 16 when the entry does not set one. The `..default` entry does not change a saga's segment count.
 
 The head token survives `axon.eventhandling.processors.<name>.*` entries. Those properties cannot express an initial
 token, so an entry that only tunes `thread-count` or `batch-size` carries no intent to replay, and tuning a saga's
@@ -154,10 +157,12 @@ discovered.
 == Behavior changes from Axon Framework 4
 
 * *Pooled streaming replaces the tracking processor.* A saga's processor is pooled streaming, not a
-`TrackingEventProcessor`. The head-token default reproduces the old behavior; a `TokenStore` bean is required, as for
-any pooled processor. Unlike Axon Framework 4, the head token survives `axon.eventhandling.processors.<name>.*`
-entries: tuning a saga's processor through properties never switches it to processing the event store from the first
-event. Replaying into a saga requires a code-level customization - see <<spring-boot-sagas>>.
+`TrackingEventProcessor`. The head-token and single-segment defaults reproduce the old behavior; a `TokenStore` bean
+is required, as for any pooled processor. Unlike Axon Framework 4, the head token survives
+`axon.eventhandling.processors.<name>.*` entries: tuning a saga's processor through properties never switches it to
+processing the event store from the first event. Replaying into a saga requires a code-level customization - see
+<<spring-boot-sagas>>. The segment count is different: an explicit entry applies the regular property semantics,
+including the generic 16-segment default when the entry sets none.
 * *No resource injection.* `ResourceInjector` and `SpringResourceInjector` are not ported. A saga's collaborators
 arrive as handler method parameters instead, resolved the same way as for any other event handler, including Spring
 beans.
