@@ -21,6 +21,8 @@ import org.axonframework.modelling.saga.repository.SagaStore;
 import org.axonframework.modelling.saga.repository.inmemory.InMemorySagaStore;
 import org.junit.jupiter.api.*;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
+import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
+import org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration;
 import org.springframework.boot.test.context.FilteredClassLoader;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
@@ -77,8 +79,14 @@ class LegacySagaAutoConfigurationTest {
         });
     }
 
+    /**
+     * Excludes Hibernate and the embedded {@code DataSource} autoconfiguration: this module has {@code hsqldb} and
+     * {@code spring-boot-starter-data-jpa} on its test classpath, so without excluding them Spring Boot would
+     * auto-configure an embedded {@code EntityManagerFactory} and {@link LegacyJpaSagaStoreAutoConfiguration} would
+     * activate instead of the in-memory fallback under test here.
+     */
     @Configuration
-    @EnableAutoConfiguration
+    @EnableAutoConfiguration(exclude = {HibernateJpaAutoConfiguration.class, DataSourceAutoConfiguration.class})
     static class TestContext {
 
     }
