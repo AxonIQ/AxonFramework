@@ -194,6 +194,7 @@ public class SagaProcessorConfigurer implements ConfigurationEnhancer, Applicati
                         (axonConfig, processorConfig) -> {
                             var result = headToken.apply(processorConfig);
                             result = baseCustomization.apply(axonConfig, result);
+                            result = singleSegmentDefault(result);
                             result = definitionCustomization.apply(result);
                             for (var extension : extensionsCustomizations) {
                                 result = extension.apply(axonConfig, result);
@@ -238,6 +239,29 @@ public class SagaProcessorConfigurer implements ConfigurationEnhancer, Applicati
      */
     private UnaryOperator<PooledStreamingEventProcessorConfiguration> headTokenDefault() {
         return configuration -> configuration.initialToken(source -> source.latestToken(null));
+    }
+
+    /**
+     * Runs a Saga's processor on a single segment, as Axon Framework 4 did: its Saga processor defaults derive from
+     * {@code TrackingEventProcessorConfiguration.forSingleThreadedProcessing()}, and the tracking processor was the
+     * Spring Boot default there.
+     * <p>
+     * A Saga manager reports {@link org.axonframework.messaging.core.sequencing.SequencingPolicy#BROADCAST}
+     * as its sequence identifier, so every segment reads every event and then keeps only the Sagas whose identifier
+     * the segment owns. Extra segments therefore multiply the reads of the whole event stream and the token store
+     * rows without splitting the stream, which is why one is the right default rather than the sixteen an ordinary
+     * Axon Framework 5 processor starts with.
+     * <p>
+     * Applied after the processor settings, so {@code initial-segment-count} does not raise it: those properties
+     * always carry a value and cannot express "unset", so honouring them would silently give every Saga sixteen
+     * segments as soon as an unrelated property such as {@code batch-size} was set. Raise it deliberately through an
+     * {@link EventProcessorDefinition} or a {@link PooledStreamingEventProcessorModule.Customization} bean, both of
+     * which run afterwards.
+     */
+    private PooledStreamingEventProcessorConfiguration singleSegmentDefault(
+            PooledStreamingEventProcessorConfiguration configuration
+    ) {
+        return configuration.initialSegmentCount(1);
     }
 
     @SuppressWarnings("unchecked")

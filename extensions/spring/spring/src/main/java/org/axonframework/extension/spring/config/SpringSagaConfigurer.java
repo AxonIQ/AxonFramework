@@ -20,7 +20,6 @@ import org.axonframework.common.StringUtils;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.configuration.ComponentBuilder;
 import org.axonframework.messaging.eventhandling.EventHandlingComponent;
-import org.axonframework.modelling.saga.SagaInstantiationException;
 import org.axonframework.modelling.saga.configuration.Sagas;
 import org.axonframework.modelling.saga.repository.SagaStore;
 import org.jspecify.annotations.Nullable;
@@ -112,13 +111,22 @@ public class SpringSagaConfigurer
         return sagaType;
     }
 
+    /**
+     * Always throws, because a Saga has no single bean instance to resolve.
+     * <p>
+     * Spring never instantiates a Saga: instances are created and loaded per Saga identifier by the Saga manager.
+     * Returning a fresh throwaway instance here would look like the bean an
+     * {@link EventProcessorDefinition} selector asked for while belonging to no Saga at all. Select a Saga on
+     * {@link #beanName()} or {@link #beanType()} instead.
+     *
+     * @throws UnsupportedOperationException always
+     */
     @Override
     public Object resolveBean() {
-        try {
-            return sagaType.getDeclaredConstructor().newInstance();
-        } catch (ReflectiveOperationException e) {
-            throw new SagaInstantiationException("Exception while trying to instantiate a new Saga", e);
-        }
+        throw new UnsupportedOperationException(
+                "Cannot resolve a bean instance for Saga [" + sagaType.getName()
+                        + "]. Saga instances are managed by the Saga manager, one per Saga identifier, not by Spring. "
+                        + "Select a Saga by its bean name or bean type instead.");
     }
 
     @Override

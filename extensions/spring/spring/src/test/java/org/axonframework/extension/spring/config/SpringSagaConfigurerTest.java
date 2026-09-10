@@ -475,6 +475,76 @@ class SpringSagaConfigurerTest {
     }
 
     @Nested
+    class Segments {
+
+        @Test
+        void runsOnASingleSegment() {
+            // given
+            try (GenericApplicationContext context = springContext(ctx -> registrar(ctx, "mySaga", MySaga.class))) {
+                // when
+                Configuration module = moduleConfiguration(axonConfiguration(context), MY_SAGA_MODULE);
+
+                // then - Axon Framework 4 derived its Saga processor defaults from single-threaded processing, and
+                // a Saga manager sequences as BROADCAST, so extra segments only re-read the whole stream
+                assertThat(pooledConfiguration(module).initialSegmentCount()).isEqualTo(1);
+            }
+        }
+
+        @Test
+        void keepsTheSingleSegmentWhenAnExplicitProcessorEntryExists() {
+            // given - the properties always carry a segment count, so they cannot express "leave it alone"
+            try (GenericApplicationContext context = springContext(ctx -> {
+                registrar(ctx, "mySaga", MySaga.class);
+                settings(ctx, Map.of("MySagaProcessor", new TestPooledSettings(7)));
+            })) {
+                // when
+                Configuration module = moduleConfiguration(axonConfiguration(context), MY_SAGA_MODULE);
+
+                // then - tuning an unrelated property must not silently fan the Saga out over sixteen segments
+                PooledStreamingEventProcessorConfiguration pooled = pooledConfiguration(module);
+                assertThat(pooled.initialSegmentCount()).isEqualTo(1);
+                assertThat(pooled.batchSize()).isEqualTo(7);
+            }
+        }
+
+        @Test
+        void aProcessorDefinitionCanRaiseTheSegmentCount() {
+            // given
+            try (GenericApplicationContext context = springContext(ctx -> {
+                registrar(ctx, "mySaga", MySaga.class);
+                processorDefinition(
+                        ctx,
+                        EventProcessorDefinition.pooledStreaming("MySagaProcessor")
+                                                .assigningHandlers(handler -> false)
+                                                .customized(configuration -> configuration.initialSegmentCount(4))
+                );
+            })) {
+                // when
+                Configuration module = moduleConfiguration(axonConfiguration(context), MY_SAGA_MODULE);
+
+                // then - raising it stays possible, as a deliberate code-level decision
+                assertThat(pooledConfiguration(module).initialSegmentCount()).isEqualTo(4);
+            }
+        }
+    }
+
+    @Nested
+    class BeanResolution {
+
+        @Test
+        void refusesToResolveASagaInstance() {
+            // given - a Saga has no single bean instance; the manager creates one per Saga identifier
+            SpringSagaConfigurer descriptor = new SpringSagaConfigurer(MySaga.class);
+
+            // when / then
+            assertThatThrownBy(descriptor::resolveBean)
+                    .isInstanceOf(UnsupportedOperationException.class)
+                    .hasMessageContaining(MySaga.class.getName())
+                    .hasMessageContaining("bean name or bean type");
+        }
+    }
+
+    @Nested
     class ExtensionCustomizations {
 
         @Test
