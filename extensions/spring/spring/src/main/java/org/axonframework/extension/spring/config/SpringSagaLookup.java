@@ -21,10 +21,13 @@ import org.axonframework.spring.stereotype.Saga;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.BeansException;
+import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.beans.factory.support.BeanDefinitionBuilder;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProcessor;
+
+import java.util.function.Supplier;
 
 /**
  * A {@link BeanDefinitionRegistryPostProcessor} implementation that scans for Saga types and registers a
@@ -69,12 +72,13 @@ public class SpringSagaLookup implements BeanDefinitionRegistryPostProcessor {
 
             Saga sagaAnnotation = beanFactory.findAnnotationOnBean(saga, Saga.class);
             Class<?> sagaType = beanFactory.getType(saga);
+            Supplier<BeanDefinition> sagaBeanDefinition = () -> beanFactory.getBeanDefinition(saga);
 
             BeanDefinitionBuilder beanDefinitionBuilder =
                     BeanDefinitionBuilder.genericBeanDefinition(SpringSagaConfigurer.class)
                                          .addConstructorArgValue(saga)
                                          .addConstructorArgValue(sagaType)
-                                         .addConstructorArgValue(beanFactory.getBeanDefinition(saga));
+                                         .addConstructorArgValue(sagaBeanDefinition);
 
             if (sagaAnnotation != null && !"".equals(sagaAnnotation.sagaStore())) {
                 beanDefinitionBuilder.addPropertyValue("sagaStore", sagaAnnotation.sagaStore());

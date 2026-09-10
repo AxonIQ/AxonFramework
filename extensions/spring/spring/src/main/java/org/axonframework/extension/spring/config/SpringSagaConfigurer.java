@@ -33,6 +33,7 @@ import org.springframework.context.ApplicationContextAware;
 
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
 
 /**
@@ -64,21 +65,25 @@ public class SpringSagaConfigurer implements PreconfiguredEventHandlerDescriptor
      */
     public SpringSagaConfigurer(Class<?> sagaType) {
         this(sagaType.getName(), sagaType,
-             BeanDefinitionBuilder.genericBeanDefinition(sagaType).getBeanDefinition());
+             () -> BeanDefinitionBuilder.genericBeanDefinition(sagaType).getBeanDefinition());
     }
 
     /**
      * Initializes a descriptor for a discovered Saga bean.
      *
-     * @param sagaBeanName       the Spring bean name used for discovery and processor selectors
-     * @param sagaType           the Saga type to configure
-     * @param sagaBeanDefinition the original Spring bean definition
+     * @param sagaBeanName               the Spring bean name used for discovery and processor selectors
+     * @param sagaType                   the Saga type to configure
+     * @param sagaBeanDefinitionSupplier supplies the original Spring bean definition without making Spring treat it
+     *                                   as an inner bean
      */
-    public SpringSagaConfigurer(String sagaBeanName, Class<?> sagaType, BeanDefinition sagaBeanDefinition) {
+    public SpringSagaConfigurer(String sagaBeanName,
+                                Class<?> sagaType,
+                                Supplier<BeanDefinition> sagaBeanDefinitionSupplier) {
         this.sagaBeanName = Objects.requireNonNull(sagaBeanName, "The sagaBeanName must not be null.");
         this.sagaType = Objects.requireNonNull(sagaType, "The sagaType must not be null.");
-        this.sagaBeanDefinition = Objects.requireNonNull(sagaBeanDefinition,
-                                                        "The sagaBeanDefinition must not be null.");
+        this.sagaBeanDefinition = Objects.requireNonNull(sagaBeanDefinitionSupplier,
+                                                        "The sagaBeanDefinitionSupplier must not be null.")
+                                           .get();
     }
 
     /**

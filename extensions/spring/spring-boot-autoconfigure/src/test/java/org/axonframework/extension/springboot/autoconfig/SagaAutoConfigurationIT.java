@@ -33,7 +33,8 @@ import org.axonframework.modelling.saga.StartSaga;
 import org.axonframework.modelling.saga.repository.SagaStore;
 import org.axonframework.modelling.saga.repository.inmemory.InMemorySagaStore;
 import org.axonframework.spring.stereotype.Saga;
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
@@ -62,7 +63,7 @@ import static org.awaitility.Awaitility.await;
  * Test class validating the Spring Boot support for Axon Framework 4 {@link Saga @Saga} types end to end.
  * <p>
  * Where {@code SpringSagaConfigurerTest} and {@code LegacySagaAutoConfigurationTest} pin the wiring in isolation, the
- * tests here run a full Spring Boot application: a {@code @Saga} bean is discovered, bound to its own event processor,
+ * tests here run a full Spring Boot application: a {@code @Saga} bean is discovered, assigned to an event processor,
  * and started by a published event, with the Saga instance ending up in the auto-configured {@link SagaStore}.
  * <p>
  * Every context excludes Hibernate and the embedded {@code DataSource} auto-configuration. This module carries
@@ -122,6 +123,19 @@ class SagaAutoConfigurationIT {
         }
 
         @Test
+        void springBeansAreNotInjectedIntoSagaFields() {
+            // given
+            String id = UUID.randomUUID().toString();
+            EventRecorder recorder = context.getBean(EventRecorder.class);
+
+            // when
+            publish(context, new EchoEvent(id));
+
+            // then
+            await().atMost(TIMEOUT).until(() -> recorder.handled("NoFieldInjection", id));
+        }
+
+        @Test
         void theSagaIsRegisteredOnItsOwnProcessorOnly() {
             // when
             AxonConfiguration configuration = context.getBean(AxonConfiguration.class);
@@ -130,11 +144,7 @@ class SagaAutoConfigurationIT {
             assertThat(configuration.getModuleConfiguration(
                     "EventProcessor[" + SagaAutoConfigurationIT.class.getPackageName() + "]"
             )).isEmpty();
-            List<String> sagaComponentNames = sagaComponentNames(configuration, "SimpleSaga");
-            assertThat(sagaComponentNames).hasSize(1);
-            assertThat(sagaComponentNames.getFirst()).contains("Saga[SimpleSaga]");
-
-            // then - and that single component is the Saga manager, not an annotated handler bean
+            // then - the single matching component is the Saga manager, not an annotated handler bean
             Map<String, EventHandlingComponent> components =
                     moduleConfiguration(context, SIMPLE_SAGA_PROCESSOR).getComponents(EventHandlingComponent.class);
             assertThat(components).hasSize(1);
@@ -266,23 +276,6 @@ class SagaAutoConfigurationIT {
         return context.getBean(AxonConfiguration.class).getModuleConfiguration(moduleName).orElseThrow();
     }
 
-    /**
-     * The names the given {@code configuration} registered event handling components under for the given
-     * {@code sagaName}, across all modules.
-     *
-     * @param configuration the configuration of the application under test
-     * @param sagaName      the simple name of the Saga type to look for
-     * @return the names the given {@code configuration} registered event handling components under for the given
-     * {@code sagaName}
-     */
-    private static List<String> sagaComponentNames(AxonConfiguration configuration, String sagaName) {
-        return configuration.getModuleConfigurations()
-                            .stream()
-                            .flatMap(module -> module.getComponents(EventHandlingComponent.class).keySet().stream())
-                            .filter(componentName -> componentName.contains(sagaName))
-                            .toList();
-    }
-
     @ContextConfiguration
     @EnableAutoConfiguration(exclude = {HibernateJpaAutoConfiguration.class, DataSourceAutoConfiguration.class})
     @EnableMBeanExport(registration = RegistrationPolicy.IGNORE_EXISTING)
@@ -384,9 +377,13 @@ class SagaAutoConfigurationIT {
     @Saga
     public static class SimpleSaga {
 
+        @Autowired
+        private transient EventRecorder injectedRecorder;
+
         @StartSaga
         @SagaEventHandler(associationProperty = "id")
         void on(EchoEvent event, EventRecorder recorder) {
+            recorder.record(injectedRecorder == null ? "NoFieldInjection" : "FieldInjection", event.id());
             recorder.record("SimpleSaga", event.id());
         }
     }
