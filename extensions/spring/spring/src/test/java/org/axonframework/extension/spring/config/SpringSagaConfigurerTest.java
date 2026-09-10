@@ -39,6 +39,7 @@ import org.axonframework.modelling.saga.SagaEventHandler;
 import org.axonframework.modelling.saga.StartSaga;
 import org.axonframework.modelling.saga.repository.SagaStore;
 import org.axonframework.modelling.saga.repository.inmemory.InMemorySagaStore;
+import org.axonframework.spring.stereotype.Saga;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -644,6 +645,48 @@ class SpringSagaConfigurerTest {
                 // then - the property still decides the mode; the definition is ignored with a warning
                 assertThat(module.getOptionalComponent(SubscribingEventProcessorConfiguration.class)).isPresent();
                 assertThat(module.getOptionalComponent(PooledStreamingEventProcessorConfiguration.class)).isEmpty();
+            }
+        }
+    }
+
+    @Nested
+    class AxonFramework4Quirks {
+
+        /**
+         * A Saga declared as a singleton bean is registered twice: once as the Saga manager on its own processor, and
+         * once more as an ordinary annotated event handling component on the package-derived processor. Every event
+         * then also reaches one shared Saga instance, outside any association or lifecycle handling.
+         * <p>
+         * {@link Saga @Saga} is {@code @Scope("prototype")} and {@code MessageHandlerLookup} skips prototype beans,
+         * which is the whole guard. A {@code @Bean} method ignores the scope declared on the class, so the guard does
+         * not hold for a Saga declared that way. Axon Framework 4 behaves identically: its own
+         * {@code MessageHandlerLookup} selects on {@code bd.isSingleton() && !bd.isAbstract()} just the same. Pinned
+         * rather than fixed, since rejecting a singleton Saga would refuse a configuration Axon Framework 4 accepted.
+         * Component-scan Saga types instead of declaring them with a {@code @Bean} method.
+         */
+        @Test
+        void aSingletonSagaBeanIsAlsoRegisteredAsAnOrdinaryEventHandler() {
+            // given - a discovered Saga that is also a singleton bean, as a @Bean method would declare it
+            try (GenericApplicationContext context = springContext(ctx -> {
+                registrar(ctx, "mySaga", MySaga.class);
+                ctx.registerBean("mySaga", MySaga.class, MySaga::new);
+            })) {
+                // when
+                AxonConfiguration configuration = axonConfiguration(context);
+
+                // then - the Saga manager, on the Saga's own processor
+                Configuration sagaModule = moduleConfiguration(configuration, MY_SAGA_MODULE);
+                assertThat(sagaModule.getComponents(EventHandlingComponent.class).values())
+                        .singleElement()
+                        .matches(component -> component.unwrap(AnnotatedSagaManager.class).isPresent());
+
+                // then - and the same type again as a plain handler, on the package-derived processor
+                Configuration packageModule = moduleConfiguration(
+                        configuration, "EventProcessor[" + MySaga.class.getPackageName() + "]"
+                );
+                assertThat(packageModule.getComponents(EventHandlingComponent.class).values())
+                        .singleElement()
+                        .matches(component -> component.unwrap(AnnotatedEventHandlingComponent.class).isPresent());
             }
         }
     }

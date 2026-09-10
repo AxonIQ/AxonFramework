@@ -248,6 +248,12 @@ dead-lettering on, see <<spring-boot-sagas>>.
 default store alongside named per-saga stores declares the default store itself.
 * *A `@Saga` class must be public with an accessible no-argument constructor*, matching the Axon Framework 4
 requirement that the default saga factory does not call `setAccessible`.
+* *Component-scan saga classes; do not declare them with a `@Bean` method.* `@Saga` is `@Scope("prototype")`, and
+skipping prototype beans is what keeps a saga out of ordinary event handler discovery. A `@Bean` method ignores the
+scope declared on the class, so a saga declared that way is registered twice: as its saga manager, and again as a
+plain event handling component on the package-derived processor, which then routes every event to one shared saga
+instance outside any association or lifecycle handling. Axon Framework 4 behaves the same way, so this is pinned
+rather than rejected.
 
 == Mapping Axon Framework 4 saga concepts to Axon Framework 5
 
