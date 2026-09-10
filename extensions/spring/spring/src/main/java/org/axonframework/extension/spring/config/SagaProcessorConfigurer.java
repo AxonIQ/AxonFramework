@@ -18,41 +18,51 @@ package org.axonframework.extension.spring.config;
 
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.annotation.RegistrationScope;
+import org.axonframework.common.configuration.ComponentBuilder;
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.ConfigurationEnhancer;
-import org.axonframework.messaging.eventhandling.configuration.EventHandlingComponentsConfigurer;
 import org.axonframework.messaging.eventhandling.configuration.EventProcessorModule;
 import org.axonframework.spring.stereotype.Saga;
 import org.jspecify.annotations.Nullable;
 import org.springframework.beans.BeansException;
+import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
 
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.function.Function;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
  * A {@link ConfigurationEnhancer} that builds one dedicated {@link EventProcessorModule} per resolved processor name
  * among the {@link Saga @Saga} beans in the application.
  * <p>
- * Several Sagas whose processor name resolves to the same value -- e.g. because they share an explicit
- * {@link org.axonframework.messaging.core.annotation.Namespace} -- are grouped onto that one processor, matching how
- * Axon Framework 4 let several Sagas share a {@code @ProcessingGroup}. A Saga's processor is never shared with a
- * regular event handling component, though: that grouping is built entirely separately, by
- * {@link DefaultProcessorModuleFactory}, so a Saga and a regular handler resolving to the same processor name is a
- * configuration error -- {@link org.axonframework.common.configuration.DuplicateModuleRegistrationException} -- rather
- * than a silent merge.
+ * Hands the {@link SpringSagaDescriptor} of every {@code @Saga} bean to a {@link DefaultProcessorModuleFactory} built
+ * just for this call, so a Saga's processor name, settings, and matching {@link EventProcessorDefinition} resolve the
+ * same way a regular event handler's do -- without reimplementing that resolution here. The factory is entirely
+ * separate from the one the plain event handling beans go through: two independent
+ * {@link ComponentRegistry#registerModule(org.axonframework.common.configuration.Module) registerModule} calls, one per
+ * factory, so a Saga is never silently grouped onto a processor a regular event handler also claims. If both resolve
+ * the same processor name, registering the second module fails with a
+ * {@link org.axonframework.common.configuration.DuplicateModuleRegistrationException}, rather than the two being
+ * merged.
  * <p>
- * Resolves each Saga's processor name from a {@link org.axonframework.messaging.core.annotation.Namespace} on its
- * type, falling back to {@link SpringSagaDescriptor#preferredProcessorName()}. A matching {@link EventProcessorDefinition}
- * (by that name) may still override the processor's mode and settings, e.g. to replay from the start of the stream or
- * to assign a shared {@code Executor} to several Saga processors -- but, unlike a regular handler, a Saga can never be
- * selected into a processor by such a definition's selector: it does not participate in that shared assignment
- * mechanism at all.
+ * A Saga's processor name resolves the same way as any other handler's -- a matching {@link EventProcessorDefinition}
+ * selector, then a {@link org.axonframework.messaging.core.annotation.Namespace} on its type -- except the
+ * package-name fallback {@link DefaultProcessorModuleFactory} otherwise applies is replaced, for a Saga without a
+ * {@code Namespace}, by a definition synthesized from {@link SpringSagaDescriptor#preferredProcessorName()}: the name
+ * Axon Framework 4 gave it, which keeps a migrating application's token store row claimable. That synthesized
+ * definition is never customized, so an application's own {@code EventProcessorDefinition} bean or
+ * {@code axon.eventhandling.processors} entry for the same name still applies on top of it. Several Sagas whose
+ * processor name resolves to the same value -- e.g. because they share a {@code Namespace} -- are grouped onto that
+ * one processor by the same {@link DefaultProcessorModuleFactory} logic that groups regular handlers, matching how
+ * Axon Framework 4 let several Sagas share a {@code @ProcessingGroup}.
  * <p>
  * Registered as a bean by {@code SagaAutoConfiguration}; an application never creates this itself.
  * <p>
@@ -74,49 +84,128 @@ public class SagaProcessorConfigurer implements ConfigurationEnhancer, Applicati
     @Override
     public void enhance(ComponentRegistry registry) {
         var context = Objects.requireNonNull(applicationContext);
-        Map<String, SpringSagaDescriptor> sagas = context.getBeansOfType(SpringSagaDescriptor.class);
+        Collection<SpringSagaDescriptor> sagas = context.getBeansOfType(SpringSagaDescriptor.class).values();
         if (sagas.isEmpty()) {
             return;
         }
-        List<EventProcessorDefinition> definitions = context.getBeanProvider(EventProcessorDefinition.class)
-                                                             .orderedStream()
-                                                             .toList();
-        Map<String, EventProcessorSettings> settingsMap =
+
+        Map<String, EventProcessorSettings> settings =
                 context.getBean(EventProcessorSettings.MapWrapper.class).settings();
 
-        Map<String, List<SpringSagaDescriptor>> sagasByProcessor =
-                sagas.values().stream().collect(Collectors.groupingBy(this::processorNameOf));
+        // Real definitions first: definitionFor(...) resolves settings by name and returns the first match, so an
+        // application's own EventProcessorDefinition for a Saga's preferred name is what applies, not this fallback.
+        List<EventProcessorDefinition> definitions = new ArrayList<>();
+        context.getBeanProvider(EventProcessorDefinition.class).orderedStream().forEach(definitions::add);
+        definitions.addAll(preferredNameDefinitions(sagas, settings));
 
-        sagasByProcessor.forEach((processorName, sagasForProcessor) -> {
-            var settings = Optional.ofNullable(settingsMap.get(processorName))
-                                   .orElseGet(() -> settingsMap.get(EventProcessorSettings.DEFAULT));
-            Function<EventHandlingComponentsConfigurer.RequiredComponentPhase, EventHandlingComponentsConfigurer.CompletePhase>
-                    componentRegistration = phase -> {
-                EventHandlingComponentsConfigurer.ComponentsPhase result = phase;
-                for (SpringSagaDescriptor saga : sagasForProcessor) {
-                    result = result.declarative(saga.beanName(), saga.handlingComponent());
-                }
-                return (EventHandlingComponentsConfigurer.CompletePhase) result;
-            };
-            registry.registerModule(EventProcessorModuleAssembler.assemble(
-                    processorName,
-                    settings,
-                    definitions,
-                    List.of(), // no DLQ for Sagas -- Axon Framework 4 never supported dead-lettering for them
-                    sagasForProcessor.getFirst().pooledStreamingDefaults(),
-                    componentRegistration
-            ));
-        });
+        var sagaProcessorFactory = new DefaultProcessorModuleFactory(
+                definitions,
+                settings,
+                List.of(), // no DLQ for Sagas -- Axon Framework 4 never supported dead-lettering for them
+                sagas.iterator().next().pooledStreamingDefaults()
+        );
+
+        Set<EventProcessorDefinition.EventHandlerDescriptor> descriptors =
+                sagas.stream().map(SagaHandlerDescriptor::new).collect(Collectors.toCollection(HashSet::new));
+        for (EventProcessorModule module : sagaProcessorFactory.buildProcessorModules(descriptors)) {
+            registry.registerModule(module);
+        }
     }
 
-    private String processorNameOf(SpringSagaDescriptor saga) {
-        return EventProcessorModuleAssembler.resolveNamespace(saga.beanType())
-                                            .or(saga::preferredProcessorName)
-                                            .orElseThrow();
+    /**
+     * Synthesizes a naming-only {@link EventProcessorDefinition} for every Saga without an explicit
+     * {@link org.axonframework.messaging.core.annotation.Namespace}, selecting it by bean name into
+     * {@link SpringSagaDescriptor#preferredProcessorName()} rather than letting it fall through to
+     * {@link DefaultProcessorModuleFactory}'s package-name default.
+     * <p>
+     * {@code notCustomized()}: these definitions exist purely to name the processor. A real
+     * {@link EventProcessorDefinition} bean or {@code axon.eventhandling.processors} entry an application declares for
+     * that same name still takes effect -- it is applied by {@link DefaultProcessorModuleFactory} the same way
+     * regardless of which definition supplied the name.
+     * <p>
+     * Its mode -- {@link EventProcessorDefinition#pooledStreaming(String) pooled} or
+     * {@link EventProcessorDefinition#subscribing(String) subscribing} -- is read from the same {@code settings} an
+     * unmatched processor would otherwise use, so synthesizing this definition never overrides a mode an application
+     * configured through {@code axon.eventhandling.processors}: a matching {@link EventProcessorDefinition}'s mode
+     * always wins over settings once one exists, so this one has to already agree with settings before it exists.
+     * <p>
+     * A Saga carrying a {@code Namespace} is left out here entirely: {@link DefaultProcessorModuleFactory} already
+     * resolves that name on its own, the same way it does for a regular handler, so several Sagas sharing one
+     * {@code Namespace} are grouped onto that processor without any help from this method.
+     *
+     * @param sagas    every {@code @Saga} bean's descriptor
+     * @param settings the settings map a processor without a matching definition would otherwise resolve its mode from
+     * @return a naming-only definition for each Saga without a {@code Namespace}
+     */
+    private List<EventProcessorDefinition> preferredNameDefinitions(
+            Collection<SpringSagaDescriptor> sagas,
+            Map<String, EventProcessorSettings> settings
+    ) {
+        return sagas.stream()
+                    .filter(saga -> EventProcessorModuleAssembler.resolveNamespace(saga.beanType()).isEmpty())
+                    .map(saga -> preferredNameDefinition(saga, settings))
+                    .toList();
+    }
+
+    private EventProcessorDefinition preferredNameDefinition(
+            SpringSagaDescriptor saga,
+            Map<String, EventProcessorSettings> settings
+    ) {
+        String processorName = saga.preferredProcessorName().orElseThrow();
+        EventProcessorSettings resolvedSettings = Optional.ofNullable(settings.get(processorName))
+                                                           .orElseGet(() -> settings.get(EventProcessorSettings.DEFAULT));
+        EventHandlerSelector selectsThisSaga = descriptor -> descriptor.beanName().equals(saga.beanName());
+        return switch (resolvedSettings.processorMode()) {
+            case POOLED -> EventProcessorDefinition.pooledStreaming(processorName)
+                                                   .assigningHandlers(selectsThisSaga)
+                                                   .notCustomized();
+            case SUBSCRIBING -> EventProcessorDefinition.subscribing(processorName)
+                                                        .assigningHandlers(selectsThisSaga)
+                                                        .notCustomized();
+        };
     }
 
     @Override
     public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
         this.applicationContext = applicationContext;
+    }
+
+    /**
+     * Adapts a {@link SpringSagaDescriptor} to an {@link EventProcessorDefinition.EventHandlerDescriptor} for
+     * {@link DefaultProcessorModuleFactory}, without making {@link SpringSagaDescriptor} itself one.
+     * <p>
+     * {@link MessageHandlerConfigurer} auto-discovers every Spring bean assignable to
+     * {@link EventProcessorDefinition.EventHandlerDescriptor} for the plain event handling pipeline; if
+     * {@link SpringSagaDescriptor} implemented the interface directly, every {@code @Saga} bean would be built into a
+     * processor module twice -- once there, once here -- and the second {@code registerModule} call would fail with a
+     * {@link org.axonframework.common.configuration.DuplicateModuleRegistrationException}. This adapter exists only for
+     * the duration of this call, never registered as a bean, so it is never discovered by that scan.
+     */
+    private record SagaHandlerDescriptor(SpringSagaDescriptor saga) implements EventProcessorDefinition.EventHandlerDescriptor {
+
+        @Override
+        public String beanName() {
+            return saga.beanName();
+        }
+
+        @Override
+        public BeanDefinition beanDefinition() {
+            return saga.beanDefinition();
+        }
+
+        @Override
+        public Class<?> beanType() {
+            return saga.beanType();
+        }
+
+        @Override
+        public Object resolveBean() {
+            return saga.resolveBean();
+        }
+
+        @Override
+        public ComponentBuilder<Object> component() {
+            return saga.component();
+        }
     }
 }

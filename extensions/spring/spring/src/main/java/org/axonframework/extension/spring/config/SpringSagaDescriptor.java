@@ -28,6 +28,8 @@ import org.axonframework.modelling.saga.repository.SagaStore;
 import org.axonframework.spring.stereotype.Saga;
 import org.jspecify.annotations.Nullable;
 import org.springframework.beans.BeanUtils;
+import org.springframework.beans.factory.config.BeanDefinition;
+import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 
 import java.util.Objects;
 import java.util.Optional;
@@ -40,10 +42,18 @@ import static java.lang.String.format;
  * <p>
  * A Saga is not an event handling bean whose handlers can be uncovered by annotation inspection: an
  * {@code AnnotatedSagaManager} decides for itself which events reach which Saga instance, and it needs a
- * {@code SagaRepository} and a {@link SagaStore} underneath it. {@link Sagas} builds that assembly, and this descriptor
- * is what carries it into the dedicated, Saga-only event processor {@link SagaProcessorConfigurer} builds for it --
+ * {@code SagaRepository} and a {@link SagaStore} underneath it. {@link Sagas} builds that assembly, and this
+ * descriptor carries it into the dedicated, Saga-only event processor {@link SagaProcessorConfigurer} builds for it --
  * configured through {@code axon.eventhandling.processors} exactly like any other processor, but never shared with
  * another Saga or a regular event handler.
+ * <p>
+ * Shaped like an {@link EventProcessorDefinition.EventHandlerDescriptor} -- {@link #beanName()}, {@link #beanType()}
+ * and the rest -- so {@link SagaProcessorConfigurer} can wrap it as one and hand it to the same
+ * {@link DefaultProcessorModuleFactory} the plain event handling beans go through, rather than reimplementing its
+ * processor-name resolution and settings application. Deliberately does not implement the interface itself: a Spring
+ * bean of a type assignable to {@link EventProcessorDefinition.EventHandlerDescriptor} is exactly what
+ * {@link MessageHandlerConfigurer} auto-discovers for the plain event handling pipeline, and a Saga must never be
+ * assigned a processor through that pipeline instead of {@link SagaProcessorConfigurer}'s own.
  * <p>
  * Instances are bean definitions registered by {@link SpringSagaLookup}, one per {@code @Saga} bean. This class is
  * internal: an application declares {@code @Saga} and never touches this.
@@ -65,6 +75,7 @@ public class SpringSagaDescriptor {
 
     private final String sagaBeanName;
     private final Class<?> sagaType;
+    private final ConfigurableListableBeanFactory beanFactory;
     private @Nullable String sagaStore;
 
     /**
@@ -73,10 +84,13 @@ public class SpringSagaDescriptor {
      *
      * @param sagaBeanName the name of the bean holding the Saga
      * @param sagaType     the type of Saga to describe
+     * @param beanFactory  the bean factory the Saga bean is registered in, used to resolve its own
+     *                     {@link BeanDefinition} for processor-name resolution
      */
-    public SpringSagaDescriptor(String sagaBeanName, Class<?> sagaType) {
+    public SpringSagaDescriptor(String sagaBeanName, Class<?> sagaType, ConfigurableListableBeanFactory beanFactory) {
         this.sagaBeanName = Objects.requireNonNull(sagaBeanName, "The sagaBeanName may not be null.");
         this.sagaType = Objects.requireNonNull(sagaType, "The sagaType may not be null.");
+        this.beanFactory = Objects.requireNonNull(beanFactory, "The beanFactory may not be null.");
     }
 
     /**
@@ -98,6 +112,17 @@ public class SpringSagaDescriptor {
     }
 
     /**
+     * The Saga bean's own {@link BeanDefinition}, not this descriptor's -- so a
+     * {@link org.axonframework.messaging.core.annotation.Namespace @Namespace} or package-name fallback resolves
+     * against the Saga type itself.
+     *
+     * @return the Saga bean's bean definition
+     */
+    public BeanDefinition beanDefinition() {
+        return beanFactory.getBeanDefinition(sagaBeanName);
+    }
+
+    /**
      * The type of Saga this descriptor describes.
      *
      * @return the Saga type
@@ -107,12 +132,29 @@ public class SpringSagaDescriptor {
     }
 
     /**
+     * Resolves the Saga bean itself, exactly as any other prototype-scoped Spring bean would.
+     * <p>
+     * Unlike {@link #component()}, this does not go through {@link Sagas#of}: the assembled handling component needs
+     * the Axon {@link Configuration} to resolve its {@link SagaStore}, which this method, matching the rest of
+     * {@link EventProcessorDefinition.EventHandlerDescriptor}, has no access to.
+     *
+     * @return a fresh Saga bean instance
+     */
+    public Object resolveBean() {
+        return beanFactory.getBean(sagaBeanName);
+    }
+
+    /**
      * Builds the assembled Saga handling component.
+     * <p>
+     * Already an {@link EventHandlingComponent}, not an annotated bean to inspect -- {@link DefaultProcessorModuleFactory}
+     * registers it declaratively rather than through annotation inspection.
      *
      * @return the Saga handling component builder
      */
-    public ComponentBuilder<EventHandlingComponent> handlingComponent() {
-        return sagaComponent(sagaType);
+    public ComponentBuilder<Object> component() {
+        ComponentBuilder<EventHandlingComponent> handlingComponent = sagaComponent(sagaType);
+        return handlingComponent::build;
     }
 
     private <T> ComponentBuilder<EventHandlingComponent> sagaComponent(Class<T> type) {

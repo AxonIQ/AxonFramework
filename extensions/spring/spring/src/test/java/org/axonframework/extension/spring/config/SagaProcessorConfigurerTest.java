@@ -47,9 +47,10 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Test class validating {@link SagaProcessorConfigurer}: the dedicated, Saga-only event processor wiring, kept
- * entirely separate from {@link DefaultProcessorModuleFactory}'s shared handler-assignment pipeline. Sagas resolving
- * to the same processor name share that processor; a Saga and a regular handler never do.
+ * Test class validating {@link SagaProcessorConfigurer}: the dedicated Saga event processor wiring, built through its
+ * own {@link DefaultProcessorModuleFactory} instance, registered entirely separately from the plain event handling
+ * beans' modules. Sagas resolving to the same processor name share that processor; a Saga and a regular handler never
+ * do.
  *
  * @author Mateusz Nowak
  */
@@ -184,21 +185,32 @@ class SagaProcessorConfigurerTest {
         );
     }
 
-    private static GenericApplicationContext context(SpringSagaDescriptor... sagas) {
+    private static GenericApplicationContext context(SagaSpec... specs) {
         GenericApplicationContext context = new GenericApplicationContext();
         context.registerBean(
                 EventProcessorSettings.MapWrapper.class,
                 () -> new EventProcessorSettings.MapWrapper(Map.of(EventProcessorSettings.DEFAULT, SUBSCRIBING_SETTINGS))
         );
-        for (SpringSagaDescriptor saga : sagas) {
-            context.registerBean(saga.beanName(), SpringSagaDescriptor.class, () -> saga);
+        for (SagaSpec spec : specs) {
+            // The Saga's own bean, registered under its own name -- exactly as SpringSagaLookup finds it -- so
+            // SpringSagaDescriptor#beanDefinition() resolves against the Saga type, not this descriptor.
+            context.registerBean(spec.beanName(), spec.sagaType());
+            context.registerBean(
+                    spec.beanName() + "$$Registrar",
+                    SpringSagaDescriptor.class,
+                    () -> new SpringSagaDescriptor(spec.beanName(), spec.sagaType(), context.getBeanFactory())
+            );
         }
         context.refresh();
         return context;
     }
 
-    private static SpringSagaDescriptor saga(String beanName, Class<?> sagaType) {
-        return new SpringSagaDescriptor(beanName, sagaType);
+    private static SagaSpec saga(String beanName, Class<?> sagaType) {
+        return new SagaSpec(beanName, sagaType);
+    }
+
+    private record SagaSpec(String beanName, Class<?> sagaType) {
+
     }
 
     private static class PlainSaga {

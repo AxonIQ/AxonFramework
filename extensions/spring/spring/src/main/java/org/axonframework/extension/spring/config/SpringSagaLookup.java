@@ -30,9 +30,9 @@ import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProce
  * A {@link BeanDefinitionRegistryPostProcessor} implementation that scans for Saga types and registers a
  * {@link SpringSagaDescriptor descriptor} for each Saga found.
  * <p>
- * The descriptors are picked up by the {@link MessageHandlerConfigurer} and turned into event processor modules
- * together with the plain event handling beans, so a Saga is assigned to a processor and configured the same way any
- * other event handler is.
+ * The descriptors are picked up by {@link SagaProcessorConfigurer}, which resolves each Saga's processor name and
+ * settings the same way {@link DefaultProcessorModuleFactory} does for the plain event handling beans, but keeps the
+ * two registrations separate so a Saga is never silently merged onto a processor a regular event handler also claims.
  *
  * @author Allard Buijze
  * @since 4.6.0
@@ -62,7 +62,8 @@ public class SpringSagaLookup implements BeanDefinitionRegistryPostProcessor {
             BeanDefinitionBuilder beanDefinitionBuilder =
                     BeanDefinitionBuilder.genericBeanDefinition(SpringSagaDescriptor.class)
                                          .addConstructorArgValue(saga)
-                                         .addConstructorArgValue(sagaType);
+                                         .addConstructorArgValue(sagaType)
+                                         .addConstructorArgValue(beanFactory);
 
             if (sagaAnnotation != null && !"".equals(sagaAnnotation.sagaStore())) {
                 beanDefinitionBuilder.addPropertyValue("sagaStore", sagaAnnotation.sagaStore());

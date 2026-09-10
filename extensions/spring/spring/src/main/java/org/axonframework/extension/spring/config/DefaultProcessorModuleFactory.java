@@ -19,9 +19,16 @@ package org.axonframework.extension.spring.config;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.extension.spring.BeanDefinitionUtils;
+import org.axonframework.messaging.core.MessageTypeResolver;
+import org.axonframework.messaging.core.annotation.HandlerDefinition;
 import org.axonframework.messaging.core.annotation.Namespace;
+import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
+import org.axonframework.messaging.eventhandling.EventHandlingComponent;
+import org.axonframework.messaging.eventhandling.annotation.AnnotatedEventHandlingComponent;
 import org.axonframework.messaging.eventhandling.configuration.EventHandlingComponentsConfigurer;
 import org.axonframework.messaging.eventhandling.configuration.EventProcessorModule;
+import org.axonframework.messaging.eventhandling.conversion.EventConverter;
+import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorConfiguration;
 import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorModule;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -61,6 +68,7 @@ public class DefaultProcessorModuleFactory implements ProcessorModuleFactory {
     private final List<EventProcessorDefinition> eventProcessorDefinitions;
     private final Map<String, EventProcessorSettings> allSettings;
     private final List<PooledStreamingEventProcessorModule.Customization> extensionsCustomizations;
+    private final UnaryOperator<PooledStreamingEventProcessorConfiguration> handlerDefaults;
 
     /**
      * Creates a new factory with the given processor definitions and settings.
@@ -84,9 +92,28 @@ public class DefaultProcessorModuleFactory implements ProcessorModuleFactory {
     public DefaultProcessorModuleFactory(List<EventProcessorDefinition> eventProcessorDefinitions,
                                          Map<String, EventProcessorSettings> settings,
                                          List<PooledStreamingEventProcessorModule.Customization> extensionsCustomizations) {
+        this(eventProcessorDefinitions, settings, extensionsCustomizations, UnaryOperator.identity());
+    }
+
+    /**
+     * Creates a new factory with the given processor definitions, settings, additional customizations, and pooled
+     * streaming defaults.
+     *
+     * @param eventProcessorDefinitions The list of processor definitions that define handler assignment rules.
+     * @param settings                  The map of processor settings, keyed by processor name.
+     * @param extensionsCustomizations  Additional {@link PooledStreamingEventProcessorModule.Customization} beans
+     *                                  (e.g., DLQ configuration) to apply to each processor during module creation.
+     * @param handlerDefaults           Defaults applied to a pooled streaming processor before the settings and any
+     *                                  matching {@link EventProcessorDefinition}, so both can still override them.
+     */
+    public DefaultProcessorModuleFactory(List<EventProcessorDefinition> eventProcessorDefinitions,
+                                         Map<String, EventProcessorSettings> settings,
+                                         List<PooledStreamingEventProcessorModule.Customization> extensionsCustomizations,
+                                         UnaryOperator<PooledStreamingEventProcessorConfiguration> handlerDefaults) {
         this.eventProcessorDefinitions = eventProcessorDefinitions;
         this.allSettings = settings;
         this.extensionsCustomizations = extensionsCustomizations;
+        this.handlerDefaults = handlerDefaults;
     }
 
     /**
@@ -95,6 +122,11 @@ public class DefaultProcessorModuleFactory implements ProcessorModuleFactory {
      * This implementation groups handlers by their assigned processor name (determined by
      * {@link #assignedProcessor(EventProcessorDefinition.EventHandlerDescriptor)}), then creates an
      * {@link EventProcessorModule} for each processor with its assigned handlers.
+     * <p>
+     * A descriptor's {@link EventProcessorDefinition.EventHandlerDescriptor#component()} is registered as-is when it
+     * already implements {@link EventHandlingComponent} -- as a {@link SpringSagaDescriptor}'s does, since it needs no
+     * annotation inspection to know which events reach it -- and wrapped in an {@link AnnotatedEventHandlingComponent}
+     * otherwise, exactly as an annotated event handling bean always was.
      */
     @Override
     public Set<EventProcessorModule> buildProcessorModules(Set<EventProcessorDefinition.EventHandlerDescriptor> handlers) {
@@ -113,10 +145,19 @@ public class DefaultProcessorModuleFactory implements ProcessorModuleFactory {
             Function<EventHandlingComponentsConfigurer.RequiredComponentPhase, EventHandlingComponentsConfigurer.CompletePhase> componentRegistration = (EventHandlingComponentsConfigurer.RequiredComponentPhase phase) -> {
                 EventHandlingComponentsConfigurer.ComponentsPhase resultOfRegistration = phase;
                 for (EventProcessorDefinition.EventHandlerDescriptor descriptor : beanDefs) {
-                    resultOfRegistration = resultOfRegistration.autodetected(
-                            descriptor.beanName(),
-                            descriptor.component()
-                    );
+                    resultOfRegistration = resultOfRegistration.declarative(descriptor.beanName(), config -> {
+                        Object handler = descriptor.component().build(config);
+                        if (handler instanceof EventHandlingComponent alreadyBuilt) {
+                            return alreadyBuilt;
+                        }
+                        return new AnnotatedEventHandlingComponent<>(
+                                handler,
+                                config.getComponent(ParameterResolverFactory.class),
+                                config.getComponent(HandlerDefinition.class),
+                                config.getComponent(MessageTypeResolver.class),
+                                config.getComponent(EventConverter.class)
+                        );
+                    });
                 }
                 return (EventHandlingComponentsConfigurer.CompletePhase) resultOfRegistration;
             };
@@ -128,7 +169,7 @@ public class DefaultProcessorModuleFactory implements ProcessorModuleFactory {
                     settings,
                     eventProcessorDefinitions,
                     extensionsCustomizations,
-                    UnaryOperator.identity(),
+                    handlerDefaults,
                     componentRegistration
             ));
         });
