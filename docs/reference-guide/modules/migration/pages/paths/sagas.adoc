@@ -30,11 +30,10 @@ The `axon-legacy` module allows migrating to Axon Framework 5 while saga instanc
 Business processes covered by sagas can span weeks or months.
 `axon-legacy` lets running saga instances continue while new instances start on an Axon Framework 5 native implementation of the business process.
 
-The `axon-legacy` module brings forward the following Axon Framework 4 saga and deadline infrastructure, adapted to the Axon Framework 5 APIs:
+The `axon-legacy` module brings forward the following Axon Framework 4 saga infrastructure, adapted to the Axon Framework 5 APIs:
 
 * `@SagaEventHandler`, `@StartSaga`, `@EndSaga`, `SagaLifecycle` and the association-value mechanism
 * `SagaStore` and its concrete implementations, to support existing saga stores
-* `DeadlineManager` and `@DeadlineHandler`
 
 The `org.axonframework.spring.stereotype.Saga` annotation itself keeps its Axon Framework 4 package but ships in the
 Spring extension (`axon-spring`), not in `axon-legacy`. Spring Boot autoconfiguration for legacy sagas activates only
@@ -53,8 +52,9 @@ drainage strategy in <<strategy>> for the deadline part of a saga.
 ====
 
 The `axon-legacy` module is a migration aid, not a supported way to write new processes. `@StartSaga` is deprecated.
-The legacy module does not start new saga instances.
-Existing instances receive their events and run to completion; new work goes to the Axon Framework 5 implementation written alongside it.
+Use the legacy module to let existing instances receive their events and run to completion while new work goes to the
+Axon Framework 5 implementation written alongside it. A ported `@StartSaga` handler can still create instances until
+you remove or disable that annotation as part of the drainage strategy.
 
 [#spring-boot-sagas]
 == Configuring legacy sagas with Spring Boot
@@ -72,11 +72,11 @@ ignores events that occurred before the processor first starts, matching the Axo
 
 [WARNING]
 ====
-Declaring *any* explicit `axon.eventhandling.processors.<name>.*` entry for a saga's processor name - even one that
-only tunes `thread-count` or `batch-size` - disables the head-token default. The processor then falls back to the
-regular Axon Framework 5 default and processes the event store *from the first event*, so historic events start new
-saga instances, with all their side effects (commands, notifications) re-executed. A `..default` entry does not count
-as an explicit override.
+Declaring *any* explicit `axon.eventhandling.processors.<name>.*` entry or `EventProcessorDefinition` for a saga's
+processor name - even one that only tunes `thread-count` or `batch-size` - disables the head-token default. The
+processor then falls back to the regular Axon Framework 5 default and processes the event store *from the first
+event*, so historic events start new saga instances, with all their side effects (commands, notifications)
+re-executed. A `..default` entry does not count as an explicit override.
 
 This reproduces Axon Framework 4 exactly: there, any customization of a saga's processor name likewise replaced the
 saga defaults, and the generic `TrackingEventProcessor` default token also replayed the stream from the start. It is
@@ -87,18 +87,13 @@ To tune a saga's processor through properties *and* keep the new-events-only beh
 
 [source,java]
 ----
-@Bean
-PooledStreamingEventProcessorModule.Customization keepOrderSagaAtHead() {
-    return (axonConfig, processorConfig) -> "OrderSagaProcessor".equals(processorConfig.processorName())
-            ? processorConfig.initialToken(source -> source.latestToken(null))
-            : processorConfig;
-}
+include::example$migration/paths/sagas/SagaProcessorConfiguration.java[tag=keep-saga-at-head,indent=0]
 ----
 ====
 
-Every other `axon.eventhandling.processors.<name>.*` property (`mode`,
-`source`, `initial-segment-count`, `token-claim-interval`, `thread-count`, `batch-size`, `token-store`,
-`sequencing-policy`) applies to a saga's processor exactly like it applies to any other processor, including
+Every `axon.eventhandling.processors.<name>.*` property (`mode`, `source`, `initial-segment-count`,
+`token-claim-interval`, `thread-count`, `batch-size`, and `token-store`) applies to a saga's processor as it applies to
+any other processor, including
 `mode=subscribing` to switch the saga to a subscribing processor. A pooled saga processor needs a `TokenStore` bean,
 as does any other pooled processor.
 
@@ -114,6 +109,11 @@ axon.eventhandling.processors[SimpleSagaProcessor].mode=subscribing
 `@Namespace` on the saga type replaces `@ProcessingGroup`: it overrides the derived processor name. Two saga classes
 carrying the same `@Namespace` value (or deriving the same default name) share one processor, reproducing the Axon
 Framework 4 behavior of co-locating sagas in one processing group.
+
+Saga descriptors take part in the same processor assignment pass as ordinary Spring event handlers. An
+`EventProcessorDefinition` selector can therefore assign a saga to its named processor, and its mode and customization
+apply normally. A saga and ordinary event handlers resolving to the same processor name share that processor, as they
+did when assigned to the same processing group in Axon Framework 4.
 
 === Saga store selection
 
@@ -157,40 +157,6 @@ arrive as handler method parameters instead, resolved the same way as for any ot
 beans.
 * *No `@ProcessingGroup`.* `@Namespace` on the saga type is the replacement for renaming or co-locating a saga's
 processor.
-* *Mixing a saga with plain event handlers on one processor is unsupported.* A saga processor name colliding with a
-non-saga processor module fails fast with a `DuplicateModuleRegistrationException` at startup. Axon Framework 4's
-processing-group co-location existed to group sagas together for threading, not to mix them with plain handlers, so
-mixing is rejected. Two sagas sharing a processor name still work as in Axon Framework 4.
-+
-For threading, share one `ScheduledExecutorService` across all saga processors with a
-`PooledStreamingEventProcessorModule.Customization` bean instead:
-+
-[source,java]
-----
-@Bean
-PooledStreamingEventProcessorModule.Customization sagaExecutorCustomization(ScheduledExecutorService sagaExecutor) {
-    return (axonConfig, processorConfig) -> processorConfig.workerExecutor(sagaExecutor)
-                                                             .coordinatorExecutor(sagaExecutor);
-}
-----
-+
-To combine a saga with plain event handlers on one processor on purpose, drop `@Saga` from that class and register
-a `Module` bean directly, combining a declarative saga component with autodetected handlers:
-+
-[source,java]
-----
-@Bean
-Module billingModule() {
-    return EventProcessorModule.pooledStreaming("billing")
-                                .eventHandlingComponents(components -> components
-                                        .declarative("Saga[OrderSaga]", Sagas.of(OrderSaga.class))
-                                        .autodetected("billingProjection", c -> new BillingProjection(...)))
-                                .build();
-}
-----
-+
-Do not component-scan the plain handlers combined this way; instantiate them inside `autodetected(...)` so they are
-not also picked up as a second processor.
 * *Dead-letter queues are not supported for sagas*, as in Axon Framework 4: the saga invoker was never wrapped in
 dead-lettering there either.
 * *Deadlines are not ported yet* (see the note in <<legacy-module>>).
