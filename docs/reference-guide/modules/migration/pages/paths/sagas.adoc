@@ -78,11 +78,14 @@ processor never changes which events the saga sees.
 ====
 This is a deliberate deviation from Axon Framework 4, where any customization of a saga's processor name - a yaml
 entry included - replaced the saga defaults, and the generic default token then processed the event store from the
-first event: historic events started new saga instances with all their side effects re-executed. Axon Framework 5
-removes that trap.
+first event. Those historic events arrived flagged as replay, and saga handlers allow replay unless annotated
+`@DisallowReplay`, so by default they started new saga instances with all their side effects re-executed. Axon
+Framework 5 removes that trap. An application that relied on it - customizing a saga's processor in yaml specifically
+to bootstrap new sagas from history - no longer gets the replay from a property and needs the customization below.
 
-Making a saga process the stream from the start therefore requires an explicit, code-level decision: a
-`PooledStreamingEventProcessorModule.Customization` bean overriding the initial token for that processor by name:
+Making a saga process the stream from the start requires an explicit, code-level decision: a
+`PooledStreamingEventProcessorModule.Customization` bean overriding the initial token for that processor by name.
+`@DisallowReplay` on the saga still excludes it from such a replay, as it did in Axon Framework 4:
 
 [source,java]
 ----
@@ -94,6 +97,11 @@ PooledStreamingEventProcessorModule.Customization replayIntoOrderSaga() {
 }
 ----
 ====
+
+The head token reads from the token store's state at first start. A migrated deployment that does not carry over the
+Axon Framework 4 token store starts its saga processors at the head of the stream, skipping events that were published
+before the switch but not yet processed by the Axon Framework 4 saga. Carry the token entries over with the rest of
+the saga data, or drain in-flight sagas before switching (see <<strategy>>).
 
 Every other `axon.eventhandling.processors.<name>.*` property (`mode`,
 `source`, `initial-segment-count`, `token-claim-interval`, `thread-count`, `batch-size`, `token-store`,

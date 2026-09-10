@@ -60,8 +60,9 @@ import java.util.function.Function;
  * replaying it, reproducing the Axon Framework 4 default that new Sagas ignore history.
  * The head token survives {@code axon.eventhandling.processors.<name>} entries: those properties cannot express an
  * initial token, so an entry that only tunes the processor carries no intent to replay. This deliberately deviates
- * from Axon Framework 4, where any customization of a Saga's processor name replaced the Saga defaults and made the
- * Saga process the stream from the start. Replaying into a Saga requires code: a
+ * from Axon Framework 4, where any customization of a Saga's processor name replaced the Saga defaults with the
+ * generic read-from-the-start default, whose historic events arrived flagged as replay and were handled by Sagas
+ * unless annotated {@code @DisallowReplay}. Replaying into a Saga requires code: a
  * {@link PooledStreamingEventProcessorModule.Customization} bean overriding the initial token, applied after this
  * configurer's base customization.
  * <p>
