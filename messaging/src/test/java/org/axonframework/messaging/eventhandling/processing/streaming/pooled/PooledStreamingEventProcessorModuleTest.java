@@ -777,6 +777,36 @@ class PooledStreamingEventProcessorModuleTest {
     }
 
     @Nested
+    class RepeatedCustomizationTest {
+
+        @Test
+        void customizationsCompoundInRegistrationOrder() {
+            // given - two customizations, as an integration and the application it serves would each register one
+            var configurer = MessagingConfigurer.create();
+            var processorName = "testProcessor";
+            var unitOfWorkFactory = new SimpleUnitOfWorkFactory(EmptyApplicationContext.INSTANCE);
+            var module = EventProcessorModule
+                    .pooledStreaming(processorName)
+                    .eventHandlingComponents(singleTestEventHandlingComponent())
+                    .customized((cfg, c) -> c.enableCoordinatorClaimExtension().batchSize(5))
+                    .customized((cfg, c) -> c.batchSize(10)
+                                             .eventSource(new AsyncInMemoryStreamableEventSource())
+                                             .tokenStore(new InMemoryTokenStore())
+                                             .unitOfWorkFactory(unitOfWorkFactory));
+            configurer.eventProcessing(ep -> ep.pooledStreaming(ps -> ps.processor(module)));
+
+            // when
+            var configuration = configurer.build();
+
+            // then - what only the first one set is retained, and the last one wins the property both set
+            var processorConfig = configurationOf(processor(configuration, processorName).orElse(null));
+            assertThat(processorConfig).isNotNull();
+            assertThat(processorConfig.coordinatorExtendsClaims()).isTrue();
+            assertThat(processorConfig.batchSize()).isEqualTo(10);
+        }
+    }
+
+    @Nested
     class CoordinatorClaimExtensionTest {
 
         @Test
