@@ -168,8 +168,32 @@ include::example$migration/paths/sagas/SagaProcessorConfiguration.java[tag=saga-
 ----
 
 `forSaga(OrderSaga.class)` follows the saga wherever its processor ended up, including onto a `@Namespace`-renamed
-one, so it never has to restate how the name was derived. Use `forProcessor("orders")` to configure a processor
-several sagas share.
+one, so it never has to restate how the name was derived.
+
+The saga type selects the processor; it does not narrow the customization to that saga. A processor is the unit of
+configuration, so when two sagas share one, `forSaga(OrderSaga.class)` configures the processor carrying both. Use
+`forProcessor("orders")` there, which says so in the code:
+
+[source,java]
+----
+include::example$migration/paths/sagas/SharedSagaProcessorConfiguration.java[tag=shared-saga-processor,indent=0]
+----
+
+Selecting a shared processor with `forSaga` still works and is logged, naming the other sagas it also configures.
+
+A pooled streaming and a subscribing processor expose different configuration, so the mode is named when the
+customization is given: `pooledStreaming(...)` takes a `PooledStreamingEventProcessorConfiguration`, and
+`subscribing(...)` takes a `SubscribingEventProcessorConfiguration` with its own `eventSource` and
+`ignoredMessageHandler`.
+
+[source,java]
+----
+include::example$migration/paths/sagas/SubscribingSagaProcessorConfiguration.java[tag=subscribing-saga-processor,indent=0]
+----
+
+Naming the mode does not select it. A saga's mode still comes from `axon.eventhandling.processors.<name>.mode` or a
+matching `EventProcessorDefinition`. A definition written for the mode its processor does not run in is skipped, and
+logged, so a customization never quietly does nothing.
 
 `PooledStreamingEventProcessorModule.Customization` beans are the one mechanism that does *not* apply to a saga's
 processor, and `SagaProcessorDefinition` is their saga-scoped replacement. That channel is how cross-cutting Axon
@@ -189,8 +213,8 @@ already settled: which handlers it assigns, which for a saga is nobody, and the 
 with `EventProcessorDefinition.pooledStreaming(...)` therefore overrules `mode=subscribing` on that processor, even
 when it only sets an unrelated value such as a batch size.
 
-A `SagaProcessorDefinition` customizes a pooled streaming configuration, so it is ignored, with a warning, on a saga
-running in subscribing mode.
+A `SagaProcessorDefinition` names the mode its customization is written for, so a pooled streaming one is skipped,
+with a warning, on a saga running in subscribing mode, and the other way round.
 ====
 
 One consequence: a saga and an ordinary event handler resolving to the same processor name are rejected, and startup

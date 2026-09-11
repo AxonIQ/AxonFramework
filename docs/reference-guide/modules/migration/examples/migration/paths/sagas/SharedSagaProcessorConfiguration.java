@@ -20,23 +20,14 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
-class SagaProcessorConfiguration {
+class SharedSagaProcessorConfiguration {
 
-    // tag::replay-into-saga[]
+    // tag::shared-saga-processor[]
+    // Both OrderSaga and ShipmentSaga carry @Namespace("orders"), so they share one processor.
     @Bean
-    SagaProcessorDefinition replayIntoOrderSaga() {
-        return SagaProcessorDefinition.forSaga(OrderSaga.class)
-                                      .pooledStreaming(config -> config.initialToken(
-                                              source -> source.firstToken(null)
-                                      ));
+    SagaProcessorDefinition ordersProcessor() {
+        return SagaProcessorDefinition.forProcessor("orders")
+                                      .pooledStreaming(config -> config.batchSize(50));
     }
-    // end::replay-into-saga[]
-
-    // tag::saga-segments[]
-    @Bean
-    SagaProcessorDefinition orderSagaSegments() {
-        return SagaProcessorDefinition.forSaga(OrderSaga.class)
-                                      .pooledStreaming(config -> config.initialSegmentCount(4));
-    }
-    // end::saga-segments[]
+    // end::shared-saga-processor[]
 }

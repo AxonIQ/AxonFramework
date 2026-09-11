@@ -16,27 +16,19 @@
 package migration.paths.sagas;
 
 import org.axonframework.extension.spring.config.SagaProcessorDefinition;
+import org.axonframework.messaging.core.SubscribableEventSource;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
-class SagaProcessorConfiguration {
+class SubscribingSagaProcessorConfiguration {
 
-    // tag::replay-into-saga[]
+    // tag::subscribing-saga-processor[]
+    // Applies only when axon.eventhandling.processors[OrderSagaProcessor].mode=subscribing.
     @Bean
-    SagaProcessorDefinition replayIntoOrderSaga() {
+    SagaProcessorDefinition orderSagaEventSource(SubscribableEventSource eventSource) {
         return SagaProcessorDefinition.forSaga(OrderSaga.class)
-                                      .pooledStreaming(config -> config.initialToken(
-                                              source -> source.firstToken(null)
-                                      ));
+                                      .subscribing(config -> config.eventSource(eventSource));
     }
-    // end::replay-into-saga[]
-
-    // tag::saga-segments[]
-    @Bean
-    SagaProcessorDefinition orderSagaSegments() {
-        return SagaProcessorDefinition.forSaga(OrderSaga.class)
-                                      .pooledStreaming(config -> config.initialSegmentCount(4));
-    }
-    // end::saga-segments[]
+    // end::subscribing-saga-processor[]
 }

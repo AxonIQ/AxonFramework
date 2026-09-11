@@ -17,6 +17,7 @@
 package org.axonframework.extension.spring.config;
 
 import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorConfiguration;
+import org.axonframework.messaging.eventhandling.processing.subscribing.SubscribingEventProcessorConfiguration;
 import org.axonframework.spring.stereotype.Saga;
 import org.jspecify.annotations.Nullable;
 
@@ -36,16 +37,28 @@ import java.util.function.UnaryOperator;
  * An {@link EventProcessorDefinition} configures a Saga's processor too, but it answers two questions a Saga has
  * already settled. It has to state which handlers it assigns, which for a Saga is nobody, and it fixes the
  * processor's mode, so a definition written only to change a batch size also overrules a {@code mode=subscribing}
- * property. This type states neither: it only customizes, leaving discovery and mode where they were.
+ * property. This type states neither.
+ * <p>
+ * A pooled streaming and a subscribing processor expose different configuration, so the mode is named when the
+ * customization is given, and the definition applies only to a processor running in that mode. Naming the mode here
+ * does not select it: a Saga's mode still comes from {@code axon.eventhandling.processors.<name>.mode} or a matching
+ * {@link EventProcessorDefinition}. A definition whose mode does not match the processor it selected is skipped,
+ * with a warning, so that a customization never quietly does nothing.
  * <p>
  * Example usage:
  * <pre>{@code
  * @Bean
  * SagaProcessorDefinition replayIntoOrderSaga() {
  *     return SagaProcessorDefinition.forSaga(OrderSaga.class)
- *                                   .customized(config -> config.initialToken(
+ *                                   .pooledStreaming(config -> config.initialToken(
  *                                           source -> source.firstToken(null)
  *                                   ));
+ * }
+ *
+ * @Bean
+ * SagaProcessorDefinition orderSagaEventSource(SubscribableEventSource source) {
+ *     return SagaProcessorDefinition.forSaga(OrderSaga.class)
+ *                                   .subscribing(config -> config.eventSource(source));
  * }
  * }</pre>
  * <p>
@@ -60,29 +73,40 @@ public final class SagaProcessorDefinition {
 
     private final @Nullable Class<?> sagaType;
     private final @Nullable String processorName;
-    private final UnaryOperator<PooledStreamingEventProcessorConfiguration> customization;
+    private final @Nullable UnaryOperator<PooledStreamingEventProcessorConfiguration> pooledCustomization;
+    private final @Nullable UnaryOperator<SubscribingEventProcessorConfiguration> subscribingCustomization;
 
-    private SagaProcessorDefinition(@Nullable Class<?> sagaType,
-                                    @Nullable String processorName,
-                                    UnaryOperator<PooledStreamingEventProcessorConfiguration> customization) {
+    private SagaProcessorDefinition(
+            @Nullable Class<?> sagaType,
+            @Nullable String processorName,
+            @Nullable UnaryOperator<PooledStreamingEventProcessorConfiguration> pooledCustomization,
+            @Nullable UnaryOperator<SubscribingEventProcessorConfiguration> subscribingCustomization
+    ) {
         this.sagaType = sagaType;
         this.processorName = processorName;
-        this.customization = customization;
+        this.pooledCustomization = pooledCustomization;
+        this.subscribingCustomization = subscribingCustomization;
     }
 
     /**
      * Starts a definition for the processor carrying the given {@code sagaType}, wherever that Saga was assigned.
      * <p>
-     * Preferred over {@link #forProcessor(String)}: it follows the Saga if its processor is renamed with a
-     * {@link org.axonframework.messaging.core.annotation.Namespace @Namespace} or assigned by an
-     * {@link EventProcessorDefinition} selector, and it does not go stale when the Saga type is renamed.
+     * The Saga type selects the processor; it does not narrow the customization to that one Saga. A processor is the
+     * unit of configuration, so when {@code sagaType} shares its processor with other Sagas, the customization
+     * applies to all of them. That case is logged, since naming one Saga and configuring several is worth noticing;
+     * prefer {@link #forProcessor(String)} there, which says so in the code.
+     * <p>
+     * Preferred over {@link #forProcessor(String)} for a Saga on its own processor: it follows the Saga if the
+     * processor is renamed with a {@link org.axonframework.messaging.core.annotation.Namespace @Namespace} or
+     * assigned by an {@link EventProcessorDefinition} selector, and it does not go stale when the Saga type is
+     * renamed.
      *
      * @param sagaType the Saga type whose processor to configure
-     * @return the next step, taking the customization to apply
+     * @return the next step, naming the processor mode and the customization to apply
      */
-    public static Builder forSaga(Class<?> sagaType) {
+    public static Selector forSaga(Class<?> sagaType) {
         Objects.requireNonNull(sagaType, "The sagaType must not be null.");
-        return customization -> new SagaProcessorDefinition(sagaType, null, customization);
+        return new Selector(sagaType, null);
     }
 
     /**
@@ -92,26 +116,53 @@ public final class SagaProcessorDefinition {
      * Saga, prefer {@link #forSaga(Class)}, which needs no knowledge of how the name was derived.
      *
      * @param processorName the name of the Saga processor to configure
-     * @return the next step, taking the customization to apply
+     * @return the next step, naming the processor mode and the customization to apply
      */
-    public static Builder forProcessor(String processorName) {
+    public static Selector forProcessor(String processorName) {
         Objects.requireNonNull(processorName, "The processorName must not be null.");
-        return customization -> new SagaProcessorDefinition(null, processorName, customization);
+        return new Selector(null, processorName);
     }
 
     /**
-     * The step taking the customization to apply to the selected Saga processor.
+     * The step naming the processor mode the customization is written for, and the customization itself.
      */
-    @FunctionalInterface
-    public interface Builder {
+    public static final class Selector {
+
+        private final @Nullable Class<?> sagaType;
+        private final @Nullable String processorName;
+
+        private Selector(@Nullable Class<?> sagaType, @Nullable String processorName) {
+            this.sagaType = sagaType;
+            this.processorName = processorName;
+        }
 
         /**
-         * Completes the definition with the {@code customization} to apply to the selected Saga processor.
+         * Completes the definition with a {@code customization} for the selected Saga processor, applied when that
+         * processor runs in pooled streaming mode, which is the default for a Saga.
          *
          * @param customization the customization to apply
          * @return the completed definition, to be declared as a Spring bean
          */
-        SagaProcessorDefinition customized(UnaryOperator<PooledStreamingEventProcessorConfiguration> customization);
+        public SagaProcessorDefinition pooledStreaming(
+                UnaryOperator<PooledStreamingEventProcessorConfiguration> customization
+        ) {
+            Objects.requireNonNull(customization, "The customization must not be null.");
+            return new SagaProcessorDefinition(sagaType, processorName, customization, null);
+        }
+
+        /**
+         * Completes the definition with a {@code customization} for the selected Saga processor, applied when that
+         * processor runs in subscribing mode.
+         *
+         * @param customization the customization to apply
+         * @return the completed definition, to be declared as a Spring bean
+         */
+        public SagaProcessorDefinition subscribing(
+                UnaryOperator<SubscribingEventProcessorConfiguration> customization
+        ) {
+            Objects.requireNonNull(customization, "The customization must not be null.");
+            return new SagaProcessorDefinition(sagaType, processorName, null, customization);
+        }
     }
 
     /**
@@ -135,11 +186,44 @@ public final class SagaProcessorDefinition {
     }
 
     /**
-     * Returns the customization to apply to the selected Saga processor.
+     * Returns the customization for a pooled streaming processor, or {@code null} when this definition was written
+     * for a subscribing one.
      *
-     * @return the customization to apply
+     * @return the pooled streaming customization, if any
      */
-    UnaryOperator<PooledStreamingEventProcessorConfiguration> customization() {
-        return customization;
+    @Nullable
+    UnaryOperator<PooledStreamingEventProcessorConfiguration> pooledCustomization() {
+        return pooledCustomization;
+    }
+
+    /**
+     * Returns the customization for a subscribing processor, or {@code null} when this definition was written for a
+     * pooled streaming one.
+     *
+     * @return the subscribing customization, if any
+     */
+    @Nullable
+    UnaryOperator<SubscribingEventProcessorConfiguration> subscribingCustomization() {
+        return subscribingCustomization;
+    }
+
+    /**
+     * Returns the Saga type this definition selected its processor by, or {@code null} when it selected the processor
+     * by name.
+     *
+     * @return the Saga type used to select the processor, if any
+     */
+    @Nullable
+    Class<?> sagaType() {
+        return sagaType;
+    }
+
+    /**
+     * Returns a description of this definition's selector, for logging.
+     *
+     * @return the selector description
+     */
+    String describeSelector() {
+        return sagaType != null ? "Saga [" + sagaType.getName() + "]" : "processor [" + processorName + "]";
     }
 }

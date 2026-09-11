@@ -19,7 +19,9 @@ package org.axonframework.extension.spring.config;
 import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.Configuration;
+import org.axonframework.common.Registration;
 import org.axonframework.common.configuration.DuplicateModuleRegistrationException;
+import org.axonframework.messaging.core.SubscribableEventSource;
 import org.axonframework.messaging.core.annotation.Namespace;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventHandlingComponent;
@@ -53,6 +55,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -539,7 +542,7 @@ class SpringSagaConfigurerTest {
                 registrar(ctx, "mySaga", MySaga.class);
                 ctx.registerBean("mySagaDefinition", SagaProcessorDefinition.class,
                                  () -> SagaProcessorDefinition.forSaga(MySaga.class)
-                                                              .customized(c -> c.batchSize(42)));
+                                                              .pooledStreaming(c -> c.batchSize(42)));
             })) {
                 // when
                 Configuration module = moduleConfiguration(axonConfiguration(context), MY_SAGA_MODULE);
@@ -557,7 +560,7 @@ class SpringSagaConfigurerTest {
                 registrar(ctx, "otherSaga", OtherSaga.class);
                 ctx.registerBean("mySagaDefinition", SagaProcessorDefinition.class,
                                  () -> SagaProcessorDefinition.forSaga(MySaga.class)
-                                                              .customized(c -> c.batchSize(42)));
+                                                              .pooledStreaming(c -> c.batchSize(42)));
             })) {
                 AxonConfiguration configuration = axonConfiguration(context);
 
@@ -578,7 +581,7 @@ class SpringSagaConfigurerTest {
                 registrar(ctx, "namespacedSaga", NamespacedSaga.class);
                 ctx.registerBean("namespacedDefinition", SagaProcessorDefinition.class,
                                  () -> SagaProcessorDefinition.forSaga(NamespacedSaga.class)
-                                                              .customized(c -> c.batchSize(42)));
+                                                              .pooledStreaming(c -> c.batchSize(42)));
             })) {
                 // when
                 Configuration module = moduleConfiguration(axonConfiguration(context), SHARED_MODULE);
@@ -596,12 +599,32 @@ class SpringSagaConfigurerTest {
                 registrar(ctx, "otherNamespacedSaga", OtherNamespacedSaga.class);
                 ctx.registerBean("sharedDefinition", SagaProcessorDefinition.class,
                                  () -> SagaProcessorDefinition.forProcessor(SHARED_PROCESSOR)
-                                                              .customized(c -> c.batchSize(42)));
+                                                              .pooledStreaming(c -> c.batchSize(42)));
             })) {
                 // when
                 Configuration module = moduleConfiguration(axonConfiguration(context), SHARED_MODULE);
 
                 // then
+                assertThat(pooledConfiguration(module).batchSize()).isEqualTo(42);
+                assertThat(module.getComponents(EventHandlingComponent.class)).hasSize(2);
+            }
+        }
+
+        @Test
+        void configuresTheWholeProcessorWhenTheSelectedSagaSharesIt() {
+            // given - a processor is the unit of configuration, so selecting it by one of its Sagas still
+            // configures the processor, and with it every Saga on that processor
+            try (GenericApplicationContext context = springContext(ctx -> {
+                registrar(ctx, "namespacedSaga", NamespacedSaga.class);
+                registrar(ctx, "otherNamespacedSaga", OtherNamespacedSaga.class);
+                ctx.registerBean("namespacedDefinition", SagaProcessorDefinition.class,
+                                 () -> SagaProcessorDefinition.forSaga(NamespacedSaga.class)
+                                                              .pooledStreaming(c -> c.batchSize(42)));
+            })) {
+                // when
+                Configuration module = moduleConfiguration(axonConfiguration(context), SHARED_MODULE);
+
+                // then - both Sagas run on the customized processor; the configurer logs that this happened
                 assertThat(pooledConfiguration(module).batchSize()).isEqualTo(42);
                 assertThat(module.getComponents(EventHandlingComponent.class)).hasSize(2);
             }
@@ -614,7 +637,7 @@ class SpringSagaConfigurerTest {
                 registrar(ctx, "mySaga", MySaga.class);
                 ctx.registerBean("replayDefinition", SagaProcessorDefinition.class,
                                  () -> SagaProcessorDefinition.forSaga(MySaga.class)
-                                                              .customized(c -> c.initialToken(
+                                                              .pooledStreaming(c -> c.initialToken(
                                                                       source -> source.firstToken(null)
                                                               )));
             })) {
@@ -637,14 +660,36 @@ class SpringSagaConfigurerTest {
                 settings(ctx, Map.of("MySagaProcessor", new TestSubscribingSettings()));
                 ctx.registerBean("mySagaDefinition", SagaProcessorDefinition.class,
                                  () -> SagaProcessorDefinition.forSaga(MySaga.class)
-                                                              .customized(c -> c.batchSize(42)));
+                                                              .pooledStreaming(c -> c.batchSize(42)));
             })) {
                 // when
                 Configuration module = moduleConfiguration(axonConfiguration(context), MY_SAGA_MODULE);
 
-                // then - the property still decides the mode; the definition is ignored with a warning
+                // then - naming a mode picks which configuration the customization is written for; the property
+                // still decides the processor's mode, and the mismatched definition is skipped with a warning
                 assertThat(module.getOptionalComponent(SubscribingEventProcessorConfiguration.class)).isPresent();
                 assertThat(module.getOptionalComponent(PooledStreamingEventProcessorConfiguration.class)).isEmpty();
+            }
+        }
+
+        @Test
+        void customizesASubscribingSagaProcessor() {
+            // given - a subscribing processor exposes its own configuration, so it takes its own customization
+            RecordingSubscribableEventSource eventSource = new RecordingSubscribableEventSource();
+            try (GenericApplicationContext context = springContext(ctx -> {
+                registrar(ctx, "mySaga", MySaga.class);
+                settings(ctx, Map.of("MySagaProcessor", new TestSubscribingSettings()));
+                ctx.registerBean("mySagaDefinition", SagaProcessorDefinition.class,
+                                 () -> SagaProcessorDefinition.forSaga(MySaga.class)
+                                                              .subscribing(c -> c.eventSource(eventSource)));
+            })) {
+                // when
+                Configuration module = moduleConfiguration(axonConfiguration(context), MY_SAGA_MODULE);
+
+                // then
+                SubscribingEventProcessorConfiguration subscribing =
+                        module.getComponent(SubscribingEventProcessorConfiguration.class);
+                assertThat(subscribing.eventSource()).isSameAs(eventSource);
             }
         }
     }
@@ -846,6 +891,20 @@ class SpringSagaConfigurerTest {
 
     private static List<String> componentNames(Configuration module) {
         return List.copyOf(module.getComponents(EventHandlingComponent.class).keySet());
+    }
+
+    /**
+     * A {@link SubscribableEventSource} that only needs an identity, to assert which source a subscribing Saga
+     * processor was configured with.
+     */
+    private static class RecordingSubscribableEventSource implements SubscribableEventSource {
+
+        @Override
+        public Registration subscribe(
+                BiFunction<List<? extends EventMessage>, @Nullable ProcessingContext, CompletableFuture<?>> consumer
+        ) {
+            return () -> true;
+        }
     }
 
     private static class RecordingTrackingTokenSource implements TrackingTokenSource {

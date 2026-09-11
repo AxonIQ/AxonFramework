@@ -188,6 +188,8 @@ public class SagaProcessorConfigurer implements ConfigurationEnhancer, Applicati
         List<SagaProcessorDefinition> matching = sagaDefinitions.stream()
                                                                 .filter(d -> d.matches(processorName, sagaTypes))
                                                                 .toList();
+        warnAboutSagaSelectorsOnASharedProcessor(processorName, sagaTypes, matching);
+        warnAboutModeMismatches(processorName, matching, definition, settings);
         Function<EventHandlingComponentsConfigurer.RequiredComponentPhase, EventHandlingComponentsConfigurer.CompletePhase>
                 componentRegistration = phase -> {
             EventHandlingComponentsConfigurer.ComponentsPhase result = phase;
@@ -218,7 +220,10 @@ public class SagaProcessorConfigurer implements ConfigurationEnhancer, Applicati
                             // class javadoc. SagaProcessorDefinition is the Saga-scoped replacement.
                             result = definitionCustomization.apply(result);
                             for (SagaProcessorDefinition sagaDefinition : matching) {
-                                result = sagaDefinition.customization().apply(result);
+                                var sagaCustomization = sagaDefinition.pooledCustomization();
+                                if (sagaCustomization != null) {
+                                    result = sagaCustomization.apply(result);
+                                }
                             }
                             SpringCustomizations.requireResolvedTokenStore(processorName, result);
                             return result;
@@ -230,19 +235,25 @@ public class SagaProcessorConfigurer implements ConfigurationEnhancer, Applicati
                         .build();
             }
             case SUBSCRIBING -> {
-                if (!matching.isEmpty()) {
-                    logger.warn("Ignoring {} SagaProcessorDefinition bean(s) for Saga processor [{}]: it runs in "
-                                        + "subscribing mode, and a SagaProcessorDefinition customizes a pooled "
-                                        + "streaming processor configuration.", matching.size(), processorName);
-                }
                 var moduleSettings = (EventProcessorSettings.SubscribingEventProcessorSettings) settings;
                 UnaryOperator<SubscribingEventProcessorConfiguration> definitionCustomization =
                         customizeConfiguration(definition);
+                UnaryOperator<SubscribingEventProcessorConfiguration> sagaCustomizations = configuration -> {
+                    var result = configuration;
+                    for (SagaProcessorDefinition sagaDefinition : matching) {
+                        var sagaCustomization = sagaDefinition.subscribingCustomization();
+                        if (sagaCustomization != null) {
+                            result = sagaCustomization.apply(result);
+                        }
+                    }
+                    return result;
+                };
                 yield EventProcessorModule
                         .subscribing(processorName)
                         .eventHandlingComponents(componentRegistration)
                         .customized(SpringCustomizations.subscribingCustomizations(processorName, moduleSettings)
-                                                        .andThen(definitionCustomization))
+                                                        .andThen(definitionCustomization)
+                                                        .andThen(sagaCustomizations))
                         .build();
             }
         };
@@ -263,6 +274,54 @@ public class SagaProcessorConfigurer implements ConfigurationEnhancer, Applicati
      * customization, and {@link PooledStreamingEventProcessorModule.Customization} beans, so any of those may
      * override the initial token and replay into a Saga deliberately.
      */
+    /**
+     * Warns when a {@link SagaProcessorDefinition} selected a processor by Saga type and that processor turns out to
+     * carry other Sagas as well. The customization applies to all of them, which is easy to miss when the code names
+     * one Saga; {@link SagaProcessorDefinition#forProcessor(String)} states the intent instead.
+     */
+    private void warnAboutSagaSelectorsOnASharedProcessor(String processorName,
+                                                          List<Class<?>> sagaTypes,
+                                                          List<SagaProcessorDefinition> matching) {
+        if (sagaTypes.size() < 2) {
+            return;
+        }
+        matching.stream()
+                .map(SagaProcessorDefinition::sagaType)
+                .filter(Objects::nonNull)
+                .forEach(selectedBy -> logger.warn(
+                        "A SagaProcessorDefinition selected the processor of Saga [{}], but processor [{}] also "
+                                + "carries {}. The customization applies to the whole processor, so it affects those "
+                                + "Sagas too. Use SagaProcessorDefinition.forProcessor(\"{}\") to say so explicitly.",
+                        selectedBy.getName(),
+                        processorName,
+                        sagaTypes.stream().filter(type -> !type.equals(selectedBy)).map(Class::getName).toList(),
+                        processorName
+                ));
+    }
+
+    /**
+     * Warns when a {@link SagaProcessorDefinition} was written for the mode the processor it selected does not run
+     * in, so that its customization is never silently skipped.
+     */
+    private void warnAboutModeMismatches(String processorName,
+                                         List<SagaProcessorDefinition> matching,
+                                         Optional<EventProcessorDefinition> definition,
+                                         EventProcessorSettings settings) {
+        var mode = definition.map(EventProcessorDefinition::mode).orElse(settings.processorMode());
+        boolean pooled = mode == EventProcessorSettings.ProcessorMode.POOLED;
+        for (SagaProcessorDefinition sagaDefinition : matching) {
+            boolean writtenForPooled = sagaDefinition.pooledCustomization() != null;
+            if (writtenForPooled != pooled) {
+                logger.warn("Skipping the SagaProcessorDefinition for {}: it customizes a {} processor "
+                                    + "configuration, and processor [{}] runs in {} mode.",
+                            sagaDefinition.describeSelector(),
+                            writtenForPooled ? "pooled streaming" : "subscribing",
+                            processorName,
+                            pooled ? "pooled streaming" : "subscribing");
+            }
+        }
+    }
+
     private UnaryOperator<PooledStreamingEventProcessorConfiguration> headTokenDefault() {
         return configuration -> configuration.initialToken(source -> source.latestToken(null));
     }
