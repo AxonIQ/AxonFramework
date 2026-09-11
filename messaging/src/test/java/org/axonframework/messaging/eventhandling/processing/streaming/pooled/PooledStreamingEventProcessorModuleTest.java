@@ -16,10 +16,10 @@
 
 package org.axonframework.messaging.eventhandling.processing.streaming.pooled;
 
-import org.jspecify.annotations.NonNull;
-import org.jspecify.annotations.Nullable;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.configuration.AxonConfiguration;
+import org.axonframework.common.configuration.ConfigurationExtension;
+import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.messaging.core.EmptyApplicationContext;
 import org.axonframework.messaging.core.MessageHandlerInterceptor;
 import org.axonframework.messaging.core.MessageStream;
@@ -40,12 +40,14 @@ import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.axonframework.messaging.eventhandling.configuration.EventHandlingComponentsConfigurer;
 import org.axonframework.messaging.eventhandling.configuration.EventProcessorConfiguration;
 import org.axonframework.messaging.eventhandling.configuration.EventProcessorModule;
-import org.axonframework.messaging.eventhandling.processing.streaming.StreamingEventProcessor;
 import org.axonframework.messaging.eventhandling.processing.errorhandling.ErrorHandler;
 import org.axonframework.messaging.eventhandling.processing.errorhandling.PropagatingErrorHandler;
+import org.axonframework.messaging.eventhandling.processing.streaming.StreamingEventProcessor;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.inmemory.InMemoryTokenStore;
 import org.axonframework.messaging.eventstreaming.StreamableEventSource;
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.*;
 
 import java.time.Duration;
@@ -82,9 +84,8 @@ class PooledStreamingEventProcessorModuleTest {
             // when
             PooledStreamingEventProcessorModule module = EventProcessorModule
                     .pooledStreaming(processorName)
-                    .eventHandlingComponents(components -> components.declarative("component",
-                                                                                  cfg -> SimpleEventHandlingComponent.create(
-                                                                                          "test")
+                    .eventHandlingComponents(components -> components.declarative(
+                            "component", cfg -> SimpleEventHandlingComponent.create("test")
                     ))
                     .customized((cfg, c) -> c);
 
@@ -164,9 +165,15 @@ class PooledStreamingEventProcessorModuleTest {
                     ep -> ep.pooledStreaming(
                             ps -> ps.defaults(d -> d.eventSource(eventSource))
                                     .defaultProcessor("test-processor",
-                                                      components -> components.declarative("component1", cfg -> component1)
-                                                                              .declarative("component2", cfg -> component2)
-                                                                              .autodetected("component3", cfg -> component3)
+                                                      components -> components.declarative(
+                                                                                      "component1", cfg -> component1
+                                                                              )
+                                                                              .declarative(
+                                                                                      "component2", cfg -> component2
+                                                                              )
+                                                                              .autodetected(
+                                                                                      "component3", cfg -> component3
+                                                                              )
                                     )
                     )
             );
@@ -223,7 +230,9 @@ class PooledStreamingEventProcessorModuleTest {
             PooledStreamingEventProcessorModule psepModuleOne =
                     EventProcessorModule.pooledStreaming("processor-one")
                                         .eventHandlingComponents(
-                                                components -> components.declarative("componentOne", cfg -> componentOne)
+                                                components -> components.declarative(
+                                                        "componentOne", cfg -> componentOne
+                                                )
                                         )
                                         .customized((config, psepConfig) -> psepConfig.withInterceptor(
                                                 specificInterceptorOne
@@ -232,7 +241,9 @@ class PooledStreamingEventProcessorModuleTest {
             PooledStreamingEventProcessorModule psepModuleTwo =
                     EventProcessorModule.pooledStreaming("processor-two")
                                         .eventHandlingComponents(
-                                                components -> components.declarative("componentTwo", cfg -> componentTwo)
+                                                components -> components.declarative(
+                                                        "componentTwo", cfg -> componentTwo
+                                                )
                                         )
                                         .customized((config, psepConfig) -> psepConfig.withInterceptor(
                                                 specificInterceptorTwo
@@ -801,6 +812,83 @@ class PooledStreamingEventProcessorModuleTest {
             assertThat(processorConfig).isNotNull();
             assertThat(processorConfig.coordinatorExtendsClaims()).isTrue();
             assertThat(processorConfig.batchSize()).isEqualTo(10);
+        }
+    }
+
+    @Nested
+    class CoordinatorClaimExtensionTest {
+
+        @Test
+        void coordinatorClaimExtensionReachesTheProcessorConfiguration() {
+            // given - the flag is set halfway a customization chain that ends on another setting
+            var configurer = MessagingConfigurer.create();
+            var processorName = "testProcessor";
+            var unitOfWorkFactory = new SimpleUnitOfWorkFactory(EmptyApplicationContext.INSTANCE);
+            var module = EventProcessorModule
+                    .pooledStreaming(processorName)
+                    .eventHandlingComponents(singleTestEventHandlingComponent())
+                    .customized((cfg, c) -> c.initialSegmentCount(4)
+                                             .batchSize(10)
+                                             .enableCoordinatorClaimExtension()
+                                             .eventSource(new AsyncInMemoryStreamableEventSource())
+                                             .tokenStore(new InMemoryTokenStore())
+                                             .unitOfWorkFactory(unitOfWorkFactory));
+            configurer.eventProcessing(ep -> ep.pooledStreaming(ps -> ps.processor(module)));
+
+            // when
+            var configuration = configurer.build();
+
+            // then - the setting survives every step between the customization and the built processor
+            var processorConfig = configurationOf(processor(configuration, processorName).orElse(null));
+            assertThat(processorConfig).isNotNull();
+            assertThat(processorConfig.coordinatorExtendsClaims()).isTrue();
+            assertThat(processorConfig.batchSize()).isEqualTo(10);
+        }
+
+        @Test
+        void coordinatorClaimExtensionSurvivesAnExtensionRegisteredAfterIt() {
+            // given - the customization ends on extend(), whose return value becomes the processor configuration
+            var configurer = MessagingConfigurer.create();
+            var processorName = "testProcessor";
+            var unitOfWorkFactory = new SimpleUnitOfWorkFactory(EmptyApplicationContext.INSTANCE);
+            var module = EventProcessorModule
+                    .pooledStreaming(processorName)
+                    .eventHandlingComponents(singleTestEventHandlingComponent())
+                    .customized((cfg, c) -> c.enableCoordinatorClaimExtension()
+                                             .eventSource(new AsyncInMemoryStreamableEventSource())
+                                             .tokenStore(new InMemoryTokenStore())
+                                             .unitOfWorkFactory(unitOfWorkFactory)
+                                             .extend(TestConfigurationExtension.class,
+                                                     TestConfigurationExtension::new));
+            configurer.eventProcessing(ep -> ep.pooledStreaming(ps -> ps.processor(module)));
+
+            // when
+            var configuration = configurer.build();
+
+            // then
+            var processorConfig = configurationOf(processor(configuration, processorName).orElse(null));
+            assertThat(processorConfig).isNotNull();
+            assertThat(processorConfig.coordinatorExtendsClaims()).isTrue();
+            assertThat(processorConfig.extension(TestConfigurationExtension.class)).isNotNull();
+        }
+    }
+
+    private static class TestConfigurationExtension
+            implements ConfigurationExtension<PooledStreamingEventProcessorConfiguration> {
+
+        @Override
+        public String name() {
+            return "test-extension";
+        }
+
+        @Override
+        public void validate() {
+            // nothing to validate
+        }
+
+        @Override
+        public void describeTo(@NonNull ComponentDescriptor descriptor) {
+            descriptor.describeProperty("name", name());
         }
     }
 

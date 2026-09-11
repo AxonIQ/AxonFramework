@@ -167,9 +167,15 @@ interface SpringCustomizations {
             var result = eventProcessorConfiguration
                     .workerExecutor(scheduledExecutorService)
                     .tokenClaimInterval(settings.tokenClaimIntervalInMillis())
+                    .claimExtensionThreshold(settings.claimExtensionThresholdInMillis())
                     .batchSize(settings.batchSize())
                     .initialSegmentCount(settings.initialSegmentCount())
                     .unitOfWorkFactory(unitOfWorkFactory);
+
+            if (settings.coordinatorClaimExtension()) {
+                // Only applied when enabled, so a customization applied elsewhere that enables it is never undone.
+                result = result.enableCoordinatorClaimExtension();
+            }
 
             String sourceName = StringUtils.nonEmptyOrNull(settings.source()) ? settings.source() : null;
             var eventSource = getComponent(configuration, StreamableEventSource.class, sourceName, null);

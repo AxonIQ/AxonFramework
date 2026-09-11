@@ -131,6 +131,32 @@ public sealed interface EventProcessorSettings {
         int batchSize();
 
         /**
+         * Threshold, in milliseconds, after which a work package extends the claim on its {@code TrackingToken} in the
+         * absence of event handling.
+         * <p>
+         * Defaults to 5000 milliseconds, matching the default of the pooled streaming processor configuration.
+         *
+         * @return the claim extension threshold in milliseconds
+         */
+        default long claimExtensionThresholdInMillis() {
+            return 5000;
+        }
+
+        /**
+         * Whether the coordinator extends the claims of its work packages, rather than leaving that to the work
+         * packages themselves.
+         * <p>
+         * Enable this when event handling regularly takes longer than the claim timeout of the {@code TokenStore}: a
+         * work package cannot extend its own claim while it is handling a batch, nor while it waits for a thread of
+         * the worker executor that lengthy handling on other segments occupies. Defaults to {@code false}.
+         *
+         * @return {@code true} if the coordinator extends the claims of its work packages, {@code false} otherwise
+         */
+        default boolean coordinatorClaimExtension() {
+            return false;
+        }
+
+        /**
          * Name of the bean acting as token store for this pooled streaming processor.
          *
          * @return only used if non-null.

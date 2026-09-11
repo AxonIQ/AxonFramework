@@ -994,6 +994,44 @@ class PooledStreamingEventProcessorTest {
         }
 
         @Test
+        void coordinatorExtendsClaimsOfSegmentsWaitingForAWorkerThread() {
+            // given - a single worker thread, so lengthy handling on one segment starves the work package of the
+            //         other segment of the thread it needs to extend its own claim
+            workerExecutor.shutdown();
+            workerExecutor = new DelegateScheduledExecutorService(Executors.newScheduledThreadPool(1));
+            withTestSubject(
+                    List.of(),
+                    c -> c.initialSegmentCount(2).claimExtensionThreshold(100).enableCoordinatorClaimExtension()
+            );
+
+            AtomicBoolean isWaiting = new AtomicBoolean(false);
+            CountDownLatch handleLatch = new CountDownLatch(1);
+            doAnswer(invocation -> {
+                // Waiting for the latch to simulate a slow/busy WorkPackage occupying the only worker thread.
+                isWaiting.set(true);
+                handleLatch.await(5, TimeUnit.SECONDS);
+                return MessageStream.empty();
+            }).when(defaultEventHandlingComponent)
+              .handle(any(EventMessage.class), any(ProcessingContext.class));
+
+            createEvents(8).forEach(stubMessageSource::publishMessage);
+
+            // when
+            startEventProcessor();
+            await().pollDelay(Duration.ofMillis(50))
+                   .atMost(Duration.ofSeconds(5))
+                   .until(isWaiting::get);
+
+            // then - both the segment handling events and the one waiting for a thread keep their claim extended
+            try {
+                verify(tokenStore, timeout(3000).atLeast(3)).extendClaim(eq(PROCESSOR_NAME), eq(0), any());
+                verify(tokenStore, timeout(3000).atLeast(3)).extendClaim(eq(PROCESSOR_NAME), eq(1), any());
+            } finally {
+                handleLatch.countDown();
+            }
+        }
+
+        @Test
         void coordinatorExtendingClaimFailsAndAbortsWorkPackage() {
             withTestSubject(
                     List.of(),

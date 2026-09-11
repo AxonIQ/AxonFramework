@@ -141,6 +141,23 @@ public class EventProcessorProperties {
         private TimeUnit tokenClaimIntervalTimeUnit = TimeUnit.MILLISECONDS;
 
         /**
+         * The threshold after which a work package of a {@link PooledStreamingEventProcessor} extends the claim on its
+         * token, in the absence of event handling that updates the token anyway.
+         * <p>
+         * Defaults to 5000 milliseconds.
+         */
+        private long claimExtensionThreshold = 5000;
+
+        /**
+         * Indicates whether the coordinator of a {@link PooledStreamingEventProcessor} extends the claims of its work
+         * packages, rather than leaving that to the work packages themselves. Enable this when event handling
+         * regularly takes longer than the claim timeout of the {@link TokenStore}.
+         * <p>
+         * Defaults to {@code false}.
+         */
+        private boolean coordinatorClaimExtension = false;
+
+        /**
          * The maximum number of threads the processor should process events with. Defaults to 4 for a
          * {@link PooledStreamingEventProcessor}.
          */
@@ -283,6 +300,37 @@ public class EventProcessorProperties {
          */
         public void setTokenClaimIntervalTimeUnit(TimeUnit tokenClaimIntervalTimeUnit) {
             this.tokenClaimIntervalTimeUnit = tokenClaimIntervalTimeUnit;
+        }
+
+
+        @Override
+        public long claimExtensionThresholdInMillis() {
+            return claimExtensionThreshold;
+        }
+
+        /**
+         * Sets the threshold, in milliseconds, after which a work package of a {@link PooledStreamingEventProcessor}
+         * extends the claim on its token. Defaults to 5000 milliseconds.
+         *
+         * @param claimExtensionThreshold the claim extension threshold in milliseconds
+         */
+        public void setClaimExtensionThreshold(long claimExtensionThreshold) {
+            this.claimExtensionThreshold = claimExtensionThreshold;
+        }
+
+        @Override
+        public boolean coordinatorClaimExtension() {
+            return coordinatorClaimExtension;
+        }
+
+        /**
+         * Sets whether the coordinator of a {@link PooledStreamingEventProcessor} extends the claims of its work
+         * packages. Defaults to {@code false}.
+         *
+         * @param coordinatorClaimExtension whether the coordinator extends the claims of its work packages
+         */
+        public void setCoordinatorClaimExtension(boolean coordinatorClaimExtension) {
+            this.coordinatorClaimExtension = coordinatorClaimExtension;
         }
 
         /**

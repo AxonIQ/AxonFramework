@@ -858,7 +858,7 @@ class WorkPackageTest {
     class ScheduleWorkerLifecycleTest {
 
         @Test
-        void processingEventsIsFalseAfterSuccessfulProcessing() {
+        void workerIsNoLongerScheduledAfterSuccessfulProcessing() {
             // given
             TrackingToken testToken = new GlobalSequenceTrackingToken(1L);
             var testEvent = new SimpleEntry<>(EventTestUtils.asEventMessage("some-event"), trackingTokenContext(testToken));
@@ -869,12 +869,12 @@ class WorkPackageTest {
             // then
             await().atMost(TIMEOUT).untilAsserted(() -> {
                 verify(tokenStore).storeToken(any(), eq(PROCESSOR_NAME), eq(segment.getSegmentId()), any());
-                assertThat(testSubject.isProcessingEvents()).isFalse();
+                assertThat(testSubject.isWorkerScheduled()).isFalse();
             });
         }
 
         @Test
-        void processingEventsIsFalseAfterFailedProcessing() {
+        void batchProcessorFailureTriggersAbort() {
             // given
             TrackingToken testToken = new GlobalSequenceTrackingToken(1L);
             var testEvent = new SimpleEntry<>(EventTestUtils.asEventMessage("some-event"), trackingTokenContext(testToken));
@@ -887,7 +887,7 @@ class WorkPackageTest {
 
             // then - wait for abort to be fully processed (trackerStatus set to null by abort handler)
             await().atMost(TIMEOUT).untilAsserted(() -> assertThat(trackerStatus).isNull());
-            assertThat(testSubject.isProcessingEvents()).isFalse();
+            assertThat(testSubject.abort(null)).isDone();
         }
 
         @Test
