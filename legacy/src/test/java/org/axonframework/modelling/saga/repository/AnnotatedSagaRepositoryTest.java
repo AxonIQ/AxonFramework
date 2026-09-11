@@ -456,6 +456,71 @@ class AnnotatedSagaRepositoryTest {
         }
     }
 
+    /**
+     * Axon Framework 4 filled a Saga's fields from a {@code ResourceInjector} after the factory produced the instance
+     * and after the store returned one. Axon Framework 5 dropped that mechanism: a Saga reaches its collaborators
+     * through handler-method parameters, and whatever else it needs comes from the factory that constructed it. These
+     * tests pin that the repository hands back exactly the instance it was given.
+     */
+    @Nested
+    class CollaboratorsComeFromTheFactoryOnly {
+
+        private AnnotatedSagaRepository<CollaboratingSaga> repository;
+
+        @BeforeEach
+        void createRepository() {
+            repository = AnnotatedSagaRepository.<CollaboratingSaga>builder()
+                                                .sagaType(CollaboratingSaga.class)
+                                                .sagaStore(new InMemorySagaStore())
+                                                .build();
+        }
+
+        @Test
+        void theInstanceTheFactoryProducedIsTheOneManaged() {
+            // given a factory handing out an instance the test holds on to
+            CollaboratingSaga produced = new CollaboratingSaga();
+
+            UnitOfWork unitOfWork = unitOfWorkFactory.create();
+            unitOfWork.runOnInvocation(context -> {
+                // when
+                Saga<CollaboratingSaga> saga = repository.createInstance("factory-saga", () -> produced, context);
+
+                // then the repository managed that instance rather than one it prepared itself, and left its
+                // collaborator field untouched
+                assertSame(produced, saga.invoke(s -> s));
+                assertNull(saga.invoke(s -> s.collaborator));
+            });
+
+            FutureUtils.joinAndUnwrap(unitOfWork.execute(), TIMEOUT);
+        }
+
+        @Test
+        void aFieldTheFactoryFillsInSurvivesAReload() {
+            Collaborator collaborator = new Collaborator();
+
+            // given a Saga created and stored with a collaborator its factory supplied
+            UnitOfWork creating = unitOfWorkFactory.create();
+            creating.runOnInvocation(context -> {
+                Saga<CollaboratingSaga> saga = repository.createInstance("stored-saga",
+                                                                        () -> new CollaboratingSaga(collaborator),
+                                                                        context);
+                saga.getAssociationValues().add(new AssociationValue("test", "value"));
+            });
+            FutureUtils.joinAndUnwrap(creating.execute(), TIMEOUT);
+
+            // when loaded again in another context
+            UnitOfWork loading = unitOfWorkFactory.create();
+            loading.runOnInvocation(context -> {
+                Saga<CollaboratingSaga> loaded = repository.load("stored-saga", context);
+
+                // then the collaborator is the one the factory supplied, not one the repository put there
+                assertNotNull(loaded);
+                assertSame(collaborator, loaded.invoke(s -> s.collaborator));
+            });
+            FutureUtils.joinAndUnwrap(loading.execute(), TIMEOUT);
+        }
+    }
+
     private static void awaitOrFail(CountDownLatch latch) {
         try {
             if (!latch.await(5, TimeUnit.SECONDS)) {
@@ -489,6 +554,29 @@ class AnnotatedSagaRepositoryTest {
 
         @EventHandler
         public void on(Object o) {
+
+        }
+    }
+
+    private static class Collaborator {
+
+    }
+
+    @SuppressWarnings("unused")
+    private static class CollaboratingSaga {
+
+        private final Collaborator collaborator;
+
+        CollaboratingSaga() {
+            this(null);
+        }
+
+        CollaboratingSaga(Collaborator collaborator) {
+            this.collaborator = collaborator;
+        }
+
+        @EventHandler
+        public void on(Object event) {
 
         }
     }

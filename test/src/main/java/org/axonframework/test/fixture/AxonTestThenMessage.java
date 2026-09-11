@@ -58,6 +58,7 @@ abstract class AxonTestThenMessage<T extends AxonTestPhase.Then.Message<T>>
     protected final AxonConfiguration configuration;
     private final AxonTestFixture.Customization customization;
     private final RecordingComponentsRegistry recordings;
+    private final Predicate<Message> assertionFilter;
 
     private final CommandValidator commandValidator;
     protected final @Nullable Throwable actualException;
@@ -65,29 +66,40 @@ abstract class AxonTestThenMessage<T extends AxonTestPhase.Then.Message<T>>
     /**
      * Constructs an {@code AxonTestThenMessage} for the given parameters.
      *
-     * @param configuration   The configuration which this test fixture phase is based on.
-     * @param customization   Collection of customizations made for this test fixture.
-     * @param recordings      The registry holding recording components for assertions.
-     * @param actualException The exception thrown during the when-phase, potentially {@code null}.
+     * @param configuration   the configuration which this test fixture phase is based on
+     * @param customization   collection of customizations made for this test fixture
+     * @param recordings      the registry holding recording components for assertions
+     * @param assertionFilter filter applied to recorded messages before assertions
+     * @param actualException the exception thrown during the when-phase, potentially {@code null}
      */
     public AxonTestThenMessage(
             AxonConfiguration configuration,
             AxonTestFixture.Customization customization,
             RecordingComponentsRegistry recordings,
+            Predicate<Message> assertionFilter,
             @Nullable Throwable actualException
     ) {
         this.configuration = configuration;
         this.customization = customization;
         this.recordings = recordings;
+        this.assertionFilter = assertionFilter;
         this.actualException = actualException;
-        this.commandValidator = new CommandValidator(recordings.commandBus()::recordedCommands,
+        this.commandValidator = new CommandValidator(this::recordedCommands,
                                                      recordings.commandBus()::reset,
                                                      new MatchAllFieldFilter(customization.fieldFilters()));
     }
 
+    private List<EventMessage> recordedEvents() {
+        return recordings.eventSink().recorded().stream().filter(assertionFilter).toList();
+    }
+
+    private List<CommandMessage> recordedCommands() {
+        return recordings.commandBus().recordedCommands().stream().filter(assertionFilter).toList();
+    }
+
     @Override
     public T events(Object... expectedEvents) {
-        var publishedEvents = recordings.eventSink().recorded();
+        var publishedEvents = recordedEvents();
 
         if (expectedEvents.length != publishedEvents.size()) {
             reporter.reportWrongEvent(publishedEvents, Arrays.asList(expectedEvents), actualException);
@@ -107,7 +119,7 @@ abstract class AxonTestThenMessage<T extends AxonTestPhase.Then.Message<T>>
     public T events(EventMessage... expectedEvents) {
         this.events(Stream.of(expectedEvents).map(Message::payload).toArray());
 
-        var publishedEvents = recordings.eventSink().recorded();
+        var publishedEvents = recordedEvents();
         Iterator<EventMessage> iterator = publishedEvents.iterator();
         for (EventMessage expectedEvent : expectedEvents) {
             EventMessage actualEvent = iterator.next();
@@ -123,7 +135,7 @@ abstract class AxonTestThenMessage<T extends AxonTestPhase.Then.Message<T>>
     @Override
     public T eventsSatisfy(Consumer<List<EventMessage>> consumer) {
         Objects.requireNonNull(consumer, "The consumer may not be null.");
-        var publishedEvents = recordings.eventSink().recorded();
+        var publishedEvents = recordedEvents();
         try {
             consumer.accept(publishedEvents);
         } catch (AssertionError e) {
@@ -135,7 +147,7 @@ abstract class AxonTestThenMessage<T extends AxonTestPhase.Then.Message<T>>
     @Override
     public T eventsMatch(Predicate<List<EventMessage>> predicate) {
         Objects.requireNonNull(predicate, "The predicate may not be null.");
-        var publishedEvents = recordings.eventSink().recorded();
+        var publishedEvents = recordedEvents();
         var result = predicate.test(publishedEvents);
         if (!result) {
             throw new AxonAssertionError("Events does not satisfy the predicate");
@@ -168,7 +180,7 @@ abstract class AxonTestThenMessage<T extends AxonTestPhase.Then.Message<T>>
     @Override
     public T commandsSatisfy(Consumer<List<CommandMessage>> consumer) {
         Objects.requireNonNull(consumer, "The consumer may not be null.");
-        var dispatchedCommands = recordings.commandBus().recordedCommands();
+        var dispatchedCommands = recordedCommands();
         try {
             consumer.accept(dispatchedCommands);
         } catch (AssertionError e) {
@@ -180,7 +192,7 @@ abstract class AxonTestThenMessage<T extends AxonTestPhase.Then.Message<T>>
     @Override
     public T commandsMatch(Predicate<List<CommandMessage>> predicate) {
         Objects.requireNonNull(predicate, "The predicate may not be null.");
-        var dispatchedCommands = recordings.commandBus().recordedCommands();
+        var dispatchedCommands = recordedCommands();
         var result = predicate.test(dispatchedCommands);
         if (!result) {
             throw new AxonAssertionError("Events does not satisfy the predicate");

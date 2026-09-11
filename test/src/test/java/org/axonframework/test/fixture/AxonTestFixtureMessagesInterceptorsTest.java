@@ -43,7 +43,7 @@ class AxonTestFixtureMessagesInterceptorsTest {
     void givenCommandHandler_whenCommandDispatched_thenRecordedEventContainsInterceptorMetadata() {
         var configurer = MessagingConfigurer.create(); // no disableEnhancerScanning!
 
-        // Command handler: ChangeStudentNameCommand → publishes StudentNameChangedEvent
+        // Command handler: ChangeStudentNameCommand -> publishes StudentNameChangedEvent
         configurer.registerCommandHandlingModule(
                 CommandHandlingModule.named("test-command-handler")
                                      .commandHandlers()
@@ -77,7 +77,7 @@ class AxonTestFixtureMessagesInterceptorsTest {
     void givenEventHandlerDispatchesCommand_whenEventPublished_thenRecordedEventContainsInterceptorMetadata() {
         var configurer = EventSourcingConfigurer.create();
 
-        // Pooled streaming processor: StudentNameChangedEvent → dispatches SendNotificationCommand
+        // Pooled streaming processor: StudentNameChangedEvent -> dispatches SendNotificationCommand
         configurer.messaging(mc -> mc.eventProcessing(ep -> ep.pooledStreaming(ps -> ps.processor(
                 EventProcessorModule
                         .pooledStreaming("test-interceptor-metadata")
@@ -96,7 +96,7 @@ class AxonTestFixtureMessagesInterceptorsTest {
                         )).notCustomized()
         ))));
 
-        // Command handler: SendNotificationCommand → publishes NotificationSentEvent
+        // Command handler: SendNotificationCommand -> publishes NotificationSentEvent
         configurer.messaging(mc -> mc.registerCommandHandlingModule(
                 CommandHandlingModule.named("test-notification-handler")
                                      .commandHandlers()
@@ -127,7 +127,7 @@ class AxonTestFixtureMessagesInterceptorsTest {
                // First, await that NotificationSentEvent was published at all
                .await(r -> r.eventsMatch(events -> events.stream()
                                                          .anyMatch(e -> e.payloadType().equals(NotificationSentEvent.class))))
-               // Then assert it carries the interceptor metadata — fails until the recording bug is fixed
+               // Then assert it carries the interceptor metadata, fails until the recording bug is fixed
                .eventsMatch(events -> events.stream()
                                             .filter(e -> e.payloadType().equals(NotificationSentEvent.class))
                                             .allMatch(e -> e.metadata().containsKey(TEST_INTERCEPTOR_METADATA_KEY)));

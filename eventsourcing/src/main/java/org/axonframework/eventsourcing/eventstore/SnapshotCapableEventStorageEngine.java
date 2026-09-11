@@ -81,17 +81,10 @@ public class SnapshotCapableEventStorageEngine implements EventStorageEngine {
      * Returns an {@link EventStorageEngine} that supports the {@link SourcingStrategy.Snapshot} sourcing strategy,
      * given the {@code engine} to source events from and the {@code snapshotStore} holding its snapshots.
      * <p>
-     * The given {@code engine} is returned as is when it is the given {@code snapshotStore} itself. Such an engine
-     * resolves the snapshot within its own {@link #source(SourcingCondition, ProcessingContext) source} call, serving
-     * the snapshot and the events following it in a single round trip. Decorating it would resolve the snapshot
-     * separately and pass an {@link SourcingStrategy.Absolute absolute strategy} inward, disabling that optimization.
-     * <p>
-     * An {@code engine} that is already decorated is returned as is too, so composing twice is harmless. It keeps
-     * resolving snapshots from the store it was decorated with, and the given {@code snapshotStore} is ignored for it.
-     * Decorating again would put the given store in front of that one instead of adding anything.
-     * <p>
-     * Any other {@code engine} is decorated, resolving the snapshot from the {@code snapshotStore} before sourcing the
-     * events that follow it.
+     * The given {@code engine} is returned as is when it already supports snapshotting natively (it implements
+     * {@link SnapshotStore} itself) or is already decorated by this class. In both cases, decorating again would
+     * only add an unnecessary indirection. Any other {@code engine} is wrapped so it resolves the snapshot from the
+     * {@code snapshotStore} before sourcing the events that follow it.
      *
      * @param engine        the engine to source events from
      * @param snapshotStore the store holding the snapshots of the given {@code engine}
@@ -102,7 +95,7 @@ public class SnapshotCapableEventStorageEngine implements EventStorageEngine {
     public static EventStorageEngine decorate(EventStorageEngine engine, SnapshotStore snapshotStore) {
         Objects.requireNonNull(engine, "The engine parameter cannot be null.");
         Objects.requireNonNull(snapshotStore, "The snapshotStore parameter cannot be null.");
-        return engine == snapshotStore || engine instanceof SnapshotCapableEventStorageEngine
+        return engine instanceof SnapshotStore || engine instanceof SnapshotCapableEventStorageEngine
                 ? engine
                 : new SnapshotCapableEventStorageEngine(engine, snapshotStore);
     }

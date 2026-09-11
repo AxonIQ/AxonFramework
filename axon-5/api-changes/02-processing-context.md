@@ -152,11 +152,11 @@ something.
 A repository never creates a context. The event processor does, and hands it down through the component that invokes
 the saga.
 
-One wiring note if you modernise a saga while migrating it. An Axon Framework 4 saga received a `CommandGateway`
-through a `ResourceInjector` and kept it in a field; that still works, and the handler passes it the
-`ProcessingContext` it was invoked with. The Axon Framework 5 route is a `CommandDispatcher` parameter, already bound
-to that context, and it needs `CommandDispatcherParameterResolverFactory` to be part of the `ParameterResolverFactory`
-the saga's metamodel was built with. That resolver is contributed by a `ConfigurationEnhancer` rather than registered
+One wiring note if you modernise a saga while migrating it. Axon Framework 4 could give a saga a `CommandGateway`
+through a `ResourceInjector` and keep it in a field. Saga resource injection is removed in Axon Framework 5. Declare a
+`CommandDispatcher` parameter on the handler instead; the injected dispatcher is already bound to the handler's
+`ProcessingContext`. `CommandDispatcherParameterResolverFactory` must be part of the `ParameterResolverFactory` the
+saga's metamodel was built with. That resolver is contributed by a `ConfigurationEnhancer` rather than registered
 through `META-INF/services`, so the classpath default `AnnotationSagaMetaModelFactory` uses does not include it: hand
 the configured factory to `AnnotatedSagaRepository.Builder#parameterResolverFactory`.
 

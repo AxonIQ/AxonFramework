@@ -19,7 +19,6 @@ package org.axonframework.integrationtests.modelling.saga;
 import org.axonframework.common.FutureUtils;
 import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.common.configuration.Configuration;
-import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
 import org.axonframework.messaging.core.configuration.MessagingConfigurer;
 import org.axonframework.messaging.eventhandling.configuration.EventProcessorModule;
 import org.axonframework.messaging.core.EmptyApplicationContext;
@@ -49,6 +48,7 @@ import org.axonframework.modelling.saga.EndSaga;
 import org.axonframework.modelling.saga.SagaEventHandler;
 import org.axonframework.modelling.saga.SagaLifecycle;
 import org.axonframework.modelling.saga.StartSaga;
+import org.axonframework.modelling.saga.configuration.Sagas;
 import org.axonframework.modelling.saga.repository.AnnotatedSagaRepository;
 import org.axonframework.modelling.saga.repository.SagaStore;
 import org.axonframework.modelling.saga.repository.inmemory.InMemorySagaStore;
@@ -334,10 +334,8 @@ class SagaEventProcessingIT {
     /**
      * The other nested classes construct their processors directly, so they can inject a recording
      * {@link TransactionManager} and choose a segment count. This one instead registers the Saga the way an
-     * application does, through the public configuration API, and resolves the {@link SagaStore} from the
-     * {@link Configuration} rather than closing over it. That is what a dedicated
-     * Saga configurer would automate, so proving it works here shows such a configurer would be sugar rather than a
-     * missing prerequisite.
+     * application does, through the public configuration API, resolving the {@link SagaStore} from the
+     * {@link Configuration} rather than closing over it.
      */
     @Nested
     class RegisteredThroughTheConfiguration {
@@ -365,7 +363,7 @@ class SagaEventProcessingIT {
                                                .eventHandlingComponents(
                                                        components -> components.declarative(
                                                                "Saga[OrderSaga]",
-                                                               this::sagaManagerFrom
+                                                               Sagas.of(OrderSaga.class)
                                                        )
                                                )
                                                .notCustomized())
@@ -378,25 +376,6 @@ class SagaEventProcessingIT {
 
             // then
             assertThat(sagaStore.findSagas(OrderSaga.class, ORDER_1)).hasSize(1);
-        }
-
-        @SuppressWarnings("unchecked")
-        private EventHandlingComponent sagaManagerFrom(Configuration configuration) {
-            SagaStore<Object> store = configuration.getComponent(SagaStore.class);
-            return AnnotatedSagaManager.<OrderSaga>builder()
-                                       .sagaRepository(AnnotatedSagaRepository.<OrderSaga>builder()
-                                                                              .sagaType(OrderSaga.class)
-                                                                              .sagaStore(store)
-                                                                              .parameterResolverFactory(
-                                                                                      configuration.getComponent(
-                                                                                              ParameterResolverFactory.class)
-                                                                              )
-                                                                              .build())
-                                       .sagaType(OrderSaga.class)
-                                       .sagaFactory(OrderSaga::new)
-                                       .parameterResolverFactory(
-                                               configuration.getComponent(ParameterResolverFactory.class))
-                                       .build();
         }
     }
 

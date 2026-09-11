@@ -27,7 +27,6 @@ import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.ProcessingLifecycle;
 import org.axonframework.modelling.saga.AnnotatedSaga;
 import org.axonframework.modelling.saga.AssociationValue;
-import org.axonframework.modelling.saga.ResourceInjector;
 import org.axonframework.modelling.saga.Saga;
 import org.axonframework.modelling.saga.SagaRepository;
 import org.axonframework.modelling.saga.metamodel.AnnotationSagaMetaModelFactory;
@@ -85,7 +84,6 @@ public class AnnotatedSagaRepository<T> extends LockingSagaRepository<T> {
     private final SagaStore<? super T> sagaStore;
     private final SagaModel<T> sagaModel;
     private final MessageHandlerInterceptorMemberChain<T> chainedInterceptor;
-    private final ResourceInjector resourceInjector;
 
     private final Map<String, AnnotatedSaga<T>> managedSagas;
     private final Context.ResourceKey<Set<String>> unsavedSagasResourceKey;
@@ -93,8 +91,8 @@ public class AnnotatedSagaRepository<T> extends LockingSagaRepository<T> {
     /**
      * Instantiate a {@link AnnotatedSagaRepository} based on the fields contained in the {@link Builder}.
      * <p>
-     * Will assert that the {@code sagaType}, {@link SagaStore} and {@link ResourceInjector} are not {@code null}, and
-     * will throw an {@link AxonConfigurationException} if any of them is {@code null}. Additionally, the provided
+     * Will assert that the {@code sagaType} and {@link SagaStore} are not {@code null}, and will throw an
+     * {@link AxonConfigurationException} if either of them is {@code null}. Additionally, the provided
      * builder's goal is to either build a {@link SagaModel} specifying generic {@code T} as the Saga type to be stored
      * or derive it based on the given {@code sagaType}. The same argument applies to the {@link MessageHandlerInterceptorMemberChain}. All
      * Sagas in this repository must be {@code instanceOf} this saga type.
@@ -107,7 +105,6 @@ public class AnnotatedSagaRepository<T> extends LockingSagaRepository<T> {
         this.sagaModel = builder.buildSagaModel();
         this.chainedInterceptor = builder.buildChainedInterceptor();
         this.sagaStore = builder.sagaStore;
-        this.resourceInjector = builder.resourceInjector;
         this.managedSagas = new ConcurrentHashMap<>();
         this.unsavedSagasResourceKey =
                 Context.ResourceKey.withLabel("Repository[" + sagaType.getSimpleName() + "]/UnsavedSagas");
@@ -116,7 +113,7 @@ public class AnnotatedSagaRepository<T> extends LockingSagaRepository<T> {
     /**
      * Instantiate a Builder to be able to create an {@link AnnotatedSagaRepository}.
      * <p>
-     * The {@link ResourceInjector} is defaulted to a {@link NoResourceInjector}. This Builder either allows directly
+     * This Builder either allows directly
      * setting a {@link SagaModel} of generic type {@code T}, or it will generate it based of the required
      * {@code sagaType} field of type {@link Class}. Same for the {@link MessageHandlerInterceptorMemberChain} Thus,
      * either the SagaModel <b>or</b> the {@code sagaType} should be provided. All Saga in this repository must be
@@ -156,7 +153,6 @@ public class AnnotatedSagaRepository<T> extends LockingSagaRepository<T> {
                                              ProcessingContext context) {
         try {
             T sagaRoot = sagaFactory.get();
-            resourceInjector.injectResources(sagaRoot);
             AnnotatedSaga<T> saga =
                     new AnnotatedSaga<>(sagaIdentifier,
                                         Collections.emptySet(),
@@ -252,8 +248,7 @@ public class AnnotatedSagaRepository<T> extends LockingSagaRepository<T> {
 
     /**
      * Loads the saga with given {@code sagaIdentifier} from the underlying saga store and returns it as a
-     * {@link AnnotatedSaga}. Resources of the saga will be injected using the {@link ResourceInjector} configured with
-     * the repository.
+     * {@link AnnotatedSaga}.
      *
      * @param sagaIdentifier the identifier of the saga to load
      * @return AnnotatedSaga instance with the loaded saga
@@ -262,7 +257,6 @@ public class AnnotatedSagaRepository<T> extends LockingSagaRepository<T> {
         SagaStore.Entry<T> entry = sagaStore.loadSaga(sagaType, sagaIdentifier);
         if (entry != null) {
             T saga = entry.saga();
-            resourceInjector.injectResources(saga);
             return new AnnotatedSaga<>(sagaIdentifier, entry.associationValues(), saga, sagaModel, chainedInterceptor);
         }
         return null;
@@ -271,7 +265,7 @@ public class AnnotatedSagaRepository<T> extends LockingSagaRepository<T> {
     /**
      * Builder class to instantiate a {@link AnnotatedSagaRepository}.
      * <p>
-     * The {@link ResourceInjector} is defaulted to a {@link NoResourceInjector}. This Builder either allows directly
+     * This Builder either allows directly
      * setting a {@link SagaModel} of generic type {@code T}, or it will generate one based of the required
      * {@code sagaType} field of type {@link Class}. Thus, either the SagaModel <b>or</b> the {@code sagaType} should be
      * provided. All Sagas in this repository must be {@code instanceOf} this saga type. Additionally, the
@@ -287,7 +281,6 @@ public class AnnotatedSagaRepository<T> extends LockingSagaRepository<T> {
         private SagaModel<T> sagaModel;
         private MessageHandlerInterceptorMemberChain<T> interceptorMemberChain;
         private SagaStore<? super T> sagaStore;
-        private ResourceInjector resourceInjector = NoResourceInjector.INSTANCE;
 
         @Override
         public Builder<T> lockFactory(LockFactory lockFactory) {
@@ -360,20 +353,6 @@ public class AnnotatedSagaRepository<T> extends LockingSagaRepository<T> {
         public Builder<T> sagaStore(SagaStore<? super T> sagaStore) {
             assertNonNull(sagaStore, "SagaStore may not be null");
             this.sagaStore = sagaStore;
-            return this;
-        }
-
-        /**
-         * Sets the {@link ResourceInjector} used to initialize {@link Saga} instances after a target instance is
-         * created or loaded from the store. Defaults to a {@link NoResourceInjector}.
-         *
-         * @param resourceInjector a {@link ResourceInjector} used to initialize {@link Saga} instances after a target
-         *                         instance is created or loaded from the store
-         * @return the current Builder instance, for fluent interfacing
-         */
-        public Builder<T> resourceInjector(ResourceInjector resourceInjector) {
-            assertNonNull(resourceInjector, "ResourceInjector may not be null");
-            this.resourceInjector = resourceInjector;
             return this;
         }
 

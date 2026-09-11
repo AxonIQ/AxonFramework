@@ -35,7 +35,6 @@ import org.axonframework.messaging.commandhandling.gateway.DefaultCommandGateway
 import org.axonframework.messaging.commandhandling.interception.CommandSequencingInterceptor;
 import org.axonframework.messaging.commandhandling.interception.InterceptingCommandBus;
 import org.axonframework.messaging.commandhandling.retry.RetryingCommandBus;
-import org.axonframework.messaging.core.retry.RetryScheduler;
 import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
 import org.axonframework.messaging.core.ConfigurationApplicationContext;
 import org.axonframework.messaging.core.MessageDispatchInterceptor;
@@ -54,6 +53,7 @@ import org.axonframework.messaging.core.interception.DefaultDispatchInterceptorR
 import org.axonframework.messaging.core.interception.DefaultHandlerInterceptorRegistry;
 import org.axonframework.messaging.core.interception.DispatchInterceptorRegistry;
 import org.axonframework.messaging.core.interception.HandlerInterceptorRegistry;
+import org.axonframework.messaging.core.retry.RetryScheduler;
 import org.axonframework.messaging.core.sequencing.NoOpSequencingPolicy;
 import org.axonframework.messaging.core.sequencing.RoutingKeySequencingPolicy;
 import org.axonframework.messaging.core.sequencing.SequencingPolicy;
@@ -156,6 +156,18 @@ public class MessagingConfigurationDefaults implements ConfigurationEnhancer {
      * The component name for the default command sequencing policy.
      */
     public static final String COMMAND_SEQUENCING_POLICY = "commandSequencingPolicy";
+    /**
+     * The name under which a {@link UnitOfWorkFactory} specifically for the {@link CommandBus} is registered.
+     * <p>
+     * By default, this component simply delegates to the generic, unnamed {@code UnitOfWorkFactory} component.
+     */
+    public static final String COMMAND_BUS_UNIT_OF_WORK_FACTORY_NAME = "UnitOfWorkFactory[CommandBus]";
+    /**
+     * The name under which a {@link UnitOfWorkFactory} specifically for the {@link QueryBus} is registered.
+     * <p>
+     * By default, this component simply delegates to the generic, unnamed {@code UnitOfWorkFactory} component.
+     */
+    public static final String QUERY_BUS_UNIT_OF_WORK_FACTORY_NAME = "UnitOfWorkFactory[QueryBus]";
 
     @Override
     public int order() {
@@ -175,6 +187,10 @@ public class MessagingConfigurationDefaults implements ConfigurationEnhancer {
                 .registerIfNotPresent(MessageConverter.class, MessagingConfigurationDefaults::defaultMessageConverter)
                 .registerIfNotPresent(EventConverter.class, MessagingConfigurationDefaults::defaultEventConverter)
                 .registerIfNotPresent(UnitOfWorkFactory.class, MessagingConfigurationDefaults::defaultUnitOfWorkFactory)
+                .registerIfNotPresent(UnitOfWorkFactory.class, COMMAND_BUS_UNIT_OF_WORK_FACTORY_NAME,
+                                      c -> c.getComponent(UnitOfWorkFactory.class))
+                .registerIfNotPresent(UnitOfWorkFactory.class, QUERY_BUS_UNIT_OF_WORK_FACTORY_NAME,
+                                      c -> c.getComponent(UnitOfWorkFactory.class))
                 .registerIfNotPresent(CorrelationDataProviderRegistry.class,
                                       MessagingConfigurationDefaults::defaultCorrelationDataProviderRegistry)
                 .registerIfNotPresent(SequencingPolicy.class,
@@ -350,7 +366,9 @@ public class MessagingConfigurationDefaults implements ConfigurationEnhancer {
     }
 
     private static CommandBus defaultCommandBus(Configuration config) {
-        return new SimpleCommandBus(config.getComponent(UnitOfWorkFactory.class));
+        return new SimpleCommandBus(
+                config.getComponent(UnitOfWorkFactory.class, COMMAND_BUS_UNIT_OF_WORK_FACTORY_NAME)
+        );
     }
 
     private static RoutingStrategy defaultRoutingStrategy(Configuration config) {
@@ -383,7 +401,9 @@ public class MessagingConfigurationDefaults implements ConfigurationEnhancer {
     }
 
     private static QueryBus defaultQueryBus(Configuration config) {
-        return new SimpleQueryBus(config.getComponent(UnitOfWorkFactory.class));
+        return new SimpleQueryBus(
+                config.getComponent(UnitOfWorkFactory.class, QUERY_BUS_UNIT_OF_WORK_FACTORY_NAME)
+        );
     }
 
     private static MessageMonitorRegistry defaultMessageMonitorRegistry(Configuration config) {

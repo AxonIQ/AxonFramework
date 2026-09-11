@@ -6,6 +6,46 @@ Any patch release made for an Axon project is tailored towards resolving bugs. T
 [#release_5_3]
 == Release 5.3
 
+=== Release 5.3.2
+
+==== Enhancements
+
+- Test Map-based `AggregateMember` rewrites (link:https://github.com/AxonIQ/AxonFramework/pull/5033[PR #5033], by @smcvb)
+- Encode username header value for non-ascii characters (link:https://github.com/AxonIQ/AxonFramework/pull/5028[PR #5028], by @CodeDrivenMitch)
+- Expand `UpdateChecker` logic (link:https://github.com/AxonIQ/AxonFramework/pull/5016[PR #5016], by @smcvb)
+- `SimpleQueryBus` should wrap any subscription query update exception in `CompletableFuture` (link:https://github.com/AxonIQ/AxonFramework/pull/4985[PR #4985], by @smcvb)
+- Add reporting of tags used for the append in the append exception (link:https://github.com/AxonIQ/AxonFramework/pull/4966[PR #4966], by @hjohn)
+
+==== Bug fixes
+
+- Defer `ConfigurationPropertiesBinding` qualified beans on `SpringComponentRegistry` initialization (link:https://github.com/AxonIQ/AxonFramework/pull/5043[PR #5043], by @smcvb)
+- Invoke a before-interceptor's handler exactly once (link:https://github.com/AxonIQ/AxonFramework/pull/5038[PR #5038], by @MateuszNaKodach)
+- Fix bugs found in AF4 during large investigation in AF5 (link:https://github.com/AxonIQ/AxonFramework/pull/5036[PR #5036], by @hjohn)
+- Support Entity-specific (annotated) command handler interceptors (link:https://github.com/AxonIQ/AxonFramework/pull/5035[PR #5035], by @smcvb)
+- Multi-Member entity event routing: docs, tests, and `@EventTag` recipe (link:https://github.com/AxonIQ/AxonFramework/pull/5021[PR #5021], by @MateuszNaKodach)
+- Fix for appending events in `SubscribingEventProcessor` (link:https://github.com/AxonIQ/AxonFramework/pull/5020[PR #5020], by @smcvb)
+- Ensure returned `CommandResultMessage` is never `null` (link:https://github.com/AxonIQ/AxonFramework/pull/4999[PR #4999], by @smcvb)
+- Bound the polling thread join in `JpaPollingEventCoordinator.terminate()` (link:https://github.com/AxonIQ/AxonFramework/pull/4968[PR #4968], by @smcvb)
+- Ensure user-configured `HandlerDefinitions` and `HandlerEnhancerDefinitions` are utilized throughout (link:https://github.com/AxonIQ/AxonFramework/issues/4786[#4786], link:https://github.com/AxonIQ/AxonFramework/pull/4965[PR #4965], by @smcvb)
+
+==== Documentation
+
+- Add saga-recipes example and a Sagas and Process Managers guide (link:https://github.com/AxonIQ/AxonFramework/issues/4619[#4619], link:https://github.com/AxonIQ/AxonFramework/pull/5017[PR #5017], by @MateuszNaKodach)
+- Fix spelling in Saga Guide (link:https://github.com/AxonIQ/AxonFramework/issues/4619[#4619], link:https://github.com/AxonIQ/AxonFramework/pull/5018[PR #5018], by @MateuszNaKodach)
+- Document that the initial token is not a replay (link:https://github.com/AxonIQ/AxonFramework/pull/4983[PR #4983], by @MateuszNaKodach)
+- Document the blast radius of a stalled segment (link:https://github.com/AxonIQ/AxonFramework/pull/4957[PR #4957], by @abuijze)
+- Add 5.3.1 release notes (link:https://github.com/AxonIQ/AxonFramework/pull/4951[PR #4951], by @smcvb)
+
+==== Contributors
+
+A heartfelt thank you to all contributors who worked on this section:
+
+- link:https://github.com/abuijze[@abuijze]
+- link:https://github.com/CodeDrivenMitch[@CodeDrivenMitch]
+- link:https://github.com/hjohn[@hjohn]
+- link:https://github.com/MateuszNaKodach[@MateuszNaKodach]
+- link:https://github.com/smcvb[@smcvb]
+
 === Release 5.3.1
 
 ==== Enhancements

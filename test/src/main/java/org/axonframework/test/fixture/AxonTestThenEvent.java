@@ -18,11 +18,13 @@ package org.axonframework.test.fixture;
 
 import org.jspecify.annotations.Nullable;
 import org.axonframework.common.configuration.AxonConfiguration;
+import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.hamcrest.StringDescription;
 
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 
 /**
  * Implementation of the {@link AxonTestThenMessage then-message-phase} for
@@ -38,18 +40,20 @@ class AxonTestThenEvent
     /**
      * Constructs an {@code AxonTestThenEvent} for the given parameters.
      *
-     * @param configuration   The configuration which this test fixture phase is based on.
-     * @param customization   Collection of customizations made for this test fixture.
-     * @param recordings      The registry holding recording components for assertions.
-     * @param actualException The exception thrown during the when-phase, potentially {@code null}.
+     * @param configuration   the configuration which this test fixture phase is based on
+     * @param customization   collection of customizations made for this test fixture
+     * @param recordings      the registry holding recording components for assertions
+     * @param assertionFilter filter applied to recorded messages before assertions
+     * @param actualException the exception thrown during the when-phase, potentially {@code null}
      */
     public AxonTestThenEvent(
             AxonConfiguration configuration,
             AxonTestFixture.Customization customization,
             RecordingComponentsRegistry recordings,
+            Predicate<Message> assertionFilter,
             @Nullable Throwable actualException
     ) {
-        super(configuration, customization, recordings, actualException);
+        super(configuration, customization, recordings, assertionFilter, actualException);
     }
 
     @Override

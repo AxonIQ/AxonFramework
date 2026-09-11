@@ -404,6 +404,53 @@ snapshotting, dead-letter queues, and event scheduling (to name a few). And, las
 solution towards integration testing an Axon Framework application.
 
 We acknowledge that this shift is a massive breaking changes between Axon Framework 4 and 5. Given the importance of
-test suites, we will provide a legacy installment of the old fixtures, albeit deprecated. This way, users are able to
-migrate the tests on their own pass.
+test suites, we will provide a legacy installment of the old fixtures. This way, users are able to migrate the tests
+on their own pass.
 
+### Migrating `SagaTestFixture`
+
+The legacy `SagaTestFixture` is available from the `axon-legacy-test` module. It retains the Axon Framework 4
+given-when-then API where possible, but delegates execution to an Axon Framework 5 `AxonTestFixture` and application
+configuration. This introduces the following observable differences and lifecycle requirements:
+
+- The fixture starts its application configuration when it handles the first event or when `getEventBus()` or
+  `getCommandBus()` is called. Register resources, handler definitions, interceptors, and custom configuration before
+  that point. As in Axon Framework 4, registrations made after the fixture has been wired are ignored.
+- Every `whenPublishingA(...)` and `whenAggregate(...)` call starts a new observation window. Commands and events from
+  a preceding when-phase are not included in the next result, and start-recording callbacks run for every when-phase.
+- `AxonTestFixture` passes commands and events supplied to its when-phase through the configured buses, but filters
+  those input messages out of then-phase assertions. Messages produced while handling the inputs remain visible.
+- `setCallbackBehavior(...)` remains effective after the fixture has started. A command handler registered through
+  `customize(...)` handles matching commands first; the callback behavior answers commands for which no handler is
+  registered. `getCommandBus()` returns the configured Axon Framework 5 `CommandBus`, rather than the concrete Axon
+  Framework 4 `RecordingCommandBus`; use fixture expectations such as `expectDispatchedCommands(...)` to inspect
+  recorded commands.
+- Passing a payload object to the fixture derives its message type from the payload class. Passing an `EventMessage`
+  preserves that message's declared Axon Framework 5 `MessageType`, and routing uses that declared type instead of the
+  payload's Java class. An explicitly created message therefore reaches a saga only when its declared type matches the
+  saga handler's event type.
+
+Saga handler exceptions also follow Axon Framework 5 processing semantics. In Axon Framework 4, the default
+`ListenerInvocationErrorHandler` logged and swallowed a saga handler exception. That extension point was removed, so
+an unhandled exception now fails `expectSuccessfulHandlerExecution()` and rolls back event handling. Declare an
+`@ExceptionHandler` method on the saga when the migration requires the Axon Framework 4 default: returning normally
+suppresses the exception, while rethrowing propagates it. See [Processing context](02-processing-context.md#sagamanager)
+for the complete SagaManager failure and transaction behavior.
+
+Deadlines, scheduled events, and time advancement have not been ported to `axon-legacy-test`. Their API remains
+present so existing tests compile, but every related operation and assertion, including negative assertions, throws
+`UnsupportedOperationException`. This fails explicitly instead of allowing a test to pass without checking anything.
+
+Finally, an Axon Framework 5-backed fixture owns a started application configuration and event processor. Close it to
+run its shutdown handlers. `SagaTestFixture` implements `AutoCloseable`, and `close()` delegates to `stop()`, so
+try-with-resources is the preferred form:
+
+```java
+try (var fixture = new SagaTestFixture<>(OrderSaga.class)) {
+    fixture.givenNoPriorActivity()
+           .whenPublishingA(new OrderPlaced("order-1"))
+           .expectActiveSagas(1);
+}
+```
+
+For a fixture stored in a test field, invoke `close()` or `stop()` from the test framework's after-each callback.

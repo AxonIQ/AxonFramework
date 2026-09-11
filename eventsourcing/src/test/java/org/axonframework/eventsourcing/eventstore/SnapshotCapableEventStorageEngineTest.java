@@ -188,6 +188,19 @@ class SnapshotCapableEventStorageEngineTest {
             assertThat(result).isSameAs(snapshotResolvingEngine);
         }
 
+        // config.getComponent(SnapshotStore.class) may return a decorated view of the engine's own SnapshotStore
+        // (e.g. wrapped for tracing) rather than the engine itself, even though the engine backs that component.
+        @Test
+        void returnsAnEngineThatIsItsOwnSnapshotStoreAsIsEvenWhenGivenADifferentSnapshotStoreInstance() {
+            SnapshotResolvingEngine snapshotResolvingEngine = new SnapshotResolvingEngine();
+
+            EventStorageEngine result = SnapshotCapableEventStorageEngine.decorate(
+                    snapshotResolvingEngine, new InMemorySnapshotStore()
+            );
+
+            assertThat(result).isSameAs(snapshotResolvingEngine);
+        }
+
         // A module registry receives the copied decorator definition and re-runs the enhancer that registers it, so the
         // same engine is composed twice. The second composition must not add a second snapshot load.
         @Test

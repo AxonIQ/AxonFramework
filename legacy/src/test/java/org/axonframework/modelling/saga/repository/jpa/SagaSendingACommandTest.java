@@ -72,10 +72,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * that belongs to the saga repository: the saga's own state follows the processing context it was created in, in both
  * directions.
  * <p>
- * Both ways of reaching the command bus are covered, because a migrating project may be on either. A
- * {@link CommandGateway} in a field is what an Axon Framework 4 saga got from a {@code ResourceInjector}, and the
- * handler hands it the {@link ProcessingContext} it was invoked with. A {@link CommandDispatcher} parameter is the
- * Axon Framework 5 route and is already bound to that context; it needs
+ * The Saga reaches the command bus through a {@link CommandDispatcher} handler parameter. It is already bound to the
+ * handler's {@link ProcessingContext}, does not depend on resource injection, and remains available when a persisted
+ * Saga is reloaded. It needs
  * {@link org.axonframework.messaging.commandhandling.annotation.CommandDispatcherParameterResolverFactory} in the
  * repository's {@code ParameterResolverFactory}, which the metamodel's classpath default does not contain.
  *
@@ -92,8 +91,7 @@ class SagaSendingACommandTest {
     private JpaSagaStore sagaStore;
     private UnitOfWorkFactory unitOfWorkFactory;
     private CommandGateway commandGateway;
-    private AnnotatedSagaRepository<CommandSendingSaga> repository;
-    private AnnotatedSagaRepository<CommandDispatchingSaga> dispatchingRepository;
+    private AnnotatedSagaRepository<CommandDispatchingSaga> repository;
 
     @BeforeEach
     void setUp() {
@@ -127,9 +125,10 @@ class SagaSendingACommandTest {
         CommandBus commandBus = new SimpleCommandBus(unitOfWorkFactory).subscribe(
                 new QualifiedName(RecordTheShipment.class),
                 (command, context) -> {
-                    sagaStore.insertSaga(CommandSendingSaga.class,
-                                         "written-by-the-command-handler",
-                                         new CommandSendingSaga(),
+                    RecordTheShipment payload = (RecordTheShipment) command.payload();
+                    sagaStore.insertSaga(CommandDispatchingSaga.class,
+                                         "written-by-" + payload.reason(),
+                                         new CommandDispatchingSaga(),
                                          Set.of());
                     return MessageStream.empty().cast();
                 }
@@ -139,25 +138,20 @@ class SagaSendingACommandTest {
                                                    CommandPriorityCalculator.defaultCalculator(),
                                                    new AnnotationRoutingStrategy());
 
-        repository = AnnotatedSagaRepository.<CommandSendingSaga>builder()
-                                           .sagaType(CommandSendingSaga.class)
-                                           .sagaStore(sagaStore)
-                                           .build();
-
         // A CommandDispatcher parameter needs its resolver, and that one is contributed by a ConfigurationEnhancer
         // rather than registered through META-INF/services, so the classpath factory the saga metamodel uses by
         // default does not include it. An application configured through MessagingConfigurer hands the configured
         // factory to the repository; here it is assembled by hand.
-        dispatchingRepository = AnnotatedSagaRepository.<CommandDispatchingSaga>builder()
-                                                       .sagaType(CommandDispatchingSaga.class)
-                                                       .sagaStore(sagaStore)
-                                                       .parameterResolverFactory(new MultiParameterResolverFactory(
-                                                               ClasspathParameterResolverFactory.forClass(
-                                                                       CommandDispatchingSaga.class
-                                                               ),
-                                                               new CommandDispatcherParameterResolverFactory()
-                                                       ))
-                                                       .build();
+        repository = AnnotatedSagaRepository.<CommandDispatchingSaga>builder()
+                                            .sagaType(CommandDispatchingSaga.class)
+                                            .sagaStore(sagaStore)
+                                            .parameterResolverFactory(new MultiParameterResolverFactory(
+                                                    ClasspathParameterResolverFactory.forClass(
+                                                            CommandDispatchingSaga.class
+                                                    ),
+                                                    new CommandDispatcherParameterResolverFactory()
+                                            ))
+                                            .build();
     }
 
     @AfterEach
@@ -179,31 +173,32 @@ class SagaSendingACommandTest {
             FutureUtils.joinAndUnwrap(unitOfWork.execute(), TIMEOUT);
 
             // then both the saga and the command's write are there
-            assertThat(committedSagaIds()).contains("saga-1", "written-by-the-command-handler");
+            assertThat(committedSagaIds()).contains("saga-1", "written-by-placement");
             assertThat(committedAssociationSagaIds(ORDER_1)).containsExactly("saga-1");
         }
 
         @Test
-        void aSagaDispatchingThroughACommandDispatcherWorksTheSameWay() {
-            // given a saga taking the Axon Framework 5 route instead: a CommandDispatcher parameter, bound to the
-            // context its handler was invoked with
-            UnitOfWork unitOfWork = unitOfWorkFactory.create();
-            unitOfWork.runOnInvocation(context -> {
+        void aReloadedSagaCanStillDispatchThroughAHandlerParameter() {
+            // given a persisted saga whose first handler invocation dispatched a command
+            UnitOfWork creation = unitOfWorkFactory.create();
+            creation.runOnInvocation(context -> handleOrderPlaced(context, "saga-1"));
+            FutureUtils.joinAndUnwrap(creation.execute(), TIMEOUT);
+
+            // when the saga is loaded as a fresh instance and handles another event
+            UnitOfWork rehydration = unitOfWorkFactory.create();
+            rehydration.runOnInvocation(context -> {
                 AnnotatedSaga<CommandDispatchingSaga> saga =
-                        (AnnotatedSaga<CommandDispatchingSaga>) dispatchingRepository.createInstance(
-                                "saga-2", CommandDispatchingSaga::new, context
-                        );
-                saga.associateWith(ORDER_1);
-                EventMessage event = EventTestUtils.asEventMessage(new OrderPlaced("order-1"));
+                        (AnnotatedSaga<CommandDispatchingSaga>) repository.load("saga-1", context);
+                assertThat(saga).isNotNull();
+                EventMessage event = EventTestUtils.asEventMessage(new OrderShipped("order-1"));
                 FutureUtils.joinAndUnwrap(saga.handle(event, context).asCompletableFuture(), TIMEOUT);
             });
 
-            // when
-            FutureUtils.joinAndUnwrap(unitOfWork.execute(), TIMEOUT);
+            FutureUtils.joinAndUnwrap(rehydration.execute(), TIMEOUT);
 
-            // then the saga was persisted and the command was handled, as with the injected gateway
-            assertThat(committedSagaIds()).contains("saga-2", "written-by-the-command-handler");
-            assertThat(committedAssociationSagaIds(ORDER_1)).containsExactly("saga-2");
+            // then the rehydrated handler received a dispatcher and its command was handled
+            assertThat(committedSagaIds()).contains("saga-1", "written-by-placement", "written-by-shipment");
+            assertThat(committedAssociationSagaIds(ORDER_1)).containsExactly("saga-1");
         }
     }
 
@@ -238,9 +233,9 @@ class SagaSendingACommandTest {
     }
 
     private void handleOrderPlaced(ProcessingContext context, String sagaId) {
-        AnnotatedSaga<CommandSendingSaga> saga =
-                (AnnotatedSaga<CommandSendingSaga>) repository.createInstance(
-                        sagaId, () -> new CommandSendingSaga(commandGateway), context
+        AnnotatedSaga<CommandDispatchingSaga> saga =
+                (AnnotatedSaga<CommandDispatchingSaga>) repository.createInstance(
+                        sagaId, CommandDispatchingSaga::new, context
                 );
         saga.associateWith(ORDER_1);
 
@@ -276,28 +271,6 @@ class SagaSendingACommandTest {
     }
 
     /**
-     * Holds its {@link CommandGateway} in a field, as an Axon Framework 4 saga did after a {@code ResourceInjector}
-     * had filled it in.
-     */
-    public static class CommandSendingSaga {
-
-        private transient CommandGateway commandGateway;
-
-        public CommandSendingSaga() {
-            // Present so the saga converts with any Jackson generation, as the store requires.
-        }
-
-        CommandSendingSaga(CommandGateway commandGateway) {
-            this.commandGateway = commandGateway;
-        }
-
-        @SagaEventHandler(associationProperty = "orderId")
-        public void on(OrderPlaced event, ProcessingContext context) {
-            commandGateway.send(new RecordTheShipment(event.orderId()), context);
-        }
-    }
-
-    /**
      * Takes the Axon Framework 5 route: a {@link CommandDispatcher} parameter, which is the documented preferred way
      * to send a command from inside a message handler and needs no field to be injected.
      */
@@ -305,7 +278,12 @@ class SagaSendingACommandTest {
 
         @SagaEventHandler(associationProperty = "orderId")
         public void on(OrderPlaced event, CommandDispatcher dispatcher) {
-            dispatcher.send(new RecordTheShipment(event.orderId()));
+            dispatcher.send(new RecordTheShipment(event.orderId(), "placement"));
+        }
+
+        @SagaEventHandler(associationProperty = "orderId")
+        public void on(OrderShipped event, CommandDispatcher dispatcher) {
+            dispatcher.send(new RecordTheShipment(event.orderId(), "shipment"));
         }
     }
 
@@ -313,7 +291,11 @@ class SagaSendingACommandTest {
 
     }
 
-    public record RecordTheShipment(String orderId) {
+    public record OrderShipped(String orderId) {
+
+    }
+
+    public record RecordTheShipment(String orderId, String reason) {
 
     }
 }

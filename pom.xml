@@ -31,6 +31,7 @@
         <module>extensions</module>
         <module>eventsourcing</module>
         <module>legacy</module>
+        <module>legacy-test</module>
         <module>messaging</module>
         <module>migration</module>
         <module>modelling</module>
