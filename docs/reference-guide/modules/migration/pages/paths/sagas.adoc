@@ -70,50 +70,30 @@ Each `@Saga` class gets its own pooled streaming event processor, named `<Simple
 ignores events that occurred before the processor first starts, matching the Axon Framework 4
 `TrackingEventProcessor` default for sagas.
 
-The head token survives anything that configures the processor without setting an initial token of its own:
-`axon.eventhandling.processors.<name>.*` entries, and an `EventProcessorDefinition` that only tunes settings. Tuning
-a saga's processor never changes which events the saga sees.
+Tuning a saga's processor does not change which events it sees. The head token survives every
+`axon.eventhandling.processors.<name>.*` entry and any `EventProcessorDefinition` that does not set an initial token
+of its own.
 
-Making a saga process the stream from the start requires setting an initial token explicitly, through a
-`SagaProcessorDefinition`. It runs after the head-token default.
+To make a saga process the stream from the start, set the initial token explicitly with a `SagaProcessorDefinition`:
 
 [source,java]
 ----
 include::example$migration/paths/sagas/SagaProcessorConfiguration.java[tag=replay-into-saga,indent=0]
 ----
 
-[NOTE]
-====
-Axon Framework 4 reached the same outcome by a different route. There, customizing a saga's processor dropped the
-saga's head-token default, and the processor fell back to the generic tracking processor default of
-`createReplayToken(createHeadToken())`: it read from the start of the stream, but flagged every event up to the head
-as a replay, and a saga manager reports `supportsReset() == false`, so those events were never delivered to it.
-Either way, a saga saw only new events.
-
-The Axon Framework 5 generic default resolves to `createReplayToken(firstToken)`, whose replay window is empty, so
-that fallback no longer protects a saga: without the head-token default an existing stream reaches the saga as
-ordinary events and re-executes its side effects. Keeping the head token in place is what preserves the Axon
-Framework 4 behavior.
-====
-
 Every `axon.eventhandling.processors.<name>.*` property (`mode`, `source`, `token-claim-interval`, `thread-count`,
 `batch-size`, and `token-store`) applies to a saga's processor as it applies to any other processor. A pooled saga
 processor needs a `TokenStore` bean, as does any other pooled processor.
 
-`initial-segment-count` is the exception: a saga's processor runs one segment, as in Axon Framework 4, whose saga
-processor defaults derive from single-threaded processing. A saga manager sequences as `BROADCAST`, so every segment
-reads every event and then keeps only the sagas whose identifier it owns; extra segments multiply reads of the whole
-event stream and token store rows without splitting the stream. The property cannot raise it, because the properties
-always carry a segment count and cannot express "leave it alone", so honoring them would fan a saga out over sixteen
-segments as soon as an unrelated property such as `batch-size` was set. Raise it deliberately with a
-`SagaProcessorDefinition`, see <<configuring-a-sagas-processor>>.
+`initial-segment-count` is the exception. A saga's processor runs a single segment, and the property does not raise
+it. Extra segments do not split the stream between them: every segment reads every event and keeps only the sagas it
+owns. Raise the count with a `SagaProcessorDefinition`, see <<configuring-a-sagas-processor>>.
 
 [WARNING]
 ====
 `mode=subscribing` switches the saga to a subscribing processor, which has no segments and no token store. Every
-application instance then falls back to the root segment and starts its own instance of the same saga. This limit is
-inherited from Axon Framework 4, where a subscribing processor behaved the same way. Keep sagas on a pooled
-streaming processor in a multi-instance deployment.
+application instance then starts its own instance of the same saga. Keep sagas on a pooled streaming processor in a
+multi-instance deployment.
 ====
 
 Processor names derived from a saga's simple name are mixed-case (for example, `SimpleSagaProcessor`). Relaxed
@@ -131,13 +111,12 @@ Framework 4 behavior of co-locating sagas in one processing group.
 
 [WARNING]
 ====
-Keep the Axon Framework 4 processor name, or in-flight sagas lose events.
+Keep the original processor name, or in-flight sagas lose events.
 
 `@ProcessingGroup` does not exist in Axon Framework 5, so a saga carrying it no longer compiles. Removing the
-annotation renames the processor to `<SimpleName>Processor`. A `TokenStore` is keyed on the processor name, so the
-Axon Framework 4 token is then orphaned, the renamed processor starts at the head of the stream, and every event
-between the old token position and start-up is never delivered. Sagas already in flight, the ones this module exists
-to carry across, silently miss them.
+annotation renames the processor to `<SimpleName>Processor`. Token stores are keyed on the processor name, so the
+existing token no longer matches, the renamed processor starts at the head of the stream, and every event published
+since that token was written is never delivered to the sagas still running.
 
 Replace `@ProcessingGroup("orders")` with `@Namespace("orders")`, keeping the value, so the existing token is found:
 
@@ -146,86 +125,66 @@ Replace `@ProcessingGroup("orders")` with `@Namespace("orders")`, keeping the va
 include::example$migration/paths/sagas/OrderSaga.java[tag=namespace-preserves-token,indent=0]
 ----
 
-This applies to any saga whose Axon Framework 4 processor name was not `<SimpleName>Processor`, including one named
-through `assignProcessingGroup` or a hand-registered `SagaConfiguration`.
+This applies to any saga whose processor was not already named `<SimpleName>Processor`, including one named through
+`assignProcessingGroup` or a hand-registered `SagaConfiguration`.
 ====
 
-Sagas are assembled separately from ordinary Spring event handlers, so that no part of saga support has to be
-threaded through the handler discovery every Axon Framework 5 application uses. Processor settings and
-`EventProcessorDefinition` beans still apply to a saga's processor as they apply to any other, and an
-`EventProcessorDefinition` selector can assign a saga to its named processor.
+Processor settings and `EventProcessorDefinition` beans apply to a saga's processor as they apply to any other, and
+an `EventProcessorDefinition` selector can assign a saga to its named processor.
 
 [#configuring-a-sagas-processor]
 === Configuring a saga's processor
 
-Declare a `SagaProcessorDefinition` bean. It reaches the same `PooledStreamingEventProcessorConfiguration` an
-ordinary processor exposes, and runs after everything else, so it can set the initial token, the segment count, an
-executor, or anything else:
+Declare a `SagaProcessorDefinition` bean. It runs after the saga defaults and the processor properties, so it has
+the last word on the processor's configuration:
 
 [source,java]
 ----
 include::example$migration/paths/sagas/SagaProcessorConfiguration.java[tag=saga-segments,indent=0]
 ----
 
-`forSaga(OrderSaga.class)` follows the saga wherever its processor ended up, including onto a `@Namespace`-renamed
-one, so it never has to restate how the name was derived.
+Choose the processor in one of two ways:
 
-The saga type selects the processor; it does not narrow the customization to that saga. A processor is the unit of
-configuration, so when two sagas share one, `forSaga(OrderSaga.class)` configures the processor carrying both. Use
-`forProcessor("orders")` there, which says so in the code:
+`forSaga(OrderSaga.class)`:: the processor carrying that saga, wherever it ended up, including a `@Namespace`-renamed
+one. The saga type picks the processor, it does not narrow the customization to that saga, so when sagas share a
+processor this configures all of them. A log message names the others.
+`forProcessor("orders")`:: the processor with that name. Use it for a processor several sagas share.
 
 [source,java]
 ----
 include::example$migration/paths/sagas/SharedSagaProcessorConfiguration.java[tag=shared-saga-processor,indent=0]
 ----
 
-Selecting a shared processor with `forSaga` still works and is logged, naming the other sagas it also configures.
+Then choose how much of the configuration to reach:
 
-`customized(...)` covers the settings both modes share: the error handler, the unit of work factory, and
-extensions. It never mentions a mode.
-
-A pooled streaming and a subscribing processor differ beyond that, so a customization touching mode-specific
-settings says which mode it was written against. `whenPooledStreaming(...)` takes a
-`PooledStreamingEventProcessorConfiguration` with its initial token and segment count; `whenSubscribing(...)` takes a
-`SubscribingEventProcessorConfiguration` with its own `eventSource` and `ignoredMessageHandler`.
+`customized(...)`:: the settings both processor modes share: the error handler, the unit of work factory, and
+extensions. Applies whatever mode the processor runs in.
+`whenPooledStreaming(...)`:: the `PooledStreamingEventProcessorConfiguration`, with the initial token and segment
+count. Applies only while the processor runs in pooled streaming mode.
+`whenSubscribing(...)`:: the `SubscribingEventProcessorConfiguration`, with its `eventSource` and
+`ignoredMessageHandler`. Applies only while the processor runs in subscribing mode.
 
 [source,java]
 ----
 include::example$migration/paths/sagas/SubscribingSagaProcessorConfiguration.java[tag=subscribing-saga-processor,indent=0]
 ----
 
-The `when` prefix is literal: naming the mode does not select it. A saga's mode comes from
-`axon.eventhandling.processors.<name>.mode` or a matching `EventProcessorDefinition`, and a definition written for
-the other mode is skipped, and logged, so a customization never quietly does nothing. Letting an adjustment switch
-the processor's kind would be a far larger change than the adjustment itself: it decides whether there is a token
-store, whether there are segments, and whether a second application instance starts a duplicate saga.
-
-`PooledStreamingEventProcessorModule.Customization` beans are the one mechanism that does *not* apply to a saga's
-processor, and `SagaProcessorDefinition` is their saga-scoped replacement. That channel is how cross-cutting Axon
-Framework 5 infrastructure attaches itself to every processor in an application. Dead-lettering is enabled that way,
-for one, and Axon Framework 4 never dead-lettered a saga: it never wrapped a saga manager in its dead-lettering
-invoker. A saga would otherwise silently acquire behavior the original never had, so a saga's processor opts out of
-the channel entirely rather than guessing which customization was meant for it. Nothing declares a
-`SagaProcessorDefinition` except a saga's own configuration, so the same cannot happen through it.
-
-An `EventProcessorDefinition` naming the processor applies as well, for an application that configures sagas the way
-it configures every other processor.
+Naming a mode does not switch the processor to it. The mode comes from `axon.eventhandling.processors.<name>.mode` or
+a matching `EventProcessorDefinition`; a definition written for the other mode is skipped and logged.
 
 [NOTE]
 ====
-Prefer `SagaProcessorDefinition` for a saga. An `EventProcessorDefinition` has to answer two questions a saga has
-already settled: which handlers it assigns, which for a saga is nobody, and the processor's mode. A definition built
-with `EventProcessorDefinition.pooledStreaming(...)` therefore overrules `mode=subscribing` on that processor, even
-when it only sets an unrelated value such as a batch size.
+`PooledStreamingEventProcessorModule.Customization` beans do not apply to a saga's processor. `SagaProcessorDefinition`
+replaces them.
 
-A `SagaProcessorDefinition` written with `whenPooledStreaming(...)` is skipped, with a warning, on a saga running in
-subscribing mode, and the other way round. `customized(...)` applies either way.
+An `EventProcessorDefinition` naming the processor does apply. Prefer `SagaProcessorDefinition` for a saga: an
+`EventProcessorDefinition` also fixes the processor's mode, so one written to set a batch size overrules
+`mode=subscribing` on that processor.
 ====
 
-One consequence: a saga and an ordinary event handler resolving to the same processor name are rejected, and startup
-fails with a `DuplicateModuleRegistrationException`. Axon Framework 4 co-located them on one processor when they
-shared a processing group. To combine them on purpose, drop `@Saga` from the class and register a `Module` bean
-directly, combining a declarative saga component with autodetected handlers.
+A saga and an ordinary event handler cannot share a processor. When both resolve to the same name, startup fails with
+a `DuplicateModuleRegistrationException`. To put them on one processor on purpose, drop `@Saga` from the class and
+register a `Module` bean combining a declarative saga component with autodetected handlers.
 
 === Saga store selection
 
@@ -259,30 +218,26 @@ discovered.
 == Behavior changes from Axon Framework 4
 
 * *Pooled streaming replaces the tracking processor.* A saga's processor is pooled streaming, not a
-`TrackingEventProcessor`. A `TokenStore` bean is required, as for any pooled processor. The head-token default
-preserves the Axon Framework 4 outcome that a saga only ever sees new events, and it survives tuning; replaying into
-a saga requires setting an initial token explicitly, see <<spring-boot-sagas>>.
+`TrackingEventProcessor`, and needs a `TokenStore` bean as any pooled processor does. A saga still only sees events
+published after its processor first started; replaying into one requires setting an initial token explicitly, see
+<<spring-boot-sagas>>.
 * *No resource injection.* `ResourceInjector` and `SpringResourceInjector` are not ported. A saga's collaborators
 arrive as handler method parameters instead, resolved the same way as for any other event handler, including Spring
 beans.
-* *No `@ProcessingGroup`.* `@Namespace` on the saga type is the replacement for renaming or co-locating a saga's
-processor. It co-locates sagas with each other only: a saga and an ordinary event handler resolving to one processor
-name fail at startup, where Axon Framework 4 put both on one processor. See <<spring-boot-sagas>> for the workaround.
-* *Dead-letter queues are not supported for sagas*, as in Axon Framework 4: the saga invoker was never wrapped in
-dead-lettering there either. Enabling a dead letter queue for a saga's processor by name has no effect, because a
-saga's processor does not take part in the `PooledStreamingEventProcessorModule.Customization` channel that turns
-dead-lettering on, see <<spring-boot-sagas>>.
+* *No `@ProcessingGroup`.* `@Namespace` on the saga type renames or co-locates a saga's processor. It co-locates
+sagas with each other only: a saga and an ordinary event handler resolving to one processor name fail at startup. See
+<<spring-boot-sagas>> for the workaround.
+* *Dead-letter queues are not supported for sagas.* Enabling a dead letter queue for a saga's processor by name has
+no effect.
 * *Deadlines are not ported yet* (see the note in <<legacy-module>>).
 * *The in-memory saga store is an explicit, overridable bean*, not an internal default. An application that wants a
 default store alongside named per-saga stores declares the default store itself.
-* *A `@Saga` class must be public with an accessible no-argument constructor*, matching the Axon Framework 4
-requirement that the default saga factory does not call `setAccessible`.
-* *Component-scan saga classes; do not declare them with a `@Bean` method.* `@Saga` is `@Scope("prototype")`, and
-skipping prototype beans is what keeps a saga out of ordinary event handler discovery. A `@Bean` method ignores the
-scope declared on the class, so a saga declared that way is registered twice: as its saga manager, and again as a
-plain event handling component on the package-derived processor, which then routes every event to one shared saga
-instance outside any association or lifecycle handling. Axon Framework 4 behaves the same way, so this is pinned
-rather than rejected.
+* *A `@Saga` class must be public with an accessible no-argument constructor.*
+* *Component-scan saga classes; do not declare them with a `@Bean` method.* A `@Bean` method ignores the
+`@Scope("prototype")` that `@Saga` declares, and a singleton saga bean is registered twice: as its saga manager, and
+again as a plain event handling component on the package-derived processor. Every event then also reaches one shared
+saga instance, outside association and lifecycle handling. Annotate the bean method with `@Scope("prototype")` if the
+saga cannot be component-scanned.
 
 == Mapping Axon Framework 4 saga concepts to Axon Framework 5
 
