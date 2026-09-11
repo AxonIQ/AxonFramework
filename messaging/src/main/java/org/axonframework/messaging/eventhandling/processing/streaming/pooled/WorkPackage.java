@@ -107,7 +107,6 @@ class WorkPackage implements SegmentProgressContext {
     private TrackingToken lastDeliveredToken; // For use only by event delivery threads, like Coordinator
     private @Nullable TrackingToken lastStoredToken;
     private final AtomicLong nextClaimExtension;
-    private final AtomicBoolean processingEvents;
 
     private final Queue<ProcessingEntry> processingQueue = new ConcurrentLinkedQueue<>();
     private final AtomicBoolean scheduled = new AtomicBoolean();
@@ -145,7 +144,6 @@ class WorkPackage implements SegmentProgressContext {
         // the first store of every claim cycle.
         this.lastStoredToken = builder.initialToken;
         this.nextClaimExtension = new AtomicLong(now() + claimExtensionThreshold);
-        this.processingEvents = new AtomicBoolean(false);
         this.schedulingProcessingContextProvider = builder.schedulingProcessingContextProvider;
         // Created last: the factory only retains this context (as SegmentProgressContext); it must be fully initialized.
         this.progressStrategy = builder.progressStrategyFactory.create(this);
@@ -385,7 +383,6 @@ class WorkPackage implements SegmentProgressContext {
 
         logger.debug("Work Package [{}]-[{}] is processing a batch of {} events.",
                      segment.getSegmentId(), name, eventBatch.size());
-        processingEvents.set(true);
         var unitOfWork = unitOfWorkFactory.create();
         unitOfWork.runOnPreInvocation(ctx -> {
             ctx.putResource(Segment.RESOURCE_KEY, segment);
@@ -407,7 +404,7 @@ class WorkPackage implements SegmentProgressContext {
         } catch (Throwable e) {
             result = CompletableFuture.failedFuture(e);
         }
-        return result.whenComplete((v, t) -> processingEvents.set(false));
+        return result;
     }
 
     private void onProcessingComplete(@Nullable Throwable e) {
@@ -656,12 +653,17 @@ class WorkPackage implements SegmentProgressContext {
     }
 
     /**
-     * Returns whether this {@code WorkPackage} is actively processing events.
+     * Indicates whether a worker is scheduled for this {@code WorkPackage}, either processing a batch or waiting for a
+     * thread of the worker executor to become available.
+     * <p>
+     * This {@code WorkPackage} refreshes its claim on its {@link TrackingToken} from its worker only. As long as one is
+     * outstanding it thus cannot do so itself, regardless of whether that worker is handling events or is still queued
+     * behind work on other segments.
      *
-     * @return Whether this {@code WorkPackage} is actively processing events.
+     * @return {@code true} if a worker is processing a batch or waiting for a thread, {@code false} otherwise
      */
-    public boolean isProcessingEvents() {
-        return processingEvents.get();
+    public boolean isWorkerScheduled() {
+        return scheduled.get();
     }
 
     /**
