@@ -302,15 +302,6 @@ public class EventProcessorProperties {
             this.tokenClaimIntervalTimeUnit = tokenClaimIntervalTimeUnit;
         }
 
-        /**
-         * Returns the threshold, in milliseconds, after which a work package of a
-         * {@link PooledStreamingEventProcessor} extends the claim on its token. Defaults to 5000 milliseconds.
-         *
-         * @return the claim extension threshold in milliseconds
-         */
-        public long getClaimExtensionThreshold() {
-            return claimExtensionThreshold;
-        }
 
         @Override
         public long claimExtensionThresholdInMillis() {
