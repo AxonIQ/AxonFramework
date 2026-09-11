@@ -220,12 +220,14 @@ discovered.
 == Behavior changes from Axon Framework 4
 
 * *`SagaConfigurer` is an Axon Framework 5 component builder.* `forType`, `configureSagaManager`,
-`configureRepository`, and `configureSagaStore` keep their Axon Framework 4 signatures and override precedence.
-`configureSagaFactory` retains custom instance creation from the interim Axon Framework 5 Saga builder. Register the
-configurer as a declarative event handling component and call `build(Configuration)` where Axon Framework 4 called
-`initialize(Configuration)`. The returned object is the Saga manager itself; `SagaConfiguration` and its manager,
-repository, store, processing-group, processor, and error-handler accessors are not ported. Configure processor
-assignment and error handling on the `EventProcessorModule` instead.
+`configureRepository`, and `configureSagaStore` keep their Axon Framework 4 names, fluent return types, and override
+precedence. Their builder functions receive the Axon Framework 5
+`org.axonframework.common.configuration.Configuration`; the Axon Framework 4 `org.axonframework.config.Configuration`
+no longer exists. `configureSagaFactory` retains custom instance creation from the interim Axon Framework 5 Saga
+builder. Register the configurer as a declarative event handling component and call `build(Configuration)` where Axon
+Framework 4 called `initialize(Configuration)`. The returned object is the Saga manager itself; `SagaConfiguration`
+and its manager, repository, store, processing-group, processor, and error-handler accessors are not ported. Configure
+processor assignment and error handling on the `EventProcessorModule` instead.
 * *Pooled streaming replaces the tracking processor.* A saga's processor is pooled streaming, not a
 `TrackingEventProcessor`, and needs a `TokenStore` bean as any pooled processor does. A saga still only sees events
 published after its processor first started; replaying into one requires setting an initial token explicitly, see
