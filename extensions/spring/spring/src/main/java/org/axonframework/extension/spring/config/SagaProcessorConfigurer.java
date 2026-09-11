@@ -224,6 +224,9 @@ public class SagaProcessorConfigurer implements ConfigurationEnhancer, Applicati
                                 if (sagaCustomization != null) {
                                     result = sagaCustomization.apply(result);
                                 }
+                                result = sagaDefinition.applyAnyModeCustomization(
+                                        result, PooledStreamingEventProcessorConfiguration.class
+                                );
                             }
                             SpringCustomizations.requireResolvedTokenStore(processorName, result);
                             return result;
@@ -245,6 +248,9 @@ public class SagaProcessorConfigurer implements ConfigurationEnhancer, Applicati
                         if (sagaCustomization != null) {
                             result = sagaCustomization.apply(result);
                         }
+                        result = sagaDefinition.applyAnyModeCustomization(
+                                result, SubscribingEventProcessorConfiguration.class
+                        );
                     }
                     return result;
                 };
@@ -310,6 +316,9 @@ public class SagaProcessorConfigurer implements ConfigurationEnhancer, Applicati
         var mode = definition.map(EventProcessorDefinition::mode).orElse(settings.processorMode());
         boolean pooled = mode == EventProcessorSettings.ProcessorMode.POOLED;
         for (SagaProcessorDefinition sagaDefinition : matching) {
+            if (!sagaDefinition.isModeSpecific()) {
+                continue;
+            }
             boolean writtenForPooled = sagaDefinition.pooledCustomization() != null;
             if (writtenForPooled != pooled) {
                 logger.warn("Skipping the SagaProcessorDefinition for {}: it customizes a {} processor "

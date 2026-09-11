@@ -28,7 +28,7 @@ class SubscribingSagaProcessorConfiguration {
     @Bean
     SagaProcessorDefinition orderSagaEventSource(SubscribableEventSource eventSource) {
         return SagaProcessorDefinition.forSaga(OrderSaga.class)
-                                      .subscribing(config -> config.eventSource(eventSource));
+                                      .whenSubscribing(config -> config.eventSource(eventSource));
     }
     // end::subscribing-saga-processor[]
 }

@@ -26,7 +26,7 @@ class SagaProcessorConfiguration {
     @Bean
     SagaProcessorDefinition replayIntoOrderSaga() {
         return SagaProcessorDefinition.forSaga(OrderSaga.class)
-                                      .pooledStreaming(config -> config.initialToken(
+                                      .whenPooledStreaming(config -> config.initialToken(
                                               source -> source.firstToken(null)
                                       ));
     }
@@ -36,7 +36,7 @@ class SagaProcessorConfiguration {
     @Bean
     SagaProcessorDefinition orderSagaSegments() {
         return SagaProcessorDefinition.forSaga(OrderSaga.class)
-                                      .pooledStreaming(config -> config.initialSegmentCount(4));
+                                      .whenPooledStreaming(config -> config.initialSegmentCount(4));
     }
     // end::saga-segments[]
 }

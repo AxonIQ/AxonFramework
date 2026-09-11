@@ -16,6 +16,8 @@
 
 package org.axonframework.extension.spring.config;
 
+import org.axonframework.common.AxonConfigurationException;
+import org.axonframework.messaging.eventhandling.configuration.EventProcessorConfiguration;
 import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorConfiguration;
 import org.axonframework.messaging.eventhandling.processing.subscribing.SubscribingEventProcessorConfiguration;
 import org.axonframework.spring.stereotype.Saga;
@@ -39,18 +41,23 @@ import java.util.function.UnaryOperator;
  * processor's mode, so a definition written only to change a batch size also overrules a {@code mode=subscribing}
  * property. This type states neither.
  * <p>
- * A pooled streaming and a subscribing processor expose different configuration, so the mode is named when the
- * customization is given, and the definition applies only to a processor running in that mode. Naming the mode here
- * does not select it: a Saga's mode still comes from {@code axon.eventhandling.processors.<name>.mode} or a matching
- * {@link EventProcessorDefinition}. A definition whose mode does not match the processor it selected is skipped,
- * with a warning, so that a customization never quietly does nothing.
+ * A pooled streaming and a subscribing processor expose different configuration, so a customization touching
+ * mode-specific settings says which mode it was written against: {@link Selector#whenPooledStreaming(UnaryOperator)}
+ * or {@link Selector#whenSubscribing(UnaryOperator)}. Naming the mode does not select it. A Saga's mode comes from
+ * {@code axon.eventhandling.processors.<name>.mode} or a matching {@link EventProcessorDefinition}, and a definition
+ * written for the other mode is skipped, with a warning, so a customization never quietly does nothing. Letting an
+ * adjustment switch the processor's kind would be a far larger change than the adjustment itself, since it decides
+ * whether there is a token store, whether there are segments, and whether a second application instance starts a
+ * duplicate Saga.
+ * <p>
+ * {@link Selector#customized(UnaryOperator)} covers the settings both modes share and never mentions a mode.
  * <p>
  * Example usage:
  * <pre>{@code
  * @Bean
  * SagaProcessorDefinition replayIntoOrderSaga() {
  *     return SagaProcessorDefinition.forSaga(OrderSaga.class)
- *                                   .pooledStreaming(config -> config.initialToken(
+ *                                   .whenPooledStreaming(config -> config.initialToken(
  *                                           source -> source.firstToken(null)
  *                                   ));
  * }
@@ -58,7 +65,7 @@ import java.util.function.UnaryOperator;
  * @Bean
  * SagaProcessorDefinition orderSagaEventSource(SubscribableEventSource source) {
  *     return SagaProcessorDefinition.forSaga(OrderSaga.class)
- *                                   .subscribing(config -> config.eventSource(source));
+ *                                   .whenSubscribing(config -> config.eventSource(source));
  * }
  * }</pre>
  * <p>
@@ -75,17 +82,20 @@ public final class SagaProcessorDefinition {
     private final @Nullable String processorName;
     private final @Nullable UnaryOperator<PooledStreamingEventProcessorConfiguration> pooledCustomization;
     private final @Nullable UnaryOperator<SubscribingEventProcessorConfiguration> subscribingCustomization;
+    private final @Nullable UnaryOperator<EventProcessorConfiguration> anyModeCustomization;
 
     private SagaProcessorDefinition(
             @Nullable Class<?> sagaType,
             @Nullable String processorName,
             @Nullable UnaryOperator<PooledStreamingEventProcessorConfiguration> pooledCustomization,
-            @Nullable UnaryOperator<SubscribingEventProcessorConfiguration> subscribingCustomization
+            @Nullable UnaryOperator<SubscribingEventProcessorConfiguration> subscribingCustomization,
+            @Nullable UnaryOperator<EventProcessorConfiguration> anyModeCustomization
     ) {
         this.sagaType = sagaType;
         this.processorName = processorName;
         this.pooledCustomization = pooledCustomization;
         this.subscribingCustomization = subscribingCustomization;
+        this.anyModeCustomization = anyModeCustomization;
     }
 
     /**
@@ -137,31 +147,56 @@ public final class SagaProcessorDefinition {
         }
 
         /**
-         * Completes the definition with a {@code customization} for the selected Saga processor, applied when that
-         * processor runs in pooled streaming mode, which is the default for a Saga.
+         * Completes the definition with a {@code customization} applied only when the selected processor runs in
+         * pooled streaming mode, which is the default for a Saga.
+         * <p>
+         * Naming the mode does not select it. The processor's mode comes from
+         * {@code axon.eventhandling.processors.<name>.mode} or a matching {@link EventProcessorDefinition}; this
+         * only says which configuration the customization was written against. Use {@link #customized(UnaryOperator)}
+         * for settings both modes share.
          *
          * @param customization the customization to apply
          * @return the completed definition, to be declared as a Spring bean
          */
-        public SagaProcessorDefinition pooledStreaming(
+        public SagaProcessorDefinition whenPooledStreaming(
                 UnaryOperator<PooledStreamingEventProcessorConfiguration> customization
         ) {
             Objects.requireNonNull(customization, "The customization must not be null.");
-            return new SagaProcessorDefinition(sagaType, processorName, customization, null);
+            return new SagaProcessorDefinition(sagaType, processorName, customization, null, null);
         }
 
         /**
-         * Completes the definition with a {@code customization} for the selected Saga processor, applied when that
-         * processor runs in subscribing mode.
+         * Completes the definition with a {@code customization} applied only when the selected processor runs in
+         * subscribing mode.
+         * <p>
+         * Naming the mode does not select it. Switch a Saga to a subscribing processor with
+         * {@code axon.eventhandling.processors.<name>.mode=subscribing}; this only says which configuration the
+         * customization was written against. Use {@link #customized(UnaryOperator)} for settings both modes share.
          *
          * @param customization the customization to apply
          * @return the completed definition, to be declared as a Spring bean
          */
-        public SagaProcessorDefinition subscribing(
+        public SagaProcessorDefinition whenSubscribing(
                 UnaryOperator<SubscribingEventProcessorConfiguration> customization
         ) {
             Objects.requireNonNull(customization, "The customization must not be null.");
-            return new SagaProcessorDefinition(sagaType, processorName, null, customization);
+            return new SagaProcessorDefinition(sagaType, processorName, null, customization, null);
+        }
+
+        /**
+         * Completes the definition with a {@code customization} applied whatever mode the selected processor runs
+         * in, covering the settings both modes share: the error handler, the unit of work factory, and extensions.
+         * <p>
+         * The {@code customization} must return the configuration it was given. These configuration objects are
+         * mutable builders whose setters return {@code this}, so returning anything else replaces a pooled streaming
+         * or subscribing configuration with a plain one and is rejected.
+         *
+         * @param customization the customization to apply
+         * @return the completed definition, to be declared as a Spring bean
+         */
+        public SagaProcessorDefinition customized(UnaryOperator<EventProcessorConfiguration> customization) {
+            Objects.requireNonNull(customization, "The customization must not be null.");
+            return new SagaProcessorDefinition(sagaType, processorName, null, null, customization);
         }
     }
 
@@ -205,6 +240,40 @@ public final class SagaProcessorDefinition {
     @Nullable
     UnaryOperator<SubscribingEventProcessorConfiguration> subscribingCustomization() {
         return subscribingCustomization;
+    }
+
+    /**
+     * Applies the mode-independent customization, if any, to the given {@code configuration}, returning it
+     * unchanged when this definition has none.
+     *
+     * @param configuration the processor configuration to customize
+     * @param type          the configuration type to hand back
+     * @param <T>           the processor configuration type
+     * @return the customized configuration
+     */
+    <T extends EventProcessorConfiguration> T applyAnyModeCustomization(T configuration, Class<T> type) {
+        if (anyModeCustomization == null) {
+            return configuration;
+        }
+        EventProcessorConfiguration result = anyModeCustomization.apply(configuration);
+        if (!type.isInstance(result)) {
+            throw new AxonConfigurationException(
+                    "A SagaProcessorDefinition for " + describeSelector() + " returned a "
+                            + result.getClass().getSimpleName() + " where a " + type.getSimpleName()
+                            + " was expected. A mode-independent customization must return the configuration it was "
+                            + "given; its setters already do, by returning the same instance.");
+        }
+        return type.cast(result);
+    }
+
+    /**
+     * Indicates whether this definition was written for one specific processor mode, rather than for the settings
+     * both modes share.
+     *
+     * @return {@code true} when this definition applies to one mode only
+     */
+    boolean isModeSpecific() {
+        return anyModeCustomization == null;
     }
 
     /**

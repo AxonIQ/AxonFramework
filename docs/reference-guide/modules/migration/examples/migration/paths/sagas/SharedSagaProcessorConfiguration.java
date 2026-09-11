@@ -27,7 +27,7 @@ class SharedSagaProcessorConfiguration {
     @Bean
     SagaProcessorDefinition ordersProcessor() {
         return SagaProcessorDefinition.forProcessor("orders")
-                                      .pooledStreaming(config -> config.batchSize(50));
+                                      .whenPooledStreaming(config -> config.batchSize(50));
     }
     // end::shared-saga-processor[]
 }
