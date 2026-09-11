@@ -25,7 +25,9 @@ import org.axonframework.messaging.core.MessageHandlerInterceptor;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.configuration.MessagingConfigurer;
+import org.axonframework.messaging.core.sequencing.SequencingPolicy;
 import org.axonframework.messaging.core.unitofwork.SimpleUnitOfWorkFactory;
+import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.core.unitofwork.TransactionalUnitOfWorkFactory;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkTestUtils;
@@ -412,6 +414,79 @@ class PooledStreamingEventProcessorModuleTest {
             assertThat(registeredComponent1).isPresent();
             assertThat(registeredComponent2).isPresent();
             assertThat(registeredComponent3).isPresent();
+        }
+    }
+
+    @Nested
+    class SequencingPolicyWiringTest {
+
+        @Test
+        void configuredSequencingPolicyOverridesTheAssignedComponentsSequencing() {
+            // given
+            String processorName = "sequencing-processor";
+            String componentName = "component";
+            var component = SimpleEventHandlingComponent.create(componentName);
+            component.subscribe(new QualifiedName(String.class), (event, context) -> MessageStream.empty());
+            EventMessage event = EventTestUtils.asEventMessage("some-event");
+            Object overriddenIdentifier = "overridden-sequence-id";
+            SequencingPolicy<EventMessage> overridingPolicy = (e, ctx) -> Optional.of(overriddenIdentifier);
+
+            var module = EventProcessorModule
+                    .pooledStreaming(processorName)
+                    .eventHandlingComponents(components -> components.declarative(componentName, cfg -> component))
+                    .customized((cfg, c) -> c.eventSource(new AsyncInMemoryStreamableEventSource())
+                                             .tokenStore(new InMemoryTokenStore())
+                                             .sequencingPolicy(overridingPolicy));
+
+            var configurer = MessagingConfigurer.create();
+            configurer.eventProcessing(ep -> ep.pooledStreaming(ps -> ps.processor(module)));
+            var configuration = configurer.build();
+
+            // when
+            var registeredComponent = registeredEventHandlingComponent(configuration, processorName, componentName);
+
+            // then
+            assertThat(registeredComponent.sequenceIdentifierFor(event, new StubProcessingContext()))
+                    .isEqualTo(overriddenIdentifier);
+        }
+
+        @Test
+        void withoutASequencingPolicyTheAssignedComponentsOwnSequencingIsUsed() {
+            // given
+            String processorName = "no-sequencing-policy-processor";
+            String componentName = "component";
+            var component = SimpleEventHandlingComponent.create(componentName);
+            component.subscribe(new QualifiedName(String.class), (event, context) -> MessageStream.empty());
+            EventMessage event = EventTestUtils.asEventMessage("some-event");
+
+            var module = EventProcessorModule
+                    .pooledStreaming(processorName)
+                    .eventHandlingComponents(components -> components.declarative(componentName, cfg -> component))
+                    .customized((cfg, c) -> c.eventSource(new AsyncInMemoryStreamableEventSource())
+                                             .tokenStore(new InMemoryTokenStore()));
+
+            var configurer = MessagingConfigurer.create();
+            configurer.eventProcessing(ep -> ep.pooledStreaming(ps -> ps.processor(module)));
+            var configuration = configurer.build();
+
+            // when
+            var registeredComponent = registeredEventHandlingComponent(configuration, processorName, componentName);
+
+            // then - the component's own (unwrapped) sequencing decides, not an override
+            assertThat(registeredComponent.sequenceIdentifierFor(event, new StubProcessingContext()))
+                    .isEqualTo(component.sequenceIdentifierFor(event, new StubProcessingContext()));
+        }
+
+        private EventHandlingComponent registeredEventHandlingComponent(
+                AxonConfiguration configuration, String processorName, String componentName
+        ) {
+            return configuration
+                    .getModuleConfiguration("EventProcessor[" + processorName + "]")
+                    .flatMap(m -> m.getOptionalComponent(
+                            EventHandlingComponent.class,
+                            "EventHandlingComponent[" + processorName + "][" + componentName + "]"
+                    ))
+                    .orElseThrow();
         }
     }
 

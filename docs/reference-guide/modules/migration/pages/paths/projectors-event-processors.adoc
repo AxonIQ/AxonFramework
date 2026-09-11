@@ -154,6 +154,17 @@ initialToken = eventSource -> eventSource.firstToken(null)
                                          .thenApply(ReplayToken::createReplayToken);
 ----
 
+[WARNING]
+.Head/tail versus latest/first: a naming inversion
+====
+Beyond the default changing, the method names used to resolve a stream position were renamed, and the names inverted in the process. This applies wherever you build a `TrackingToken` from a stream position, not just the initial token default shown above:
+
+* Axon Framework 4's `StreamableMessageSource.createHeadToken()`, the most recent position, is Axon Framework 5's `StreamableEventSource.latestToken(ProcessingContext)`.
+* Axon Framework 4's `StreamableMessageSource.createTailToken()`, the beginning of the stream, is Axon Framework 5's `StreamableEventSource.firstToken(ProcessingContext)`.
+
+Nothing prevents you from calling the wrong one: both methods compile and return a `CompletableFuture<TrackingToken>`. Calling `latestToken()` where you meant `firstToken()` (or vice versa) silently starts a processor at the wrong position, for example replaying the entire event store instead of starting at the tip. Double check which method you call when migrating custom initial token configuration.
+====
+
 [cols="1,1,1"]
 |===
 | | Axon Framework 4 | Axon Framework 5

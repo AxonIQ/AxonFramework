@@ -198,6 +198,12 @@ Spring Boot's `InterceptorAutoConfiguration` automatically:
 3. Registers them with the appropriate components based on their generic `Message` type
 4. Applies them to the corresponding message buses
 
+[NOTE]
+====
+This mirrors Axon Framework 4's behavior exactly: a plain `@Component`-annotated class implementing `MessageHandlerInterceptor` or `MessageDispatchInterceptor` is automatically discovered and registered, with no manual `@Bean` method or explicit registration call required.
+The Axon Framework 5 tabs above are a complete, working Spring Boot configuration on their own.
+====
+
 [IMPORTANT]
 ====
 Be aware that interceptors are registered on all applicable components based on their generic type.

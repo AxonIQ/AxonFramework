@@ -21,7 +21,9 @@ import org.axonframework.common.AxonThreadFactory;
 import org.axonframework.common.StringUtils;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.messaging.core.SubscribableEventSource;
+import org.axonframework.messaging.core.sequencing.SequencingPolicy;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
+import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorConfiguration;
 import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorModule;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore;
@@ -195,6 +197,20 @@ interface SpringCustomizations {
             }
             if (tokenStore != null) {
                 result = result.tokenStore(tokenStore);
+            }
+
+            String sequencingPolicyName = StringUtils.nonEmptyOrNull(settings.sequencingPolicy())
+                    ? settings.sequencingPolicy() : null;
+            if (sequencingPolicyName != null) {
+                @SuppressWarnings("unchecked")
+                SequencingPolicy<? super EventMessage> sequencingPolicy =
+                        (SequencingPolicy<? super EventMessage>) getComponent(
+                                configuration, SequencingPolicy.class, sequencingPolicyName, null
+                        );
+                require(sequencingPolicy != null,
+                        "Could not find a mandatory SequencingPolicy with name '" + settings.sequencingPolicy()
+                                + "' for event processor '" + name + "'.");
+                result = result.sequencingPolicy(sequencingPolicy);
             }
 
             return result;

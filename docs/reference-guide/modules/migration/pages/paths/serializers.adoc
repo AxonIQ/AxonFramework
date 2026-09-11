@@ -138,5 +138,20 @@ NOTE: The `avro` converter can only be used for `messages` or `events`, not as a
 
 IMPORTANT: Jackson 3 changed the default for deserializing `final` fields. If your upgrade from Jackson 2 to Jackson 3, check the xref:ROOT:conversion.adoc#jackson3_converter_final_fields_note[additional information in the conversion reference].
 
+=== `@AvroSchemaScan` annotation
+
+If you use the `AvroConverter`, you likely rely on the `@AvroSchemaScan` annotation to configure classpath scanning for Avro schemas, as described in xref:ROOT:conversion.adoc#avro_converter[AvroConverter]. This annotation survived the migration unchanged in behavior, but moved package:
+
+* Axon Framework 4: `org.axonframework.spring.serialization.avro.AvroSchemaScan`
+* Axon Framework 5: `org.axonframework.extension.spring.conversion.avro.AvroSchemaScan`
+
+Update your imports accordingly; no other changes are required to keep using the annotation.
+
+The Spring Boot autoconfiguration classes backing it also moved, to `org.axonframework.extension.springboot.autoconfig`:
+
+* `AvroSchemaStoreAutoConfiguration`: builds the default `SchemaStore` by scanning the packages configured through `@AvroSchemaScan`.
+* `AvroConverterAutoConfiguration`: configures the `AvroConverter` based on the `axon.converter.*` properties.
+
+Both are picked up automatically; no manual configuration is required beyond the annotation and properties described above.
 
 

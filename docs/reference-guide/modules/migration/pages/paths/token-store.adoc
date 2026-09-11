@@ -261,6 +261,38 @@ Only the token column changes to JSON.
 The token type column can keep the old class name, because Axon Framework 5 maps it on read.
 After this, upgrade and apply the mask migration above.
 
+[#java-api-changes]
+== Java API changes
+
+The sections above cover the data stored in your token store table. If you have a custom `TokenStore` implementation, or call its methods directly (rather than only relying on Axon Framework's event processors to do so), the interface itself also changed for Axon Framework 5.
+
+=== Package move
+
+The `TokenStore` interface, and its implementations, moved package:
+
+* Axon Framework 4: `org.axonframework.eventhandling.tokenstore.TokenStore`
+* Axon Framework 5: `org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore`
+
+The `InMemoryTokenStore` implementation moved to the `.inmemory` subpackage: `org.axonframework.messaging.eventhandling.processing.streaming.token.store.inmemory.InMemoryTokenStore`.
+
+=== `retrieveStorageIdentifier` became asynchronous
+
+`TokenStore.retrieveStorageIdentifier()` changed from a synchronous method returning `Optional<String>` to an asynchronous method returning `CompletableFuture<String>`, and now takes a `@Nullable ProcessingContext` parameter:
+
+[source,java,role=axon4]
+----
+// AF4
+Optional<String> retrieveStorageIdentifier();
+----
+
+[source,java]
+----
+// AF5
+CompletableFuture<String> retrieveStorageIdentifier(@Nullable ProcessingContext context);
+----
+
+Pass the current `ProcessingContext` when calling this method from within a message handler, or `null` when calling it outside of message handling, for example during application startup.
+
 [#replay-tokens]
 === Replay tokens
 

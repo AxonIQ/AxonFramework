@@ -42,9 +42,10 @@ class AddEventTagAnnotationKotlinTest implements RewriteTest {
     @Test
     void annotatesFirstParamAsFallbackWhenIdFieldNameDiffers() {
         // Mirrors the auction-house Auction.kt shape: the entity's @AggregateIdentifier field
-        // is named `id`, but the event class uses `auctionId`. The recipe must fall back to
-        // the first primary-constructor param and annotate it (with a TODO comment for the
-        // human reviewer, omitted here since the test only pins the annotation placement).
+        // is named `id`, but the event class uses `auctionId` — not a name-similarity match either
+        // ("id" is not a suffix of "auctionId"), so the recipe falls back to the first
+        // primary-constructor param and annotates it with a trailing TODO comment for the human
+        // reviewer to verify the choice.
         rewriteRun(
                 kotlin(
                         """
@@ -88,7 +89,7 @@ class AddEventTagAnnotationKotlinTest implements RewriteTest {
                         }
 
                         data class AuctionCreated(
-                            @EventTag(key = "Auction")
+                            @EventTag(key = "Auction") // TODO(axon4to5): verify this is the aggregate-id field
                             val auctionId: String,
                             val owner: String,
                         )

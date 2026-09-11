@@ -68,6 +68,14 @@ import java.util.Map;
  *         Known-type {@code @Bean} methods are deleted from the configuration class; custom ones receive a
  *         {@code TODO(axon4to5):} comment and are left in place.</li>
  * </ol>
+ * <p>
+ * <b>Adjacent {@code Serializer} bean</b>: AF4 applications commonly paired the
+ * {@code SnapshotTriggerDefinition} bean with a manually-registered {@code Serializer}/
+ * {@code JacksonSerializer} {@code @Bean} in the same configuration class, specifically to guarantee
+ * the snapshot payload was serializable. Whenever a configuration class declares a
+ * {@code SnapshotTriggerDefinition} bean, this recipe also scans that same class for a
+ * {@code Serializer}-returning {@code @Bean} method and prepends a {@code TODO(axon4to5):} comment
+ * to it — AF5's converter model may make the bean redundant, but that needs a human to confirm.
  *
  * @author Mateusz Nowak
  * @since 5.1.1
@@ -92,6 +100,13 @@ public class MigrateSnapshotTriggerDefinitionToAnnotation
             "org.axonframework.eventsourcing.snapshot.api.Snapshotter";
     private static final String BEAN_FQN =
             "org.springframework.context.annotation.Bean";
+    // AF4 apps commonly registered a manual `Serializer`/`JacksonSerializer` @Bean alongside the
+    // SnapshotTriggerDefinition bean, specifically to guarantee the snapshot payload was
+    // serializable. AF5's converter model may make this redundant, so a @Bean of this shape found
+    // in the same configuration class is flagged for manual review rather than migrated.
+    private static final String SERIALIZER_FQN = "org.axonframework.serialization.Serializer";
+    private static final String SERIALIZER_TODO_MARKER =
+            "TODO(axon4to5): This manually-registered Serializer bean";
 
     /** AF4 {@code @Aggregate} FQN before {@code ChangePackage} runs. */
     private static final String AGGREGATE_AF4 =
@@ -219,6 +234,7 @@ public class MigrateSnapshotTriggerDefinitionToAnnotation
                     return cd;
                 }
                 boolean[] removedABean = {false};
+                boolean[] hasSnapshotBean = {false};
                 J.Block body = cd.getBody().withStatements(
                         ListUtils.map(cd.getBody().getStatements(), stmt -> {
                             if (!(stmt instanceof J.MethodDeclaration method)) {
@@ -228,6 +244,7 @@ public class MigrateSnapshotTriggerDefinitionToAnnotation
                                     || !isSnapshotTriggerDefinitionMethod(method)) {
                                 return stmt;
                             }
+                            hasSnapshotBean[0] = true;
                             String name = extractBeanName(method);
                             SnapshotBeanInfo info = acc.beans.get(name);
                             if (info == null || info.type() == TriggerType.CUSTOM) {
@@ -238,6 +255,12 @@ public class MigrateSnapshotTriggerDefinitionToAnnotation
                             return null;
                         })
                 );
+                if (hasSnapshotBean[0]) {
+                    // A Serializer bean living alongside the SnapshotTriggerDefinition bean in the
+                    // same configuration class is a common AF4 pairing — flag it for review rather
+                    // than silently leaving it behind.
+                    body = flagAdjacentSerializerBean(body);
+                }
                 if (removedABean[0]) {
                     maybeRemoveImport(SNAPSHOTTER_FQN);
                     maybeRemoveImport(SNAPSHOTTER_AF5_FQN);
@@ -316,6 +339,69 @@ public class MigrateSnapshotTriggerDefinitionToAnnotation
             }
         }
         return false;
+    }
+
+    /**
+     * Returns {@code true} when the method's declared return type is (or is named like) a
+     * {@code Serializer} — e.g. {@code Serializer} itself or {@code JacksonSerializer}. Mirrors the
+     * simple-name fallback used elsewhere in this recipe so the check still fires on unresolved
+     * types in synthetic test sources.
+     */
+    private static boolean isSerializerBeanMethod(J.MethodDeclaration method) {
+        if (method.getReturnTypeExpression() == null) {
+            return false;
+        }
+        JavaType returnType = method.getReturnTypeExpression().getType();
+        if (TypeUtils.isOfClassType(returnType, SERIALIZER_FQN)) {
+            return true;
+        }
+        if (method.getReturnTypeExpression() instanceof J.Identifier id) {
+            String name = id.getSimpleName();
+            return "Serializer".equals(name) || name.endsWith("Serializer");
+        }
+        return false;
+    }
+
+    /**
+     * Prepends a {@code // TODO(axon4to5):} comment to every {@code @Bean} method in {@code body}
+     * whose return type looks like a {@code Serializer}. Called only for configuration classes that
+     * also declare a {@code SnapshotTriggerDefinition} bean, since this pairing existed under AF4
+     * specifically to guarantee the snapshot payload was serializable — a concern AF5's converter
+     * model may already address, so the bean is flagged for review rather than migrated or removed.
+     */
+    private static J.Block flagAdjacentSerializerBean(J.Block body) {
+        return body.withStatements(
+                ListUtils.map(body.getStatements(), stmt -> {
+                    if (!(stmt instanceof J.MethodDeclaration method)) {
+                        return stmt;
+                    }
+                    if (!hasBeanAnnotation(method) || !isSerializerBeanMethod(method)) {
+                        return stmt;
+                    }
+                    return prependSerializerTodo(method);
+                })
+        );
+    }
+
+    /** Prepends a {@code // TODO(axon4to5):} line comment above a manually-registered Serializer bean. */
+    private static J.MethodDeclaration prependSerializerTodo(J.MethodDeclaration method) {
+        // Idempotency: if the comment is already present, skip (second recipe cycle would re-add it).
+        if (method.getPrefix().getComments().stream()
+                .anyMatch(c -> c instanceof TextComment tc && tc.getText().contains(SERIALIZER_TODO_MARKER))) {
+            return method;
+        }
+        Space prefix = method.getPrefix();
+        String leading = prefix.getWhitespace();
+        String indent = leading.contains("\n")
+                ? leading.substring(leading.lastIndexOf('\n') + 1)
+                : "";
+        String suffix = "\n" + indent;
+        TextComment todo = new TextComment(false,
+                " " + SERIALIZER_TODO_MARKER
+                        + " existed under AF4 to guarantee the snapshot payload was serializable —"
+                        + " review whether it is still needed under AF5's converter model.",
+                suffix, Markers.EMPTY);
+        return method.withPrefix(prefix.withComments(ListUtils.concat(prefix.getComments(), todo)));
     }
 
     private static boolean isSnapshotNewClass(J.NewClass nc) {

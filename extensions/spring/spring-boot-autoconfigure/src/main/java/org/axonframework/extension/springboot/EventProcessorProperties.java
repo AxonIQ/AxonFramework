@@ -161,11 +161,14 @@ public class EventProcessorProperties {
         private String tokenStore;
 
         /**
-         * The name of the bean that represents the sequencing policy for processing events. If no name is specified,
+         * The name of the bean that represents the sequencing policy for processing events.
+         *
+         * When no name is specified,
          * the processor defaults to a {@link SequentialPerAggregatePolicy},
          * which guarantees to process events originating from the same Aggregate instance sequentially, while events
          * from different Aggregate instances may be processed concurrently.
          */
+        @Nullable
         private String sequencingPolicy;
 
         /**
@@ -359,6 +362,8 @@ public class EventProcessorProperties {
          * @return the name of the bean that defines the
          * {@link SequencingPolicy} for this processor.
          */
+        @Override
+        @Nullable
         public String sequencingPolicy() {
             return sequencingPolicy;
         }

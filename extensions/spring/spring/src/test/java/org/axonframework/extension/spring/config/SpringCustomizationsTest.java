@@ -22,8 +22,10 @@ import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.messaging.core.SubscribableEventSource;
 import org.axonframework.messaging.core.configuration.MessagingConfigurer;
+import org.axonframework.messaging.core.sequencing.SequencingPolicy;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
 import org.axonframework.messaging.eventhandling.EventBus;
+import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.SimpleEventBus;
 import org.axonframework.messaging.eventhandling.configuration.EventBusConfigurationDefaults;
 import org.axonframework.messaging.eventhandling.configuration.EventProcessorConfiguration;
@@ -35,6 +37,7 @@ import org.axonframework.messaging.eventstreaming.StreamableEventSource;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.*;
 
+import java.util.Optional;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -277,7 +280,9 @@ class SpringCustomizationsTest {
         void leavesSourceAndTokenStoreUnsetWhenNoTypeLevelDefaultsArePresent() {
             // given - only named components are registered
             var configuration = configuration(cr -> cr
-                    .registerComponent(StreamableEventSource.class, "named-source", cfg -> mock(StreamableEventSource.class))
+                    .registerComponent(StreamableEventSource.class,
+                                       "named-source",
+                                       cfg -> mock(StreamableEventSource.class))
                     .registerComponent(TokenStore.class, "named-token-store", cfg -> new InMemoryTokenStore())
             );
 
@@ -317,7 +322,9 @@ class SpringCustomizationsTest {
         void treatsEmptySourceAndTokenStoreNamesAsUnset() {
             // given
             var configuration = configuration(cr -> cr
-                    .registerComponent(StreamableEventSource.class, "named-source", cfg -> mock(StreamableEventSource.class))
+                    .registerComponent(StreamableEventSource.class,
+                                       "named-source",
+                                       cfg -> mock(StreamableEventSource.class))
                     .registerComponent(TokenStore.class, "named-token-store", cfg -> new InMemoryTokenStore())
             );
 
@@ -327,6 +334,74 @@ class SpringCustomizationsTest {
             // then
             assertThat(result.eventSource()).isNull();
             assertThat(result.tokenStore()).isNull();
+        }
+    }
+
+    @Nested
+    class PooledSequencingPolicyConfiguredComponents {
+
+        @Test
+        void appliesTheSequencingPolicyRegisteredUnderTheConfiguredName() {
+            // given
+            SequencingPolicy<EventMessage> namedPolicy = (event, context) -> Optional.of("seq-id");
+            var configuration = configuration(
+                    cr -> cr.registerComponent(SequencingPolicy.class, "my-policy", cfg -> namedPolicy)
+            );
+
+            // when
+            var result = SpringCustomizations
+                    .pooledStreamingCustomizations(PROCESSOR_NAME, new TestPooledSettings(null, null, "my-policy"))
+                    .apply(configuration, pooledProcessorConfiguration());
+
+            // then
+            assertThat(result.sequencingPolicy()).isSameAs(namedPolicy);
+        }
+
+        @Test
+        void failsWhenTheConfiguredSequencingPolicyCannotBeResolved() {
+            // given
+            var configuration = configuration(cr -> {
+            });
+
+            // when / then
+            assertThatThrownBy(() -> SpringCustomizations
+                    .pooledStreamingCustomizations(PROCESSOR_NAME, new TestPooledSettings(null, null, "unknown-policy"))
+                    .apply(configuration, pooledProcessorConfiguration()))
+                    .isInstanceOf(AxonConfigurationException.class)
+                    .hasMessageContaining("'unknown-policy'")
+                    .hasMessageContaining(PROCESSOR_NAME);
+        }
+
+        @Test
+        void leavesTheSequencingPolicyUnsetWhenNoNameIsConfigured() {
+            // given - unlike source and token store, there is no unique-type-level fallback for the sequencing policy
+            SequencingPolicy<EventMessage> typeLevelPolicy = (event, context) -> Optional.of("seq-id");
+            var configuration = configuration(
+                    cr -> cr.registerComponent(SequencingPolicy.class, cfg -> typeLevelPolicy)
+            );
+
+            // when
+            var result = SpringCustomizations
+                    .pooledStreamingCustomizations(PROCESSOR_NAME, new TestPooledSettings(null, null, null))
+                    .apply(configuration, pooledProcessorConfiguration());
+
+            // then
+            assertThat(result.sequencingPolicy()).isNull();
+        }
+
+        @Test
+        void treatsAnEmptySequencingPolicyNameAsUnset() {
+            // given
+            var configuration = configuration(cr -> {
+            });
+
+            // when
+            var result = SpringCustomizations
+                    .pooledStreamingCustomizations(PROCESSOR_NAME, new TestPooledSettings(null, null, ""))
+                    .apply(configuration, pooledProcessorConfiguration());
+
+            // then
+            assertThat(result.sequencingPolicy()).isNull();
         }
     }
 
@@ -377,8 +452,15 @@ class SpringCustomizationsTest {
 
     }
 
-    private record TestPooledSettings(@Nullable String source, @Nullable String tokenStore)
-            implements EventProcessorSettings.PooledEventProcessorSettings {
+    private record TestPooledSettings(
+            @Nullable String source,
+            @Nullable String tokenStore,
+            @Nullable String sequencingPolicy
+    ) implements EventProcessorSettings.PooledEventProcessorSettings {
+
+        TestPooledSettings(@Nullable String source, @Nullable String tokenStore) {
+            this(source, tokenStore, null);
+        }
 
         @Override
         public int initialSegmentCount() {

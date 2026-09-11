@@ -24,8 +24,10 @@ import org.axonframework.common.configuration.ComponentDefinition;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.common.configuration.ModuleBuilder;
 import org.axonframework.common.lifecycle.Phase;
+import org.axonframework.messaging.core.sequencing.SequencingPolicy;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
 import org.axonframework.messaging.eventhandling.EventHandlingComponent;
+import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.configuration.DefaultEventHandlingComponentsConfigurer;
 import org.axonframework.messaging.eventhandling.configuration.EventHandlingComponentsConfigurer;
 import org.axonframework.messaging.eventhandling.configuration.EventProcessingConfigurer;
@@ -35,6 +37,7 @@ import org.axonframework.messaging.eventhandling.configuration.EventProcessorMod
 import org.axonframework.messaging.eventhandling.interception.InterceptingEventHandlingComponent;
 import org.axonframework.messaging.eventhandling.processing.streaming.StreamingEventProcessor;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.SequenceCachingEventHandlingComponent;
+import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.SequenceOverridingEventHandlingComponent;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore;
 
 import java.util.List;
@@ -170,7 +173,15 @@ public class PooledStreamingEventProcessorModule extends BaseModule<PooledStream
                 cr.registerComponent(EventHandlingComponent.class, componentName,
                                      cfg -> {
                                          var component = componentBuilder.build(cfg);
-                                         return new SequenceCachingEventHandlingComponent(component);
+                                         SequencingPolicy<? super EventMessage> sequencingPolicy =
+                                                 cfg.getComponent(PooledStreamingEventProcessorConfiguration.class)
+                                                    .sequencingPolicy();
+                                         EventHandlingComponent effectiveComponent = sequencingPolicy == null
+                                                 ? component
+                                                 : new SequenceOverridingEventHandlingComponent(
+                                                         sequencingPolicy, component
+                                                 );
+                                         return new SequenceCachingEventHandlingComponent(effectiveComponent);
                                      });
                 cr.registerDecorator(EventHandlingComponent.class, componentName,
                                      InterceptingEventHandlingComponent.DECORATION_ORDER,
