@@ -16,137 +16,352 @@
 
 package org.axonframework.config;
 
-import org.junit.jupiter.api.extension.*;
-import org.mockito.junit.jupiter.*;
+import org.axonframework.common.AxonConfigurationException;
+import org.axonframework.common.FutureUtils;
+import org.axonframework.common.configuration.AxonConfiguration;
+import org.axonframework.common.configuration.Configuration;
+import org.axonframework.messaging.core.configuration.MessagingConfigurer;
+import org.axonframework.messaging.eventhandling.EventMessage;
+import org.axonframework.messaging.eventhandling.EventSink;
+import org.axonframework.messaging.eventhandling.EventTestUtils;
+import org.axonframework.modelling.saga.AbstractSagaManager;
+import org.axonframework.modelling.saga.AnnotatedSagaManager;
+import org.axonframework.modelling.saga.AssociationValue;
+import org.axonframework.modelling.saga.SagaEventHandler;
+import org.axonframework.modelling.saga.SagaRepository;
+import org.axonframework.modelling.saga.StartSaga;
+import org.axonframework.modelling.saga.repository.AnnotatedSagaRepository;
+import org.axonframework.modelling.saga.repository.SagaStore;
+import org.axonframework.modelling.saga.repository.inmemory.InMemorySagaStore;
+import org.jspecify.annotations.Nullable;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
 
-// TODO #3097 - Fix as part of revamp of SagaConfigurer into workable ConfigurationEnhancer / Module
-@ExtendWith(MockitoExtension.class)
+import java.time.Duration;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
+import java.util.function.Supplier;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
 class SagaConfigurerTest {
 
-//    @AfterEach
-//    void cleanup() {
-//        TestSaga.counter.set(0);
-//    }
-//
-//    @Test
-//    void nullChecksOnSagaConfigurer() {
-//        SagaConfigurer<Object> configurer = SagaConfigurer.forType(Object.class);
-//        assertConfigurerNullCheck(() -> SagaConfigurer.forType(null), "Saga type should be checked for null");
-//        assertConfigurerNullCheck(() -> configurer.configureSagaStore(null),
-//                                  "Saga store builder should be checked for null");
-//        assertConfigurerNullCheck(() -> configurer.configureSagaManager(null),
-//                                  "Saga manager should be checked for null");
-//        assertConfigurerNullCheck(() -> configurer.configureRepository(null),
-//                                  "Saga repository should be checked for null");
-//    }
-//
-//    @Test
-//    void defaultConfiguration(
-//            @Mock ListenerInvocationErrorHandler listenerInvocationErrorHandler,
-//            @Mock SagaStore store
-//    ) {
-//        LegacyConfiguration configuration =
-//                LegacyDefaultConfigurer.defaultConfiguration()
-//                                       .eventProcessing(ep -> ep.registerSaga(Object.class))
-//                                       .registerComponent(ListenerInvocationErrorHandler.class,
-//                                                          c -> listenerInvocationErrorHandler
-//                                       )
-//                                       .registerComponent(SagaStore.class, c -> store)
-//                                       .buildConfiguration();
-//        SagaConfiguration<Object> sagaConfiguration = configuration.eventProcessingConfiguration().sagaConfiguration(
-//                Object.class);
-//
-//        assertEquals("ObjectProcessor", sagaConfiguration.processingGroup());
-//        assertEquals(Object.class, sagaConfiguration.type());
-//        assertEquals(store, sagaConfiguration.store());
-//        assertEquals(listenerInvocationErrorHandler, sagaConfiguration.listenerInvocationErrorHandler());
-//    }
-//
-//    @Test
-//    void customConfiguration(
-//            @Mock SagaRepository<Object> repository,
-//            @Mock AnnotatedSagaManager<Object> manager) {
-//        SagaStore<Object> sagaStore = new InMemorySagaStore();
-//        String processingGroup = "myProcessingGroup";
-//
-//        EventProcessingModule eventProcessingModule = new EventProcessingModule();
-//        eventProcessingModule.registerSaga(Object.class, sc -> sc.configureSagaStore(c -> sagaStore)
-//                                                                 .configureRepository(c -> repository)
-//                                                                 .configureSagaManager(c -> manager));
-//        eventProcessingModule.assignProcessingGroup("ObjectProcessor", processingGroup)
-//                             .assignHandlerTypesMatching(processingGroup, clazz -> clazz.equals(Object.class));
-//        LegacyConfiguration configuration = LegacyDefaultConfigurer.defaultConfiguration()
-//                                                                   .registerModule(eventProcessingModule)
-//                                                                   .buildConfiguration();
-//
-//        SagaConfiguration<Object> sagaConfiguration = configuration.eventProcessingConfiguration().sagaConfiguration(
-//                Object.class);
-//
-//        assertEquals(Object.class, sagaConfiguration.type());
-//        assertEquals(processingGroup, sagaConfiguration.processingGroup());
-//        assertEquals(manager, sagaConfiguration.manager());
-//        assertEquals(repository, sagaConfiguration.repository());
-//        assertEquals(sagaStore, sagaConfiguration.store());
-//    }
-//
-//
-//    @Disabled("TODO #3443 - Adjust SagaRepository API to be async-native")
-//    @Test
-//    void deduplicateRegisterSaga() {
-//        LegacyEmbeddedEventStore eventStore =
-//                LegacyEmbeddedEventStore.builder()
-//                                        .storageEngine(new LegacyInMemoryEventStorageEngine())
-//                                        .build();
-//        SagaStore<Object> sagaStore = new InMemorySagaStore();
-//        EventProcessingModule eventProcessingModule = new EventProcessingModule();
-//        eventProcessingModule
-//                .registerSaga(TestSaga.class)
-//                .registerSaga(TestSaga.class, sc -> sc.configureSagaStore(c -> sagaStore))
-//                .registerSubscribingEventProcessor("testsaga", c -> eventStore);
-//        LegacyConfiguration configuration = LegacyDefaultConfigurer.defaultConfiguration()
-//                                                                   .configureEventStore(c -> eventStore)
-//                                                                   .registerModule(eventProcessingModule)
-//                                                                   .buildConfiguration();
-//        configuration.start();
-//        TestEvent testEvent = new TestEvent();
-//        eventStore.publish(EventTestUtils.asEventMessage(testEvent));
-//        Set<String> sagas = sagaStore.findSagas(TestSaga.class, new AssociationValue("id", testEvent.id.toString()));
-//        assertEquals(1, sagas.size());
-//        assertEquals(1, TestSaga.counter.get());
-//    }
-//
-//    private void assertConfigurerNullCheck(Runnable r, String message) {
-//        try {
-//            r.run();
-//            fail(message);
-//        } catch (AxonConfigurationException ace) {
-//            // we expect this exception
-//        }
-//    }
-//
-//    private static class TestEvent {
-//
-//        private final UUID id;
-//
-//        private TestEvent() {
-//            id = UUID.randomUUID();
-//        }
-//
-//        @SuppressWarnings("unused")
-//        public UUID getId() {
-//            return id;
-//        }
-//    }
-//
-//    @ProcessingGroup("testsaga")
-//    public static class TestSaga {
-//
-//        static final AtomicInteger counter = new AtomicInteger();
-//
-//        @StartSaga
-//        @SagaEventHandler(associationProperty = "id")
-//        public void handleCreated(TestEvent event) {
-//            counter.incrementAndGet();
-//        }
-//    }
+    private static final Duration TIMEOUT = Duration.ofSeconds(5);
+    private static final AssociationValue ORDER_1 = new AssociationValue("orderId", "order-1");
+
+    private @Nullable AxonConfiguration configuration;
+
+    @AfterEach
+    void tearDown() {
+        if (configuration != null) {
+            configuration.shutdown();
+        }
+    }
+
+    @Nested
+    class DefaultConfiguration {
+
+        @Test
+        void buildsAManagerThatCreatesAndStoresSagas() {
+            // given
+            InMemorySagaStore sagaStore = new InMemorySagaStore();
+            startWith(SagaConfigurer.forType(OrderSaga.class), sagaStore);
+
+            // when
+            publish(new OrderPlaced("order-1"));
+
+            // then
+            assertThat(sagaStore.findSagas(OrderSaga.class, ORDER_1)).hasSize(1);
+        }
+
+        @Test
+        void reportsWhenNoSagaStoreIsConfigured() {
+            // given
+            SagaConfigurer<OrderSaga> sagaConfigurer = SagaConfigurer.forType(OrderSaga.class);
+            MessagingConfigurer configurer = MessagingConfigurer.create()
+                                                                  .eventProcessing(processing -> processing.subscribing(
+                                                                          subscribing -> subscribing.defaultProcessor(
+                                                                                  "sagas",
+                                                                                  components -> components.declarative(
+                                                                                          "Saga[OrderSaga]",
+                                                                                          sagaConfigurer
+                                                                                  )
+                                                                          )
+                                                                  ));
+
+            // when / then
+            assertThatThrownBy(() -> configuration = configurer.start())
+                    .rootCause()
+                    .isInstanceOf(AxonConfigurationException.class)
+                    .hasMessageContaining(SagaStore.class.getName())
+                    .hasMessageContaining(OrderSaga.class.getName());
+        }
+    }
+
+    @Nested
+    class CustomConfiguration {
+
+        @Test
+        void configuredFactoryCreatesTheSaga() {
+            // given
+            InMemorySagaStore sagaStore = new InMemorySagaStore();
+            Collaborator collaborator = new Collaborator();
+            SagaConfigurer<CollaboratingSaga> sagaConfigurer =
+                    SagaConfigurer.forType(CollaboratingSaga.class)
+                                  .configureSagaFactory(() -> new CollaboratingSaga(collaborator));
+            startWith(sagaConfigurer, sagaStore);
+
+            // when
+            publish(new OrderPlaced("order-1"));
+
+            // then
+            SagaStore.Entry<CollaboratingSaga> entry = sagaStore.loadSaga(
+                    CollaboratingSaga.class,
+                    sagaStore.findSagas(CollaboratingSaga.class, ORDER_1).iterator().next()
+            );
+            assertThat(entry).isNotNull();
+            assertThat(entry.saga().collaborator).isSameAs(collaborator);
+        }
+
+        @Test
+        void configuredStoreReplacesTheConfigurationComponent() {
+            // given
+            InMemorySagaStore registeredStore = new InMemorySagaStore();
+            InMemorySagaStore configuredStore = new InMemorySagaStore();
+            SagaConfigurer<OrderSaga> sagaConfigurer = SagaConfigurer.forType(OrderSaga.class)
+                                                                      .configureSagaStore(c -> configuredStore);
+            startWith(sagaConfigurer, registeredStore);
+
+            // when
+            publish(new OrderPlaced("order-1"));
+
+            // then
+            assertThat(configuredStore.findSagas(OrderSaga.class, ORDER_1)).hasSize(1);
+            assertThat(registeredStore.size()).isZero();
+        }
+
+        @Test
+        void configuredRepositoryBypassesTheConfiguredStore() {
+            // given
+            InMemorySagaStore repositoryStore = new InMemorySagaStore();
+            AtomicInteger storeBuilderInvocations = new AtomicInteger();
+            SagaConfigurer<OrderSaga> sagaConfigurer = SagaConfigurer.forType(OrderSaga.class)
+                                                                      .configureSagaStore(c -> {
+                                                                          storeBuilderInvocations.incrementAndGet();
+                                                                          return new InMemorySagaStore();
+                                                                      })
+                                                                      .configureRepository(
+                                                                              c -> repositoryFor(
+                                                                                      OrderSaga.class,
+                                                                                      repositoryStore,
+                                                                                      c
+                                                                              )
+                                                                      );
+            startWith(sagaConfigurer, new InMemorySagaStore());
+
+            // when
+            publish(new OrderPlaced("order-1"));
+
+            // then
+            assertThat(repositoryStore.findSagas(OrderSaga.class, ORDER_1)).hasSize(1);
+            assertThat(storeBuilderInvocations).hasValue(0);
+        }
+
+        @Test
+        void configuredManagerBypassesRepositoryStoreAndFactory() {
+            // given
+            InMemorySagaStore managerStore = new InMemorySagaStore();
+            AtomicInteger repositoryBuilderInvocations = new AtomicInteger();
+            AtomicInteger storeBuilderInvocations = new AtomicInteger();
+            AtomicInteger factoryInvocations = new AtomicInteger();
+            SagaConfigurer<OrderSaga> sagaConfigurer = SagaConfigurer.forType(OrderSaga.class)
+                                                                      .configureSagaStore(c -> {
+                                                                          storeBuilderInvocations.incrementAndGet();
+                                                                          return new InMemorySagaStore();
+                                                                      })
+                                                                      .configureRepository(c -> {
+                                                                          repositoryBuilderInvocations
+                                                                                  .incrementAndGet();
+                                                                          return repositoryFor(
+                                                                                  OrderSaga.class,
+                                                                                  new InMemorySagaStore(),
+                                                                                  c
+                                                                          );
+                                                                      })
+                                                                      .configureSagaFactory(() -> {
+                                                                          factoryInvocations.incrementAndGet();
+                                                                          return new OrderSaga();
+                                                                      })
+                                                                      .configureSagaManager(
+                                                                              c -> managerFor(
+                                                                                      OrderSaga.class,
+                                                                                      managerStore,
+                                                                                      c
+                                                                              )
+                                                                      );
+            startWith(sagaConfigurer, new InMemorySagaStore());
+
+            // when
+            publish(new OrderPlaced("order-1"));
+
+            // then
+            assertThat(managerStore.findSagas(OrderSaga.class, ORDER_1)).hasSize(1);
+            assertThat(repositoryBuilderInvocations).hasValue(0);
+            assertThat(storeBuilderInvocations).hasValue(0);
+            assertThat(factoryInvocations).hasValue(0);
+        }
+    }
+
+    @Nested
+    class Lifecycle {
+
+        @Test
+        void repeatedBuildReturnsTheSameManagerAndFreezesConfiguration() {
+            // given
+            SagaConfigurer<OrderSaga> sagaConfigurer = SagaConfigurer.forType(OrderSaga.class);
+            InMemorySagaStore sagaStore = new InMemorySagaStore();
+            configuration = MessagingConfigurer.create()
+                                               .componentRegistry(
+                                                       registry -> registry.registerComponent(
+                                                               SagaStore.class,
+                                                               c -> sagaStore
+                                                       )
+                                               )
+                                               .build();
+
+            // when
+            AbstractSagaManager<OrderSaga> first = sagaConfigurer.build(configuration);
+            AbstractSagaManager<OrderSaga> second = sagaConfigurer.build(MessagingConfigurer.create().build());
+
+            // then
+            assertThat(second).isSameAs(first);
+            assertThatThrownBy(() -> sagaConfigurer.configureSagaStore(c -> sagaStore))
+                    .isInstanceOf(AxonConfigurationException.class)
+                    .hasMessage("SagaConfiguration has already been created. Cannot make modifications.");
+        }
+    }
+
+    @Nested
+    class NullChecks {
+
+        @Test
+        void rejectsNullConfigurationValues() {
+            // given
+            SagaConfigurer<Object> sagaConfigurer = SagaConfigurer.forType(Object.class);
+            Function<Configuration, AbstractSagaManager<Object>> managerBuilder = null;
+            Function<Configuration, SagaRepository<Object>> repositoryBuilder = null;
+            Function<Configuration, SagaStore<? super Object>> storeBuilder = null;
+            Supplier<Object> sagaFactory = null;
+
+            // when / then
+            assertThatThrownBy(() -> SagaConfigurer.forType(null))
+                    .isInstanceOf(AxonConfigurationException.class);
+            assertThatThrownBy(() -> sagaConfigurer.configureSagaManager(managerBuilder))
+                    .isInstanceOf(AxonConfigurationException.class);
+            assertThatThrownBy(() -> sagaConfigurer.configureRepository(repositoryBuilder))
+                    .isInstanceOf(AxonConfigurationException.class);
+            assertThatThrownBy(() -> sagaConfigurer.configureSagaStore(storeBuilder))
+                    .isInstanceOf(AxonConfigurationException.class);
+            assertThatThrownBy(() -> sagaConfigurer.configureSagaFactory(sagaFactory))
+                    .isInstanceOf(AxonConfigurationException.class);
+        }
+    }
+
+    private <T> void startWith(SagaConfigurer<T> sagaConfigurer, SagaStore<?> sagaStore) {
+        configuration = MessagingConfigurer.create()
+                                           .componentRegistry(
+                                                   registry -> registry.registerComponent(
+                                                           SagaStore.class,
+                                                           c -> sagaStore
+                                                   )
+                                           )
+                                           .eventProcessing(processing -> processing.subscribing(
+                                                   subscribing -> subscribing.defaultProcessor(
+                                                           "sagas",
+                                                           components -> components.declarative("Saga", sagaConfigurer)
+                                                   )
+                                           ))
+                                           .start();
+    }
+
+    private void publish(Object payload) {
+        EventMessage event = EventTestUtils.asEventMessage(payload);
+        FutureUtils.joinAndUnwrap(
+                configuration.getComponent(EventSink.class).publish(null, List.of(event)),
+                TIMEOUT
+        );
+    }
+
+    private static <T> SagaRepository<T> repositoryFor(
+            Class<T> sagaType,
+            SagaStore<? super T> sagaStore,
+            Configuration configuration
+    ) {
+        AnnotatedSagaRepository.Builder<T> builder = AnnotatedSagaRepository.<T>builder()
+                                                                              .sagaType(sagaType)
+                                                                              .sagaStore(sagaStore);
+        configuration.getOptionalComponent(org.axonframework.messaging.core.annotation.ParameterResolverFactory.class)
+                     .ifPresent(builder::parameterResolverFactory);
+        configuration.getOptionalComponent(org.axonframework.messaging.core.annotation.HandlerDefinition.class)
+                     .ifPresent(builder::handlerDefinition);
+        return builder.build();
+    }
+
+    private static <T> AbstractSagaManager<T> managerFor(
+            Class<T> sagaType,
+            SagaStore<? super T> sagaStore,
+            Configuration configuration
+    ) {
+        AnnotatedSagaManager.Builder<T> builder = AnnotatedSagaManager.<T>builder()
+                                                                      .sagaType(sagaType)
+                                                                      .sagaRepository(
+                                                                              repositoryFor(
+                                                                                      sagaType,
+                                                                                      sagaStore,
+                                                                                      configuration
+                                                                              )
+                                                                      );
+        configuration.getOptionalComponent(org.axonframework.messaging.core.annotation.ParameterResolverFactory.class)
+                     .ifPresent(builder::parameterResolverFactory);
+        configuration.getOptionalComponent(org.axonframework.messaging.core.annotation.HandlerDefinition.class)
+                     .ifPresent(builder::handlerDefinition);
+        return builder.build();
+    }
+
+    record OrderPlaced(String orderId) {
+
+    }
+
+    @SuppressWarnings({"unused", "removal"})
+    public static class OrderSaga {
+
+        @StartSaga
+        @SagaEventHandler(associationProperty = "orderId")
+        public void on(OrderPlaced event) {
+            // Starting the saga is the behavior under test.
+        }
+    }
+
+    private static class Collaborator {
+
+    }
+
+    @SuppressWarnings({"unused", "removal"})
+    public static class CollaboratingSaga {
+
+        private final Collaborator collaborator;
+
+        CollaboratingSaga(Collaborator collaborator) {
+            this.collaborator = collaborator;
+        }
+
+        @StartSaga
+        @SagaEventHandler(associationProperty = "orderId")
+        public void on(OrderPlaced event) {
+            // Starting the saga is the behavior under test.
+        }
+    }
 }
