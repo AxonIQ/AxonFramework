@@ -20,6 +20,8 @@ import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.configuration.AxonConfiguration;
+import org.axonframework.common.configuration.ConfigurationExtension;
+import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.messaging.core.EmptyApplicationContext;
 import org.axonframework.messaging.core.MessageHandlerInterceptor;
 import org.axonframework.messaging.core.MessageStream;
@@ -772,6 +774,83 @@ class PooledStreamingEventProcessorModuleTest {
                 .eventHandlingComponents(singleTestEventHandlingComponent())
                 .customized((cfg, c) -> c.eventSource(cfg.getOptionalComponent(StreamableEventSource.class)
                                                          .orElse(new AsyncInMemoryStreamableEventSource())));
+    }
+
+    @Nested
+    class CoordinatorClaimExtensionTest {
+
+        @Test
+        void coordinatorClaimExtensionReachesTheProcessorConfiguration() {
+            // given - the flag is set halfway a customization chain that ends on another setting
+            var configurer = MessagingConfigurer.create();
+            var processorName = "testProcessor";
+            var unitOfWorkFactory = new SimpleUnitOfWorkFactory(EmptyApplicationContext.INSTANCE);
+            var module = EventProcessorModule
+                    .pooledStreaming(processorName)
+                    .eventHandlingComponents(singleTestEventHandlingComponent())
+                    .customized((cfg, c) -> c.initialSegmentCount(4)
+                                             .batchSize(10)
+                                             .enableCoordinatorClaimExtension()
+                                             .eventSource(new AsyncInMemoryStreamableEventSource())
+                                             .tokenStore(new InMemoryTokenStore())
+                                             .unitOfWorkFactory(unitOfWorkFactory));
+            configurer.eventProcessing(ep -> ep.pooledStreaming(ps -> ps.processor(module)));
+
+            // when
+            var configuration = configurer.build();
+
+            // then - the setting survives every step between the customization and the built processor
+            var processorConfig = configurationOf(processor(configuration, processorName).orElse(null));
+            assertThat(processorConfig).isNotNull();
+            assertThat(processorConfig.coordinatorExtendsClaims()).isTrue();
+            assertThat(processorConfig.batchSize()).isEqualTo(10);
+        }
+
+        @Test
+        void coordinatorClaimExtensionSurvivesAnExtensionRegisteredAfterIt() {
+            // given - the customization ends on extend(), whose return value becomes the processor configuration
+            var configurer = MessagingConfigurer.create();
+            var processorName = "testProcessor";
+            var unitOfWorkFactory = new SimpleUnitOfWorkFactory(EmptyApplicationContext.INSTANCE);
+            var module = EventProcessorModule
+                    .pooledStreaming(processorName)
+                    .eventHandlingComponents(singleTestEventHandlingComponent())
+                    .customized((cfg, c) -> c.enableCoordinatorClaimExtension()
+                                             .eventSource(new AsyncInMemoryStreamableEventSource())
+                                             .tokenStore(new InMemoryTokenStore())
+                                             .unitOfWorkFactory(unitOfWorkFactory)
+                                             .extend(TestConfigurationExtension.class,
+                                                     TestConfigurationExtension::new));
+            configurer.eventProcessing(ep -> ep.pooledStreaming(ps -> ps.processor(module)));
+
+            // when
+            var configuration = configurer.build();
+
+            // then
+            var processorConfig = configurationOf(processor(configuration, processorName).orElse(null));
+            assertThat(processorConfig).isNotNull();
+            assertThat(processorConfig.coordinatorExtendsClaims()).isTrue();
+            assertThat(processorConfig.extension(TestConfigurationExtension.class)).isNotNull();
+        }
+    }
+
+    private static class TestConfigurationExtension
+            implements ConfigurationExtension<PooledStreamingEventProcessorConfiguration> {
+
+        @Override
+        public String name() {
+            return "test-extension";
+        }
+
+        @Override
+        public void validate() {
+            // nothing to validate
+        }
+
+        @Override
+        public void describeTo(@NonNull ComponentDescriptor descriptor) {
+            descriptor.describeProperty("name", name());
+        }
     }
 
     private @NonNull

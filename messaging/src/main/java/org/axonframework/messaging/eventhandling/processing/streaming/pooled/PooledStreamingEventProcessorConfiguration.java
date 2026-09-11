@@ -433,7 +433,10 @@ public class PooledStreamingEventProcessorConfiguration extends EventProcessorCo
      * <p>
      * In both scenarios, there's a window of opportunity that the {@code WorkPackage} is not fast enough in extending
      * the claim itself. Not being able to do so potentially causes token stealing by other instances of this
-     * {@link PooledStreamingEventProcessor}, thus overburdening the overall event processing task.
+     * {@link PooledStreamingEventProcessor}, thus overburdening the overall event processing task. The same holds for
+     * segments that are not handling any events at that moment, as lengthy handling on other segments occupies the
+     * threads of the shared {@link #workerExecutor(java.util.function.Supplier) worker executor} they need to extend
+     * their own claim.
      * <p>
      * Note that enabling this feature will result in more frequent invocation of the {@link TokenStore} to update the
      * tokens.

@@ -15,7 +15,7 @@ The main tuning knobs are:
 * `tokenClaimInterval(long)` to control how often the coordinator retries token claims
 * `claimExtensionThreshold(long)` to decide when a running work package refreshes its claim
 * `maxClaimedSegments(int)` or `maxSegmentProvider(...)` to limit how much work one instance can own
-* `enableCoordinatorClaimExtension()` when work packages spend a long time handling batches
+* `enableCoordinatorClaimExtension()` when work packages spend a long time handling batches, or if it takes a long time before a batch is assigned a thread for processing.
 
 In practice, most tuning starts with `batchSize`, `initialSegmentCount`, and the executor sizing.
 The defaults are conservative and work well for small systems, but high-throughput installations usually need larger batches and more careful claim management.

@@ -409,6 +409,11 @@ A processor uses this value to steal token claims from other processor threads.
 This value defaults to 5000 milliseconds.
 * `claimExtensionThreshold`: Threshold to extend the claim in the absence of events.
 The value defaults to 5000 milliseconds.
+* `coordinatorClaimExtension`: Has the coordinator extend the claims of its work packages, instead of leaving that to the work packages themselves.
+Off by default.
+Enable it when handling a batch regularly takes longer than the claim timeout of the token store, since a work package can only extend its own claim from a worker thread.
+
+With Spring Boot, these are also available as properties per processor: `axon.eventhandling.processors.<name>.token-claim-interval`, `axon.eventhandling.processors.<name>.claim-extension-threshold` (in milliseconds) and `axon.eventhandling.processors.<name>.coordinator-claim-extension`.
 
 Consider the following snippet if you want to configure these values:
 
@@ -473,6 +478,10 @@ Examples of when a thread may get its token stolen are:
 - Too large event batch size.
 - Blocking operations inside event handlers.
 - Blocking exceptions inside event handlers.
+
+Note that a work package can only update its token timestamp from a worker thread.
+Lengthy handling therefore not only stales the segment it happens on, but also occupies a thread the work packages of other segments need to update their timestamp.
+Enabling `enableCoordinatorClaimExtension()` lets the coordinator extend the claims of its work packages, covering both the segment handling the lengthy batch and the ones waiting for a thread.
 
 ==== What are the consequences of token stealing?
 
@@ -878,7 +887,7 @@ The second thread pool deals with all the segments the `Coordinator` of the pool
 The `Coordinator` starts a `WorkPackage` for each segment and provides them the events to handle.
 The work package will, in turn, invoke the Event Handling Components to process the events.
 These packages run within the second thread pool, the so-called "worker executor" pool.
-The worker-pool also defaults to `ScheduledExecutorService` with a single thread.
+The worker-pool defaults to a `ScheduledExecutorService` with four threads, shared by the work packages of all claimed segments.
 
 When you want to increase event handling throughput, we recommend changing the number of threads for the worker thread pool.
 How to do this is shown in the following sample:
