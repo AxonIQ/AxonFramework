@@ -20,14 +20,18 @@ import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.FutureUtils;
 import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.common.configuration.Configuration;
+import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.configuration.MessagingConfigurer;
+import org.axonframework.messaging.eventhandling.EventHandlingExceptionHandler;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.EventSink;
 import org.axonframework.messaging.eventhandling.EventTestUtils;
 import org.axonframework.modelling.saga.AbstractSagaManager;
 import org.axonframework.modelling.saga.AnnotatedSagaManager;
 import org.axonframework.modelling.saga.AssociationValue;
+import org.axonframework.modelling.saga.EndSaga;
 import org.axonframework.modelling.saga.SagaEventHandler;
+import org.axonframework.modelling.saga.SagaLifecycle;
 import org.axonframework.modelling.saga.SagaRepository;
 import org.axonframework.modelling.saga.StartSaga;
 import org.axonframework.modelling.saga.repository.AnnotatedSagaRepository;
@@ -40,6 +44,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -78,6 +83,47 @@ class SagaConfigurerTest {
         }
 
         @Test
+        void routesFollowUpEventsThroughAssociationValues() {
+            // given
+            InMemorySagaStore sagaStore = new InMemorySagaStore();
+            startWith(SagaConfigurer.forType(OrderSaga.class), sagaStore);
+            publish(new OrderPlaced("order-1"));
+
+            // when
+            publish(new OrderShipped("shipment-of-order-1"));
+
+            // then
+            assertThat(sagaOf(sagaStore, ORDER_1).shippedCount).isEqualTo(1);
+        }
+
+        @Test
+        void removesAnEndedSagaFromTheStore() {
+            // given
+            InMemorySagaStore sagaStore = new InMemorySagaStore();
+            startWith(SagaConfigurer.forType(OrderSaga.class), sagaStore);
+            publish(new OrderPlaced("order-1"));
+
+            // when
+            publish(new OrderCompleted("shipment-of-order-1"));
+
+            // then
+            assertThat(sagaStore.findSagas(OrderSaga.class, ORDER_1)).isEmpty();
+        }
+
+        @Test
+        void ignoresEventsTheSagaDoesNotHandle() {
+            // given
+            InMemorySagaStore sagaStore = new InMemorySagaStore();
+            startWith(SagaConfigurer.forType(OrderSaga.class), sagaStore);
+
+            // when
+            publish(new Unrelated("order-1"));
+
+            // then
+            assertThat(sagaStore.size()).isZero();
+        }
+
+        @Test
         void reportsWhenNoSagaStoreIsConfigured() {
             // given
             SagaConfigurer<OrderSaga> sagaConfigurer = SagaConfigurer.forType(OrderSaga.class);
@@ -98,6 +144,92 @@ class SagaConfigurerTest {
                     .isInstanceOf(AxonConfigurationException.class)
                     .hasMessageContaining(SagaStore.class.getName())
                     .hasMessageContaining(OrderSaga.class.getName());
+        }
+    }
+
+    @Nested
+    class Composition {
+
+        @Test
+        void oneProcessorCarriesTwoSagas() {
+            // given
+            InMemorySagaStore sagaStore = new InMemorySagaStore();
+            configuration = MessagingConfigurer.create()
+                                               .componentRegistry(
+                                                       registry -> registry.registerComponent(
+                                                               SagaStore.class,
+                                                               c -> sagaStore
+                                                       )
+                                               )
+                                               .eventProcessing(processing -> processing.subscribing(
+                                                       subscribing -> subscribing.defaultProcessor(
+                                                               "sagas",
+                                                               components -> components
+                                                                       .declarative(
+                                                                               "Saga[OrderSaga]",
+                                                                               SagaConfigurer.forType(OrderSaga.class)
+                                                                       )
+                                                                       .declarative(
+                                                                               "Saga[ShipmentSaga]",
+                                                                               SagaConfigurer.forType(
+                                                                                       ShipmentSaga.class
+                                                                               )
+                                                                       )
+                                                       )
+                                               ))
+                                               .start();
+
+            // when
+            publish(new OrderPlaced("order-1"));
+
+            // then
+            assertThat(sagaStore.findSagas(OrderSaga.class, ORDER_1)).hasSize(1);
+            assertThat(sagaStore.findSagas(ShipmentSaga.class, ORDER_1)).hasSize(1);
+        }
+
+        @Test
+        void processorDecorationSeesASagaFailure() {
+            // given
+            InMemorySagaStore sagaStore = new InMemorySagaStore();
+            List<Throwable> handled = new CopyOnWriteArrayList<>();
+            configuration = MessagingConfigurer.create()
+                                               .componentRegistry(
+                                                       registry -> registry.registerComponent(
+                                                               SagaStore.class,
+                                                               c -> sagaStore
+                                                       )
+                                               )
+                                               .eventProcessing(processing -> processing.subscribing(
+                                                       subscribing -> subscribing.defaultProcessor(
+                                                               "sagas",
+                                                               components -> components
+                                                                       .declarative(
+                                                                               "Saga[FailingSaga]",
+                                                                               SagaConfigurer.forType(
+                                                                                       FailingSaga.class
+                                                                               )
+                                                                       )
+                                                                       .withExceptionHandler(
+                                                                               c -> (EventHandlingExceptionHandler) (
+                                                                                       event,
+                                                                                       context,
+                                                                                       error
+                                                                               ) -> {
+                                                                                   handled.add(error);
+                                                                                   return MessageStream.empty();
+                                                                               }
+                                                                       )
+                                                       )
+                                               ))
+                                               .start();
+
+            // when
+            publish(new OrderPlaced("order-1"));
+
+            // then
+            assertThat(handled).singleElement().satisfies(
+                    error -> assertThat(error).hasMessage("this saga always fails")
+            );
         }
     }
 
@@ -295,6 +427,13 @@ class SagaConfigurerTest {
         );
     }
 
+    private static OrderSaga sagaOf(InMemorySagaStore sagaStore, AssociationValue associationValue) {
+        String sagaIdentifier = sagaStore.findSagas(OrderSaga.class, associationValue).iterator().next();
+        SagaStore.Entry<OrderSaga> entry = sagaStore.loadSaga(OrderSaga.class, sagaIdentifier);
+        assertThat(entry).isNotNull();
+        return entry.saga();
+    }
+
     private static <T> SagaRepository<T> repositoryFor(
             Class<T> sagaType,
             SagaStore<? super T> sagaStore,
@@ -335,13 +474,58 @@ class SagaConfigurerTest {
 
     }
 
+    record OrderShipped(String shipmentId) {
+
+    }
+
+    record OrderCompleted(String shipmentId) {
+
+    }
+
+    record Unrelated(String orderId) {
+
+    }
+
     @SuppressWarnings({"unused", "removal"})
     public static class OrderSaga {
+
+        private int shippedCount;
+
+        @StartSaga
+        @SagaEventHandler(associationProperty = "orderId")
+        public void on(OrderPlaced event, SagaLifecycle lifecycle) {
+            lifecycle.associateWith("shipmentId", "shipment-of-" + event.orderId());
+        }
+
+        @SagaEventHandler(associationProperty = "shipmentId")
+        public void on(OrderShipped event) {
+            shippedCount++;
+        }
+
+        @EndSaga
+        @SagaEventHandler(associationProperty = "shipmentId")
+        public void on(OrderCompleted event) {
+            // Ending the Saga is the behavior under test.
+        }
+    }
+
+    @SuppressWarnings({"unused", "removal"})
+    public static class ShipmentSaga {
 
         @StartSaga
         @SagaEventHandler(associationProperty = "orderId")
         public void on(OrderPlaced event) {
-            // Starting the saga is the behavior under test.
+            // Starting the second Saga is the behavior under test.
+        }
+    }
+
+    @SuppressWarnings({"unused", "removal"})
+    public static class FailingSaga {
+
+        @StartSaga
+        @SagaEventHandler(associationProperty = "orderId")
+        public void on(OrderPlaced event) {
+            throw new IllegalStateException("this saga always fails");
         }
     }
 
