@@ -480,6 +480,218 @@ class MigrateSnapshotTriggerDefinitionToAnnotationTest implements RewriteTest {
     }
 
     // -------------------------------------------------------------------------
+    // Adjacent manually-registered Serializer bean → flagged for review
+    // -------------------------------------------------------------------------
+
+    @Nested
+    class AdjacentSerializerBeanMigration {
+
+        @Test
+        void flagsSerializerBeanInSameConfigurationClass() {
+            // AF4 apps commonly paired the SnapshotTriggerDefinition bean with a manually
+            // registered Serializer bean in the same @Configuration class, specifically to
+            // guarantee the snapshot payload was serializable. The recipe must migrate the
+            // snapshot trigger as usual, but also flag the adjacent Serializer bean for review
+            // instead of silently leaving (or removing) it.
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.eventsourcing.EventCountSnapshotTriggerDefinition;
+                            import org.axonframework.eventsourcing.SnapshotTriggerDefinition;
+                            import org.axonframework.eventsourcing.Snapshotter;
+                            import org.axonframework.serialization.Serializer;
+                            import org.axonframework.serialization.json.JacksonSerializer;
+                            import org.axonframework.spring.stereotype.Aggregate;
+                            import org.springframework.context.annotation.Bean;
+                            import org.springframework.context.annotation.Configuration;
+                            import org.springframework.context.annotation.Primary;
+
+                            @Aggregate(snapshotTriggerDefinition = "myTrigger")
+                            class MyAggregate {}
+
+                            @Configuration
+                            class MyConfig {
+                                @Bean
+                                SnapshotTriggerDefinition myTrigger(Snapshotter snapshotter) {
+                                    return new EventCountSnapshotTriggerDefinition(snapshotter, 50);
+                                }
+
+                                @Bean
+                                @Primary
+                                Serializer serializer() {
+                                    return JacksonSerializer.defaultSerializer();
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.eventsourcing.annotation.Snapshotting;
+                            import org.axonframework.serialization.Serializer;
+                            import org.axonframework.serialization.json.JacksonSerializer;
+                            import org.axonframework.spring.stereotype.Aggregate;
+                            import org.springframework.context.annotation.Bean;
+                            import org.springframework.context.annotation.Configuration;
+                            import org.springframework.context.annotation.Primary;
+
+                            @Aggregate
+                            @Snapshotting(afterEvents = 50)
+                            class MyAggregate {}
+
+                            @Configuration
+                            class MyConfig {
+
+                                // TODO(axon4to5): This manually-registered Serializer bean existed under AF4 to guarantee the snapshot payload was serializable — review whether it is still needed under AF5's converter model.
+                                @Bean
+                                @Primary
+                                Serializer serializer() {
+                                    return JacksonSerializer.defaultSerializer();
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void doesNotFlagSerializerBeanWhenNoSnapshotTriggerBeanPresent() {
+            // A Serializer bean on its own (no adjacent SnapshotTriggerDefinition bean in the same
+            // class) is out of scope for this recipe and must be left untouched.
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.serialization.Serializer;
+                            import org.axonframework.serialization.json.JacksonSerializer;
+                            import org.springframework.context.annotation.Bean;
+                            import org.springframework.context.annotation.Configuration;
+
+                            @Configuration
+                            class SerializationConfig {
+                                @Bean
+                                Serializer serializer() {
+                                    return JacksonSerializer.defaultSerializer();
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void flagsCustomTriggerAndDoesNotDuplicateExistingSerializerTodo() {
+            // The custom-trigger bean gets its usual TODO on this pass, while the Serializer bean
+            // already carries its TODO from a previous pass — that one must not be duplicated.
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.eventsourcing.SnapshotTriggerDefinition;
+                            import org.axonframework.eventsourcing.annotation.Snapshotting;
+                            import org.axonframework.serialization.Serializer;
+                            import org.axonframework.serialization.json.JacksonSerializer;
+                            import org.axonframework.spring.stereotype.Aggregate;
+                            import org.springframework.context.annotation.Bean;
+                            import org.springframework.context.annotation.Configuration;
+
+                            @Aggregate
+                            @Snapshotting(afterEvents = 50)
+                            class MyAggregate {}
+
+                            @Configuration
+                            class MyConfig {
+                                @Bean
+                                SnapshotTriggerDefinition myTrigger() {
+                                    return new CustomSnapshotTriggerDefinition();
+                                }
+
+                                // TODO(axon4to5): This manually-registered Serializer bean existed under AF4 to guarantee the snapshot payload was serializable — review whether it is still needed under AF5's converter model.
+                                @Bean
+                                Serializer serializer() {
+                                    return JacksonSerializer.defaultSerializer();
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.eventsourcing.SnapshotTriggerDefinition;
+                            import org.axonframework.eventsourcing.annotation.Snapshotting;
+                            import org.axonframework.serialization.Serializer;
+                            import org.axonframework.serialization.json.JacksonSerializer;
+                            import org.axonframework.spring.stereotype.Aggregate;
+                            import org.springframework.context.annotation.Bean;
+                            import org.springframework.context.annotation.Configuration;
+
+                            @Aggregate
+                            @Snapshotting(afterEvents = 50)
+                            class MyAggregate {}
+
+                            @Configuration
+                            class MyConfig {
+                                // TODO(axon4to5): Custom SnapshotTriggerDefinition bean "myTrigger" — remove this bean manually.
+                                @Bean
+                                SnapshotTriggerDefinition myTrigger() {
+                                    return new CustomSnapshotTriggerDefinition();
+                                }
+
+                                // TODO(axon4to5): This manually-registered Serializer bean existed under AF4 to guarantee the snapshot payload was serializable — review whether it is still needed under AF5's converter model.
+                                @Bean
+                                Serializer serializer() {
+                                    return JacksonSerializer.defaultSerializer();
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void isIdempotentWhenBothTodosAlreadyPresent() {
+            // Running the recipe again over output that already carries both TODO comments must
+            // not change anything.
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.eventsourcing.SnapshotTriggerDefinition;
+                            import org.axonframework.eventsourcing.annotation.Snapshotting;
+                            import org.axonframework.serialization.Serializer;
+                            import org.axonframework.serialization.json.JacksonSerializer;
+                            import org.axonframework.spring.stereotype.Aggregate;
+                            import org.springframework.context.annotation.Bean;
+                            import org.springframework.context.annotation.Configuration;
+
+                            @Aggregate
+                            @Snapshotting(afterEvents = 50)
+                            class MyAggregate {}
+
+                            @Configuration
+                            class MyConfig {
+                                // TODO(axon4to5): Custom SnapshotTriggerDefinition bean "myTrigger" — remove this bean manually.
+                                @Bean
+                                SnapshotTriggerDefinition myTrigger() {
+                                    return new CustomSnapshotTriggerDefinition();
+                                }
+
+                                // TODO(axon4to5): This manually-registered Serializer bean existed under AF4 to guarantee the snapshot payload was serializable — review whether it is still needed under AF5's converter model.
+                                @Bean
+                                Serializer serializer() {
+                                    return JacksonSerializer.defaultSerializer();
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // No-op cases
     // -------------------------------------------------------------------------
 
