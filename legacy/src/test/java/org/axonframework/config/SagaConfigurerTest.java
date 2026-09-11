@@ -276,6 +276,21 @@ class SagaConfigurerTest {
         }
 
         @Test
+        void configuredStoreDoesNotRequireARegisteredSagaStoreComponent() {
+            // given
+            InMemorySagaStore configuredStore = new InMemorySagaStore();
+            SagaConfigurer<OrderSaga> sagaConfigurer = SagaConfigurer.forType(OrderSaga.class)
+                                                                      .configureSagaStore(c -> configuredStore);
+            startWith(sagaConfigurer);
+
+            // when
+            publish(new OrderPlaced("order-1"));
+
+            // then
+            assertThat(configuredStore.findSagas(OrderSaga.class, ORDER_1)).hasSize(1);
+        }
+
+        @Test
         void configuredRepositoryBypassesTheConfiguredStore() {
             // given
             InMemorySagaStore repositoryStore = new InMemorySagaStore();
@@ -410,6 +425,17 @@ class SagaConfigurerTest {
                                                            c -> sagaStore
                                                    )
                                            )
+                                           .eventProcessing(processing -> processing.subscribing(
+                                                   subscribing -> subscribing.defaultProcessor(
+                                                           "sagas",
+                                                           components -> components.declarative("Saga", sagaConfigurer)
+                                                   )
+                                           ))
+                                           .start();
+    }
+
+    private <T> void startWith(SagaConfigurer<T> sagaConfigurer) {
+        configuration = MessagingConfigurer.create()
                                            .eventProcessing(processing -> processing.subscribing(
                                                    subscribing -> subscribing.defaultProcessor(
                                                            "sagas",
