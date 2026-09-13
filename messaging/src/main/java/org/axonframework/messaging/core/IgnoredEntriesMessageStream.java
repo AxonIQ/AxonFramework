@@ -74,6 +74,11 @@ class IgnoredEntriesMessageStream<M extends Message> extends AbstractMessageStre
     }
 
     @Override
+    protected FetchResult<Entry<Message>> terminalState() {
+        return terminalStateOf(delegate);
+    }
+
+    @Override
     protected void onCompleted() {
         delegate.close();
     }

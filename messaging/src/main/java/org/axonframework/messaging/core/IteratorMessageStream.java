@@ -47,6 +47,11 @@ class IteratorMessageStream<M extends Message> extends AbstractMessageStream<M> 
     }
 
     @Override
+    protected FetchResult<Entry<M>> terminalState() {
+        return source.hasNext() ? FetchResult.notReady() : FetchResult.completed();
+    }
+
+    @Override
     protected final void onCompleted() {
         this.source = List.<Entry<M>>of().iterator();
 

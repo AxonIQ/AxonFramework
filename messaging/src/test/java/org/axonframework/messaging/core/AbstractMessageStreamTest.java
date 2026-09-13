@@ -51,6 +51,8 @@ class AbstractMessageStreamTest {
 
         private RuntimeException thrownExceptionInOnCompleted;
         private int onCompletedCount;
+        private int fetchNextCount;
+        private FetchResult<Entry<Message>> terminalState = FetchResult.notReady();
 
         void enqueue(FetchResult<Entry<Message>> result) {
             results.add(result);
@@ -68,9 +70,24 @@ class AbstractMessageStreamTest {
             thrownExceptionInOnCompleted = e;
         }
 
+        void reportTerminalState(FetchResult<Entry<Message>> terminalState) {
+            this.terminalState = terminalState;
+        }
+
+        int fetchNextCount() {
+            return fetchNextCount;
+        }
+
+        @Override
+        protected FetchResult<Entry<Message>> terminalState() {
+            return terminalState;
+        }
+
         @NonNull
         @Override
         protected FetchResult<Entry<Message>> fetchNext() {
+            fetchNextCount++;
+
             FetchResult<Entry<Message>> result = results.poll();
 
             return result != null ? result : FetchResult.notReady();
@@ -755,6 +772,126 @@ class AbstractMessageStreamTest {
 
             thread.setDaemon(true);
             thread.start();
+        }
+    }
+
+    @Nested
+    class WhenCompletionStatusRequested {
+
+        ControllableStream stream = new ControllableStream();
+
+        @Test
+        void withTerminalStateCompletedThenReportsCompleted() {
+            // given: a source that knows it is exhausted, without anything having read from it
+            stream.reportTerminalState(FetchResult.completed());
+
+            // when / then
+            assertThat(stream.isCompleted()).isTrue();
+            assertThat(stream.error()).isEmpty();
+        }
+
+        @Test
+        void withTerminalStateErrorThenReportsTheError() {
+            // given
+            RuntimeException failure = new RuntimeException("source failed");
+
+            stream.reportTerminalState(FetchResult.error(failure));
+
+            // when / then
+            assertThat(stream.isCompleted()).isTrue();
+            assertThat(stream.error()).contains(failure);
+        }
+
+        @Test
+        void withTerminalStateNotReadyThenStaysOpen() {
+            assertThat(stream.isCompleted()).isFalse();
+            assertThat(stream.error()).isEmpty();
+        }
+
+        @Test
+        void withTerminalStateValueThenThrowsIllegalStateException() {
+            // given: reporting an entry as a terminal state is a programming error, entries come from fetchNext
+            stream.reportTerminalState(FetchResult.of(entryOf("msg")));
+
+            // when / then
+            assertThatThrownBy(() -> stream.isCompleted()).isInstanceOf(IllegalStateException.class);
+        }
+
+        @Test
+        void thenRunsTheOnCompletedHookExactlyOnce() {
+            // given: resources are released on the transition, wherever the transition is observed
+            stream.reportTerminalState(FetchResult.completed());
+
+            // when
+            stream.isCompleted();
+            stream.isCompleted();
+
+            // then
+            assertThat(stream.onCompletedCount()).isEqualTo(1);
+        }
+
+        @Test
+        void thenDoesNotReadFromTheSource() {
+            // given: a status check must not consume, buffer, or otherwise advance the source
+            stream.enqueue(FetchResult.of(entryOf("msg")));
+
+            // when
+            stream.isCompleted();
+
+            // then
+            assertThat(stream.fetchNextCount()).isZero();
+            assertThat(stream.next()).isPresent();
+        }
+
+        @Test
+        void withEntryAvailableThenStaysOpenWithoutConsumingIt() {
+            // given: an entry was read ahead and is waiting to be handed out
+            Entry<Message> entry = entryOf("msg");
+
+            stream.enqueue(FetchResult.of(entry));
+            stream.peek();
+
+            // when: the source says it has nothing left, but the buffered entry is still owed to the consumer
+            stream.reportTerminalState(FetchResult.completed());
+
+            // then
+            assertThat(stream.isCompleted()).isFalse();
+            assertThat(stream.next()).contains(entry);
+        }
+
+        @Test
+        void thenDoesNotInvokeTheCallback() {
+            // given: the consumer asking for the status is the one the callback would notify
+            AtomicInteger callbackCount = new AtomicInteger();
+
+            stream.setCallback(callbackCount::incrementAndGet);
+            stream.reportTerminalState(FetchResult.completed());
+
+            callbackCount.set(0);
+
+            // when
+            assertThat(stream.isCompleted()).isTrue();
+
+            // then
+            assertThat(callbackCount).hasValue(0);
+        }
+
+        @Test
+        void thenStillNotifiesAConsumerThatGoesOnReading() {
+            // given: the notification recorded by the transition is owed until the consumer interacts again
+            AtomicInteger callbackCount = new AtomicInteger();
+
+            stream.setCallback(callbackCount::incrementAndGet);
+            stream.reportTerminalState(FetchResult.completed());
+
+            callbackCount.set(0);
+
+            // when
+            stream.isCompleted();
+            stream.next();
+
+            // then
+            assertThat(callbackCount).hasValue(1);
         }
     }
 }

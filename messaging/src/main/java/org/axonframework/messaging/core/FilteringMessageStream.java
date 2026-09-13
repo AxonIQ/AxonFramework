@@ -70,6 +70,11 @@ class FilteringMessageStream<M extends Message> extends AbstractMessageStream<M>
     }
 
     @Override
+    protected FetchResult<Entry<M>> terminalState() {
+        return terminalStateOf(delegate);
+    }
+
+    @Override
     protected final void onCompleted() {
         delegate.close();
     }

@@ -96,6 +96,11 @@ class FlatMappedMessageStream<M extends Message, N extends Message> extends Abst
     }
 
     @Override
+    protected FetchResult<Entry<N>> terminalState() {
+        return inner == null ? terminalStateOf(outer) : FetchResult.notReady();
+    }
+
+    @Override
     protected void onCompleted() {
         if (inner != null) {
             inner.close();
