@@ -79,6 +79,19 @@ class StartingFromTest {
     }
 
     @Test
+    void withPositionReplacesTheExistingPositionPreservingCriteria() {
+        // given a StartingFrom whose default criteria matches any tag
+        GlobalSequenceTrackingToken replacement = new GlobalSequenceTrackingToken(42);
+
+        // when its position is replaced
+        StreamingCondition result = testSubject.withPosition(replacement);
+
+        // then the replacement position is used and the default criteria is preserved
+        assertEquals(replacement, result.position());
+        assertEquals(EventCriteria.havingAnyTag(), result.criteria());
+    }
+
+    @Test
     void withCriteriaThrowsIllegalArgumentExceptionWhenPositionIsNull() {
         // given a StartingFrom without a position
         StreamingCondition nullPositionTestSubject = StreamingCondition.startingFrom(null);

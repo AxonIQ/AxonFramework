@@ -343,10 +343,13 @@ public class AggregateBasedJpaEventStorageEngine implements EventStorageEngine {
 
     @Override
     public MessageStream<EventMessage> stream(StreamingCondition condition) {
-        AtomicReference<GapAwareTrackingToken> cursorRef = new AtomicReference<>(tokenOperations.assertGapAwareTrackingToken(condition.position()));
+        StreamingCondition resolvedCondition = resolveSpecialStreamingPosition(condition);
+        AtomicReference<GapAwareTrackingToken> cursorRef = new AtomicReference<>(
+                tokenOperations.assertGapAwareTrackingToken(resolvedCondition.position())
+        );
 
         return new ContinuousMessageStream<>(
-                () -> queryTokensAndEventsBy(cursorRef, condition),
+                () -> queryTokensAndEventsBy(cursorRef, resolvedCondition),
                 tae -> new SimpleEntry<>(convertToEventMessage(tae.event), buildTrackedContext(tae)),
                 (ms, r) -> {
                     streamCallbacks.put(ms, r);
