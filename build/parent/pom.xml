@@ -68,7 +68,7 @@
         <jspecify.version>1.0.1</jspecify.version>
         <!-- Logging -->
         <log4j.version>2.26.1</log4j.version>
-        <slf4j.version>2.0.18</slf4j.version>
+        <slf4j.version>2.0.19</slf4j.version>
         <!-- Metrics -->
         <dropwizard.metrics.version>5.0.8</dropwizard.metrics.version>
         <micrometer.version>1.17.1</micrometer.version>
