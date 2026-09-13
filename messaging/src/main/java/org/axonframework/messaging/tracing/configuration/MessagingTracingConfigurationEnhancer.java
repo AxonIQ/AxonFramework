@@ -18,17 +18,16 @@ package org.axonframework.messaging.tracing.configuration;
 
 import org.axonframework.messaging.tracing.SpanFactory;
 import org.axonframework.messaging.commandhandling.tracing.TracingCommandBus;
-import org.axonframework.messaging.eventhandling.tracing.TracingEventBus;
 import org.axonframework.messaging.eventhandling.tracing.TracingEventHandlingComponent;
 import org.axonframework.messaging.eventhandling.tracing.TracingEventSink;
 import org.axonframework.messaging.queryhandling.tracing.TracingQueryBus;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.annotation.RegistrationScope;
+import org.axonframework.common.configuration.CapabilityPreservingDecorator;
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.common.configuration.ConfigurationEnhancer;
 import org.axonframework.messaging.commandhandling.CommandBus;
-import org.axonframework.messaging.eventhandling.EventBus;
 import org.axonframework.messaging.eventhandling.EventHandlingComponent;
 import org.axonframework.messaging.eventhandling.EventSink;
 import org.axonframework.messaging.eventhandling.configuration.EventProcessorConfiguration;
@@ -62,13 +61,6 @@ public final class MessagingTracingConfigurationEnhancer implements Configuratio
      */
     public static final int TRACING_DECORATOR_ORDER = TracingConfigurationOrder.TRACING_DECORATOR_ORDER;
 
-    /**
-     * Fully qualified name of {@code EventStore} from {@code axon-eventsourcing}. Resolved by name so that this module
-     * does not depend on {@code axon-eventsourcing} at compile time -- when event sourcing is not on the classpath, no
-     * {@code EventStore} instances exist and the check below returns {@code false}.
-     */
-    private static final String EVENT_STORE_CLASS_NAME = "org.axonframework.eventsourcing.eventstore.EventStore";
-
     @Override
     public void enhance(ComponentRegistry registry) {
         registry.registerIfNotPresent(MessagingTracingSettings.class,
@@ -84,39 +76,22 @@ public final class MessagingTracingConfigurationEnhancer implements Configuratio
                     return new TracingCommandBus(delegate, spanFactory);
                 }
         );
-        // Three type-preserving decorators cooperating via instanceof skip-guards. The component registry stores
-        // each component under its declared type and enforces that a decorator's result is assignable to that type
-        // (see DecoratedComponent#resolve). Each lambda below produces the wrapper that matches the actual subtype.
+        // Matching is assignability-based, so a decorator registered for EventSink also reaches EventBus and
+        // EventStore components. preservingCapabilitiesOf keeps it from narrowing those wider components down to a
+        // bare EventSink: it widens the result back to the delegate's full original interface set whenever
+        // TracingEventSink alone would not cover it, routing EventSink-declared methods (publish) to the tracing
+        // wrapper and every other method (subscribe, EventStore's transaction/open/token methods, ...) straight to
+        // the raw, undecorated delegate.
         registry.registerDecorator(
                 EventSink.class,
                 TRACING_DECORATOR_ORDER,
-                (config, name, delegate) -> {
-                    // EventBus / EventStore slots are handled by the dedicated decorators below / in the
-                    // eventsourcing module -- skip them here to keep this lambda type-preserving for EventSink.
-                    if (delegate instanceof EventBus || isEventStore(delegate)) {
-                        return delegate;
-                    }
+                CapabilityPreservingDecorator.preservingCapabilitiesOf((config, name, delegate) -> {
                     SpanFactory spanFactory = spanFactory(config);
                     if (spanFactory == null || !settings(config).eventSinkEnabled()) {
                         return delegate;
                     }
                     return new TracingEventSink(delegate, spanFactory);
-                }
-        );
-        registry.registerDecorator(
-                EventBus.class,
-                TRACING_DECORATOR_ORDER,
-                (config, name, delegate) -> {
-                    // EventStore slots are handled by the eventsourcing module's enhancer -- skip them here.
-                    if (isEventStore(delegate)) {
-                        return delegate;
-                    }
-                    SpanFactory spanFactory = spanFactory(config);
-                    if (spanFactory == null || !settings(config).eventSinkEnabled()) {
-                        return delegate;
-                    }
-                    return new TracingEventBus(delegate, spanFactory);
-                }
+                })
         );
         registry.registerDecorator(
                 EventHandlingComponent.class,
@@ -178,22 +153,5 @@ public final class MessagingTracingConfigurationEnhancer implements Configuratio
     @Override
     public int order() {
         return TracingConfigurationOrder.TRACING_DEFAULTS_ENHANCER_ORDER;
-    }
-
-    /**
-     * Returns {@code true} when {@code delegate} is an instance of the {@code EventStore} type, without referencing
-     * the {@code axon-eventsourcing} module at compile time.
-     */
-    private static boolean isEventStore(Object delegate) {
-        try {
-            Class<?> eventStoreClass = Class.forName(
-                    EVENT_STORE_CLASS_NAME,
-                    false,
-                    delegate.getClass().getClassLoader()
-            );
-            return eventStoreClass.isInstance(delegate);
-        } catch (ClassNotFoundException e) {
-            return false;
-        }
     }
 }
