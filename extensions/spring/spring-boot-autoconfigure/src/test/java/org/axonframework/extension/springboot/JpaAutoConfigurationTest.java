@@ -25,6 +25,7 @@ import org.axonframework.extension.springboot.autoconfig.JpaAutoConfiguration;
 import org.axonframework.extension.springboot.util.jpa.ContainerManagedEntityManagerProvider;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.jpa.JpaTokenStore;
+import org.axonframework.modelling.saga.repository.jpa.JpaSagaStore;
 import org.hsqldb.jdbc.JDBCDataSource;
 import org.junit.jupiter.api.*;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
@@ -78,15 +79,11 @@ class JpaAutoConfigurationTest {
             assertEquals(JpaTokenStore.class,
                          tokenStores.get("tokenStore").getClass());
 
-            /*
-            TODO re-enable as part of #3097
-            //noinspection rawtypes
-            Map<String, SagaStore> sagaStores =
-                    context.getBeansOfType(SagaStore.class);
-            assertTrue(sagaStores.containsKey("sagaStore"));
-            assertEquals(JpaSagaStore.class,
-                         sagaStores.get("sagaStore").getClass());
-             */
+            // The sagaStore bean is @Lazy (its constructor eagerly registers named queries against the
+            // EntityManager), and this context's EntityManagerFactory is a bare mock that cannot back a real
+            // EntityManager, so the type is asserted from the bean definition instead of an instantiated bean.
+            assertTrue(context.getBeanFactory().containsBean("sagaStore"));
+            assertEquals(JpaSagaStore.class, context.getBeanFactory().getType("sagaStore"));
             PersistenceExceptionResolver persistenceExceptionResolver =
                     context.getBean("persistenceExceptionResolver", PersistenceExceptionResolver.class);
             assertThat(persistenceExceptionResolver).isInstanceOf(SmartLifecycle.class);

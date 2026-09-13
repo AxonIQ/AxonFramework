@@ -14,10 +14,12 @@
  * limitations under the License.
  */
 
+
 /**
- * This is part of a stashed module that is not actively maintained and just kept for reference.
+ * Contains the Axon Framework 4 {@code @Saga} stereotype, kept at its original package so migrating saga classes
+ * component-scan unchanged.
  */
 @NullMarked
-package org.axonframework.spring.saga;
+package org.axonframework.spring.stereotype;
 
 import org.jspecify.annotations.NullMarked;
