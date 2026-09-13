@@ -44,4 +44,22 @@ class KotlinReflectPropertyAccessStrategyTest {
 
         assertThat(property?.getValue<PersonId>(person)).isEqualTo(PersonId(42))
     }
+
+    @Test
+    fun `falls through to another strategy for a non-kotlin class`() {
+        // RuntimeException is not a Kotlin class, so this strategy cannot resolve the property.
+        // It must yield (return null) so a lower-priority strategy can resolve "message" via getMessage().
+        val property = PropertyAccessStrategy.getProperty(RuntimeException::class.java, "message")
+
+        assertThat(property?.getValue<String>(RuntimeException("boom"))).isEqualTo("boom")
+    }
+
+    @Test
+    fun `returns null when the kotlin class has no such property`() {
+        data class Person(val id: Int, val name: String)
+
+        val property = PropertyAccessStrategy.getProperty(Person::class.java, "nonExisting")
+
+        assertThat(property).isNull()
+    }
 }
