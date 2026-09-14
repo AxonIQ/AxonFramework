@@ -330,6 +330,56 @@ class SpringCustomizationsTest {
         }
     }
 
+    @Nested
+    class PooledClaimExtension {
+
+        @Test
+        void appliesTheClaimExtensionSettings() {
+            // given
+            var configuration = configuration(cr -> {
+            });
+
+            // when
+            var result = SpringCustomizations
+                    .pooledStreamingCustomizations(PROCESSOR_NAME, new TestClaimExtensionSettings(1234, true))
+                    .apply(configuration, pooledProcessorConfiguration());
+
+            // then
+            assertThat(result.claimExtensionThreshold()).isEqualTo(1234);
+            assertThat(result.coordinatorExtendsClaims()).isTrue();
+        }
+
+        @Test
+        void defaultsMatchTheProcessorConfigurationDefaults() {
+            // given - settings that do not override the claim extension defaults
+            var configuration = configuration(cr -> {
+            });
+
+            // when
+            var result = customizePooled(configuration, null, null);
+
+            // then
+            assertThat(result.claimExtensionThreshold()).isEqualTo(5000);
+            assertThat(result.coordinatorExtendsClaims()).isFalse();
+        }
+
+        @Test
+        void keepsCoordinatorClaimExtensionEnabledByAnotherCustomization() {
+            // given - the setting is off, while another customization already enabled the coordinator claim extension
+            var configuration = configuration(cr -> {
+            });
+            var alreadyEnabled = pooledProcessorConfiguration().enableCoordinatorClaimExtension();
+
+            // when
+            var result = SpringCustomizations
+                    .pooledStreamingCustomizations(PROCESSOR_NAME, new TestClaimExtensionSettings(5000, false))
+                    .apply(configuration, alreadyEnabled);
+
+            // then - settings never undo an enable applied elsewhere
+            assertThat(result.coordinatorExtendsClaims()).isTrue();
+        }
+    }
+
     private static AxonConfiguration configuration(Consumer<ComponentRegistry> components) {
         MessagingConfigurer configurer = MessagingConfigurer.create();
         // classpath enhancers, like the event sourcing defaults, would register additional event sources
@@ -375,6 +425,40 @@ class SpringCustomizationsTest {
     private record TestSubscribingSettings(@Nullable String source)
             implements EventProcessorSettings.SubscribingEventProcessorSettings {
 
+    }
+
+    private record TestClaimExtensionSettings(long claimExtensionThresholdInMillis, boolean coordinatorClaimExtension)
+            implements EventProcessorSettings.PooledEventProcessorSettings {
+
+        @Override
+        public @Nullable String source() {
+            return null;
+        }
+
+        @Override
+        public @Nullable String tokenStore() {
+            return null;
+        }
+
+        @Override
+        public int initialSegmentCount() {
+            return 1;
+        }
+
+        @Override
+        public long tokenClaimIntervalInMillis() {
+            return 5000;
+        }
+
+        @Override
+        public int threadCount() {
+            return 1;
+        }
+
+        @Override
+        public int batchSize() {
+            return 1;
+        }
     }
 
     private record TestPooledSettings(@Nullable String source, @Nullable String tokenStore)
