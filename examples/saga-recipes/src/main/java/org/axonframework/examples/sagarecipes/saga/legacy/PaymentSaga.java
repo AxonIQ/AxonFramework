@@ -97,7 +97,7 @@ public class PaymentSaga {
         PaymentReference reference = RentalPaymentReference.forRental(event.rentalId());
         lifecycle.associateWith("paymentReference", reference.raw());
         dispatcher.send(new PreparePayment(reference, RentalPricing.PRICE));
-        // TODO #5006 - Axon Framework 4 retried a failed dispatch through a scheduled "retryPayment" deadline:
+        // TODO #3065 - Axon Framework 4 retried a failed dispatch through a scheduled "retryPayment" deadline:
         // commandGateway.send(new PreparePayment(reference, RentalPricing.PRICE))
         //               .whenComplete((r, e) -> {
         //                   if (e != null) {
@@ -142,7 +142,7 @@ public class PaymentSaga {
     @EndSaga
     @SagaEventHandler(associationProperty = "bikeId")
     public void on(RequestRejected event) {
-        // TODO #5006 - Axon Framework 4 cancelled the payment timeout scheduled below:
+        // TODO #3065 - Axon Framework 4 cancelled the payment timeout scheduled below:
         // deadlineManager.cancelAllWithinScope("cancelPayment");
     }
 
@@ -155,17 +155,17 @@ public class PaymentSaga {
      */
     @SagaEventHandler(associationProperty = "paymentReference")
     public void on(PaymentPrepared event) {
-        // TODO #5006 - Axon Framework 4 scheduled the payment timeout here:
+        // TODO #3065 - Axon Framework 4 scheduled the payment timeout here:
         // deadlineManager.schedule(Duration.ofSeconds(30), "cancelPayment", event.paymentId());
     }
 
-    // TODO #5006 - Axon Framework 4 gave up on a payment nobody paid in time:
+    // TODO #3065 - Axon Framework 4 gave up on a payment nobody paid in time:
     // @DeadlineHandler(deadlineName = "cancelPayment")
     // public void cancelPayment(String paymentId) {
     //     commandGateway.send(new RejectPayment(PaymentId.of(paymentId)));
     // }
 
-    // TODO #5006 - Axon Framework 4 re-attempted a dispatch that had failed, and asked for the payment in the first
+    // TODO #3065 - Axon Framework 4 re-attempted a dispatch that had failed, and asked for the payment in the first
     // place through the very same method:
     // @DeadlineHandler(deadlineName = "retryPayment")
     // public void preparePayment(PaymentReference reference) {

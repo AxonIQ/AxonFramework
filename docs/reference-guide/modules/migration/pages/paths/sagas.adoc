@@ -116,7 +116,7 @@ Keep the original processor name, or in-flight sagas lose events.
 `@ProcessingGroup` does not exist in Axon Framework 5, so a saga carrying it no longer compiles. Removing the
 annotation renames the processor to `<SimpleName>Processor`. Token stores are keyed on the processor name, so the
 existing token no longer matches, the renamed processor starts at the head of the stream, and every event published
-since that token was written is never delivered to the sagas still running.
+before that token was written is never delivered to the sagas still running.
 
 Replace `@ProcessingGroup("orders")` with `@Namespace("orders")`, keeping the value, so the existing token is found:
 
@@ -233,10 +233,8 @@ no effect.
 * *The in-memory saga store is an explicit, overridable bean*, not an internal default. An application that wants a
 default store alongside named per-saga stores declares the default store itself.
 * *A `@Saga` class must be public with an accessible no-argument constructor.*
-* *Component-scan saga classes; do not declare them with a `@Bean` method.* A `@Bean` method ignores the
-`@Scope("prototype")` that `@Saga` declares, and a singleton saga bean is registered twice: as its saga manager, and
-again as a plain event handling component on the package-derived processor. Every event then also reaches one shared
-saga instance, outside association and lifecycle handling. Annotate the bean method with `@Scope("prototype")` if the
+* *Component-scan saga classes, or declare them with a `@Scope("prototype")` annotated `@Bean` method.* A plain `@Bean` method ignores the
+`@Scope("prototype")` that `@Saga` declares and requires to avoid the saga being registered additionally as a plain singleton event handling component bean. Annotate the bean method with `@Scope("prototype")` if the
 saga cannot be component-scanned.
 
 == Mapping Axon Framework 4 saga concepts to Axon Framework 5
