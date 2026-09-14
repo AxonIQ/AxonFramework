@@ -427,10 +427,21 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
      * Composes a chain containing only the {@code static} members of the given {@code interceptors}, preserving their
      * relative order. This is the chain used for creational commands, for which no entity instance exists to invoke
      * instance methods on.
+     * <p>
+     * Every interceptor left out is logged at debug level, so that an interceptor which unexpectedly does not guard a
+     * creational command can be traced back to it being declared as an instance method.
      */
     private MessageHandlerInterceptorMemberChain<E> staticInterceptorChain(
             SortedSet<MessageHandlingMember<? super E>> interceptors
     ) {
+        if (logger.isDebugEnabled()) {
+            interceptors.stream()
+                        .filter(interceptor -> !isStaticMember(interceptor))
+                        .forEach(interceptor -> logger.debug(
+                                "Excluded instance interceptor [{}] from creational command dispatch on [{}]. "
+                                        + "Declare it static for it to guard creational commands as well.",
+                                interceptor.signature(), entityType));
+        }
         List<MessageHandlingMember<? super E>> staticInterceptors = interceptors.stream()
                                                                                .filter(this::isStaticMember)
                                                                                .toList();

@@ -373,6 +373,19 @@ class AnnotatedEntityMetamodelCommandInterceptorTest {
                     .withMessage("Card identifier must not be empty");
             assertThat(StaticallyInterceptedGiftCard.invocations).containsExactly("intercepted");
         }
+
+        @Test
+        void staticInterceptorAlsoRunsForInstanceCommand() {
+            // given an entity instance exists
+            entityState = new StaticallyInterceptedGiftCard();
+            StaticallyInterceptedGiftCard.invocations.clear();
+
+            // when
+            dispatchInstanceCommand(new RedeemGiftCard("card-1"));
+
+            // then a static interceptor is not limited to creational dispatch; it guards instance commands as well
+            assertThat(StaticallyInterceptedGiftCard.invocations).containsExactly("intercepted", "redeemed");
+        }
     }
 
     @Nested
@@ -679,6 +692,11 @@ class AnnotatedEntityMetamodelCommandInterceptorTest {
         public static String handle(IssueGiftCard command) {
             invocations.add("created");
             return command.id();
+        }
+
+        @CommandHandler
+        public void handle(RedeemGiftCard command) {
+            invocations.add("redeemed");
         }
 
         @CommandHandlerInterceptor
