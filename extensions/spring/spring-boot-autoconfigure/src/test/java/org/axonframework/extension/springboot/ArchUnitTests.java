@@ -53,6 +53,9 @@ class ArchUnitTests {
     static void beforeAll() {
         importedClasses = new ClassFileImporter()
                 .withImportOption(new ImportOption.DoNotIncludeTests())
+                // Only validate this module's own classes. The axon-legacy test dependency contributes its own
+                // Saga autoconfiguration classes in the same package; those are listed in axon-legacy's imports file.
+                .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_JARS)
                 .importPackages("org.axonframework.extension.springboot");
     }
 

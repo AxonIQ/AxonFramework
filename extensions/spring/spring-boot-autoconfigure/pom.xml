@@ -45,11 +45,13 @@
             <optional>true</optional>
         </dependency>
 
+        <!-- Test scope only: the legacy Saga autoconfiguration classes now live in axon-legacy; these tests exercise
+             them together with this module's Spring Boot autoconfiguration stack (persistence.xml, event store). -->
         <dependency>
             <groupId>org.axonframework</groupId>
             <artifactId>axon-legacy</artifactId>
             <version>${project.version}</version>
-            <optional>true</optional>
+            <scope>test</scope>
         </dependency>
 
         <dependency>

@@ -1,0 +1,3 @@
+org.axonframework.extension.springboot.autoconfig.LegacyJpaSagaStoreAutoConfiguration
+org.axonframework.extension.springboot.autoconfig.LegacyJdbcSagaStoreAutoConfiguration
+org.axonframework.extension.springboot.autoconfig.LegacySagaAutoConfiguration

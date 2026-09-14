@@ -19,7 +19,6 @@ package org.axonframework.extension.springboot.autoconfig;
 import jakarta.persistence.EntityManagerFactory;
 import org.axonframework.common.jpa.EntityManagerProvider;
 import org.axonframework.conversion.GeneralConverter;
-import org.axonframework.extension.springboot.util.RegisterDefaultEntities;
 import org.axonframework.modelling.saga.repository.SagaStore;
 import org.axonframework.modelling.saga.repository.jpa.JpaSagaStore;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -27,6 +26,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Lazy;
 
 /**
@@ -35,29 +35,31 @@ import org.springframework.context.annotation.Lazy;
  * <p>
  * Registers the {@code SagaEntry} and {@code AssociationValueEntry} entities defined in
  * {@code org.axonframework.modelling.saga.repository.jpa} with the persistence unit via
- * {@link RegisterDefaultEntities}, so they are picked up even though they live outside the application's own base
- * packages.
+ * {@link LegacySagaJpaEntityRegistrar}, so they are picked up even though they live outside the application's own
+ * base packages.
  * <p>
  * The {@link #sagaStore(GeneralConverter, EntityManagerProvider)} bean is {@link Lazy}: {@link JpaSagaStore}'s
  * constructor eagerly registers named queries against the {@link jakarta.persistence.EntityManager}, which requires
  * a fully initialized persistence unit. Axon Framework 4 deferred this bean the same way for the same reason.
  * <p>
- * Runs after {@link JpaAutoConfiguration} so the {@link EntityManagerProvider} bean it provides is available, and
- * before {@link LegacySagaAutoConfiguration} so this bean is visible when that class's in-memory fallback checks for
- * an existing {@link SagaStore}.
+ * Runs after {@code org.axonframework.extension.springboot.autoconfig.JpaAutoConfiguration} so the
+ * {@link EntityManagerProvider} bean it provides is available, and before {@link LegacySagaAutoConfiguration} so this
+ * bean is visible when that class's in-memory fallback checks for an existing {@link SagaStore}. The ordering
+ * reference to {@code JpaAutoConfiguration} uses {@link AutoConfiguration#afterName()} rather than
+ * {@link AutoConfiguration#after()} so that {@code axon-legacy} carries no compile-time dependency on the
+ * {@code axon-spring-boot-autoconfigure} module.
  *
  * @author Mateusz Nowak
  * @since 5.4.0
  */
-@AutoConfiguration(after = JpaAutoConfiguration.class, afterName = {
+@AutoConfiguration(afterName = {
+        "org.axonframework.extension.springboot.autoconfig.JpaAutoConfiguration",
         "org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration",
         "org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration"
 })
 @ConditionalOnClass({JpaSagaStore.class, EntityManagerFactory.class})
 @ConditionalOnBean(EntityManagerFactory.class)
-@RegisterDefaultEntities(packages = {
-        "org.axonframework.modelling.saga.repository.jpa"
-})
+@Import(LegacySagaJpaEntityRegistrar.class)
 public class LegacyJpaSagaStoreAutoConfiguration {
 
     /**

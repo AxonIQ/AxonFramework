@@ -43,16 +43,22 @@ import javax.sql.DataSource;
  *     (see the {@code SagaSqlSchema} implementations for specific databases) can plug it in as a bean.</li>
  * </ul>
  * <p>
- * Runs after {@link JdbcAutoConfiguration}, so the {@link ConnectionProvider} bean it provides is available, and
- * after {@link LegacyJpaSagaStoreAutoConfiguration}, so a JPA-backed store, when applicable, takes precedence over
- * this JDBC-backed one -- both {@link ConditionalOnMissingBean} checks target {@link SagaStore}, so whichever
- * autoconfiguration runs first wins when an application has both an {@code EntityManagerFactory} and a
- * {@link DataSource}.
+ * Runs after {@code org.axonframework.extension.springboot.autoconfig.JdbcAutoConfiguration}, so the
+ * {@link ConnectionProvider} bean it provides is available, and after {@link LegacyJpaSagaStoreAutoConfiguration},
+ * so a JPA-backed store, when applicable, takes precedence over this JDBC-backed one -- both
+ * {@link ConditionalOnMissingBean} checks target {@link SagaStore}, so whichever autoconfiguration runs first wins
+ * when an application has both an {@code EntityManagerFactory} and a {@link DataSource}. The ordering reference to
+ * {@code JdbcAutoConfiguration} uses {@link AutoConfiguration#afterName()} rather than
+ * {@link AutoConfiguration#after()} so that {@code axon-legacy} carries no compile-time dependency on the
+ * {@code axon-spring-boot-autoconfigure} module.
  *
  * @author Mateusz Nowak
  * @since 5.4.0
  */
-@AutoConfiguration(after = {JdbcAutoConfiguration.class, LegacyJpaSagaStoreAutoConfiguration.class})
+@AutoConfiguration(
+        after = LegacyJpaSagaStoreAutoConfiguration.class,
+        afterName = "org.axonframework.extension.springboot.autoconfig.JdbcAutoConfiguration"
+)
 @ConditionalOnClass(JdbcSagaStore.class)
 @ConditionalOnBean(DataSource.class)
 public class LegacyJdbcSagaStoreAutoConfiguration {

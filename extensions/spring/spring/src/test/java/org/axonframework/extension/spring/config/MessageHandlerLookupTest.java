@@ -17,9 +17,7 @@
 package org.axonframework.extension.spring.config;
 
 import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.modelling.saga.SagaEventHandler;
-import org.axonframework.modelling.saga.StartSaga;
-import org.axonframework.spring.stereotype.Saga;
+import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.config.BeanDefinition;
@@ -38,61 +36,58 @@ import static org.assertj.core.api.Assertions.assertThat;
 class MessageHandlerLookupTest {
 
     /**
-     * A Saga carries {@link SagaEventHandler @SagaEventHandler} methods, which are meta-annotated with
-     * {@link org.axonframework.messaging.eventhandling.annotation.EventHandler @EventHandler} and therefore with
-     * {@link org.axonframework.messaging.core.annotation.MessageHandler @MessageHandler}. The lookup would happily
-     * wire a Saga up as a plain annotated event handling component in addition to its declarative Saga component if
-     * {@link Saga @Saga} did not make the bean a prototype. That single scope check is the whole guard.
+     * A prototype-scoped bean carrying {@link EventHandler @EventHandler} methods is detected as an event handling
+     * component, but the lookup deliberately excludes it unless prototype beans are explicitly requested. This guards
+     * against wiring a bean that a higher-level component (such as an Axon Framework 4 Saga) manages itself, in
+     * addition to that component. The scope check is the whole guard.
      */
     @Nested
-    class PrototypeScopedSagas {
+    class PrototypeScopedHandlers {
 
         @Test
-        void excludesAPrototypeScopedSaga() {
-            // given - the same Saga type as a prototype and as a singleton bean
+        void excludesAPrototypeScopedHandler() {
+            // given - the same handler type as a prototype and as a singleton bean
             DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory();
-            sagaBean(beanFactory, "prototypeSaga", BeanDefinition.SCOPE_PROTOTYPE);
-            sagaBean(beanFactory, "singletonSaga", BeanDefinition.SCOPE_SINGLETON);
+            handlerBean(beanFactory, "prototypeHandler", BeanDefinition.SCOPE_PROTOTYPE);
+            handlerBean(beanFactory, "singletonHandler", BeanDefinition.SCOPE_SINGLETON);
 
             // when
             List<String> found = MessageHandlerLookup.messageHandlerBeans(EventMessage.class, beanFactory, false);
 
-            // then - the singleton proves the handler is detected; only the scope keeps the Saga out
-            assertThat(found).containsExactly("singletonSaga");
+            // then - the singleton proves the handler is detected; only the scope keeps the prototype out
+            assertThat(found).containsExactly("singletonHandler");
         }
 
         @Test
-        void includesAPrototypeScopedSagaWhenPrototypeBeansAreRequested() {
+        void includesAPrototypeScopedHandlerWhenPrototypeBeansAreRequested() {
             // given
             DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory();
-            sagaBean(beanFactory, "prototypeSaga", BeanDefinition.SCOPE_PROTOTYPE);
+            handlerBean(beanFactory, "prototypeHandler", BeanDefinition.SCOPE_PROTOTYPE);
 
             // when
             List<String> found = MessageHandlerLookup.messageHandlerBeans(EventMessage.class, beanFactory, true);
 
             // then
-            assertThat(found).containsExactly("prototypeSaga");
+            assertThat(found).containsExactly("prototypeHandler");
         }
     }
 
-    private static void sagaBean(DefaultListableBeanFactory beanFactory, String beanName, String scope) {
+    private static void handlerBean(DefaultListableBeanFactory beanFactory, String beanName, String scope) {
         beanFactory.registerBeanDefinition(beanName,
-                                           BeanDefinitionBuilder.genericBeanDefinition(SimpleSaga.class)
+                                           BeanDefinitionBuilder.genericBeanDefinition(SimpleEventHandler.class)
                                                                 .setScope(scope)
                                                                 .getBeanDefinition());
     }
 
-    @Saga
-    static class SimpleSaga {
+    static class SimpleEventHandler {
 
-        @StartSaga
-        @SagaEventHandler(associationProperty = "id")
-        void on(SagaStarted event) {
-            // Intentionally empty; the Saga only needs a handler for the lookup to consider it.
+        @EventHandler
+        void on(SomethingHappened event) {
+            // Intentionally empty; the bean only needs a handler for the lookup to consider it.
         }
     }
 
-    record SagaStarted(String id) {
+    record SomethingHappened(String id) {
 
     }
 }
