@@ -45,7 +45,7 @@ import java.lang.annotation.Target;
  * annotation keeps its Axon Framework 4 package for that reason, so migrating Saga classes component-scan unchanged.
  *
  * @author Allard Buijze
- * @since 5.4.0
+ * @since 3.0
  */
 @Target({ElementType.TYPE, ElementType.ANNOTATION_TYPE})
 @Retention(RetentionPolicy.RUNTIME)

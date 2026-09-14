@@ -45,7 +45,7 @@ import java.util.function.Supplier;
  * code, so its shape may change with the Saga support it serves.
  *
  * @author Allard Buijze
- * @since 5.4.0
+ * @since 4.6.0
  */
 @Internal
 public class SpringSagaLookup implements BeanDefinitionRegistryPostProcessor {

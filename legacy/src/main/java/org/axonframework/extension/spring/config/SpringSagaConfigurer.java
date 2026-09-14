@@ -46,7 +46,7 @@ import java.util.function.Supplier;
  *
  * @author Allard Buijze
  * @author Mateusz Nowak
- * @since 5.4.0
+ * @since 4.6.0
  */
 @Internal
 public class SpringSagaConfigurer
