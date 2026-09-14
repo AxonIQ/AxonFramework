@@ -85,9 +85,10 @@ Every `axon.eventhandling.processors.<name>.*` property (`mode`, `source`, `toke
 `batch-size`, and `token-store`) applies to a saga's processor as it applies to any other processor. A pooled saga
 processor needs a `TokenStore` bean, as does any other pooled processor.
 
-`initial-segment-count` is the exception. A saga's processor runs a single segment, and the property does not raise
-it. Extra segments do not split the stream between them: every segment reads every event and keeps only the sagas it
-owns. Raise the count with a `SagaProcessorDefinition`, see <<configuring-a-sagas-processor>>.
+`initial-segment-count` is the exception. A saga's processor starts with a single segment, and the property does not
+raise it; raise the count with a `SagaProcessorDefinition`, see <<configuring-a-sagas-processor>>. Segments do not
+split the stream: every segment reads every event and keeps only the sagas it owns. A higher count lets several
+threads process sagas concurrently within an application instance.
 
 [WARNING]
 ====
