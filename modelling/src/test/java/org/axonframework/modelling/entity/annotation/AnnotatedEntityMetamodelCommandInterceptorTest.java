@@ -287,6 +287,152 @@ class AnnotatedEntityMetamodelCommandInterceptorTest {
         }
     }
 
+    @Nested
+    class CreationalCommandWithInstanceInterceptor
+            extends AbstractAnnotatedEntityMetamodelTest<CreatableGiftCard> {
+
+        @Override
+        protected AnnotatedEntityMetamodel<CreatableGiftCard> getMetamodel() {
+            return AnnotatedEntityMetamodel.forConcreteType(CreatableGiftCard.class,
+                                                            parameterResolverFactory,
+                                                            handlerDefinition,
+                                                            messageTypeResolver,
+                                                            messageConverter,
+                                                            eventConverter);
+        }
+
+        @Test
+        void instanceInterceptorIsSkippedForCreationalCommand() {
+            // given no entity instance exists yet
+            entityState = null;
+            CreatableGiftCard.invocations.clear();
+
+            // when
+            Object result = dispatchCreateCommand(new IssueGiftCard("card-1"));
+
+            // then the instance interceptor cannot be invoked without an instance, but the handler still runs
+            assertThat(result).isEqualTo("card-1");
+            assertThat(CreatableGiftCard.invocations).containsExactly("created");
+        }
+
+        @Test
+        void instanceInterceptorStillRunsOnceEntityExists() {
+            // given an entity created by an earlier creational command
+            dispatchCreateCommand(new IssueGiftCard("card-1"));
+            entityState = new CreatableGiftCard();
+            CreatableGiftCard.invocations.clear();
+
+            // when
+            dispatchInstanceCommand(new RedeemGiftCard("card-1"));
+
+            // then
+            assertThat(CreatableGiftCard.invocations).containsExactly("intercepted", "redeemed");
+            assertThatExceptionOfType(IllegalStateException.class)
+                    .isThrownBy(() -> dispatchInstanceCommand(new RedeemGiftCard("card-1")))
+                    .withMessage("Gift card already redeemed");
+        }
+    }
+
+    @Nested
+    class CreationalCommandWithStaticInterceptor
+            extends AbstractAnnotatedEntityMetamodelTest<StaticallyInterceptedGiftCard> {
+
+        @Override
+        protected AnnotatedEntityMetamodel<StaticallyInterceptedGiftCard> getMetamodel() {
+            return AnnotatedEntityMetamodel.forConcreteType(StaticallyInterceptedGiftCard.class,
+                                                            parameterResolverFactory,
+                                                            handlerDefinition,
+                                                            messageTypeResolver,
+                                                            messageConverter,
+                                                            eventConverter);
+        }
+
+        @Test
+        void staticInterceptorRunsBeforeCreationalHandler() {
+            // given no entity instance exists yet
+            entityState = null;
+            StaticallyInterceptedGiftCard.invocations.clear();
+
+            // when
+            Object result = dispatchCreateCommand(new IssueGiftCard("card-1"));
+
+            // then a static interceptor needs no instance, so it takes part in creational dispatch
+            assertThat(result).isEqualTo("card-1");
+            assertThat(StaticallyInterceptedGiftCard.invocations).containsExactly("intercepted", "created");
+        }
+
+        @Test
+        void staticInterceptorCanRejectCreationalCommand() {
+            // given
+            entityState = null;
+            StaticallyInterceptedGiftCard.invocations.clear();
+
+            // when / then
+            assertThatExceptionOfType(IllegalArgumentException.class)
+                    .isThrownBy(() -> dispatchCreateCommand(new IssueGiftCard("")))
+                    .withMessage("Card identifier must not be empty");
+            assertThat(StaticallyInterceptedGiftCard.invocations).containsExactly("intercepted");
+        }
+
+        @Test
+        void staticInterceptorAlsoRunsForInstanceCommand() {
+            // given an entity instance exists
+            entityState = new StaticallyInterceptedGiftCard();
+            StaticallyInterceptedGiftCard.invocations.clear();
+
+            // when
+            dispatchInstanceCommand(new RedeemGiftCard("card-1"));
+
+            // then a static interceptor is not limited to creational dispatch; it guards instance commands as well
+            assertThat(StaticallyInterceptedGiftCard.invocations).containsExactly("intercepted", "redeemed");
+        }
+    }
+
+    @Nested
+    class PolymorphicCreationalCommandWithInstanceInterceptor
+            extends AbstractAnnotatedEntityMetamodelTest<CreatableShape> {
+
+        @Override
+        protected AnnotatedEntityMetamodel<CreatableShape> getMetamodel() {
+            return AnnotatedEntityMetamodel.forPolymorphicType(
+                    CreatableShape.class,
+                    Set.of(CreatableCircle.class),
+                    parameterResolverFactory,
+                    handlerDefinition,
+                    messageTypeResolver,
+                    messageConverter,
+                    eventConverter
+            );
+        }
+
+        @Test
+        void supertypeInstanceInterceptorIsSkippedForCreationalCommand() {
+            // given no entity instance exists yet
+            entityState = null;
+            CreatableShape.invocations.clear();
+
+            // when
+            Object result = dispatchCreateCommand(new CreateShape("shape-1"));
+
+            // then
+            assertThat(result).isEqualTo("shape-1");
+            assertThat(CreatableShape.invocations).containsExactly("created");
+        }
+
+        @Test
+        void supertypeInstanceInterceptorStillRunsForConcreteTypeInstance() {
+            // given a concrete instance
+            entityState = new CreatableCircle();
+            CreatableShape.invocations.clear();
+
+            // when
+            dispatchInstanceCommand(new DescribeShape("shape-1"));
+
+            // then
+            assertThat(CreatableShape.invocations).containsExactly("intercepted", "described");
+        }
+    }
+
     @SuppressWarnings("unused")
     static class InterceptedEntity {
 
@@ -506,6 +652,98 @@ class AnnotatedEntityMetamodelCommandInterceptorTest {
     }
 
     record ResizeShape(int radius) {
+
+    }
+
+    @SuppressWarnings("unused")
+    static class CreatableGiftCard {
+
+        static final List<String> invocations = new ArrayList<>();
+
+        private boolean redeemed;
+
+        @CommandHandler
+        public static String handle(IssueGiftCard command) {
+            invocations.add("created");
+            return command.id();
+        }
+
+        @CommandHandlerInterceptor
+        public void rejectIfAlreadyRedeemed(CommandMessage command) {
+            invocations.add("intercepted");
+            if (redeemed) {
+                throw new IllegalStateException("Gift card already redeemed");
+            }
+        }
+
+        @CommandHandler
+        public void handle(RedeemGiftCard command) {
+            invocations.add("redeemed");
+            this.redeemed = true;
+        }
+    }
+
+    @SuppressWarnings("unused")
+    static class StaticallyInterceptedGiftCard {
+
+        static final List<String> invocations = new ArrayList<>();
+
+        @CommandHandler
+        public static String handle(IssueGiftCard command) {
+            invocations.add("created");
+            return command.id();
+        }
+
+        @CommandHandler
+        public void handle(RedeemGiftCard command) {
+            invocations.add("redeemed");
+        }
+
+        @CommandHandlerInterceptor
+        public static void rejectBlankIdentifier(CommandMessage command) {
+            invocations.add("intercepted");
+            if (command.payload() instanceof IssueGiftCard issue && issue.id().isEmpty()) {
+                throw new IllegalArgumentException("Card identifier must not be empty");
+            }
+        }
+    }
+
+    record IssueGiftCard(String id) {
+
+    }
+
+    @SuppressWarnings("unused")
+    abstract static class CreatableShape {
+
+        static final List<String> invocations = new ArrayList<>();
+
+        @CommandHandler
+        public static String handle(CreateShape command) {
+            invocations.add("created");
+            return command.id();
+        }
+
+        @CommandHandlerInterceptor
+        public void audit(CommandMessage command) {
+            invocations.add("intercepted");
+        }
+
+        @CommandHandler
+        public void handle(DescribeShape command) {
+            invocations.add("described");
+        }
+    }
+
+    @SuppressWarnings("unused")
+    static class CreatableCircle extends CreatableShape {
+
+    }
+
+    record CreateShape(String id) {
+
+    }
+
+    record DescribeShape(String id) {
 
     }
 }
