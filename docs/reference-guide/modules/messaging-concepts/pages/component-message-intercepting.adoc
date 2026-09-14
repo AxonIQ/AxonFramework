@@ -215,3 +215,7 @@ include::example$messagingconcepts/componentmessageintercepting/entitydeclarativ
 ----
 
 Unlike the generic `MessageHandlerInterceptor`, an entity command handler interceptor receives the targeted entity instance (or `null` for a creational command), so it can base its decision on the entity's current state.
+
+A creational command is handled before any entity instance exists, which shapes which interceptors take part in it.
+A declarative interceptor always runs, and receives `null` as the entity.
+An annotated interceptor declared as an instance method has no instance to be invoked on, so it is left out of creational dispatch entirely; declare the interceptor method `static` when it must guard creational commands too.
