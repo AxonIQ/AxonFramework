@@ -122,6 +122,12 @@ public interface EventProcessorModule extends Module {
          * <p>
          * This method applies processor-specific customizations on top of shared defaults from parent modules,
          * providing the recommended approach for most configuration scenarios.
+         * <p>
+         * Customizations compound: calling this method again applies the given {@code instanceCustomization} on top of
+         * the configuration the previous one returned, in registration order. Two customizations that set the same
+         * property therefore resolve to the value of the last one registered, while everything else each of them set
+         * is retained. This lets an integration configure a processor from its own settings without discarding what
+         * the application configured, or the other way around.
          *
          * @param instanceCustomization A function that receives the configuration and default processor config,
          *                              returning the customized processor configuration.

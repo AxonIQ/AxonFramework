@@ -25,13 +25,13 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Sets the timeout settings of a message handler. Takes precedence over configuration through
- * {@link HandlerTimeoutConfiguration}, for each property individually.
+ * Sets the timeout settings of a message handler.
  * <p>
- * Any property set to {@code -1} will use the default value of the
- * {@link HandlerTimeoutConfiguration}. For example, setting the timeout to
- * {@code -1}, and {@code warningThreshold} to {@code 1000}, will take the default timeout from the configuration, while
- * setting the warning threshold to {@code 1000}.
+ * Takes precedence over configuration through {@link HandlerTimeoutConfiguration}, for each property individually.
+ * <p>
+ * Any property set to {@code -1} will use the default value of the {@link HandlerTimeoutConfiguration}. For example,
+ * setting the timeout to {@code -1}, and {@code warningThreshold} to {@code 1000}, will take the default timeout from
+ * the configuration, while setting the warning threshold to {@code 1000}.
  *
  * @author Mitchell Herrijgers
  * @since 4.11.0
@@ -51,8 +51,8 @@ public @interface MessageHandlerTimeout {
     int timeoutMs() default -1;
 
     /**
-     * The time in milliseconds after which a warning message should be logged that the message handler is taking
-     * too long. A value of {@code -1} indicates that the default warning threshold should be used.
+     * The time in milliseconds after which a warning message should be logged that the message handler is taking too
+     * long. A value of {@code -1} indicates that the default warning threshold should be used.
      * <p>
      * A value higher than the {@code timeout} (or the timeout from the configuration if is {@code -1} on the
      * annotation), will disable warnings.

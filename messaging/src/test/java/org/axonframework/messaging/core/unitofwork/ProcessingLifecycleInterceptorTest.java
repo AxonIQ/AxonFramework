@@ -21,8 +21,7 @@ import org.axonframework.messaging.core.EmptyApplicationContext;
 import org.axonframework.messaging.core.unitofwork.ProcessingLifecycle.DefaultPhases;
 import org.axonframework.messaging.core.unitofwork.ProcessingLifecycle.Phase;
 import org.jspecify.annotations.Nullable;
-import org.junit.jupiter.api.Nested;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.*;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -509,6 +508,21 @@ class ProcessingLifecycleInterceptorTest {
 
             // when / then
             assertThatThrownBy(() -> uow.execute().join()).hasRootCause(failure);
+        }
+
+        @Test
+        void executeWithResultSeesTheInterceptorSubstitutedOutcomeNotTheRawOne() {
+            // given -- an interceptor that substitutes a failing action's outcome with a fallback value
+            ProcessingLifecycleInterceptor substituting = ProcessingLifecycleInterceptor.intercept(
+                    (context, action) -> action.get().handle((value, error) -> error != null ? "fallback" : value));
+            UnitOfWork uow = unitOfWorkWith(substituting);
+
+            // when
+            CompletableFuture<String> actual = uow.executeWithResult(
+                    c -> CompletableFuture.failedFuture(new RuntimeException("boom")));
+
+            // then -- the caller sees the interceptor-substituted value, not the raw exception
+            assertThat(actual.join()).isEqualTo("fallback");
         }
 
         @Test

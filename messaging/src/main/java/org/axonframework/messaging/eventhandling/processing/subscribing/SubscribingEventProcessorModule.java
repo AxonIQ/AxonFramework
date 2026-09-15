@@ -158,12 +158,19 @@ public class SubscribingEventProcessorModule extends BaseModule<SubscribingEvent
     public SubscribingEventProcessorModule customized(
             BiFunction<Configuration, SubscribingEventProcessorConfiguration, SubscribingEventProcessorConfiguration> instanceCustomization
     ) {
-        this.customizedProcessorConfigurationBuilder = config -> {
-            var typeCustomization = typeSpecificCustomizationOrNoOp(config)
-                    .apply(config, defaultEventProcessorsConfiguration(config, processorName));
-            return instanceCustomization.apply(config, typeCustomization);
-        };
+        Objects.requireNonNull(instanceCustomization, "instanceCustomization may not be null");
+        ComponentBuilder<SubscribingEventProcessorConfiguration> previous =
+                this.customizedProcessorConfigurationBuilder;
+        this.customizedProcessorConfigurationBuilder =
+                previous == null
+                        ? config -> instanceCustomization.apply(config, typeCustomizedConfiguration(config))
+                        : config -> instanceCustomization.apply(config, previous.build(config));
         return this;
+    }
+
+    private SubscribingEventProcessorConfiguration typeCustomizedConfiguration(Configuration config) {
+        return typeSpecificCustomizationOrNoOp(config)
+                .apply(config, defaultEventProcessorsConfiguration(config, processorName));
     }
 
     @Override

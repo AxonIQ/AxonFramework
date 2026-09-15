@@ -442,6 +442,37 @@ class SubscribingEventProcessorModuleTest {
     }
 
     @Nested
+    class RepeatedCustomizationTest {
+
+        @Test
+        void customizationsCompoundInRegistrationOrder() {
+            // given - two customizations, as an integration and the application it serves would each register one
+            var configurer = MessagingConfigurer.create();
+            var processorName = "testProcessor";
+            ErrorHandler firstErrorHandler = exception -> {
+            };
+            ErrorHandler secondErrorHandler = exception -> {
+            };
+            SimpleEventBus eventSource = new SimpleEventBus();
+            var module = EventProcessorModule
+                    .subscribing(processorName)
+                    .eventHandlingComponents(singleTestEventHandlingComponent())
+                    .customized((cfg, c) -> c.errorHandler(firstErrorHandler).eventSource(eventSource))
+                    .customized((cfg, c) -> c.errorHandler(secondErrorHandler));
+            configurer.eventProcessing(ep -> ep.subscribing(sp -> sp.processor(module)));
+
+            // when
+            var configuration = configurer.build();
+
+            // then - what only the first one set is retained, and the last one wins the property both set
+            var processorConfig = configurationOf(processor(configuration, processorName).orElse(null));
+            assertThat(processorConfig).isNotNull();
+            assertThat(processorConfig.eventSource()).isEqualTo(eventSource);
+            assertThat(processorConfig.errorHandler()).isEqualTo(secondErrorHandler);
+        }
+    }
+
+    @Nested
     @DisplayName("Configuration Hierarchy: Should apply configuration customizations in order: shared -> type-specific -> instance-specific")
     class ConfigurationHierarchyTest {
 

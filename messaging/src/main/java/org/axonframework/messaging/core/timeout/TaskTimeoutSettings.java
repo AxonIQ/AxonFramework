@@ -16,102 +16,69 @@
 package org.axonframework.messaging.core.timeout;
 
 /**
- * Configuration properties for a task timeout. Used in other parts of the configuration.
+ * Configuration properties for a task timeout.
+ * <p>
+ * Used in other parts of the configuration. For a fully disabled configuration, use the
+ * {@link TaskTimeoutSettings#DISABLED} constant.
  *
+ * @param timeoutMs          the timeout of the message handler in milliseconds
+ * @param warningThresholdMs the threshold in milliseconds after which a warning is logged. Setting this to a value
+ *                           higher than or equal to {@code timeoutMs} will disable warnings
+ * @param warningIntervalMs  the interval in milliseconds between warnings
  * @author Mitchell Herrijgers
+ * @author Steven van Beelen
  * @since 4.11.0
  */
-public class TaskTimeoutSettings {
+public record TaskTimeoutSettings(
+        int timeoutMs,
+        int warningThresholdMs,
+        int warningIntervalMs
+) {
 
     /**
-     * The timeout of the message handler in milliseconds.
+     * A {@code TaskTimeoutSettings} with all timeouts disabled.
      */
-    private int timeoutMs = -1;
-    /**
-     * The threshold in milliseconds after which a warning is logged. Setting this to a value higher than
-     * {@code timeout} will disable warnings.
-     */
-    private int warningThresholdMs = -1;
+    public static final TaskTimeoutSettings DISABLED = new TaskTimeoutSettings(-1, -1, -1);
 
     /**
-     * The interval in milliseconds between warnings.
-     */
-    private int warningIntervalMs = -1;
-
-    /**
-     * Creates a new {@link TaskTimeoutSettings} with the provided timeout settings.
-     *
-     * @param timeoutMs          the timeout in milliseconds
-     * @param warningThresholdMs the threshold in milliseconds after which a warning is logged. Setting this to a value
-     *                           higher than or equal to {@code timeout} will disable warnings.
-     * @param warningIntervalMs  the interval in milliseconds between warnings
-     */
-    public TaskTimeoutSettings(int timeoutMs, int warningThresholdMs, int warningIntervalMs) {
-        this.timeoutMs = timeoutMs;
-        this.warningThresholdMs = warningThresholdMs;
-        this.warningIntervalMs = warningIntervalMs;
-    }
-
-    /**
-     * Creates a new {@link TaskTimeoutSettings} with default timeout settings.
-     * This means all timeouts are disabled.
-     */
-    public TaskTimeoutSettings() {
-    }
-
-    /**
-     * Returns the timeout of the message handler in milliseconds.
-     *
-     * @return the timeout of the message handler in milliseconds
-     */
-    public int getTimeoutMs() {
-        return timeoutMs;
-    }
-
-    /**
-     * Sets the timeout of the message handler in milliseconds.
+     * Defines the timeout of the message handler in milliseconds.
      *
      * @param timeoutMs the timeout of the message handler in milliseconds
+     * @return a new settings instance, for fluent interfacing
      */
-    public void setTimeoutMs(int timeoutMs) {
-        this.timeoutMs = timeoutMs;
+    public TaskTimeoutSettings timeoutMs(int timeoutMs) {
+        return new TaskTimeoutSettings(timeoutMs, warningThresholdMs, warningIntervalMs);
     }
 
     /**
-     * Returns the threshold in milliseconds after which a warning is logged. Setting this to a value higher than
-     * {@code timeout} will disable warnings.
-     *
-     * @return the threshold in milliseconds after which a warning is logged
-     */
-    public int getWarningThresholdMs() {
-        return warningThresholdMs;
-    }
-
-    /**
-     * Sets the threshold in milliseconds after which a warning is logged. Setting this to a value higher than
-     * or equal to {@code timeout} will disable warnings.
+     * Defines the threshold in milliseconds after which a warning is logged.
+     * <p>
+     * Setting this to a value higher than or equal to {@code timeoutMs} will disable warnings.
      *
      * @param warningThresholdMs the threshold in milliseconds after which a warning is logged
+     * @return a new settings instance, for fluent interfacing
      */
-    public void setWarningThresholdMs(int warningThresholdMs) {
-        this.warningThresholdMs = warningThresholdMs;
+    public TaskTimeoutSettings warningThresholdMs(int warningThresholdMs) {
+        return new TaskTimeoutSettings(timeoutMs, warningThresholdMs, warningIntervalMs);
     }
 
     /**
-     * Returns the interval in milliseconds between warnings.
-     *
-     * @return the interval in milliseconds between warnings
-     */
-    public int getWarningIntervalMs() {
-        return warningIntervalMs;
-    }
-
-    /**
-     * Sets the interval in milliseconds between warnings.
+     * Defines the interval in milliseconds between warnings.
      *
      * @param warningIntervalMs the interval in milliseconds between warnings
+     * @return a new settings instance, for fluent interfacing
      */
-    public void setWarningIntervalMs(int warningIntervalMs) {
-        this.warningIntervalMs = warningIntervalMs;
+    public TaskTimeoutSettings warningIntervalMs(int warningIntervalMs) {
+        return new TaskTimeoutSettings(timeoutMs, warningThresholdMs, warningIntervalMs);
+    }
+
+    /**
+     * Returns whether these settings are disabled, meaning neither a timeout nor a warning is configured.
+     *
+     * @return {@code true} if both {@link #timeoutMs()} and {@link #warningThresholdMs()} are negative, {@code false}
+     * otherwise
+     */
+    public boolean isDisabled() {
+        return timeoutMs < 0 && warningThresholdMs < 0;
     }
 }

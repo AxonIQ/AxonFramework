@@ -16,11 +16,11 @@
 
 package org.axonframework.messaging.core.unitofwork;
 
-import org.jspecify.annotations.Nullable;
 import org.axonframework.common.FutureUtils;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.messaging.core.ApplicationContext;
 import org.axonframework.messaging.core.Context;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -38,6 +38,7 @@ import java.util.concurrent.ConcurrentNavigableMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -163,8 +164,7 @@ public class UnitOfWork implements ProcessingLifecycle {
      */
     public <R> CompletableFuture<R> executeWithResult(Function<ProcessingContext, CompletableFuture<R>> action) {
         CompletableFuture<R> result = new CompletableFuture<>();
-        onInvocation(processingContext -> safe(() -> action.apply(processingContext))
-                .whenComplete(FutureUtils.alsoComplete(result)));
+        context.onInvocationWithResult(processingContext -> safe(() -> action.apply(processingContext)), result);
         return execute().thenCompose(ignored -> result);
     }
 
@@ -208,7 +208,7 @@ public class UnitOfWork implements ProcessingLifecycle {
         private final AtomicReference<Status> status = new AtomicReference<>(Status.NOT_STARTED);
         private final AtomicReference<Phase> currentPhase = new AtomicReference<>(null);
 
-        private final ConcurrentNavigableMap<Phase, Queue<Function<ProcessingContext, CompletableFuture<?>>>> phaseActions =
+        private final ConcurrentNavigableMap<Phase, Queue<PhaseAction>> phaseActions =
                 new ConcurrentSkipListMap<>(Comparator.comparingInt(Phase::order));
         private final Queue<Consumer<ProcessingContext>> completeHandlers = new ConcurrentLinkedQueue<>();
         private final Queue<ErrorHandler> errorHandlers = new ConcurrentLinkedQueue<>();
@@ -259,6 +259,52 @@ public class UnitOfWork implements ProcessingLifecycle {
 
         @Override
         public ProcessingLifecycle on(Phase phase, Function<ProcessingContext, CompletableFuture<?>> action) {
+            return on(phase, action, null);
+        }
+
+        /**
+         * Registers the given {@code action} for the {@link DefaultPhases#INVOCATION invocation phase}, completing
+         * {@code result} with its own post-{@link ProcessingLifecycleInterceptor interceptor} outcome once that
+         * phase runs.
+         *
+         * @param action the action to register, given the active {@link ProcessingContext}
+         * @param result the {@link CompletableFuture} to complete with the given {@code action}'s own
+         *               post-interceptor outcome
+         * @param <R>    the type of value returned by the given {@code action}
+         */
+        private <R> void onInvocationWithResult(Function<ProcessingContext, CompletableFuture<R>> action,
+                                                CompletableFuture<R> result) {
+            on(DefaultPhases.INVOCATION, action::apply, (value, error) -> {
+                if (error == null) {
+                    @SuppressWarnings("unchecked")
+                    R typedValue = (R) value;
+                    result.complete(typedValue);
+                } else {
+                    result.completeExceptionally(error);
+                }
+            });
+        }
+
+        /**
+         * Registers the given {@code action} for the given {@code phase}, optionally tapping its own
+         * post-{@link ProcessingLifecycleInterceptor interceptor} outcome through {@code resultSink}.
+         * <p>
+         * The aggregate pass/fail signal {@link #runNextPhase()} computes for a phase (via
+         * {@link CompletableFuture#allOf(CompletableFuture[])} across every handler registered in that phase)
+         * discards individual per-handler values. {@code resultSink}, when non-null, is invoked with this
+         * specific handler's own (possibly interceptor-transformed) value or exception, independent of that
+         * aggregate signal. Used exclusively by {@link UnitOfWork#executeWithResult(Function)}; every other
+         * caller goes through the public {@link #on(Phase, Function)}, which always passes {@code null}.
+         *
+         * @param phase      the {@link Phase} to register the given {@code action} in
+         * @param action     the action to register, given the active {@link ProcessingContext}
+         * @param resultSink the sink to notify with this handler's own post-interceptor (value, error) pair, or
+         *                   {@code null} when the aggregate phase signal is the only outcome of interest
+         * @return this {@link ProcessingLifecycle} for a fluent API
+         */
+        private ProcessingLifecycle on(Phase phase,
+                                       Function<ProcessingContext, CompletableFuture<?>> action,
+                                       @Nullable BiConsumer<Object, Throwable> resultSink) {
             var current = currentPhase.get();
             if (current != null && phase.order() <= current.order()) {
                 throw new IllegalStateException(
@@ -267,7 +313,7 @@ public class UnitOfWork implements ProcessingLifecycle {
                 );
             }
             phaseActions.computeIfAbsent(phase, p -> new ConcurrentLinkedQueue<>())
-                        .add(safe(phase, action));
+                        .add(new PhaseAction(safe(phase, action), resultSink));
             return this;
         }
 
@@ -435,7 +481,7 @@ public class UnitOfWork implements ProcessingLifecycle {
             Phase current = phaseActions.firstKey();
             currentPhase.set(current);
 
-            Queue<Function<ProcessingContext, CompletableFuture<?>>> actionQueue = phaseActions.remove(current);
+            Queue<PhaseAction> actionQueue = phaseActions.remove(current);
             if (actionQueue == null || actionQueue.isEmpty()) {
                 logger.debug("Skipping phase {} (with order [{}]), since no actions are registered.",
                              current, current.order());
@@ -444,13 +490,24 @@ public class UnitOfWork implements ProcessingLifecycle {
             logger.debug("Calling {}# actions in phase {} (with order {}).",
                          actionQueue.size(), current, current.order());
 
-            CompletableFuture<Void> phaseResult = actionQueue.stream()
-                                                             .map(handler -> FutureUtils.emptyCompletedFuture()
-                                                                                        .thenComposeAsync(result -> intercept(
-                                                                                                current, handler), workScheduler)
-                                                                                        .thenAccept(FutureUtils::ignoreResult))
-                                                             .reduce(CompletableFuture::allOf)
-                                                             .orElseGet(FutureUtils::emptyCompletedFuture);
+            CompletableFuture<Void> phaseResult =
+                    actionQueue.stream()
+                               .map(phaseAction -> FutureUtils.emptyCompletedFuture()
+                                                              .thenComposeAsync(
+                                                                      ignored -> intercept(
+                                                                              current, phaseAction.handler()
+                                                                      ),
+                                                                      workScheduler
+                                                              )
+                                                              .whenComplete((value, error) -> {
+                                                                  if (phaseAction.resultSink() != null) {
+                                                                      phaseAction.resultSink()
+                                                                                 .accept(value, error);
+                                                                  }
+                                                              })
+                                                              .thenAccept(FutureUtils::ignoreResult))
+                               .reduce(CompletableFuture::allOf)
+                               .orElseGet(FutureUtils::emptyCompletedFuture);
             if (forceSyncProcessing) {
                 try {
                     phaseResult.join();
@@ -604,6 +661,25 @@ public class UnitOfWork implements ProcessingLifecycle {
          * @param cause The {@link Throwable} thrown in an action executed in the given {@code phase}.
          */
         private record CauseAndPhase(Phase phase, Throwable cause) {
+
+        }
+
+        /**
+         * Pairing of a phase {@code handler} with an optional {@code resultSink} that receives that specific
+         * handler's own post-{@link ProcessingLifecycleInterceptor interceptor} outcome (value or exception),
+         * independent of the aggregate pass/fail signal {@link #runNextPhase()} computes across every handler
+         * registered in the same phase via {@link CompletableFuture#allOf(CompletableFuture[])}.
+         * <p>
+         * {@code resultSink} is {@code null} for every handler registered through the public
+         * {@link #on(Phase, Function)} contract. Only {@link #onInvocationWithResult(Function, CompletableFuture)},
+         * used exclusively by {@link UnitOfWork#executeWithResult(Function)}, installs one.
+         *
+         * @param handler    the action registered for a given {@link Phase}
+         * @param resultSink the sink to notify with this handler's own post-interceptor (value, error) pair, or
+         *                   {@code null} when the aggregate phase signal is the only outcome of interest
+         */
+        private record PhaseAction(Function<ProcessingContext, CompletableFuture<?>> handler,
+                                   @Nullable BiConsumer<Object, Throwable> resultSink) {
 
         }
     }

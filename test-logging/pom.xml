@@ -40,7 +40,7 @@
     <properties>
         <!-- Not inherited from build/parent (see note on <parent> above). -->
         <log4j.version>2.26.1</log4j.version>
-        <slf4j.version>2.0.18</slf4j.version>
+        <slf4j.version>2.0.19</slf4j.version>
     </properties>
 
     <dependencies>

@@ -1,0 +1,147 @@
+= Timeout Migration
+:navtitle: Timeout Migration
+
+Axon Framework 5 keeps the same handler- and processing-timeout behavior introduced in Axon Framework 4.11, with the same default values.
+The Spring Boot property names and the programmatic configuration API have both changed to match Axon Framework 5's terminology and configuration model.
+For a complete description of the current behavior, see xref:messaging-concepts:timeouts.adoc[Timeouts].
+
+[NOTE]
+====
+The most notable changes are:
+
+* **Property rename**: `axon.timeout.transaction.*` becomes `axon.timeout.unit-of-work.*`, matching the `ProcessingContext`/`UnitOfWork` terminology used throughout Axon Framework 5. The query bus property also changes from `axon.timeout.transaction.query.*` to `axon.timeout.unit-of-work.query-bus.*`, for consistency with `command-bus`.
+* **Handler-level properties unchanged**: `axon.timeout.handler.events/commands/queries.*` and `axon.timeout.enabled` keep the same names.
+* **Deadline timeouts removed**: `axon.timeout.handler.deadlines.*` and `axon.timeout.transaction.deadline.*` have no equivalent, since Axon Framework 5 has no `DeadlineManager` or `@DeadlineHandler`. See xref:migration:paths/sagas.adoc#deadlines[Migrating deadlines].
+* **Configuration API overhaul**: the mutable, setter-based `HandlerTimeoutConfiguration` and the manually registered `UnitOfWorkTimeoutInterceptor` are replaced by immutable `HandlerTimeoutConfiguration`/`TimeoutUnitOfWorkFactoryConfiguration` components, registered once on the `ComponentRegistry` and applied automatically to every `CommandBus`, `QueryBus`, and `EventProcessor`.
+====
+
+== Spring Boot properties
+
+[cols="1,1"]
+|===
+| Axon Framework 4 property | Axon Framework 5 property
+
+| `axon.timeout.enabled`
+| `axon.timeout.enabled`
+
+| `axon.timeout.handler.events.*`
+| `axon.timeout.handler.events.*`
+
+| `axon.timeout.handler.commands.*`
+| `axon.timeout.handler.commands.*`
+
+| `axon.timeout.handler.queries.*`
+| `axon.timeout.handler.queries.*`
+
+| `axon.timeout.handler.deadlines.*`
+| Removed
+
+| `axon.timeout.transaction.command-bus.*`
+| `axon.timeout.unit-of-work.command-bus.*`
+
+| `axon.timeout.transaction.query.*`
+| `axon.timeout.unit-of-work.query-bus.*`
+
+| `axon.timeout.transaction.event-processors.*`
+| `axon.timeout.unit-of-work.event-processors.*`
+
+| `axon.timeout.transaction.event-processor.<name>.*`
+| `axon.timeout.unit-of-work.event-processor.<name>.*`
+
+| `axon.timeout.transaction.deadline.*`
+| Removed
+|===
+
+Each property still has `timeout-ms`, `warning-threshold-ms`, and `warning-interval-ms` suffixes, unchanged.
+
+== Handler timeout configuration
+
+Axon Framework 4 required a mutable `HandlerTimeoutConfiguration`, configured through setters and registered via a `HandlerEnhancerDefinition` on the `Configurer`.
+Axon Framework 5 registers an immutable `HandlerTimeoutConfiguration` component directly on the `ComponentRegistry`. The framework applies it automatically, with no separate `HandlerEnhancerDefinition` registration needed.
+
+[tabs]
+====
+Axon Framework 4::
++
+[source,java,role=axon4]
+----
+public class MyTimeoutConfigurerModule implements ConfigurerModule {
+
+    @Override
+    public void configureModule(@NotNull Configurer configurer) {
+        HandlerTimeoutConfiguration config = new HandlerTimeoutConfiguration();
+        config.getEvents().setTimeoutMs(30000);
+        // Set any timeouts and warning thresholds you would like here
+        configurer.registerHandlerEnhancerDefinition(c -> new HandlerTimeoutHandlerEnhancerDefinition(config));
+    }
+}
+----
+
+Axon Framework 5::
++
+[source,java]
+----
+include::example$migration/paths/timeouts/HandlerTimeoutConfigurer.java[tag=handler-timeout-configuration,indent=0]
+----
+====
+
+The `@MessageHandlerTimeout` annotation is unchanged between Axon Framework 4 and 5, except that it no longer applies to `@DeadlineHandler` methods, since deadlines do not exist in Axon Framework 5.
+
+== Processing context (Unit of Work) timeout configuration
+
+Axon Framework 4 required registering a `UnitOfWorkTimeoutInterceptor` by hand as a handler interceptor on each component (`CommandBus`, `QueryBus`, every `EventProcessor`), including a startup-ordering workaround to make sure the interceptor was registered before the component started dispatching messages.
+Axon Framework 5 replaces this with a single `TimeoutUnitOfWorkFactoryConfiguration` component: the framework decorates the `UnitOfWorkFactory` of every `CommandBus`, `QueryBus`, and `EventProcessor` with it automatically.
+
+[tabs]
+====
+Axon Framework 4::
++
+[source,java,role=axon4]
+----
+public class MyTimeoutConfigurerModule implements ConfigurerModule {
+
+    @Override
+    public void configureModule(@NotNull Configurer configurer) {
+        configurer.eventProcessing().registerDefaultHandlerInterceptor((c, name) -> new UnitOfWorkTimeoutInterceptor(
+                "EventProcessor " + name,
+                30000,
+                25000,
+                1000));
+
+        // Register a transaction timeout for the command bus
+        configurer.onStart(Integer.MIN_VALUE, () -> {
+            configurer.buildConfiguration().commandBus().registerHandlerInterceptor(new UnitOfWorkTimeoutInterceptor(
+                    "CommandBus",
+                    30000,
+                    25000,
+                    1000));
+            // You can do this for the queryBus() and deadlineManager() as well
+        });
+    }
+}
+----
+
+Axon Framework 5::
++
+[source,java]
+----
+include::example$migration/paths/timeouts/ProcessingContextTimeoutConfiguration.java[tag=processing-context-timeout-config,indent=0]
+----
+====
+
+For settings that must be computed dynamically, register a `ConfigurationEnhancer` instead of a static component:
+
+[source,java]
+----
+include::example$migration/paths/timeouts/TimeoutEnhancerExample.java[tag=timeout-configuration-enhancer,indent=0]
+----
+
+== Disabling timeouts
+
+The `axon.timeout.enabled=false` Spring Boot property still disables all timeouts, unchanged from Axon Framework 4.
+For declarative configuration, Axon Framework 5 adds explicit `DISABLED` constants, rather than requiring you to leave the configuration unregistered:
+
+[source,java]
+----
+include::example$migration/paths/timeouts/DisabledTimeoutBehavior.java[tag=disable-timeout-behavior,indent=0]
+----

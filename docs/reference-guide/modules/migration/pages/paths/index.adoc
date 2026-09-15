@@ -14,17 +14,18 @@ Whether you are performing a straightforward version bump or a deep architectura
 2. **Specific Migration Paths**
 * xref:migration:paths/messages.adoc[Message Migration (@Event, @Command, @Query)]
 * xref:migration:paths/aggregates/index.adoc[Aggregate Migration]
+* xref:migration:paths/projectors-event-processors.adoc[Event Processor configuration]
+* xref:migration:paths/token-store.adoc[Token Store migration]
 * xref:migration:paths/event-store.adoc[Event Store migration]
 * xref:migration:paths/snapshotting.adoc[Snapshot migration]
-* xref:migration:paths/projectors-event-processors.adoc[Event Processor configuration]
 * xref:migration:paths/sagas.adoc[Saga migration]
 * xref:migration:paths/test-fixtures.adoc[Test Fixture migration]
+* xref:migration:paths/configuration.adoc[Configuration migration]
 * xref:migration:paths/serializers.adoc[Serializer migration]
 * xref:migration:paths/interceptors.adoc[Interceptor migration]
-* xref:migration:paths/configuration.adoc[Configuration migration]
 * xref:migration:paths/sequencing-policies.adoc[Sequencing Policy migration]
 * xref:migration:paths/dlq.adoc[Dead-Letter Queue migration]
-* xref:migration:paths/token-store.adoc[Token Store migration]
+* xref:migration:paths/timeouts.adoc[Timeout migration]
 * xref:migration:paths/distributed-tracing.adoc[Distributed Tracing migration]
 ifdef::advanced-framework[]
 * xref:migration:paths/upcasters.adoc[Upcaster Migration]
@@ -303,12 +304,7 @@ As Axon Framework 5.0 is the first step in this new major version, not all featu
   An `axon-legacy` module, scheduled for 5.4.0, keeps existing sagas and their deadlines running on Axon Framework 5 almost unchanged, so long-running processes can drain after the upgrade instead of before it.
   New processes are fully supported today: see xref:{page-component-version}@saga-guide:ROOT:index.adoc[Sagas and Process Managers] for the available approaches, and xref:migration:paths/sagas.adoc[Saga migration] for both the legacy module and the drainage strategy.
   A first-class replacement, Workflows, is in preview in Axoniq Framework.
-- **Event Replaying**: The ability to replay events for streaming event processors is not yet implemented.
-- **Multiple Event Sources**: `MultiStreamableEventSource` support is not yet available. Currently scheduled for 5.1.
-- **Annotated Features (Coming in 5.2.0)**:
-    *   **Timeouts**: Built-in timeout support for message handlers and processing contexts.
-    *   **Interceptors**: Declarative and annotated interceptor support for message handling components.
-    *   **Exception Handling**: Annotated exception handling support (`@ExceptionHandler`).
+- **Aggregate Caching**: The ability to cache aggregates hasn't returned yet. We plan to revamp this support entirely for a broader caching solution.
 - **Extensions**: Specialized external extensions are not yet migrated to support Axon Framework 5.x yet. As these are community-driven, their availability may vary.
 
 If your application relies heavily on these features, we recommend checking the release notes for future 5.x versions or contacting us for guidance.

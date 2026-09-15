@@ -16,6 +16,7 @@
 
 package org.axonframework.messaging.core.reflection;
 
+import org.axonframework.common.annotation.RegistrationScope;
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.common.configuration.ConfigurationEnhancer;
@@ -39,6 +40,11 @@ import java.util.Optional;
  * @see org.axonframework.messaging.core.configuration.reflection.HandlerEnhancerDefinitionUtils
  * @since 5.3.2
  */
+@RegistrationScope("Register the decorator once at the root; do not re-invoke in child module registries. The "
+        + "decorator function resolves config.getParent() lazily, at each module's own resolution time, so the single "
+        + "DecoratorDefinition copied down on its own already composes every module correctly with its own parent. "
+        + "Re-invoking per nesting level would register the decorator again, composing the parent's contribution "
+        + "into a module's own HandlerEnhancerDefinition twice.")
 public class HierarchicalHandlerEnhancerDefinitionConfigurationEnhancer implements ConfigurationEnhancer {
 
     @Override
