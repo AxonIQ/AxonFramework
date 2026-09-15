@@ -16,8 +16,8 @@ The following table summarizes the primary annotation changes:
 | AF4 Annotation | AF5 Replacement | Reasoning
 
 | `@TargetAggregateIdentifier`
-| `@TargetEntityId`
-| Axon Framework 5 moves from the "Aggregate" terminology towards a more general "Entity" model. This aligns with the Dynamic Consistency Boundary (DCB) principles where boundaries are more fluid. See the xref:migration:understanding-architecture-principles.adoc#moving-away-from-aggregates[architecture principles] for more details.
+| `@TargetEntityId` + `@Command(routingKey = "...")`
+| Axon Framework 5 moves from the "Aggregate" terminology towards a more general "Entity" model. This aligns with the Dynamic Consistency Boundary (DCB) principles where boundaries are more fluid. Note that AF4's `@TargetAggregateIdentifier` also served as the routing key; in AF5 the routing key must be declared explicitly via `@Command(routingKey = "...")` to keep same-target commands handled sequentially. See the xref:migration:understanding-architecture-principles.adoc#moving-away-from-aggregates[architecture principles] for more details.
 
 | `@Revision`
 | `@Event(version = "...")`
@@ -81,8 +81,15 @@ If you used `@Revision` in AF4, ensure to migrate to the new versioning approach
 
 === Target entity identification
 
-When sending a command to an entity (formerly aggregate), you previously used `@TargetAggregateIdentifier`. 
+When sending a command to an entity (formerly aggregate), you previously used `@TargetAggregateIdentifier`.
 In Axon Framework 5, this is replaced by `@TargetEntityId`. This shift is part of the broader move towards Dynamic Consistency Boundaries. See the xref:migration:understanding-architecture-principles.adoc#moving-away-from-aggregates[architecture principles] for more context.
+
+[IMPORTANT]
+====
+In Axon Framework 4, `@TargetAggregateIdentifier` did two things: it identified the target *and* acted as the command's routing key, guaranteeing that commands for the same aggregate were handled by the same instance, one at a time. `@TargetEntityId` only does the first. To preserve the sequential-handling guarantee you must also make the routing key explicit with `@Command(routingKey = "<field>")`, naming the field annotated with `@TargetEntityId`. Effectively, AF4's `@TargetAggregateIdentifier` equals AF5's `@TargetEntityId` plus `@Command(routingKey = "...")`.
+
+Omitting the `routingKey` compiles and passes unit tests, but under concurrent load commands with the same target ID may be handled in parallel, breaking state-based validation.
+====
 
 [source,java,role=axon4]
 ----
