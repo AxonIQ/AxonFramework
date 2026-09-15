@@ -97,7 +97,7 @@ public class SagaProcessorConfigurer implements ConfigurationEnhancer, Applicati
     @Override
     public void enhance(ComponentRegistry registry) {
         ApplicationContext context = requireApplicationContext();
-        Map<String, SpringSagaConfigurer> discovered = context.getBeansOfType(SpringSagaConfigurer.class);
+        Map<String, SpringSagaDescriptor> discovered = context.getBeansOfType(SpringSagaDescriptor.class);
         if (discovered.isEmpty()) {
             return;
         }
@@ -122,16 +122,16 @@ public class SagaProcessorConfigurer implements ConfigurationEnhancer, Applicati
      * Groups the discovered Sagas by the processor they are assigned to, collapsing repeated registrations of one
      * Saga type so that declaring the same Saga twice yields a single component.
      */
-    private Map<String, List<SpringSagaConfigurer>> sagasByProcessor(
-            Iterable<SpringSagaConfigurer> discovered,
+    private Map<String, List<SpringSagaDescriptor>> sagasByProcessor(
+            Iterable<SpringSagaDescriptor> discovered,
             List<EventProcessorDefinition> definitions
     ) {
-        Map<String, SpringSagaConfigurer> uniqueSagas = new LinkedHashMap<>();
-        for (SpringSagaConfigurer saga : discovered) {
+        Map<String, SpringSagaDescriptor> uniqueSagas = new LinkedHashMap<>();
+        for (SpringSagaDescriptor saga : discovered) {
             uniqueSagas.put(saga.deduplicationKey(), saga);
         }
-        Map<String, List<SpringSagaConfigurer>> byProcessor = new LinkedHashMap<>();
-        for (SpringSagaConfigurer saga : uniqueSagas.values()) {
+        Map<String, List<SpringSagaDescriptor>> byProcessor = new LinkedHashMap<>();
+        for (SpringSagaDescriptor saga : uniqueSagas.values()) {
             byProcessor.computeIfAbsent(assignedProcessor(saga, definitions), name -> new ArrayList<>()).add(saga);
         }
         return byProcessor;
@@ -147,7 +147,7 @@ public class SagaProcessorConfigurer implements ConfigurationEnhancer, Applicati
      *     <li>{@code <SagaSimpleName>Processor}</li>
      * </ol>
      */
-    private String assignedProcessor(SpringSagaConfigurer saga, List<EventProcessorDefinition> definitions) {
+    private String assignedProcessor(SpringSagaDescriptor saga, List<EventProcessorDefinition> definitions) {
         Set<String> matches = new HashSet<>();
         for (EventProcessorDefinition definition : definitions) {
             if (definition.matchesSelector(saga)) {
@@ -165,7 +165,7 @@ public class SagaProcessorConfigurer implements ConfigurationEnhancer, Applicati
         return resolveNamespace(saga).orElseGet(saga::derivedProcessorName);
     }
 
-    private Optional<String> resolveNamespace(SpringSagaConfigurer saga) {
+    private Optional<String> resolveNamespace(SpringSagaDescriptor saga) {
         return AnnotationUtils.findAnnotationAttributesOnType(
                                       saga.beanType(),
                                       Namespace.class,
@@ -176,7 +176,7 @@ public class SagaProcessorConfigurer implements ConfigurationEnhancer, Applicati
 
     private EventProcessorModule module(
             String processorName,
-            List<SpringSagaConfigurer> sagas,
+            List<SpringSagaDescriptor> sagas,
             List<EventProcessorDefinition> definitions,
             Map<String, EventProcessorSettings> allSettings,
             List<SagaProcessorDefinition> sagaDefinitions
@@ -184,7 +184,7 @@ public class SagaProcessorConfigurer implements ConfigurationEnhancer, Applicati
         EventProcessorSettings settings = Optional.ofNullable(allSettings.get(processorName))
                                                   .orElseGet(() -> allSettings.get(EventProcessorSettings.DEFAULT));
         Optional<EventProcessorDefinition> definition = definitionFor(processorName, definitions);
-        List<Class<?>> sagaTypes = sagas.stream().<Class<?>>map(SpringSagaConfigurer::beanType).toList();
+        List<Class<?>> sagaTypes = sagas.stream().<Class<?>>map(SpringSagaDescriptor::beanType).toList();
         List<SagaProcessorDefinition> matching = sagaDefinitions.stream()
                                                                 .filter(d -> d.matches(processorName, sagaTypes))
                                                                 .toList();
@@ -193,7 +193,7 @@ public class SagaProcessorConfigurer implements ConfigurationEnhancer, Applicati
         Function<EventHandlingComponentsConfigurer.RequiredComponentPhase, EventHandlingComponentsConfigurer.CompletePhase>
                 componentRegistration = phase -> {
             EventHandlingComponentsConfigurer.ComponentsPhase result = phase;
-            for (SpringSagaConfigurer saga : sagas) {
+            for (SpringSagaDescriptor saga : sagas) {
                 // Declarative, not autodetected: a Saga manager is an EventHandlingComponent already, and wrapping it
                 // in an AnnotatedEventHandlingComponent would look for @EventHandler methods a Saga does not have.
                 result = result.declarative(saga.beanName(), saga.eventHandlingComponent());

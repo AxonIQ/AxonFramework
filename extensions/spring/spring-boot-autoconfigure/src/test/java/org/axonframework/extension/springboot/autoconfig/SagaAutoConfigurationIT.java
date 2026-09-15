@@ -63,7 +63,7 @@ import static org.awaitility.Awaitility.await;
 /**
  * Test class validating the Spring Boot support for Axon Framework 4 {@link Saga @Saga} types end to end.
  * <p>
- * Where {@code SpringSagaConfigurerTest} and {@code LegacySagaAutoConfigurationTest} pin the wiring in isolation, the
+ * Where {@code SpringSagaDescriptorTest} and {@code LegacySagaAutoConfigurationTest} pin the wiring in isolation, the
  * tests here run a full Spring Boot application: a {@code @Saga} bean is discovered, assigned to an event processor,
  * and started by a published event, with the Saga instance ending up in the auto-configured {@link SagaStore}.
  * <p>

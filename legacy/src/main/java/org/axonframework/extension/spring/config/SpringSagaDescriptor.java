@@ -46,10 +46,10 @@ import java.util.function.Supplier;
  *
  * @author Allard Buijze
  * @author Mateusz Nowak
- * @since 4.6.0
+ * @since 5.4.0
  */
 @Internal
-public class SpringSagaConfigurer
+public class SpringSagaDescriptor
         implements EventProcessorDefinition.EventHandlerDescriptor, ApplicationContextAware {
 
     private final String sagaBeanName;
@@ -64,7 +64,7 @@ public class SpringSagaConfigurer
      *
      * @param sagaType the Saga type to configure
      */
-    public SpringSagaConfigurer(Class<?> sagaType) {
+    public SpringSagaDescriptor(Class<?> sagaType) {
         this(sagaType.getName(), sagaType,
              () -> BeanDefinitionBuilder.genericBeanDefinition(sagaType).getBeanDefinition());
     }
@@ -77,7 +77,7 @@ public class SpringSagaConfigurer
      * @param sagaBeanDefinitionSupplier supplies the original Spring bean definition without making Spring treat it
      *                                   as an inner bean
      */
-    public SpringSagaConfigurer(String sagaBeanName,
+    public SpringSagaDescriptor(String sagaBeanName,
                                 Class<?> sagaType,
                                 Supplier<BeanDefinition> sagaBeanDefinitionSupplier) {
         this.sagaBeanName = Objects.requireNonNull(sagaBeanName, "The sagaBeanName must not be null.");

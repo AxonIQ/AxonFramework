@@ -203,7 +203,7 @@ the chain above.
 
 === Suppressing autoconfiguration for one saga
 
-Discovery registers a `SpringSagaConfigurer` bean named `<sagaBeanName>$$Registrar` for every `@Saga` bean. Declaring
+Discovery registers a `SpringSagaDescriptor` bean named `<sagaBeanName>$$Registrar` for every `@Saga` bean. Declaring
 a bean under that name yourself keeps discovery from configuring that saga.
 
 [IMPORTANT]

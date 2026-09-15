@@ -31,7 +31,7 @@ import java.util.function.Supplier;
 
 /**
  * A {@link BeanDefinitionRegistryPostProcessor} implementation that scans for Saga types and registers a
- * {@link SpringSagaConfigurer configurer} for each Saga found.
+ * {@link SpringSagaDescriptor configurer} for each Saga found.
  * <p>
  * A Saga is recognized by the {@link Saga @Saga} annotation on its bean definition. The configurer is registered under
  * the bean name {@code "<sagaBeanName>$$Registrar"}, which doubles as an opt-out: declaring that bean name yourself
@@ -75,7 +75,7 @@ public class SpringSagaLookup implements BeanDefinitionRegistryPostProcessor {
             Supplier<BeanDefinition> sagaBeanDefinition = () -> beanFactory.getBeanDefinition(saga);
 
             BeanDefinitionBuilder beanDefinitionBuilder =
-                    BeanDefinitionBuilder.genericBeanDefinition(SpringSagaConfigurer.class)
+                    BeanDefinitionBuilder.genericBeanDefinition(SpringSagaDescriptor.class)
                                          .addConstructorArgValue(saga)
                                          .addConstructorArgValue(sagaType)
                                          .addConstructorArgValue(sagaBeanDefinition);

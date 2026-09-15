@@ -54,7 +54,7 @@ public class LegacySagaAutoConfiguration {
 
     /**
      * Provides the {@link SpringSagaLookup} that discovers {@code @Saga}-annotated bean definitions and registers a
-     * {@link org.axonframework.extension.spring.config.SpringSagaConfigurer} for each of them.
+     * {@link org.axonframework.extension.spring.config.SpringSagaDescriptor} for each of them.
      * <p>
      * Static, like {@link InfrastructureAutoConfiguration#messageHandlerLookup()}, so it can run as a
      * {@link org.springframework.beans.factory.config.BeanFactoryPostProcessor} before other bean definitions in

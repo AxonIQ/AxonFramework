@@ -64,7 +64,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Test class validating the {@link SpringSagaConfigurer} descriptor contributed for every Saga discovered in a Spring
+ * Test class validating the {@link SpringSagaDescriptor} descriptor contributed for every Saga discovered in a Spring
  * application context, and the processor {@link SagaProcessorConfigurer} assembles from it.
  * <p>
  * The tests pin the Axon Framework 4 behavior these reproduce: the derived processor name, the co-location of Sagas
@@ -74,7 +74,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *
  * @author Mateusz Nowak
  */
-class SpringSagaConfigurerTest {
+class SpringSagaDescriptorTest {
 
     private static final String MY_SAGA_MODULE = "EventProcessor[MySagaProcessor]";
     private static final String SHARED_PROCESSOR = "shared";
@@ -772,7 +772,7 @@ class SpringSagaConfigurerTest {
         @Test
         void refusesToResolveASagaInstance() {
             // given - a Saga has no single bean instance; the manager creates one per Saga identifier
-            SpringSagaConfigurer descriptor = new SpringSagaConfigurer(MySaga.class);
+            SpringSagaDescriptor descriptor = new SpringSagaDescriptor(MySaga.class);
 
             // when / then
             assertThatThrownBy(descriptor::resolveBean)
@@ -863,7 +863,7 @@ class SpringSagaConfigurerTest {
                                   String beanName,
                                   Class<?> sagaType,
                                   @Nullable String sagaStore) {
-        BeanDefinitionBuilder builder = BeanDefinitionBuilder.genericBeanDefinition(SpringSagaConfigurer.class)
+        BeanDefinitionBuilder builder = BeanDefinitionBuilder.genericBeanDefinition(SpringSagaDescriptor.class)
                                                              .addConstructorArgValue(sagaType);
         if (sagaStore != null) {
             builder.addPropertyValue("sagaStore", sagaStore);

@@ -33,7 +33,7 @@ import static org.mockito.Mockito.verify;
 
 /**
  * Test class validating the {@link SpringSagaLookup}, the post processor turning every
- * {@link Saga @Saga} bean into a {@link SpringSagaConfigurer} bean definition.
+ * {@link Saga @Saga} bean into a {@link SpringSagaDescriptor} bean definition.
  *
  * @author Mateusz Nowak
  */
@@ -105,7 +105,7 @@ class SpringSagaLookupTest {
             sagaBean(beanFactory, "barSaga", BarSaga.class);
             beanFactory.registerBeanDefinition(
                     "fooSaga$$Registrar",
-                    BeanDefinitionBuilder.genericBeanDefinition(SpringSagaConfigurer.class)
+                    BeanDefinitionBuilder.genericBeanDefinition(SpringSagaDescriptor.class)
                                          .addConstructorArgValue(FooSaga.class)
                                          .getBeanDefinition()
             );
@@ -146,7 +146,7 @@ class SpringSagaLookupTest {
 
     private static Class<?> sagaTypeOf(DefaultListableBeanFactory beanFactory, String registrarBeanName) {
         BeanDefinition registrar = beanFactory.getBeanDefinition(registrarBeanName);
-        assertThat(registrar.getBeanClassName()).isEqualTo(SpringSagaConfigurer.class.getName());
+        assertThat(registrar.getBeanClassName()).isEqualTo(SpringSagaDescriptor.class.getName());
         return (Class<?>) registrar.getConstructorArgumentValues()
                                    .getArgumentValue(1, Class.class)
                                    .getValue();
