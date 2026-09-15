@@ -37,7 +37,28 @@ The `axon-legacy` module brings forward the following Axon Framework 4 saga and 
 * `SagaStore` and its concrete implementations, to support existing saga stores
 * `DeadlineManager` and `@DeadlineHandler`
 
-The legacy module supports existing saga classes as-is. Add `axon-legacy` as a dependency to your project.
+Add `axon-legacy` as a dependency to the project. The legacy module preserves the Saga annotations, association
+values, and `SagaStore` contract. Saga classes require two mechanical source changes:
+
+* Replace static `SagaLifecycle` calls with calls on a `SagaLifecycle` parameter of the `@SagaEventHandler` method.
+* Replace injected `CommandGateway` fields with a `CommandDispatcher` parameter of the `@SagaEventHandler` method.
+
+The `org.axonframework.migration.UpgradeAxon4ToAxon5` OpenRewrite recipe adds `axon-legacy` when it detects Saga
+types in application source. It also applies both source changes. A `CommandGateway.send(...)` call remains
+fire-and-forget. A `CommandGateway.sendAndWait(...)` call remains synchronous.
+
+=== Synchronous event handlers
+
+An `@SagaEventHandler` in `axon-legacy` must complete on the thread that invoked it. Do not return
+`CompletableFuture`, `Mono`, `Publisher`, or another asynchronous result type from a legacy Saga event handler.
+
+Axon Framework 4 invoked Saga event handlers synchronously and ignored their return values. The legacy module keeps
+that contract so the `SagaStore` update runs in the invoking thread's transaction. A handler that returns incomplete
+asynchronous work fails with a `SagaExecutionException`.
+
+Keep existing `void` handlers synchronous. Use `CommandDispatcher.send(...)` for an existing fire-and-forget
+`CommandGateway.send(...)` call. For an existing `sendAndWait(...)` call, wait for the command result before the
+handler returns.
 
 [NOTE]
 ====
