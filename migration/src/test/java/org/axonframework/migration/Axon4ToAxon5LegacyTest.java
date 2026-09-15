@@ -31,6 +31,8 @@ import static java.util.Objects.requireNonNull;
 import static org.openrewrite.java.Assertions.java;
 import static org.openrewrite.java.Assertions.mavenProject;
 import static org.openrewrite.java.Assertions.srcMainJava;
+import static org.openrewrite.kotlin.Assertions.kotlin;
+import static org.openrewrite.kotlin.Assertions.srcMainKotlin;
 import static org.openrewrite.maven.Assertions.pomXml;
 
 /**
@@ -210,6 +212,61 @@ class Axon4ToAxon5LegacyTest implements RewriteTest {
     }
 
     @Nested
+    class KotlinSagaMigration {
+
+        @Test
+        void migratesLifecycleAndCommandDispatchParameters() {
+            rewriteRun(
+                    kotlin(
+                            """
+                            package com.example
+
+                            import org.axonframework.commandhandling.gateway.CommandGateway
+                            import org.axonframework.modelling.saga.SagaEventHandler
+                            import org.axonframework.modelling.saga.SagaLifecycle
+
+                            class PaymentSaga {
+                                private lateinit var commandGateway: CommandGateway
+
+                                @SagaEventHandler(associationProperty = "rentalId")
+                                fun prepare(command: Any) {
+                                    SagaLifecycle.associateWith("paymentId", "payment")
+                                    commandGateway.send(command)
+                                }
+
+                                @SagaEventHandler(associationProperty = "paymentId")
+                                fun confirm(command: Any) {
+                                    commandGateway.sendAndWait<Any>(command)
+                                }
+                            }
+                            """,
+                            """
+                            package com.example
+
+                            import org.axonframework.common.FutureUtils
+                            import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher
+                            import org.axonframework.modelling.saga.SagaEventHandler
+                            import org.axonframework.modelling.saga.SagaLifecycle
+
+                            class PaymentSaga {
+                                @SagaEventHandler(associationProperty = "rentalId")
+                                fun prepare(command: Any, sagaLifecycle: SagaLifecycle, commandDispatcher: CommandDispatcher) {
+                                    sagaLifecycle.associateWith("paymentId", "payment")
+                                    commandDispatcher.send(command)
+                                }
+
+                                @SagaEventHandler(associationProperty = "paymentId")
+                                fun confirm(command: Any, commandDispatcher: CommandDispatcher) {
+                                    FutureUtils.joinAndUnwrap(commandDispatcher.send(command).getResultMessage())
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+    }
+
+    @Nested
     class DependencyMigration {
 
         @Test
@@ -254,6 +311,52 @@ class Axon4ToAxon5LegacyTest implements RewriteTest {
                                                 void on(Object event) {
                                                 }
                                             }
+                                            """
+                                    )
+                            )
+                    )
+            );
+        }
+
+        @Test
+        void addsAxonLegacyForKotlinSagaSource() {
+            rewriteRun(
+                    mavenProject(
+                            "rental",
+                            pomXml(
+                                    """
+                                    <project>
+                                        <modelVersion>4.0.0</modelVersion>
+                                        <groupId>com.example</groupId>
+                                        <artifactId>rental</artifactId>
+                                        <version>1.0.0</version>
+                                    </project>
+                                    """,
+                                    """
+                                    <project>
+                                        <modelVersion>4.0.0</modelVersion>
+                                        <groupId>com.example</groupId>
+                                        <artifactId>rental</artifactId>
+                                        <version>1.0.0</version>
+                                        <dependencies>
+                                            <dependency>
+                                                <groupId>org.axonframework</groupId>
+                                                <artifactId>axon-legacy</artifactId>
+                                                <version>%s</version>
+                                            </dependency>
+                                        </dependencies>
+                                    </project>
+                                    """.formatted(AXON_VERSION)
+                            ),
+                            srcMainKotlin(
+                                    kotlin(
+                                            """
+                                            package com.example
+
+                                            import org.axonframework.spring.stereotype.Saga
+
+                                            @Saga
+                                            class PaymentSaga
                                             """
                                     )
                             )

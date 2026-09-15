@@ -19,6 +19,7 @@ package org.axonframework.migration;
 import org.openrewrite.ExecutionContext;
 import org.openrewrite.InMemoryExecutionContext;
 import org.openrewrite.Recipe;
+import org.openrewrite.SourceFile;
 import org.openrewrite.Tree;
 import org.openrewrite.TreeVisitor;
 import org.openrewrite.marker.Markers;
@@ -31,6 +32,8 @@ import org.openrewrite.java.tree.JavaType;
 import org.openrewrite.java.tree.Space;
 import org.openrewrite.java.tree.Statement;
 import org.openrewrite.java.tree.TypeUtils;
+import org.openrewrite.kotlin.KotlinParser;
+import org.openrewrite.kotlin.tree.K;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -137,7 +140,8 @@ public class MigrateCommandGatewayInSagaEventHandler extends Recipe {
                                 null
                         );
                         J.MethodInvocation dispatch = visited.withSelect(dispatcher)
-                                                             .withName(visited.getName().withSimpleName("send"));
+                                                             .withName(visited.getName().withSimpleName("send"))
+                                                             .withTypeParameters(null);
                         if (originalMethod.equals("send")) {
                             return dispatch;
                         }
@@ -291,6 +295,9 @@ public class MigrateCommandGatewayInSagaEventHandler extends Recipe {
             }
 
             private J.MethodDeclaration addDispatcherParameter(J.MethodDeclaration method, String parameterName) {
+                if (isKotlinSource()) {
+                    return addKotlinDispatcherParameter(method, parameterName);
+                }
                 List<Object> templateArguments = new ArrayList<>();
                 StringBuilder template = new StringBuilder();
                 List<Statement> existing = method.getParameters();
@@ -311,6 +318,50 @@ public class MigrateCommandGatewayInSagaEventHandler extends Recipe {
                         .javaParser(JavaParser.fromJavaVersion().classpath(JavaParser.runtimeClasspath()))
                         .build()
                         .apply(getCursor(), method.getCoordinates().replaceParameters(), templateArguments.toArray());
+            }
+
+            private J.MethodDeclaration addKotlinDispatcherParameter(J.MethodDeclaration method,
+                                                                      String parameterName) {
+                List<Statement> existing = method.getParameters();
+                boolean hasExisting = !(existing.size() == 1 && existing.get(0) instanceof J.Empty);
+                StringBuilder parameters = new StringBuilder();
+                if (hasExisting) {
+                    for (int i = 0; i < existing.size(); i++) {
+                        if (i > 0) {
+                            parameters.append(", ");
+                        }
+                        parameters.append(existing.get(i).print(getCursor()).trim());
+                    }
+                    parameters.append(", ");
+                }
+                parameters.append(parameterName).append(": CommandDispatcher");
+
+                String snippet = "package _temp\n\nimport " + COMMAND_DISPATCHER_FQN + "\n\nfun _f("
+                        + parameters + ") {}\n";
+                List<SourceFile> parsed;
+                try {
+                    parsed = KotlinParser.builder().build().parse(snippet)
+                                         .filter(source -> source instanceof K.CompilationUnit)
+                                         .toList();
+                } catch (RuntimeException exception) {
+                    return method;
+                }
+                if (parsed.isEmpty()) {
+                    return method;
+                }
+                K.CompilationUnit compilationUnit = (K.CompilationUnit) parsed.get(0);
+                for (Statement statement : compilationUnit.getStatements()) {
+                    if (statement instanceof J.MethodDeclaration) {
+                        return method.getPadding().withParameters(
+                                ((J.MethodDeclaration) statement).getPadding().getParameters()
+                        );
+                    }
+                }
+                return method;
+            }
+
+            private boolean isKotlinSource() {
+                return getCursor().firstEnclosing(SourceFile.class) instanceof K.CompilationUnit;
             }
 
             private boolean isFieldStillReferenced(J.ClassDeclaration classDeclaration, String fieldName) {

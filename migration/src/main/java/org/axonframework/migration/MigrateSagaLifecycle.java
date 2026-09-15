@@ -19,6 +19,7 @@ package org.axonframework.migration;
 import org.openrewrite.ExecutionContext;
 import org.openrewrite.InMemoryExecutionContext;
 import org.openrewrite.Recipe;
+import org.openrewrite.SourceFile;
 import org.openrewrite.Tree;
 import org.openrewrite.TreeVisitor;
 import org.openrewrite.marker.Markers;
@@ -31,6 +32,8 @@ import org.openrewrite.java.tree.JavaType;
 import org.openrewrite.java.tree.Space;
 import org.openrewrite.java.tree.Statement;
 import org.openrewrite.java.tree.TypeUtils;
+import org.openrewrite.kotlin.KotlinParser;
+import org.openrewrite.kotlin.tree.K;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -226,6 +229,9 @@ public class MigrateSagaLifecycle extends Recipe {
             }
 
             private J.MethodDeclaration addLifecycleParameter(J.MethodDeclaration method, String parameterName) {
+                if (isKotlinSource()) {
+                    return addKotlinLifecycleParameter(method, parameterName);
+                }
                 List<Object> templateArguments = new ArrayList<>();
                 StringBuilder template = new StringBuilder();
                 List<Statement> existing = method.getParameters();
@@ -246,6 +252,54 @@ public class MigrateSagaLifecycle extends Recipe {
                         .javaParser(JavaParser.fromJavaVersion().classpath(JavaParser.runtimeClasspath()))
                         .build()
                         .apply(getCursor(), method.getCoordinates().replaceParameters(), templateArguments.toArray());
+            }
+
+            private J.MethodDeclaration addKotlinLifecycleParameter(J.MethodDeclaration method, String parameterName) {
+                return addKotlinParameter(method, parameterName + ": SagaLifecycle", SAGA_LIFECYCLE_FQN);
+            }
+
+            private J.MethodDeclaration addKotlinParameter(J.MethodDeclaration method,
+                                                            String newParameter,
+                                                            String parameterType) {
+                List<Statement> existing = method.getParameters();
+                boolean hasExisting = !(existing.size() == 1 && existing.get(0) instanceof J.Empty);
+                StringBuilder parameters = new StringBuilder();
+                if (hasExisting) {
+                    for (int i = 0; i < existing.size(); i++) {
+                        if (i > 0) {
+                            parameters.append(", ");
+                        }
+                        parameters.append(existing.get(i).print(getCursor()).trim());
+                    }
+                    parameters.append(", ");
+                }
+                parameters.append(newParameter);
+
+                String snippet = "package _temp\n\nimport " + parameterType + "\n\nfun _f(" + parameters + ") {}\n";
+                List<SourceFile> parsed;
+                try {
+                    parsed = KotlinParser.builder().build().parse(snippet)
+                                         .filter(source -> source instanceof K.CompilationUnit)
+                                         .toList();
+                } catch (RuntimeException exception) {
+                    return method;
+                }
+                if (parsed.isEmpty()) {
+                    return method;
+                }
+                K.CompilationUnit compilationUnit = (K.CompilationUnit) parsed.get(0);
+                for (Statement statement : compilationUnit.getStatements()) {
+                    if (statement instanceof J.MethodDeclaration) {
+                        return method.getPadding().withParameters(
+                                ((J.MethodDeclaration) statement).getPadding().getParameters()
+                        );
+                    }
+                }
+                return method;
+            }
+
+            private boolean isKotlinSource() {
+                return getCursor().firstEnclosing(SourceFile.class) instanceof K.CompilationUnit;
             }
         };
     }
