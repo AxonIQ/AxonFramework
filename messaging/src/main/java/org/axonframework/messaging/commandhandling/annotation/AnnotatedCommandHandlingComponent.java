@@ -31,8 +31,10 @@ import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.annotation.AnnotatedHandlerInspector;
+import org.axonframework.messaging.core.annotation.HandlerAttributes;
 import org.axonframework.messaging.core.annotation.HandlerDefinition;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
+import org.axonframework.messaging.core.VersionSpecifier;
 import org.axonframework.messaging.core.conversion.MessageConverter;
 import org.axonframework.messaging.core.interception.annotation.MessageHandlerInterceptorMemberChain;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
@@ -114,17 +116,11 @@ public class AnnotatedCommandHandlingComponent<T> implements CommandHandlingComp
 
     private CommandHandler constructCommandHandlerFor(CommandHandlingMember<? super T> handler) {
         MessageHandlerInterceptorMemberChain<T> interceptorChain = model.chainedInterceptor(target.getClass());
-        return (command, context) -> interceptorChain.handle(
-                                                             command.withConvertedPayload(
-                                                                     handler.payloadType(), converter
-                                                             ),
-                                                             context,
-                                                             target,
-                                                             handler
-                                                     )
-                                                     .mapMessage(this::asCommandResultMessage)
-                                                     .first()
-                                                     .cast();
+        VersionSpecifier versionSpecifier = handler.<String>attribute(HandlerAttributes.COMMAND_VERSION_RANGE)
+                                                   .map(VersionSpecifier::parse)
+                                                   .orElse(VersionSpecifier.any());
+
+        return new AdapterCommandHandler(handler, interceptorChain, versionSpecifier);
     }
 
 
@@ -151,5 +147,37 @@ public class AnnotatedCommandHandlingComponent<T> implements CommandHandlingComp
         descriptor.describeWrapperOf(handlingComponent);
         descriptor.describeProperty("messageTypeResolver", messageTypeResolver);
         descriptor.describeProperty("converter", converter);
+    }
+
+    private class AdapterCommandHandler implements CommandHandler {
+        private final CommandHandlingMember<? super T> delegate;
+        private final MessageHandlerInterceptorMemberChain<T> interceptorChain;
+        private final VersionSpecifier versionSpecifier;
+
+        private AdapterCommandHandler(CommandHandlingMember<? super T> delegate,
+                                      MessageHandlerInterceptorMemberChain<T> interceptorChain,
+                                      VersionSpecifier versionSpecifier) {
+            this.delegate = delegate;
+            this.interceptorChain = interceptorChain;
+            this.versionSpecifier = versionSpecifier;
+        }
+
+        @Override
+        public MessageStream.Single<CommandResultMessage> handle(CommandMessage command, ProcessingContext context) {
+            return interceptorChain.handle(
+                                           command.withConvertedPayload(delegate.payloadType(), converter),
+                                           context,
+                                           target,
+                                           delegate
+                                   )
+                                   .mapMessage(AnnotatedCommandHandlingComponent.this::asCommandResultMessage)
+                                   .first()
+                                   .cast();
+        }
+
+        @Override
+        public VersionSpecifier supportedVersions() {
+            return versionSpecifier;
+        }
     }
 }

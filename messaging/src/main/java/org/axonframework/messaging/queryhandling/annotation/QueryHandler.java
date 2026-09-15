@@ -70,4 +70,14 @@ public @interface QueryHandler {
      * {@link QueryMessage#type()}.
      */
     String queryName() default "";
+
+    /**
+     * The version range of the query this handler listens to.
+     * <p>
+     * Defaults to an empty string, meaning the handler accepts any version of the query.
+     * The string can define a specific version (e.g. {@code "1.0"}) or an inclusive range (e.g. {@code "1.0-2.0"}).
+     *
+     * @return The version range of the query expected by this handler.
+     */
+    String versionRange() default "";
 }
