@@ -9,11 +9,12 @@ If you are curious about more details on the `AxonTestFixture`, be sure to read 
 
 [NOTE]
 ====
-The `SagaTestFixture` does not have an Axon Framework 5 replacement yet.
-Once available, process testing will also go through the `AxonTestFixture`.
+For sagas kept running through the `axon-legacy` module, `SagaTestFixture` (`org.axonframework.test.saga.SagaTestFixture`)
+is available unchanged in `axon-legacy-test`; see xref:migration:paths/sagas.adoc[Saga migration].
 
-Note that simple sagas can already be written and tested in Axon Framework 5, as an automation.
-Check out our xref:axon-framework-5-getting-started::implement-stateful-event-handler.adoc[getting started] for an example on how to do this.
+Simple sagas can also be written and tested without the legacy module, as an automation, going through the
+`AxonTestFixture`. Check out our xref:axon-framework-5-getting-started::implement-stateful-event-handler.adoc[getting started]
+for an example on how to do this.
 ====
 
 == Why the change?

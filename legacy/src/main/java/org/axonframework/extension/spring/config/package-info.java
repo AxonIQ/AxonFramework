@@ -15,9 +15,11 @@
  */
 
 /**
- * This is part of a stashed module that is not actively maintained and just kept for reference.
+ * Spring configuration for the Axon Framework 4 Sagas carried by {@code axon-legacy}. Discovers
+ * {@link org.axonframework.spring.stereotype.Saga @Saga}-annotated beans and assembles the event processors that
+ * carry them.
  */
 @NullMarked
-package org.axonframework.spring.saga;
+package org.axonframework.extension.spring.config;
 
 import org.jspecify.annotations.NullMarked;

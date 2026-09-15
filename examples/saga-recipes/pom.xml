@@ -104,6 +104,11 @@
             <groupId>io.axoniq.framework</groupId>
             <artifactId>axon-server-connector</artifactId>
         </dependency>
+        <!-- Carries the Axon Framework 4 Saga, for the "legacy" recipe. -->
+        <dependency>
+            <groupId>org.axonframework</groupId>
+            <artifactId>axon-legacy</artifactId>
+        </dependency>
 
         <!-- Database -->
         <dependency>
@@ -115,6 +120,12 @@
         <dependency>
             <groupId>org.axonframework</groupId>
             <artifactId>axon-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Carries the Axon Framework 4 SagaTestFixture, on which the "legacy" recipe keeps its original test. -->
+        <dependency>
+            <groupId>org.axonframework</groupId>
+            <artifactId>axon-legacy-test</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
