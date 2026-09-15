@@ -60,13 +60,20 @@ public record UpdateCheckRequest(
      * Converts the usage request into a query string format suitable for HTTP requests. All values are properly URL
      * encoded.
      *
+     * @param uptimeMillis the number of milliseconds the JVM has been running
+     * @param firstRequest whether this is the first request sent by this JVM instance
      * @return the query string representation of the usage request
      */
-    public String toQueryString() {
+    public String toQueryString(long uptimeMillis, boolean firstRequest) {
         StringBuilder sb = new StringBuilder();
         sb.append("os=").append(encode(osName + "; " + osVersion + "; " + osArch))
           .append("&java=").append(encode(jvmVersion + "; " + jvmVendor))
-          .append("&kotlin=").append(encode(kotlinVersion));
+          .append("&kotlin=").append(encode(kotlinVersion))
+          .append("&machine-id=").append(encode(machineId))
+          .append("&machine-user-name=").append(encode(machineUserName))
+          .append("&instance-id=").append(encode(instanceId))
+          .append("&uptime=").append(uptimeMillis)
+          .append("&first-run=").append(firstRequest);
         for (Artifact library : libraries) {
             sb.append("&lib-").append(library.shortGroupId())
               .append(".").append(library.artifactId())
@@ -77,21 +84,6 @@ public record UpdateCheckRequest(
 
     private String encode(String value) {
         return URLEncoder.encode(value, StandardCharsets.UTF_8);
-    }
-
-    /**
-     * Returns the {@link #machineUserName()} percent-encoded as UTF-8, for use as an HTTP header value.
-     * <p>
-     * HTTP headers cannot carry anything outside ISO-8859-1, so a user name written in, for instance, Chinese or
-     * Cyrillic cannot be sent as-is: {@link java.net.http.HttpRequest.Builder#headers(String...)} rejects it and the
-     * whole update check fails. Encoding rather than stripping keeps the name intact and distinguishable, as every
-     * unrepresentable name would otherwise collapse onto the same placeholder. Names that are already unreserved
-     * ASCII pass through unchanged.
-     *
-     * @return the machine user name, percent-encoded as UTF-8
-     */
-    public String machineUserNameHeader() {
-        return encode(machineUserName).replace("+", "%20");
     }
 
     /**
