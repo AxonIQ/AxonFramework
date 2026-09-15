@@ -46,6 +46,9 @@ After the migration run, search for every such location with:
   `queryMany()` when paired with `multipleInstancesOf`.
 - **Command handling**: converts `@CommandHandler` constructors to `public static void handle(...)` methods, and swaps
   in-handler `CommandGateway` fields for injected `CommandDispatcher` parameters.
+- **Legacy sagas**: adds `axon-legacy` when Saga source types are present, replaces static `SagaLifecycle` calls with
+  an injected lifecycle parameter, and replaces Saga `CommandGateway` fields with `CommandDispatcher` handler
+  parameters. Saga handlers stay synchronous; `send` remains fire-and-forget and `sendAndWait` keeps waiting.
 - **Spring config**: renames `axon.serializer.*` properties to `axon.converter.*` in `application.properties`/YAML, and
   adds advisory TODOs above obsolete `sequencing-policy` settings. Also **migrates Spring Boot snapshotting
   configuration** from the AF4 two-step pattern (`@Bean SnapshotTriggerDefinition` + `@Aggregate(snapshotTriggerDefinition
@@ -128,6 +131,7 @@ also run independently. Module names map 1:1 to published Maven modules.
 | Event sourcing                                             | `Axon4ToAxon5EventSourcing`                 |
 | Common (config + module API; was AF4 `axon-configuration`) | `Axon4ToAxon5Common`                        |
 | Conversion (was Serialization)                             | `Axon4ToAxon5Conversion`                    |
+| Legacy Sagas                                               | `Axon4ToAxon5Legacy`                        |
 | Test (axon-test)                                           | `Axon4ToAxon5Test`                          |
 | Spring extension                                           | `Axon4ToAxon5SpringExtension`               |
 | Spring Boot extension                                      | `Axon4ToAxon5SpringBootExtension`           |
