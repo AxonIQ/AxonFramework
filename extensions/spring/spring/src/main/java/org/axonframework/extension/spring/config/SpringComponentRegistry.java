@@ -17,6 +17,7 @@
 package org.axonframework.extension.spring.config;
 
 import org.axonframework.common.Assert;
+import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.TypeReference;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.configuration.Component;
@@ -91,6 +92,10 @@ import static org.axonframework.common.configuration.DefaultComponentRegistry.cr
  * available. The {@link BeanFactory} that's set through
  * {@link BeanFactoryPostProcessor#postProcessBeanFactory(ConfigurableListableBeanFactory)} is also used to
  * {@link #hasComponent(Class, String) validate if this registery has a certain component}.
+ * <p>
+ * Lookups on the resulting {@link Configuration} fail fast while {@link #initialize()} is still promoting local
+ * components to Spring bean definitions. Querying during that window would otherwise miss components that are
+ * registered but not yet visible in the Application Context.
  *
  * @author Allard Buijze
  * @author Steven van Beelen
@@ -122,6 +127,7 @@ public class SpringComponentRegistry implements
     private final List<ComponentFactory<?>> factories = new ArrayList<>();
 
     private final AtomicBoolean initialized = new AtomicBoolean(false);
+    private final AtomicBoolean localComponentsPromoted = new AtomicBoolean(false);
     private final Configuration configuration = new SpringConfiguration();
     private final Map<String, Configuration> moduleConfigurations = new ConcurrentHashMap<>();
 
@@ -595,6 +601,30 @@ public class SpringComponentRegistry implements
             // Initialize the components lifecycle handlers, by adapting them into SmartLifecycle beans through the SpringLifecycleRegistry.
             component.initLifecycle(configuration, lifecycleRegistry);
         });
+        localComponentsPromoted.set(true);
+    }
+
+    /**
+     * Rejects {@link Configuration} lookups that happen after {@link #initialize()} has started and before local
+     * components are {@link #registerLocalComponentsWithApplicationContext() promoted} to Spring bean definitions.
+     * <p>
+     * During that window {@link SpringConfiguration} can only see the Application Context, so a locally registered
+     * Axon component looks missing. The typical trigger is a Spring {@code @Bean} method that injects
+     * {@link Configuration} and calls {@code getComponent} while a {@link ConfigurationEnhancer} (for example
+     * {@link MessageHandlerConfigurer}) is still running.
+     *
+     * @throws AxonConfigurationException if a lookup is attempted during the enhancer phase
+     */
+    private void assertLocalComponentsPromoted() {
+        if (initialized.get() && !localComponentsPromoted.get()) {
+            throw new AxonConfigurationException(
+                    "Cannot retrieve Axon components from the Configuration until they have been promoted to Spring "
+                            + "bean definitions. This usually means a Spring @Bean method injected Configuration or "
+                            + "AxonConfiguration and called getComponent(...) during bean construction, while a "
+                            + "ConfigurationEnhancer was still initializing. Inject the concrete Spring bean instead, "
+                            + "or look the component up after the ApplicationContext has started."
+            );
+        }
     }
 
     /**
@@ -649,6 +679,7 @@ public class SpringComponentRegistry implements
 
         @Override
         public <C> C getComponent(Class<C> type) {
+            assertLocalComponentsPromoted();
             try {
                 return beanFactory.getBean(type);
             } catch (NoUniqueBeanDefinitionException e) {
@@ -667,6 +698,7 @@ public class SpringComponentRegistry implements
         @Override
         public <C> C getComponent(Class<C> type,
                                   @Nullable String name) {
+            assertLocalComponentsPromoted();
             Assert.notNull(name, () -> "Spring does not allow the use of null names for component retrieval.");
             //noinspection DataFlowIssue
             try {
@@ -678,6 +710,7 @@ public class SpringComponentRegistry implements
 
         @Override
         public <C> Optional<C> getOptionalComponent(Class<C> type) {
+            assertLocalComponentsPromoted();
             try {
                 return Optional.of(getComponent(type));
             } catch (ComponentNotFoundException e) {
@@ -688,6 +721,7 @@ public class SpringComponentRegistry implements
         @Override
         public <C> Optional<C> getOptionalComponent(Class<C> type,
                                                     @Nullable String name) {
+            assertLocalComponentsPromoted();
             Map<String, C> beansOfType = beanFactory.getBeansOfType(type);
             if (beansOfType.containsKey(name)) {
                 return Optional.of(beansOfType.get(name));
@@ -704,6 +738,7 @@ public class SpringComponentRegistry implements
 
         @Override
         public <C> C getComponent(TypeReference<C> typeReference) {
+            assertLocalComponentsPromoted();
             return beanFactory.<C>getBeanProvider(ResolvableType.forType(typeReference.getType()))
                               .stream()
                               .findFirst()
@@ -713,6 +748,7 @@ public class SpringComponentRegistry implements
         @Override
         @SuppressWarnings("unchecked,DataFlowIssue")
         public <C> C getComponent(TypeReference<C> typeReference, @Nullable String name) {
+            assertLocalComponentsPromoted();
             Assert.notNull(name, () -> "Spring does not allow the use of null names for component retrieval.");
             try {
                 BeanDefinition beanDefinition = beanFactory.getBeanDefinition(name);
@@ -728,6 +764,7 @@ public class SpringComponentRegistry implements
 
         @Override
         public <C> Optional<C> getOptionalComponent(TypeReference<C> typeReference) {
+            assertLocalComponentsPromoted();
             return beanFactory.<C>getBeanProvider(ResolvableType.forType(typeReference.getType()))
                               .stream()
                               .findFirst();
@@ -736,6 +773,7 @@ public class SpringComponentRegistry implements
         @Override
         @SuppressWarnings("unchecked,DataFlowIssue")
         public <C> Optional<C> getOptionalComponent(TypeReference<C> typeReference, @Nullable String name) {
+            assertLocalComponentsPromoted();
             Assert.notNull(name, () -> "Spring does not allow the use of null names for component retrieval.");
             try {
                 BeanDefinition beanDefinition = beanFactory.getBeanDefinition(name);
@@ -784,6 +822,7 @@ public class SpringComponentRegistry implements
 
         @Override
         public <C> Map<String, C> getComponents(Class<C> type) {
+            assertLocalComponentsPromoted();
             Map<String, C> result = new LinkedHashMap<>();
 
             // 1. Get all beans of the specified type from Spring context
