@@ -38,14 +38,21 @@ The `axon-legacy` module brings forward the following Axon Framework 4 saga and 
 * `DeadlineManager` and `@DeadlineHandler`
 
 Add `axon-legacy` as a dependency to the project. The legacy module preserves the Saga annotations, association
-values, and `SagaStore` contract. Saga classes require two mechanical source changes:
+values, and `SagaStore` contract. Saga classes require the following source changes:
 
 * Replace static `SagaLifecycle` calls with calls on a `SagaLifecycle` parameter of the `@SagaEventHandler` method.
 * Replace injected `CommandGateway` fields with a `CommandDispatcher` parameter of the `@SagaEventHandler` method.
+* Move dependencies stored in `@Inject` or `@Autowired` fields to the `@SagaEventHandler` methods that use them.
+
+Axon Framework 5 does not inject dependencies into fields of legacy Saga instances. If a Saga currently keeps a
+service or another collaborator in an `@Inject` or `@Autowired` field, add that dependency as a parameter to each
+`@SagaEventHandler` method that needs it, then remove the field. Axon resolves the parameter when it invokes the
+handler. The OpenRewrite recipe takes care of this for `CommandGateway`; other injected dependencies need to be moved
+manually.
 
 The `org.axonframework.migration.UpgradeAxon4ToAxon5` OpenRewrite recipe adds `axon-legacy` when it detects Saga
-types in application source. It also applies both source changes. A `CommandGateway.send(...)` call remains
-fire-and-forget. A `CommandGateway.sendAndWait(...)` call remains synchronous.
+types in application source. It also applies the `SagaLifecycle` and `CommandGateway` changes. A
+`CommandGateway.send(...)` call remains fire-and-forget. A `CommandGateway.sendAndWait(...)` call remains synchronous.
 
 === Synchronous event handlers
 
