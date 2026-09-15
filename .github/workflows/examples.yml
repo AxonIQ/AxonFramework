@@ -26,6 +26,12 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+        with:
+          # Need the commit timestamp of the last change per module (see build/parent/pom.xml),
+          # not just the tip commit -- shallow clones can't provide that.
+          fetch-depth: 0
+          # git log -- <path> only needs commit/tree metadata, not file contents.
+          filter: blob:none
 
       - name: Set up JDK ${{ matrix.java-version }}
         uses: actions/setup-java@v6.0.1
