@@ -18,6 +18,7 @@ package org.axonframework.migration;
 
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.openrewrite.PrintOutputCapture;
 import org.openrewrite.config.Environment;
 import org.openrewrite.test.RecipeSpec;
 import org.openrewrite.test.RewriteTest;
@@ -272,6 +273,7 @@ class Axon4ToAxon5LegacyTest implements RewriteTest {
         @Test
         void addsAxonLegacyWhenSagaSourceIsPresent() {
             rewriteRun(
+                    Axon4ToAxon5LegacyTest::ignoreUnpublishedTargetVersionWarning,
                     mavenProject(
                             "rental",
                             pomXml(
@@ -321,6 +323,7 @@ class Axon4ToAxon5LegacyTest implements RewriteTest {
         @Test
         void addsAxonLegacyForKotlinSagaSource() {
             rewriteRun(
+                    Axon4ToAxon5LegacyTest::ignoreUnpublishedTargetVersionWarning,
                     mavenProject(
                             "rental",
                             pomXml(
@@ -394,6 +397,12 @@ class Axon4ToAxon5LegacyTest implements RewriteTest {
                     )
             );
         }
+    }
+
+    private static void ignoreUnpublishedTargetVersionWarning(RecipeSpec spec) {
+        // The target may be an unreleased snapshot in CI. Keep asserting the generated coordinate without rendering
+        // Maven's download warning as part of the expected POM.
+        spec.markerPrinter(PrintOutputCapture.MarkerPrinter.SEARCH_MARKERS_ONLY);
     }
 
     private static String axonVersion() {
