@@ -58,6 +58,11 @@ class CompletionCallbackMessageStream<M extends Message> extends AbstractMessage
     }
 
     @Override
+    protected FetchResult<Entry<M>> terminalState() {
+        return terminalStateOf(delegate);
+    }
+
+    @Override
     protected void onCompleted() {
         delegate.close();
 
