@@ -34,6 +34,7 @@ The `axon-legacy` module brings forward the following Axon Framework 4 saga infr
 
 * `@SagaEventHandler`, `@StartSaga`, `@EndSaga`, `SagaLifecycle` and the association-value mechanism
 * `SagaStore` and its concrete implementations, to support existing saga stores
+* `SagaConfigurer`, with its Axon Framework 4 package and fluent manager, repository, and store configuration hooks
 
 The `org.axonframework.spring.stereotype.Saga` annotation itself keeps its Axon Framework 4 package but ships in the
 Spring extension (`axon-spring`), not in `axon-legacy`. Spring Boot autoconfiguration for legacy sagas activates only
@@ -185,7 +186,7 @@ An `EventProcessorDefinition` naming the processor does apply. Prefer `SagaProce
 
 A saga and an ordinary event handler cannot share a processor. When both resolve to the same name, startup fails with
 a `DuplicateModuleRegistrationException`. To put them on one processor on purpose, drop `@Saga` from the class and
-register a `Module` bean combining a declarative saga component with autodetected handlers.
+register a `Module` bean combining a declarative `SagaConfigurer.forType(...)` component with autodetected handlers.
 
 === Saga store selection
 
@@ -218,6 +219,15 @@ discovered.
 [#behavior-changes]
 == Behavior changes from Axon Framework 4
 
+* *`SagaConfigurer` is an Axon Framework 5 component builder.* `forType`, `configureSagaManager`,
+`configureRepository`, and `configureSagaStore` keep their Axon Framework 4 names, fluent return types, and override
+precedence. Their builder functions receive the Axon Framework 5
+`org.axonframework.common.configuration.Configuration`; the Axon Framework 4 `org.axonframework.config.Configuration`
+no longer exists. `configureSagaFactory` retains custom instance creation from the interim Axon Framework 5 Saga
+builder. Register the configurer as a declarative event handling component and call `build(Configuration)` where Axon
+Framework 4 called `initialize(Configuration)`. The returned object is the Saga manager itself; `SagaConfiguration`
+and its manager, repository, store, processing-group, processor, and error-handler accessors are not ported. Configure
+processor assignment and error handling on the `EventProcessorModule` instead.
 * *Pooled streaming replaces the tracking processor.* A saga's processor is pooled streaming, not a
 `TrackingEventProcessor`, and needs a `TokenStore` bean as any pooled processor does. A saga still only sees events
 published after its processor first started; replaying into one requires setting an initial token explicitly, see
