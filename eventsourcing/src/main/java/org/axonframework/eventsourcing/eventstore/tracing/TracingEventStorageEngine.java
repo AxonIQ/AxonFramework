@@ -17,6 +17,7 @@
 package org.axonframework.eventsourcing.eventstore.tracing;
 
 import org.axonframework.common.annotation.Internal;
+import org.axonframework.common.configuration.DecoratingComponent;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.eventsourcing.eventstore.AppendCondition;
 import org.axonframework.eventsourcing.eventstore.ConsistencyMarker;
@@ -56,7 +57,7 @@ import java.util.function.Supplier;
  * @since 5.3.0
  */
 @Internal
-public final class TracingEventStorageEngine implements EventStorageEngine {
+public final class TracingEventStorageEngine implements EventStorageEngine, DecoratingComponent {
 
     /** Name of the span covering a complete append transaction. */
     private static final String APPEND_TRANSACTION_SPAN = "EventStorageEngine.appendTransaction";
@@ -149,6 +150,11 @@ public final class TracingEventStorageEngine implements EventStorageEngine {
     @Override
     public CompletableFuture<TrackingToken> tokenAt(Instant at) {
         return delegate.tokenAt(at);
+    }
+
+    @Override
+    public Object decoratedDelegate() {
+        return delegate;
     }
 
     @Override
