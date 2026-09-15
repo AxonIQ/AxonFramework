@@ -76,6 +76,14 @@
         <maven.compiler.target>${java.version}</maven.compiler.target>
         <!-- Main -->
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <!-- Reproducible builds: every jar plugin that supports it stamps archive entries with
+             this instead of the current time, so rebuilding the same source produces byte-
+             identical output. Real modules override this per-module with the timestamp of the
+             last commit that touched their own directory (see the exec-maven-plugin and
+             properties-maven-plugin executions in build/parent/pom.xml and test-logging/pom.xml).
+             This root-level value is just the fallback for packaging=pom aggregators like this
+             one, which have no jar of their own and so don't carry that plugin pair. -->
+        <project.build.outputTimestamp>2026-09-15T00:00:00Z</project.build.outputTimestamp>
         <sonar.coverage.jacoco.xmlReportPaths>
             ${project.basedir}/coverage-report/target/site/jacoco-aggregate/jacoco.xml,
             ${project.basedir}/../coverage-report/target/site/jacoco-aggregate/jacoco.xml
@@ -91,6 +99,9 @@
         <maven-enforcer.version>3.6.3</maven-enforcer.version>
         <maven-failsafe.version>3.6.0</maven-failsafe.version>
         <maven-gpg.version>3.2.8</maven-gpg.version>
+        <!-- Reproducible builds (see project.build.outputTimestamp above) -->
+        <exec-maven-plugin.version>3.6.3</exec-maven-plugin.version>
+        <properties-maven-plugin.version>1.2.1</properties-maven-plugin.version>
         <maven-install.version>3.1.4</maven-install.version>
         <maven-jar.version>3.5.1</maven-jar.version>
         <maven-javadoc.version>3.12.0</maven-javadoc.version>
