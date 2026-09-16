@@ -35,8 +35,7 @@ The `axon-legacy` module brings forward the following Axon Framework 4 saga infr
 * `@SagaEventHandler`, `@StartSaga`, `@EndSaga`, `SagaLifecycle` and the association-value mechanism
 * `SagaStore` and its concrete implementations, to support existing saga stores
 
-The `org.axonframework.spring.stereotype.Saga` annotation itself keeps its Axon Framework 4 package but ships in the
-Spring extension (`axon-spring`), not in `axon-legacy`. Spring Boot autoconfiguration for legacy sagas activates only
+The `org.axonframework.spring.stereotype.Saga` annotation itself keeps its Axon Framework 4 package. Spring Boot autoconfiguration for legacy sagas activates only
 when both `axon-legacy` and `axon-spring-boot-starter` are on the classpath; see <<spring-boot-sagas>>.
 
 The legacy module supports existing saga classes as-is. Add `axon-legacy` as a dependency to your project.
@@ -208,11 +207,10 @@ a bean under that name yourself keeps discovery from configuring that saga.
 
 [IMPORTANT]
 ====
-Discovery ported an Axon Framework 4 quirk literally: if a `<sagaBeanName>$$Registrar` bean already exists when
-discovery reaches it, discovery aborts for *all* sagas processed after that point in bean-definition order, not just
-the one being suppressed. Prefer opting a saga out of `@Saga` discovery entirely (drop the annotation and register it
-through a `Module` bean, see <<behavior-changes>>) over relying on this hook for anything but the last saga bean
-discovered.
+If you want to opt out a specific saga from `@Saga` discovery to manually configure it, drop the annotation and register it
+through a `Module` bean, see <<behavior-changes>>.
+
+If a `<sagaBeanName>$$Registrar` bean already exists when discovery reaches it, discovery aborts for *all* sagas processed after that point in bean-definition order. This is a known Axon Framework 4 behaviour that has been ported unchanged to the legacy module.
 ====
 
 [#behavior-changes]
