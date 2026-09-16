@@ -15,15 +15,9 @@
  */
 
 /**
- * Registration of Sagas with an Axon Framework 5 configuration.
- * <p>
- * An {@link org.axonframework.modelling.saga.AnnotatedSagaManager} is an
- * {@link org.axonframework.messaging.eventhandling.EventHandlingComponent}, so a Saga is registered on an
- * {@link org.axonframework.messaging.eventhandling.configuration.EventProcessorModule EventProcessorModule} like any
- * other component, and inherits everything the processor offers. This package holds the assembly of the manager and
- * its repository, which is the only part a user would otherwise write out by hand.
+ * Configuration support for registering Axon Framework 4 Sagas with Axon Framework 5 event processors.
  */
 @NullMarked
-package org.axonframework.modelling.saga.configuration;
+package org.axonframework.config;
 
 import org.jspecify.annotations.NullMarked;

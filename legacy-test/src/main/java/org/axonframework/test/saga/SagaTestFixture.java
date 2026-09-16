@@ -18,6 +18,7 @@ package org.axonframework.test.saga;
 
 import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.common.configuration.ComponentRegistry;
+import org.axonframework.config.SagaConfigurer;
 import org.axonframework.messaging.commandhandling.CommandBus;
 import org.axonframework.messaging.core.MessageHandlerInterceptor;
 import org.axonframework.messaging.core.annotation.HandlerDefinition;
@@ -31,7 +32,6 @@ import org.axonframework.messaging.core.configuration.reflection.HandlerEnhancer
 import org.axonframework.messaging.eventhandling.EventBus;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.configuration.EventHandlingComponentsConfigurer;
-import org.axonframework.modelling.saga.configuration.Sagas;
 import org.axonframework.modelling.saga.repository.SagaStore;
 import org.axonframework.modelling.saga.repository.inmemory.InMemorySagaStore;
 import org.axonframework.test.fixture.AxonTestFixture;
@@ -435,7 +435,10 @@ public class SagaTestFixture<T> implements FixtureConfiguration, ContinuedGivenS
             EventHandlingComponentsConfigurer.RequiredComponentPhase components
     ) {
         EventHandlingComponentsConfigurer.CompletePhase phase =
-                components.declarative("Saga[" + sagaType.getSimpleName() + "]", Sagas.of(sagaType))
+                components.declarative(
+                                  "Saga[" + sagaType.getSimpleName() + "]",
+                                  SagaConfigurer.forType(sagaType)
+                          )
                           // Registered first, so an interceptor the test registers already sees the aggregate fields
                           // on the processing context and a message without the metadata that carried them.
                           .intercepted(c -> LegacyAggregateEnvelope.liftingInterceptor());
