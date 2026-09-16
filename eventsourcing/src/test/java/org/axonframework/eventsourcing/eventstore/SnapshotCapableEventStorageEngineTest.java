@@ -16,6 +16,7 @@
 
 package org.axonframework.eventsourcing.eventstore;
 
+import org.axonframework.common.configuration.DecoratingComponent;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.eventsourcing.eventstore.EventStorageEngine.AppendTransaction;
 import org.axonframework.eventsourcing.eventstore.inmemory.InMemoryEventStorageEngine;
@@ -188,15 +189,28 @@ class SnapshotCapableEventStorageEngineTest {
             assertThat(result).isSameAs(snapshotResolvingEngine);
         }
 
-        // config.getComponent(SnapshotStore.class) may return a decorated view of the engine's own SnapshotStore
-        // (e.g. wrapped for tracing) rather than the engine itself, even though the engine backs that component.
+        // An engine that happens to implement SnapshotStore is not automatically the SnapshotStore a caller means:
+        // a different, unrelated SnapshotStore instance always takes precedence over the engine's own support.
         @Test
-        void returnsAnEngineThatIsItsOwnSnapshotStoreAsIsEvenWhenGivenADifferentSnapshotStoreInstance() {
+        void decoratesAnEngineThatImplementsSnapshotStoreWhenGivenADifferentSnapshotStoreInstance() {
             SnapshotResolvingEngine snapshotResolvingEngine = new SnapshotResolvingEngine();
 
             EventStorageEngine result = SnapshotCapableEventStorageEngine.decorate(
                     snapshotResolvingEngine, new InMemorySnapshotStore()
             );
+
+            assertThat(result).isInstanceOf(SnapshotCapableEventStorageEngine.class);
+        }
+
+        // config.getComponent(SnapshotStore.class) may return a decorated view of the engine's own SnapshotStore
+        // (e.g. wrapped for tracing) rather than the engine itself, even though the engine backs that component.
+        @Test
+        void returnsAnEngineThatIsItsOwnSnapshotStoreAsIsEvenWhenTheSnapshotStoreIsDecorated() {
+            SnapshotResolvingEngine snapshotResolvingEngine = new SnapshotResolvingEngine();
+            SnapshotStore decoratedView = new DecoratingSnapshotStore(snapshotResolvingEngine);
+
+            EventStorageEngine result =
+                    SnapshotCapableEventStorageEngine.decorate(snapshotResolvingEngine, decoratedView);
 
             assertThat(result).isSameAs(snapshotResolvingEngine);
         }
@@ -238,6 +252,36 @@ class SnapshotCapableEventStorageEngineTest {
         @Override
         public CompletableFuture<Snapshot> load(QualifiedName qn, Object id, ProcessingContext context) {
             return CompletableFuture.completedFuture(null);
+        }
+    }
+
+    /** A decorator exposing its delegate via {@link DecoratingComponent}, mirroring {@code TracingSnapshotStore}. */
+    private static class DecoratingSnapshotStore implements SnapshotStore, DecoratingComponent {
+
+        private final SnapshotStore delegate;
+
+        DecoratingSnapshotStore(SnapshotStore delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public CompletableFuture<Void> store(QualifiedName qn, Object id, Snapshot s, ProcessingContext context) {
+            return delegate.store(qn, id, s, context);
+        }
+
+        @Override
+        public CompletableFuture<Snapshot> load(QualifiedName qn, Object id, ProcessingContext context) {
+            return delegate.load(qn, id, context);
+        }
+
+        @Override
+        public Object decoratedDelegate() {
+            return delegate;
+        }
+
+        @Override
+        public void describeTo(ComponentDescriptor descriptor) {
+            descriptor.describeWrapperOf(delegate);
         }
     }
 
