@@ -47,12 +47,7 @@ values, and `SagaStore` contract. Saga classes require the following source chan
 Axon Framework 5 does not inject dependencies into fields of legacy Saga instances. If a Saga currently keeps a
 service or another collaborator in an `@Inject` or `@Autowired` field, add that dependency as a parameter to each
 `@SagaEventHandler` method that needs it, then remove the field. Axon resolves the parameter when it invokes the
-handler. The OpenRewrite recipe takes care of this for `CommandGateway`; other injected dependencies need to be moved
-manually.
-
-The `org.axonframework.migration.UpgradeAxon4ToAxon5` OpenRewrite recipe adds `axon-legacy` when it detects Saga
-types in application source. It also applies the `SagaLifecycle` and `CommandGateway` changes. A
-`CommandGateway.send(...)` call remains fire-and-forget. A `CommandGateway.sendAndWait(...)` call remains synchronous.
+handler.
 
 === Synchronous event handlers
 

@@ -46,6 +46,7 @@ The recipes handle the following categories of changes automatically:
 * **Annotation rewrites**:`@Aggregate` → `@EventSourced`, `@AggregateRoot` → `@EventSourcedEntity`, `@TargetAggregateIdentifier` → `@TargetEntityId`, `@Revision` → `@Event(version = …)`, `@ProcessingGroup` → `@Namespace`, `@EntityCreator` added to constructors
 * **Message API**:accessor method renames, `AggregateLifecycle.apply(...)` replaced with `EventAppender#append(...)`
 * **Command handling**:`@CommandHandler` constructors converted to static `handle(...)` methods, `CommandGateway` replaced with `CommandDispatcher`
+* **Legacy sagas**:`axon-legacy` added when saga types are detected, static `SagaLifecycle` calls moved to an injected handler parameter, and injected `CommandGateway` fields replaced with `CommandDispatcher` handler parameters. Other injected saga dependencies must be moved to handler parameters manually. `CommandGateway.send(...)` remains fire-and-forget, while `CommandGateway.sendAndWait(...)` remains synchronous.
 * **Query API**:`ResponseTypes.instanceOf(X.class)` unwrapped to a direct class argument, `query()` renamed to `queryMany()` when used with `multipleInstancesOf`
 * **Spring configuration**:`axon.serializer.*` properties renamed to `axon.converter.*`
 * **Test fixtures**:`AggregateTestFixture` replaced with `AxonTestFixture`, Given-When-Then chain rewritten
