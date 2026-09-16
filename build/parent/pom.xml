@@ -507,6 +507,60 @@
             </plugins>
         </pluginManagement>
         <plugins>
+            <!-- Reproducible builds: derive a per-module output timestamp from the last commit
+                 that touched this module's own directory, so a module's jar only gets a new
+                 timestamp (and therefore a new hash) when something relevant to it actually
+                 changed, rather than on every commit anywhere in the repository. -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>${exec-maven-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>compute-module-output-timestamp</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>git</executable>
+                            <workingDirectory>${project.basedir}</workingDirectory>
+                            <outputFile>${project.build.directory}/reproducible-build.properties</outputFile>
+                            <successCodes>
+                                <successCode>0</successCode>
+                                <successCode>128</successCode>
+                            </successCodes>
+                            <arguments>
+                                <argument>log</argument>
+                                <argument>-1</argument>
+                                <argument>--format=project.build.outputTimestamp=%cI</argument>
+                                <argument>--</argument>
+                                <argument>.</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>properties-maven-plugin</artifactId>
+                <version>${properties-maven-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>load-module-output-timestamp</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>read-project-properties</goal>
+                        </goals>
+                        <configuration>
+                            <quiet>true</quiet>
+                            <files>
+                                <file>${project.build.directory}/reproducible-build.properties</file>
+                            </files>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <!-- compile -->
             <plugin>
                 <artifactId>maven-compiler-plugin</artifactId>
