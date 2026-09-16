@@ -78,6 +78,35 @@
             <optional>true</optional>
         </dependency>
 
+        <!-- Spring integration for the ported Sagas. Optional: a migrating Spring application already provides
+             these on its classpath, while a non-Spring application keeps them off the graph entirely. -->
+        <!-- The Spring Saga wiring builds on axon-spring's EventProcessorDefinition processor-configuration SPI, so
+             axon-legacy compiles against axon-spring. Kept optional: only a Spring application (which already has
+             axon-spring) uses these classes. -->
+        <dependency>
+            <groupId>org.axonframework.extensions.spring</groupId>
+            <artifactId>axon-spring</artifactId>
+            <version>${project.version}</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
+            <version>${spring.boot.version}</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure-processor</artifactId>
+            <version>${spring.boot.version}</version>
+            <optional>true</optional>
+        </dependency>
+
         <!-- Testing -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>

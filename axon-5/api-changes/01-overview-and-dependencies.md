@@ -86,4 +86,12 @@ Major API Changes
 * We have switched the `Serializer` for the lower-level `Converter` API throughout Axon Framework. Furthermore, we
   stopped support for the `XStreamSerializer` altogether, making the `JacksonConverter` the default. For more details on
   the `Serializer`-to-`Converter` switch, please check [here](08-serialization-and-interceptors.md#serialization--conversion-changes).
+* Sagas moved out of the core framework into `axon-legacy`, a compatibility layer for keeping saga instances started
+  on Axon Framework 4 running while new business processes move to Axon Framework 5 native alternatives. The
+  `org.axonframework.spring.stereotype.Saga` annotation keeps its Axon Framework 4 package but now ships in the Spring
+  extension (`axon-spring`); adding `axon-legacy` next to `axon-spring-boot-starter` in a Spring Boot application
+  activates saga discovery, saga store wiring, and event processor registration through the existing autoconfiguration
+  mechanism. `axon-legacy` is an optional dependency of both `axon-spring` and `axon-spring-boot-autoconfigure`, so
+  applications that do not add it are unaffected. See the [Class Reference](11-class-reference.md#moved-or-renamed-classes)
+  for the full saga class mapping.
 
