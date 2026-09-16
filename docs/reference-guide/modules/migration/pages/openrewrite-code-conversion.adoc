@@ -44,6 +44,11 @@ The recipes handle the following categories of changes automatically:
 * **Build files**:BOM rename, Java source/target version bump, Spring Boot upgrade to 3.5, removal of dependencies with no Axon Framework 5 equivalent
 * **Package and class renames**:handler annotations, `EventBus` → `EventSink`, `ConfigurerModule` → `ConfigurationEnhancer`, extension packages
 * **Annotation rewrites**:`@Aggregate` → `@EventSourced`, `@AggregateRoot` → `@EventSourcedEntity`, `@TargetAggregateIdentifier` → `@TargetEntityId`, `@Revision` → `@Event(version = …)`, `@ProcessingGroup` → `@Namespace`, `@EntityCreator` added to constructors
++
+[NOTE]
+====
+AF4's `@TargetAggregateIdentifier` was *both* the target-id and the command's routing key, keeping same-entity commands handled sequentially. In AF5 that routing key must be explicit as `@Command(routingKey = "...")`. Whether the OpenRewrite rewrite lifts it for you depends on the recipe version: older versions rename `@TargetAggregateIdentifier` to `@TargetEntityId` only and leave a bare (or absent) `@Command`, while newer versions also fill in the `routingKey`. Do not assume either way; verify each command and reconcile it to the correct end state regardless of what the rewrite produced. See xref:migration:paths/messages.adoc#_target_entity_identification[Target entity identification] for the required end state.
+====
 * **Message API**:accessor method renames, `AggregateLifecycle.apply(...)` replaced with `EventAppender#append(...)`
 * **Command handling**:`@CommandHandler` constructors converted to static `handle(...)` methods, `CommandGateway` replaced with `CommandDispatcher`
 * **Query API**:`ResponseTypes.instanceOf(X.class)` unwrapped to a direct class argument, `query()` renamed to `queryMany()` when used with `multipleInstancesOf`
