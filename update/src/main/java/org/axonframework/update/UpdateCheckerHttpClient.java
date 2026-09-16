@@ -62,8 +62,7 @@ public class UpdateCheckerHttpClient {
     }
 
     /**
-     * Sends a usage request to the Axoniq servers. If {@code firstRequest} is true, it will send a POST request,
-     * otherwise it will send a PUT request.
+     * Sends a usage request to the Axoniq servers.
      *
      * @param updateCheckRequest the {@link UpdateCheckRequest} to send
      * @param firstRequest       whether this is the first request sent by this JVM instance
@@ -72,10 +71,11 @@ public class UpdateCheckerHttpClient {
      */
     public Optional<UpdateCheckResponse> sendRequest(UpdateCheckRequest updateCheckRequest, boolean firstRequest) {
         long uptimeMillis = ManagementFactory.getRuntimeMXBean().getUptime();
-        String url = userProperties.getUrl() + "?" + updateCheckRequest.toQueryString(uptimeMillis, firstRequest);
+        String endpoint = userProperties.getUrl();
+        String url = endpoint + "?" + updateCheckRequest.toQueryString(uptimeMillis, firstRequest);
 
         try {
-            logger.debug("Reporting anonymous usage data to Axoniq servers at: {}", url);
+            logger.debug("Reporting usage data to Axoniq servers at: {}", endpoint);
             HttpRequest request = HttpRequest
                     .newBuilder()
                     .uri(URI.create(url))
