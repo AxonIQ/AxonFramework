@@ -21,6 +21,8 @@ import org.junit.jupiter.api.*;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 /**
  * Test class validating the {@link IteratorMessageStream} through the {@link MessageStreamTest} suite.
  *
@@ -57,5 +59,44 @@ class IteratorMessageStreamTest extends MessageStreamTest<Message> {
     protected Message createRandomMessage() {
         return new GenericMessage(new MessageType("message"),
                                     "test-" + ThreadLocalRandom.current().nextInt(10000));
+    }
+
+    @Nested
+    class WhenCompletionStatusRequested {
+
+        @Test
+        void withAnEmptySourceThenReportsCompletedWithoutBeingRead() {
+            // given
+            MessageStream<Message> testSubject = MessageStream.fromIterable(List.of());
+
+            // when / then
+            assertThat(testSubject.isCompleted()).isTrue();
+        }
+
+        @Test
+        void withTheLastEntryHandedOutThenReportsCompletedWithoutBeingReadAgain() {
+            // given
+            Message message = createRandomMessage();
+            MessageStream<Message> testSubject = MessageStream.fromIterable(List.of(message));
+
+            // when
+            assertThat(testSubject.next()).isPresent();
+
+            // then
+            assertThat(testSubject.isCompleted()).isTrue();
+        }
+
+        @Test
+        void withEntriesLeftThenStaysOpen() {
+            // given
+            MessageStream<Message> testSubject =
+                    MessageStream.fromIterable(List.of(createRandomMessage(), createRandomMessage()));
+
+            // when
+            assertThat(testSubject.next()).isPresent();
+
+            // then
+            assertThat(testSubject.isCompleted()).isFalse();
+        }
     }
 }
