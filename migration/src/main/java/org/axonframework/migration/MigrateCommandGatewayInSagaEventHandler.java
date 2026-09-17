@@ -38,6 +38,9 @@ import org.openrewrite.kotlin.tree.K;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
+import java.util.LinkedHashSet;
+import java.util.HashSet;
 
 /**
  * Migrates command dispatch from an Axon Framework 4 {@code CommandGateway} field in legacy Saga event handlers to
@@ -68,7 +71,8 @@ public class MigrateCommandGatewayInSagaEventHandler extends Recipe {
 
     @Override
     public String getDescription() {
-        return "Replaces a class-level `CommandGateway` used by `@SagaEventHandler` methods with an injected "
+        return "Replaces a class-level `CommandGateway` used by `@SagaEventHandler` methods, and by the private "
+                + "helper methods they call, with an injected "
                 + "`CommandDispatcher` parameter. `send` remains fire-and-forget, while `sendAndWait` remains "
                 + "synchronous without changing the handler return type.";
     }
@@ -80,10 +84,17 @@ public class MigrateCommandGatewayInSagaEventHandler extends Recipe {
             public J.ClassDeclaration visitClassDeclaration(J.ClassDeclaration classDeclaration,
                                                              ExecutionContext ctx) {
                 String gatewayFieldName = gatewayFieldName(classDeclaration);
-                if (gatewayFieldName == null || !hasSagaHandlerCallingGateway(classDeclaration, gatewayFieldName)) {
+                if (gatewayFieldName == null) {
+                    return super.visitClassDeclaration(classDeclaration, ctx);
+                }
+                Set<String> needingDispatcher = methodsNeedingDispatcher(classDeclaration, gatewayFieldName);
+                if (!hasSagaHandlerIn(classDeclaration, needingDispatcher)) {
                     return super.visitClassDeclaration(classDeclaration, ctx);
                 }
                 getCursor().putMessage("axon.sagaGatewayFieldName", gatewayFieldName);
+                getCursor().putMessage("axon.sagaMethodsNeedingDispatcher", needingDispatcher);
+                getCursor().putMessage("axon.sagaCallsNeedingDispatcher", callKeysOf(classDeclaration, needingDispatcher));
+                getCursor().putMessage("axon.sagaMethodsWithDispatcher", methodsWithDispatcherParameter(classDeclaration));
                 J.ClassDeclaration migrated = super.visitClassDeclaration(classDeclaration, ctx);
                 if (!isFieldStillReferenced(migrated, gatewayFieldName)) {
                     migrated = removeGatewayField(migrated, gatewayFieldName);
@@ -97,11 +108,19 @@ public class MigrateCommandGatewayInSagaEventHandler extends Recipe {
 
             @Override
             public J.MethodDeclaration visitMethodDeclaration(J.MethodDeclaration method, ExecutionContext ctx) {
-                if (!isSagaEventHandler(method) || method.getBody() == null) {
+                if (method.getBody() == null) {
                     return super.visitMethodDeclaration(method, ctx);
                 }
                 String gatewayFieldName = getCursor().getNearestMessage("axon.sagaGatewayFieldName");
-                if (gatewayFieldName == null || !referencesGatewayCall(method, gatewayFieldName)) {
+                Set<String> needingDispatcher = getCursor().getNearestMessage("axon.sagaMethodsNeedingDispatcher");
+                Set<String> callsNeedingDispatcher = getCursor().getNearestMessage("axon.sagaCallsNeedingDispatcher");
+                Set<String> hadDispatcher = getCursor().getNearestMessage("axon.sagaMethodsWithDispatcher");
+                if (gatewayFieldName == null || needingDispatcher == null
+                        || !needingDispatcher.contains(signatureOf(method))) {
+                    return super.visitMethodDeclaration(method, ctx);
+                }
+                // Helper methods (not handlers) are migrated for Java sources only; Kotlin helpers stay for the hand.
+                if (!isSagaEventHandler(method) && isKotlinSource()) {
                     return super.visitMethodDeclaration(method, ctx);
                 }
 
@@ -119,6 +138,9 @@ public class MigrateCommandGatewayInSagaEventHandler extends Recipe {
                     public J.MethodInvocation visitMethodInvocation(J.MethodInvocation invocation,
                                                                     ExecutionContext executionContext) {
                         J.MethodInvocation visited = super.visitMethodInvocation(invocation, executionContext);
+                        if (isHelperCall(visited, callsNeedingDispatcher, hadDispatcher)) {
+                            return withDispatcherArgument(visited, dispatcherName);
+                        }
                         if (!isGatewayCall(visited, gatewayFieldName)) {
                             return visited;
                         }
@@ -164,6 +186,138 @@ public class MigrateCommandGatewayInSagaEventHandler extends Recipe {
                     maybeAddImport(FUTURE_UTILS_FQN, false);
                 }
                 return migrated;
+            }
+
+            /**
+             * Every method of the class that must receive the dispatcher: the ones calling the gateway, then the
+             * ones calling those, until nothing changes. Handlers and private helpers alike.
+             */
+            private Set<String> methodsNeedingDispatcher(J.ClassDeclaration classDeclaration, String fieldName) {
+                Set<String> needing = new LinkedHashSet<>();
+                List<J.MethodDeclaration> methods = new ArrayList<>();
+                for (Statement statement : classDeclaration.getBody().getStatements()) {
+                    if (statement instanceof J.MethodDeclaration method) {
+                        methods.add(method);
+                        if (referencesGatewayCall(method, fieldName)) {
+                            needing.add(signatureOf(method));
+                        }
+                    }
+                }
+                boolean changed = true;
+                while (changed) {
+                    changed = false;
+                    Set<String> callKeys = callKeysOf(classDeclaration, needing);
+                    for (J.MethodDeclaration method : methods) {
+                        if (!needing.contains(signatureOf(method)) && callsAnyOf(method, callKeys)) {
+                            needing.add(signatureOf(method));
+                            changed = true;
+                        }
+                    }
+                }
+                return needing;
+            }
+
+            /** Method name plus parameter types: overloaded handlers are tracked one by one. */
+            private String signatureOf(J.MethodDeclaration method) {
+                StringBuilder signature = new StringBuilder(method.getSimpleName()).append('(');
+                for (Statement parameter : method.getParameters()) {
+                    if (parameter instanceof J.VariableDeclarations declarations
+                            && declarations.getTypeExpression() != null) {
+                        signature.append(declarations.getTypeExpression().toString()).append(',');
+                    }
+                }
+                return signature.append(')').toString();
+            }
+
+            /** Name plus parameter count, the shape a call site exposes without type attribution. */
+            private String callKeyOf(String name, int arity) {
+                return name + "/" + arity;
+            }
+
+            private Set<String> callKeysOf(J.ClassDeclaration classDeclaration, Set<String> signatures) {
+                Set<String> keys = new HashSet<>();
+                for (Statement statement : classDeclaration.getBody().getStatements()) {
+                    if (statement instanceof J.MethodDeclaration method && signatures.contains(signatureOf(method))) {
+                        keys.add(callKeyOf(method.getSimpleName(), parameterCount(method)));
+                    }
+                }
+                return keys;
+            }
+
+            private int parameterCount(J.MethodDeclaration method) {
+                List<Statement> parameters = method.getParameters();
+                return parameters.size() == 1 && parameters.get(0) instanceof J.Empty ? 0 : parameters.size();
+            }
+
+            private int argumentCount(J.MethodInvocation invocation) {
+                List<Expression> arguments = invocation.getArguments();
+                return arguments.size() == 1 && arguments.get(0) instanceof J.Empty ? 0 : arguments.size();
+            }
+
+            private Set<String> methodsWithDispatcherParameter(J.ClassDeclaration classDeclaration) {
+                Set<String> keys = new HashSet<>();
+                for (Statement statement : classDeclaration.getBody().getStatements()) {
+                    if (statement instanceof J.MethodDeclaration method && dispatcherParameterName(method) != null) {
+                        keys.add(callKeyOf(method.getSimpleName(), parameterCount(method)));
+                    }
+                }
+                return keys;
+            }
+
+            private boolean hasSagaHandlerIn(J.ClassDeclaration classDeclaration, Set<String> signatures) {
+                for (Statement statement : classDeclaration.getBody().getStatements()) {
+                    if (statement instanceof J.MethodDeclaration method
+                            && isSagaEventHandler(method) && signatures.contains(signatureOf(method))) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+
+            private boolean callsAnyOf(J.MethodDeclaration method, Set<String> callKeys) {
+                if (method.getBody() == null || callKeys.isEmpty()) {
+                    return false;
+                }
+                boolean[] found = {false};
+                new JavaIsoVisitor<ExecutionContext>() {
+                    @Override
+                    public J.MethodInvocation visitMethodInvocation(J.MethodInvocation invocation,
+                                                                    ExecutionContext executionContext) {
+                        if (isOwnMethodCall(invocation)
+                                && callKeys.contains(callKeyOf(invocation.getSimpleName(), argumentCount(invocation)))) {
+                            found[0] = true;
+                        }
+                        return found[0] ? invocation : super.visitMethodInvocation(invocation, executionContext);
+                    }
+                }.visit(method.getBody(), new InMemoryExecutionContext());
+                return found[0];
+            }
+
+            /** A call to a method of this class: no select, or {@code this}. */
+            private boolean isOwnMethodCall(J.MethodInvocation invocation) {
+                Expression select = invocation.getSelect();
+                return select == null
+                        || (select instanceof J.Identifier identifier && identifier.getSimpleName().equals("this"));
+            }
+
+            private boolean isHelperCall(J.MethodInvocation invocation, Set<String> callKeys, Set<String> hadDispatcher) {
+                if (callKeys == null || !isOwnMethodCall(invocation)) {
+                    return false;
+                }
+                String key = callKeyOf(invocation.getSimpleName(), argumentCount(invocation));
+                return callKeys.contains(key) && (hadDispatcher == null || !hadDispatcher.contains(key));
+            }
+
+            private J.MethodInvocation withDispatcherArgument(J.MethodInvocation invocation, String dispatcherName) {
+                J.Identifier dispatcher = new J.Identifier(Tree.randomId(), Space.format(" "), Markers.EMPTY,
+                                                           Collections.emptyList(), dispatcherName, null, null);
+                List<Expression> arguments = invocation.getArguments();
+                if (arguments.size() == 1 && arguments.get(0) instanceof J.Empty) {
+                    return invocation.withArguments(Collections.singletonList(dispatcher.withPrefix(Space.EMPTY)));
+                }
+                List<Expression> extended = new ArrayList<>(arguments);
+                extended.add(dispatcher);
+                return invocation.withArguments(extended);
             }
 
             private String gatewayFieldName(J.ClassDeclaration classDeclaration) {
@@ -308,7 +462,8 @@ public class MigrateCommandGatewayInSagaEventHandler extends Recipe {
                             template.append(", ");
                         }
                         template.append("#{}");
-                        templateArguments.add(existing.get(i).print(getCursor()));
+                        // trim: the printed parameter carries its own leading space, the template adds ", "
+                        templateArguments.add(existing.get(i).print(getCursor()).trim());
                     }
                     template.append(", ");
                 }

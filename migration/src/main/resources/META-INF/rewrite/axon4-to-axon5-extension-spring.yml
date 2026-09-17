@@ -30,13 +30,56 @@ name: org.axonframework.migration.Axon4ToAxon5SpringExtension
 displayName: Migrate the Spring extension to Axon Framework 5
 description: >-
   Relocates `org.axonframework.spring` to `org.axonframework.extension.spring`
-  and renames the Spring stereotype `@Aggregate` to `@EventSourced`. The
-  stereotype rename is mapped from both the AF4 location and the post-package-
-  move location, so the recipe is order-independent.
+  subpackage by subpackage, renames the Spring stereotype `@Aggregate` to
+  `@EventSourced`, and leaves `@Saga` in `org.axonframework.spring.stereotype`,
+  where `axon-legacy` keeps it.
 recipeList:
+  # `org.axonframework.spring` moves to `org.axonframework.extension.spring`, one
+  # subpackage at a time. The `stereotype` package is left alone on purpose:
+  # `@Saga` keeps its Axon Framework 4 name (`axon-legacy` ships it there) and
+  # `@Aggregate` is renamed to `@EventSourced` by the ChangeType below.
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.spring.SpringUtils
+      newFullyQualifiedTypeName: org.axonframework.extension.spring.SpringUtils
   - org.openrewrite.java.ChangePackage:
-      oldPackageName: org.axonframework.spring
-      newPackageName: org.axonframework.extension.spring
+      oldPackageName: org.axonframework.spring.authorization
+      newPackageName: org.axonframework.extension.spring.authorization
+      recursive: true
+  - org.openrewrite.java.ChangePackage:
+      oldPackageName: org.axonframework.spring.config
+      newPackageName: org.axonframework.extension.spring.config
+      recursive: true
+  - org.openrewrite.java.ChangePackage:
+      oldPackageName: org.axonframework.spring.event
+      newPackageName: org.axonframework.extension.spring.event
+      recursive: true
+  - org.openrewrite.java.ChangePackage:
+      oldPackageName: org.axonframework.spring.eventhandling
+      newPackageName: org.axonframework.extension.spring.eventhandling
+      recursive: true
+  - org.openrewrite.java.ChangePackage:
+      oldPackageName: org.axonframework.spring.eventsourcing
+      newPackageName: org.axonframework.extension.spring.eventsourcing
+      recursive: true
+  - org.openrewrite.java.ChangePackage:
+      oldPackageName: org.axonframework.spring.jdbc
+      newPackageName: org.axonframework.extension.spring.jdbc
+      recursive: true
+  - org.openrewrite.java.ChangePackage:
+      oldPackageName: org.axonframework.spring.messaging
+      newPackageName: org.axonframework.extension.spring.messaging
+      recursive: true
+  - org.openrewrite.java.ChangePackage:
+      oldPackageName: org.axonframework.spring.modelling
+      newPackageName: org.axonframework.extension.spring.modelling
+      recursive: true
+  - org.openrewrite.java.ChangePackage:
+      oldPackageName: org.axonframework.spring.saga
+      newPackageName: org.axonframework.extension.spring.saga
+      recursive: true
+  - org.openrewrite.java.ChangePackage:
+      oldPackageName: org.axonframework.spring.serialization
+      newPackageName: org.axonframework.extension.spring.serialization
       recursive: true
   # Runs after ChangePackage (so the @Aggregate FQN is at its post-move location)
   # but BEFORE the ChangeType rename below. Converts @Bean SnapshotTriggerDefinition
