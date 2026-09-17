@@ -16,6 +16,10 @@
 
 package org.axonframework.migration;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import org.jspecify.annotations.Nullable;
+import org.openrewrite.Option;
 import org.openrewrite.ExecutionContext;
 import org.openrewrite.Recipe;
 import org.openrewrite.SourceFile;
@@ -77,7 +81,37 @@ public class AddAxonTestFixtureTearDown extends Recipe {
 
     private static final String AF5_AXON_TEST_FIXTURE =
             "org.axonframework.test.fixture.AxonTestFixture";
-    private static final String AF5_AXON_TEST_FIXTURE_SIMPLE = "AxonTestFixture";
+
+    @Option(displayName = "Fixture type",
+            description = "Fully qualified name of the fixture type whose field must be stopped. "
+                    + "Defaults to `org.axonframework.test.fixture.AxonTestFixture`. "
+                    + "`Axon4ToAxon5Legacy` uses it for `org.axonframework.test.saga.SagaTestFixture`.",
+            example = "org.axonframework.test.saga.SagaTestFixture",
+            required = false)
+    @Nullable
+    private final String fixtureType;
+
+    public AddAxonTestFixtureTearDown() {
+        this(null);
+    }
+
+    @JsonCreator
+    public AddAxonTestFixtureTearDown(@JsonProperty("fixtureType") @Nullable String fixtureType) {
+        this.fixtureType = fixtureType;
+    }
+
+    public @Nullable String getFixtureType() {
+        return fixtureType;
+    }
+
+    private String fixtureTypeName() {
+        return fixtureType == null || fixtureType.isBlank() ? AF5_AXON_TEST_FIXTURE : fixtureType;
+    }
+
+    private String fixtureSimpleName() {
+        String name = fixtureTypeName();
+        return name.substring(name.lastIndexOf('.') + 1);
+    }
     private static final String JUNIT_AFTER_EACH =
             "org.junit.jupiter.api.AfterEach";
     private static final String JUNIT_AFTER_EACH_SIMPLE = "AfterEach";
@@ -88,13 +122,13 @@ public class AddAxonTestFixtureTearDown extends Recipe {
 
     @Override
     public String getDisplayName() {
-        return "Add @AfterEach tearDown() that stops the AxonTestFixture";
+        return "Add @AfterEach tearDown() that stops the test fixture";
     }
 
     @Override
     public String getDescription() {
         return "Adds an `@AfterEach tearDown()` method calling `stop()` on the "
-                + "`AxonTestFixture` field, when the test class has such a "
+                + "fixture field (`AxonTestFixture` by default, or the configured `fixtureType`), when the test class has such a "
                 + "field but no existing `@AfterEach` method (and no method "
                 + "named `tearDown`). Pairs with "
                 + "`MigrateAggregateTestFixtureSetup` which produces the "
@@ -180,7 +214,7 @@ public class AddAxonTestFixtureTearDown extends Recipe {
             private boolean isAxonTestFixtureType(org.openrewrite.java.tree.TypeTree typeExpr) {
                 JavaType.FullyQualified resolved = TypeUtils.asFullyQualified(typeExpr.getType());
                 if (resolved != null) {
-                    return AF5_AXON_TEST_FIXTURE.equals(resolved.getFullyQualifiedName());
+                    return fixtureTypeName().equals(resolved.getFullyQualifiedName());
                 }
                 // Shape fallback: simple-name match. Safe in this recipe's
                 // chain because the preceding ChangeType has already renamed
@@ -190,12 +224,14 @@ public class AddAxonTestFixtureTearDown extends Recipe {
                 // class would produce a false positive, accepted as a known
                 // edge case.
                 if (typeExpr instanceof J.Identifier) {
-                    return AF5_AXON_TEST_FIXTURE_SIMPLE
-                            .equals(((J.Identifier) typeExpr).getSimpleName());
+                    return fixtureSimpleName().equals(((J.Identifier) typeExpr).getSimpleName());
+                }
+                if (typeExpr instanceof J.ParameterizedType parameterized
+                        && parameterized.getClazz() instanceof J.Identifier identifier) {
+                    return fixtureSimpleName().equals(identifier.getSimpleName());
                 }
                 if (typeExpr instanceof J.FieldAccess) {
-                    return AF5_AXON_TEST_FIXTURE
-                            .equals(((J.FieldAccess) typeExpr).toString());
+                    return fixtureTypeName().equals(((J.FieldAccess) typeExpr).toString());
                 }
                 return false;
             }

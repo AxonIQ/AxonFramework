@@ -19,9 +19,10 @@ type: specs.openrewrite.org/v1beta/recipe
 name: org.axonframework.migration.Axon4ToAxon5Legacy
 displayName: Migrate Axon Framework 4 legacy APIs
 description: >-
-  Adds the Axon Framework 5 legacy module when Saga APIs are used and adapts
-  Saga lifecycle and command dispatch access to ProcessingContext-scoped
-  handler parameters.
+  Adds the Axon Framework 5 legacy module when Saga APIs are used, keeps saga
+  tests on the SagaTestFixture ported by axon-legacy-test, and adapts Saga
+  lifecycle and command dispatch access to ProcessingContext-scoped handler
+  parameters.
 recipeList:
   # `onlyIfUsing` evaluates the AF4-typed source model before source rewrites run.
   - org.openrewrite.java.dependencies.AddDependency:
@@ -35,6 +36,17 @@ recipeList:
       artifactId: axon-legacy
       version: ${project.version}
       onlyIfUsing: org.axonframework.spring.stereotype.Saga
+
+  # Saga tests keep their SagaTestFixture, which axon-legacy-test ports. The ported
+  # fixture runs a live configuration and must be stopped after each test.
+  - org.openrewrite.java.dependencies.AddDependency:
+      groupId: org.axonframework
+      artifactId: axon-legacy-test
+      version: ${project.version}
+      scope: test
+      onlyIfUsing: org.axonframework.test.saga.SagaTestFixture
+  - org.axonframework.migration.AddAxonTestFixtureTearDown:
+      fixtureType: org.axonframework.test.saga.SagaTestFixture
 
   - org.axonframework.migration.MigrateSagaLifecycle
   - org.axonframework.migration.MigrateCommandGatewayInSagaEventHandler

@@ -32,6 +32,7 @@ import static java.util.Objects.requireNonNull;
 import static org.openrewrite.java.Assertions.java;
 import static org.openrewrite.java.Assertions.mavenProject;
 import static org.openrewrite.java.Assertions.srcMainJava;
+import static org.openrewrite.java.Assertions.srcTestJava;
 import static org.openrewrite.kotlin.Assertions.kotlin;
 import static org.openrewrite.kotlin.Assertions.srcMainKotlin;
 import static org.openrewrite.maven.Assertions.pomXml;
@@ -390,6 +391,90 @@ class Axon4ToAxon5LegacyTest implements RewriteTest {
                                             class Projection {
                                                 void on(Object event) {
                                                 }
+                                            }
+                                            """
+                                    )
+                            )
+                    )
+            );
+        }
+    }
+
+    @Nested
+    class SagaTestFixtureMigration {
+
+        @Test
+        void keepsSagaTestFixtureAddsAxonLegacyTestAndATearDown() {
+            rewriteRun(
+                    Axon4ToAxon5LegacyTest::ignoreUnpublishedTargetVersionWarning,
+                    mavenProject(
+                            "rental",
+                            pomXml(
+                            """
+                            <project>
+                                <modelVersion>4.0.0</modelVersion>
+                                <groupId>com.example</groupId>
+                                <artifactId>rental</artifactId>
+                                <version>1.0.0</version>
+                            </project>
+                            """,
+                            """
+                            <project>
+                                <modelVersion>4.0.0</modelVersion>
+                                <groupId>com.example</groupId>
+                                <artifactId>rental</artifactId>
+                                <version>1.0.0</version>
+                                <dependencies>
+                                    <dependency>
+                                        <groupId>org.axonframework</groupId>
+                                        <artifactId>axon-legacy-test</artifactId>
+                                        <version>%s</version>
+                                        <scope>test</scope>
+                                    </dependency>
+                                </dependencies>
+                            </project>
+                            """.formatted(AXON_VERSION)
+                            ),
+                            srcTestJava(
+                                    java(
+                                            """
+                                            package com.example;
+
+                                            import org.axonframework.test.saga.SagaTestFixture;
+                                            import org.junit.jupiter.api.BeforeEach;
+
+                                            class PaymentSagaTest {
+                                                private SagaTestFixture<PaymentSaga> fixture;
+
+                                                @BeforeEach
+                                                void setUp() {
+                                                    fixture = new SagaTestFixture<>(PaymentSaga.class);
+                                                }
+                                            }
+                                            class PaymentSaga {
+                                            }
+                                            """,
+                                            """
+                                            package com.example;
+
+                                            import org.axonframework.test.saga.SagaTestFixture;
+                                            import org.junit.jupiter.api.AfterEach;
+                                            import org.junit.jupiter.api.BeforeEach;
+
+                                            class PaymentSagaTest {
+                                                private SagaTestFixture<PaymentSaga> fixture;
+
+                                                @BeforeEach
+                                                void setUp() {
+                                                    fixture = new SagaTestFixture<>(PaymentSaga.class);
+                                                }
+
+                                                @AfterEach
+                                                void tearDown() {
+                                                    fixture.stop();
+                                                }
+                                            }
+                                            class PaymentSaga {
                                             }
                                             """
                                     )
