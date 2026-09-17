@@ -80,4 +80,15 @@ public interface SagaModel<T> {
      * described by this model
      */
     Set<QualifiedName> supportedEvents();
+
+    /**
+     * Returns the payload type of the handler that is declared for events with the given {@code eventName}.
+     * <p>
+     * Sagas resolve handlers and association values from the payload's runtime type. An event read from an event store
+     * carries a serialized payload, which has to be converted to this type first.
+     *
+     * @param eventName the qualified name of the event
+     * @return the handler's payload type, or empty if no handler is declared for the given name
+     */
+    Optional<Class<?>> payloadTypeFor(QualifiedName eventName);
 }
