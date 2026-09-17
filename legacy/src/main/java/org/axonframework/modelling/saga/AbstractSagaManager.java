@@ -91,7 +91,8 @@ public abstract class AbstractSagaManager<T> implements EventHandlingComponent, 
      * {@link SagaCreationPolicy#IF_NONE_FOUND} policy consults before starting a new instance.
      */
     @Override
-    public MessageStream.Empty<Message> handle(EventMessage event, ProcessingContext context) {
+    public MessageStream.Empty<Message> handle(EventMessage rawEvent, ProcessingContext context) {
+        EventMessage event = withHandlerPayload(rawEvent, context);
         if (!canHandle(event, context)) {
             return MessageStream.empty();
         }
@@ -208,6 +209,21 @@ public abstract class AbstractSagaManager<T> implements EventHandlingComponent, 
      * @return The AssociationValues indicating which Sagas should handle given event.
      */
     protected abstract Set<AssociationValue> extractAssociationValues(EventMessage event, ProcessingContext context);
+
+    /**
+     * Returns the given {@code event} with its payload converted to the type the Saga's handler declares for it.
+     * <p>
+     * Events read from an event store carry a serialized payload. Handler matching and association resolution work
+     * on the payload's runtime type, so without this step every such event is ignored. Events whose payload already
+     * has the handler's type, and events no handler is declared for, are returned unchanged.
+     *
+     * @param event   The event to convert.
+     * @param context The {@link ProcessingContext} providing the {@link EventConverter}.
+     * @return the event with a converted payload, or the given event
+     */
+    protected EventMessage withHandlerPayload(EventMessage event, ProcessingContext context) {
+        return event;
+    }
 
     /**
      * Indicates whether a Saga of the given {@code sagaType} has a handler for the given {@code event}.
