@@ -401,6 +401,86 @@ class Axon4ToAxon5LegacyTest implements RewriteTest {
     }
 
     @Nested
+    class PrivateHelperMigration {
+
+        @Test
+        void passesTheDispatcherIntoPrivateHelpersThatUseTheGateway() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.commandhandling.gateway.CommandGateway;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.springframework.beans.factory.annotation.Autowired;
+
+                            class OrderSaga {
+                                @Autowired
+                                private transient CommandGateway commandGateway;
+                                private boolean paid;
+
+                                @SagaEventHandler(associationProperty = "orderId")
+                                void on(Object event) {
+                                    paid = true;
+                                    proceed("o-1");
+                                }
+
+                                @SagaEventHandler(associationProperty = "orderId")
+                                void onFailure(Object event) {
+                                    compensate("o-1", "failed");
+                                }
+
+                                private void proceed(String orderId) {
+                                    if (paid) {
+                                        commandGateway.send(new Object());
+                                    }
+                                }
+
+                                private void compensate(String orderId, String reason) {
+                                    commandGateway.sendAndWait(new Object());
+                                    proceed(orderId);
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.common.FutureUtils;
+                            import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+
+                            class OrderSaga {
+                                private boolean paid;
+
+                                @SagaEventHandler(associationProperty = "orderId")
+                                void on(Object event, CommandDispatcher commandDispatcher) {
+                                    paid = true;
+                                    proceed("o-1", commandDispatcher);
+                                }
+
+                                @SagaEventHandler(associationProperty = "orderId")
+                                void onFailure(Object event, CommandDispatcher commandDispatcher) {
+                                    compensate("o-1", "failed", commandDispatcher);
+                                }
+
+                                private void proceed(String orderId, CommandDispatcher commandDispatcher) {
+                                    if (paid) {
+                                        commandDispatcher.send(new Object());
+                                    }
+                                }
+
+                                private void compensate(String orderId, String reason, CommandDispatcher commandDispatcher) {
+                                    FutureUtils.joinAndUnwrap(commandDispatcher.send(new Object()).getResultMessage());
+                                    proceed(orderId, commandDispatcher);
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+    }
+
+    @Nested
     class SagaTestFixtureMigration {
 
         @Test
