@@ -60,6 +60,15 @@
                 <scope>import</scope>
                 <type>pom</type>
             </dependency>
+            <!-- Explicitly pin protobuf to avoid spring boot pinning to 4.35.1, which is incompatible with
+                 axonserver-connector-java 2026.1.0
+                 TODO remove once https://github.com/AxonIQ/axoniq-framework/issues/524 is resolved
+            -->
+            <dependency>
+                <groupId>com.google.protobuf</groupId>
+                <artifactId>protobuf-java</artifactId>
+                <version>4.36.1</version>
+            </dependency>
             <dependency>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-dependencies</artifactId>

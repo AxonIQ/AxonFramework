@@ -53,8 +53,8 @@
         <c3p0.version>0.9.1.2</c3p0.version>
         <hikari.version>7.1.0</hikari.version>
         <hsqldb.version>2.7.4</hsqldb.version>
-        <hibernate-core.version>7.4.7.Final</hibernate-core.version>
-        <mongo.driver.version>5.11.0</mongo.driver.version>
+        <hibernate-core.version>7.4.8.Final</hibernate-core.version>
+        <mongo.driver.version>5.11.1</mongo.driver.version>
         <mysql-connector-java.version>26.7.0</mysql-connector-java.version>
         <postgresql.version>42.7.13</postgresql.version>
         <ojdbc.version>23.26.3.0.0</ojdbc.version>
@@ -73,9 +73,9 @@
         <dropwizard.metrics.version>5.0.8</dropwizard.metrics.version>
         <micrometer.version>1.17.1</micrometer.version>
         <!-- Micrometer Tracing versions independently of Micrometer core, so it has its own property. -->
-        <micrometer-tracing.version>1.5.12</micrometer-tracing.version>
+        <micrometer-tracing.version>1.7.1</micrometer-tracing.version>
         <!-- Other -->
-        <byte-buddy.version>1.18.13</byte-buddy.version>
+        <byte-buddy.version>1.18.14</byte-buddy.version>
         <commons-io.version>2.22.0</commons-io.version>
         <disruptor.version>4.0.0</disruptor.version>
         <findbugs-jsr305.version>3.0.2</findbugs-jsr305.version>

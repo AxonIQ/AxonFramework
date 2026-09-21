@@ -91,7 +91,7 @@
         <maven-enforcer.version>3.6.3</maven-enforcer.version>
         <maven-failsafe.version>3.6.0</maven-failsafe.version>
         <maven-gpg.version>3.2.8</maven-gpg.version>
-        <maven-install.version>3.1.4</maven-install.version>
+        <maven-install.version>3.2.0</maven-install.version>
         <maven-jar.version>3.5.1</maven-jar.version>
         <maven-javadoc.version>3.12.0</maven-javadoc.version>
         <maven-release.version>3.3.1</maven-release.version>
