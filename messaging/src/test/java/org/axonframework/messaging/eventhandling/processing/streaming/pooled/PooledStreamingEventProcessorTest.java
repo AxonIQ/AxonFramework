@@ -53,6 +53,7 @@ import org.axonframework.messaging.eventhandling.processing.streaming.segmenting
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.SegmentChangeListener;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.SimpleSegmentChangeListener;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.GlobalSequenceTrackingToken;
+import org.axonframework.messaging.eventhandling.processing.streaming.token.MergedTrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.ReplayToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.UnableToRetrieveIdentifierException;
@@ -265,6 +266,61 @@ class PooledStreamingEventProcessorTest {
                    long currentPosition = testSubject.processingStatus().get(0).getCurrentPosition().orElse(0);
                    assertThat(currentPosition).isEqualTo(2);
                });
+    }
+
+    @Test
+    @Timeout(10)
+    void mergedTokenDoesNotReprocessEventsAlreadyHandledByTheFurthestSegment() {
+        // Reproducer for AxonIQ/AxonFramework#5079: ported from the AF4 TrackingEventProcessor regression test in
+        // .ai/PAtch-AF4lts-regressiontest, adapted to PSEP's WorkPackage/AsyncInMemoryStreamableEventSource.
+        //
+        // The payload doubles as the sequence identifier, so even payloads belong to the (pre-merge) lower segment
+        // and odd payloads to the upper segment. AsyncInMemoryStreamableEventSource assigns the event carrying
+        // payload i the tracking token position i + 1 (see AsyncInMemoryStreamableEventSource#next()), so a stored
+        // progress token of N means payloads 0..N-1 (of the matching parity) were already handled, and payloads
+        // >= N were not.
+        int lowerSegmentPosition = 5;
+        int upperSegmentPosition = 15;
+
+        SimpleEventHandlingComponent ehc = SimpleEventHandlingComponent.create(
+                "merge-repro", (event, ctx) -> Optional.of(event.payload()));
+        ehc.subscribe(new QualifiedName(Integer.class), (event, ctx) -> MessageStream.empty());
+        RecordingEventHandlingComponent recordingComponent = new RecordingEventHandlingComponent(ehc);
+
+        withTestSubject(List.of(recordingComponent), c -> c.initialSegmentCount(1));
+
+        IntStream.rangeClosed(0, 20)
+                 .mapToObj(EventTestUtils::asEventMessage)
+                 .forEach(stubMessageSource::publishMessage);
+
+        // Simulate the post-merge state directly: a single (root) segment carrying a MergedTrackingToken whose two
+        // halves have diverged, exactly as MergeTask would leave it after merging two real segments.
+        ProcessingContext ctx = createProcessingContext();
+        joinAndUnwrap(tokenStore.initializeTokenSegments(PROCESSOR_NAME, 1, null, ctx));
+        joinAndUnwrap(tokenStore.fetchToken(PROCESSOR_NAME, 0, ctx));
+        joinAndUnwrap(tokenStore.storeToken(
+                new MergedTrackingToken(new GlobalSequenceTrackingToken(lowerSegmentPosition),
+                                        new GlobalSequenceTrackingToken(upperSegmentPosition)),
+                PROCESSOR_NAME, 0, ctx
+        ));
+        joinAndUnwrap(tokenStore.releaseClaim(PROCESSOR_NAME, 0, ctx));
+
+        startEventProcessor();
+
+        await().atMost(5, TimeUnit.SECONDS)
+               .until(() -> testSubject.processingStatus().get(0) != null
+                       && testSubject.processingStatus().get(0).isCaughtUp());
+
+        List<Integer> expectedPayloads =
+                IntStream.rangeClosed(0, 20)
+                         .filter(i -> i >= (i % 2 == 0 ? lowerSegmentPosition : upperSegmentPosition))
+                         .boxed()
+                         .collect(Collectors.toList());
+        List<Integer> handledPayloads = recordingComponent.recorded()
+                                                           .stream()
+                                                           .map(m -> (Integer) m.payload())
+                                                           .collect(Collectors.toList());
+        assertThat(handledPayloads).containsExactlyElementsOf(expectedPayloads);
     }
 
     @Nested
