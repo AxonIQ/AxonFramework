@@ -63,9 +63,12 @@ class KotlinReflectPropertyAccessStrategy : PropertyAccessStrategy() {
     // needs increased priority to be able to override the default property access strategy
     override fun getPriority(): Int = 1000
 
+    // Returns null when this strategy cannot resolve the property (non-Kotlin class, or no single
+    // matching member property), so PropertyAccessStrategy.getProperty falls through to the next
+    // strategy instead of failing with a NullPointerException.
     override fun <T : Any> propertyFor(
         targetClass: Class<out T>,
         property: String
-    ): Property<T> = KotlinReflectProperty(kProperty(targetClass, property)!!)
+    ): Property<T>? = kProperty(targetClass, property)?.let { KotlinReflectProperty(it) }
 
 }
