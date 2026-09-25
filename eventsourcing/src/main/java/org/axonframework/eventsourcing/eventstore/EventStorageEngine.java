@@ -16,6 +16,7 @@
 
 package org.axonframework.eventsourcing.eventstore;
 
+import org.axonframework.common.FutureUtils;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.infra.DescribableComponent;
 import org.axonframework.messaging.core.MessageStream;
@@ -144,6 +145,10 @@ public interface EventStorageEngine extends DescribableComponent {
      * <p>
      * The {@code condition} may dictate the {@link StreamingCondition#position()} to start streaming from, as well as
      * define {@link StreamingCondition#criteria() filter criteria} for the returned {@code MessageStream}.
+     * <p>
+     * {@link TrackingToken#FIRST} and {@link TrackingToken#LATEST} must be honored: the former starts at the beginning
+     * of the store, the latter only receives events appended after the stream is opened. Implementations should invoke
+     * {@link #resolveSpecialStreamingPosition(StreamingCondition)} before interpreting the position.
      *
      * @param condition The {@link StreamingCondition} dictating the {@link StreamingCondition#position()} to start
      *                  streaming from, as well as the {@link StreamingCondition#criteria() filter criteria} used for
@@ -152,6 +157,26 @@ public interface EventStorageEngine extends DescribableComponent {
      * {@code condition}.
      */
     MessageStream<EventMessage> stream(StreamingCondition condition);
+
+    /**
+     * Replaces {@link TrackingToken#FIRST} and {@link TrackingToken#LATEST} on the given {@code condition} with the
+     * concrete tokens from {@link #firstToken()} and {@link #latestToken()}.
+     * <p>
+     * Other positions, including {@code null}, are left unchanged.
+     *
+     * @param condition the streaming condition whose position may be a special token
+     * @return the given {@code condition}, or a copy whose position is the matching concrete token
+     */
+    default StreamingCondition resolveSpecialStreamingPosition(StreamingCondition condition) {
+        TrackingToken position = condition.position();
+        if (TrackingToken.FIRST.equals(position)) {
+            return condition.withPosition(FutureUtils.joinAndUnwrap(firstToken()));
+        }
+        if (TrackingToken.LATEST.equals(position)) {
+            return condition.withPosition(FutureUtils.joinAndUnwrap(latestToken()));
+        }
+        return condition;
+    }
 
     /**
      * Creates a {@link TrackingToken} that is at the first position of an event stream.
