@@ -361,3 +361,5 @@ recipeList:
   # `CommandGateway`. Anything outside the supported body shapes (single dispatch / try/catch with one
   # dispatch per branch) is left untouched so the build still surfaces those call sites for the human.
   - org.axonframework.migration.MigrateCommandGatewayInEventHandler
+  # EventGateway.publish(..) takes the ProcessingContext first in Axon Framework 5.
+  - org.axonframework.migration.MigrateEventGatewayPublishInHandlers

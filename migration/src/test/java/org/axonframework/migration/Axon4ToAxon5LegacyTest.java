@@ -32,6 +32,7 @@ import static java.util.Objects.requireNonNull;
 import static org.openrewrite.java.Assertions.java;
 import static org.openrewrite.java.Assertions.mavenProject;
 import static org.openrewrite.java.Assertions.srcMainJava;
+import static org.openrewrite.java.Assertions.srcTestJava;
 import static org.openrewrite.kotlin.Assertions.kotlin;
 import static org.openrewrite.kotlin.Assertions.srcMainKotlin;
 import static org.openrewrite.maven.Assertions.pomXml;
@@ -390,6 +391,170 @@ class Axon4ToAxon5LegacyTest implements RewriteTest {
                                             class Projection {
                                                 void on(Object event) {
                                                 }
+                                            }
+                                            """
+                                    )
+                            )
+                    )
+            );
+        }
+    }
+
+    @Nested
+    class PrivateHelperMigration {
+
+        @Test
+        void passesTheDispatcherIntoPrivateHelpersThatUseTheGateway() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.commandhandling.gateway.CommandGateway;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.springframework.beans.factory.annotation.Autowired;
+
+                            class OrderSaga {
+                                @Autowired
+                                private transient CommandGateway commandGateway;
+                                private boolean paid;
+
+                                @SagaEventHandler(associationProperty = "orderId")
+                                void on(Object event) {
+                                    paid = true;
+                                    proceed("o-1");
+                                }
+
+                                @SagaEventHandler(associationProperty = "orderId")
+                                void onFailure(Object event) {
+                                    compensate("o-1", "failed");
+                                }
+
+                                private void proceed(String orderId) {
+                                    if (paid) {
+                                        commandGateway.send(new Object());
+                                    }
+                                }
+
+                                private void compensate(String orderId, String reason) {
+                                    commandGateway.sendAndWait(new Object());
+                                    proceed(orderId);
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.common.FutureUtils;
+                            import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+
+                            class OrderSaga {
+                                private boolean paid;
+
+                                @SagaEventHandler(associationProperty = "orderId")
+                                void on(Object event, CommandDispatcher commandDispatcher) {
+                                    paid = true;
+                                    proceed("o-1", commandDispatcher);
+                                }
+
+                                @SagaEventHandler(associationProperty = "orderId")
+                                void onFailure(Object event, CommandDispatcher commandDispatcher) {
+                                    compensate("o-1", "failed", commandDispatcher);
+                                }
+
+                                private void proceed(String orderId, CommandDispatcher commandDispatcher) {
+                                    if (paid) {
+                                        commandDispatcher.send(new Object());
+                                    }
+                                }
+
+                                private void compensate(String orderId, String reason, CommandDispatcher commandDispatcher) {
+                                    FutureUtils.joinAndUnwrap(commandDispatcher.send(new Object()).getResultMessage());
+                                    proceed(orderId, commandDispatcher);
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+    }
+
+    @Nested
+    class SagaTestFixtureMigration {
+
+        @Test
+        void keepsSagaTestFixtureAddsAxonLegacyTestAndATearDown() {
+            rewriteRun(
+                    Axon4ToAxon5LegacyTest::ignoreUnpublishedTargetVersionWarning,
+                    mavenProject(
+                            "rental",
+                            pomXml(
+                            """
+                            <project>
+                                <modelVersion>4.0.0</modelVersion>
+                                <groupId>com.example</groupId>
+                                <artifactId>rental</artifactId>
+                                <version>1.0.0</version>
+                            </project>
+                            """,
+                            """
+                            <project>
+                                <modelVersion>4.0.0</modelVersion>
+                                <groupId>com.example</groupId>
+                                <artifactId>rental</artifactId>
+                                <version>1.0.0</version>
+                                <dependencies>
+                                    <dependency>
+                                        <groupId>org.axonframework</groupId>
+                                        <artifactId>axon-legacy-test</artifactId>
+                                        <version>%s</version>
+                                        <scope>test</scope>
+                                    </dependency>
+                                </dependencies>
+                            </project>
+                            """.formatted(AXON_VERSION)
+                            ),
+                            srcTestJava(
+                                    java(
+                                            """
+                                            package com.example;
+
+                                            import org.axonframework.test.saga.SagaTestFixture;
+                                            import org.junit.jupiter.api.BeforeEach;
+
+                                            class PaymentSagaTest {
+                                                private SagaTestFixture<PaymentSaga> fixture;
+
+                                                @BeforeEach
+                                                void setUp() {
+                                                    fixture = new SagaTestFixture<>(PaymentSaga.class);
+                                                }
+                                            }
+                                            class PaymentSaga {
+                                            }
+                                            """,
+                                            """
+                                            package com.example;
+
+                                            import org.axonframework.test.saga.SagaTestFixture;
+                                            import org.junit.jupiter.api.AfterEach;
+                                            import org.junit.jupiter.api.BeforeEach;
+
+                                            class PaymentSagaTest {
+                                                private SagaTestFixture<PaymentSaga> fixture;
+
+                                                @BeforeEach
+                                                void setUp() {
+                                                    fixture = new SagaTestFixture<>(PaymentSaga.class);
+                                                }
+
+                                                @AfterEach
+                                                void tearDown() {
+                                                    fixture.stop();
+                                                }
+                                            }
+                                            class PaymentSaga {
                                             }
                                             """
                                     )
