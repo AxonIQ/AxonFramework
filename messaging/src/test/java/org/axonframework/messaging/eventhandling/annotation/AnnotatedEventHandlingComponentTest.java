@@ -111,6 +111,44 @@ class AnnotatedEventHandlingComponentTest {
     }
 
     @Test
+    void subscribesEventHandlerWithVersionRange() {
+        AtomicInteger invocationCount = new AtomicInteger(0);
+        Object annotatedEventHandler = new Object() {
+            @SuppressWarnings("unused")
+            @EventHandler(eventName = "myEventName", versionRange = "1.0-2.0")
+            public void handle(String event) {
+                invocationCount.incrementAndGet();
+            }
+        };
+        MessageTypeResolver messageTypeResolver = spy(new AnnotationMessageTypeResolver());
+        AnnotatedEventHandlingComponent<Object> annotatedComponent = new AnnotatedEventHandlingComponent<>(
+                annotatedEventHandler,
+                ClasspathParameterResolverFactory.forClass(annotatedEventHandler.getClass()),
+                ClasspathHandlerDefinition.forClass(annotatedEventHandler.getClass()),
+                messageTypeResolver,
+                new DelegatingEventConverter(PassThroughConverter.INSTANCE)
+        );
+
+        // Within range
+        org.axonframework.messaging.eventhandling.EventMessage testEvent = 
+                new org.axonframework.messaging.eventhandling.GenericEventMessage(new MessageType("myEventName", "1.5"), "payload");
+        org.axonframework.messaging.core.MessageStream.Empty resultStream =
+                annotatedComponent.handle(testEvent, org.axonframework.messaging.core.unitofwork.StubProcessingContext.forMessage(testEvent));
+        
+        resultStream.isCompleted(); // trigger evaluation
+        assertEquals(1, invocationCount.get());
+        
+        // Outside range
+        org.axonframework.messaging.eventhandling.EventMessage outOfRangeEvent = 
+                new org.axonframework.messaging.eventhandling.GenericEventMessage(new MessageType("myEventName", "2.5"), "payload");
+        org.axonframework.messaging.core.MessageStream.Empty outOfRangeStream =
+                annotatedComponent.handle(outOfRangeEvent, org.axonframework.messaging.core.unitofwork.StubProcessingContext.forMessage(outOfRangeEvent));
+        
+        outOfRangeStream.isCompleted(); // trigger evaluation
+        assertEquals(1, invocationCount.get()); // Should NOT increment!
+    }
+
+    @Test
     void subscribesEventHandlerThroughMessageTypeResolverWhenEventNameIsEmpty() {
         QualifiedName expectedName = new QualifiedName("defaultName");
 
