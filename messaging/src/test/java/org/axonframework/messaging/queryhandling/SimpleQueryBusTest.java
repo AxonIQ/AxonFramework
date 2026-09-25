@@ -112,16 +112,16 @@ class SimpleQueryBusTest {
             testSubject.subscribe(QUERY_NAME, SINGLE_RESPONSE_HANDLER);
             // then...
             testSubject.describeTo(testDescriptor);
-            Map<QualifiedName, QueryHandler> subscriptions = testDescriptor.getProperty("subscriptions");
+            Map<QualifiedName, List<QueryHandler>> subscriptions = testDescriptor.getProperty("subscriptions");
             assertThat(subscriptions.size()).isEqualTo(1);
-            assertThat(subscriptions).containsValue(SINGLE_RESPONSE_HANDLER);
+            assertThat(subscriptions.get(QUERY_NAME)).contains(SINGLE_RESPONSE_HANDLER);
             // when second subscription with different query name...
             testSubject.subscribe(new QualifiedName("test2"), SINGLE_RESPONSE_HANDLER);
             // then...
             testSubject.describeTo(testDescriptor);
             subscriptions = testDescriptor.getProperty("subscriptions");
             assertThat(subscriptions.size()).isEqualTo(2);
-            assertThat(subscriptions).containsValue(SINGLE_RESPONSE_HANDLER);
+            assertThat(subscriptions.get(QUERY_NAME)).contains(SINGLE_RESPONSE_HANDLER);
 
             // when third subscription with the same query name...
             testSubject.subscribe(QUERY_NAME, SINGLE_RESPONSE_HANDLER);
@@ -1180,6 +1180,63 @@ class SimpleQueryBusTest {
             // then only the subscription whose sealExceptionally() succeeded is counted...
             assertThat(completedCount).isEqualTo(1);
         }
+    }
+
+    @Test
+    void overlappingRegistrationIsRejected() {
+        var handler1 = mock(QueryHandler.class);
+        when(handler1.supportedVersions()).thenReturn(org.axonframework.messaging.core.VersionSpecifier.range("1.0", "3.0"));
+
+        var handler2 = mock(QueryHandler.class);
+        when(handler2.supportedVersions()).thenReturn(org.axonframework.messaging.core.VersionSpecifier.range("2.0", "4.0"));
+
+        testSubject.subscribe(QUERY_NAME, handler1);
+        assertThrows(DuplicateQueryHandlerSubscriptionException.class,
+                     () -> testSubject.subscribe(QUERY_NAME, handler2));
+    }
+
+    @Test
+    void nonOverlappingRegistrationIsAllowedAndDispatchesCorrectly() throws Exception {
+        var handler1 = new QueryHandler() {
+            @Override
+            public MessageStream<QueryResponseMessage> handle(QueryMessage message, ProcessingContext context) {
+                return MessageStream.just(new GenericQueryResponseMessage(RESPONSE_TYPE, "V1"));
+            }
+            @Override
+            public org.axonframework.messaging.core.VersionSpecifier supportedVersions() {
+                return org.axonframework.messaging.core.VersionSpecifier.range("1.0", "1.9");
+            }
+        };
+        var handler2 = new QueryHandler() {
+            @Override
+            public MessageStream<QueryResponseMessage> handle(QueryMessage message, ProcessingContext context) {
+                return MessageStream.just(new GenericQueryResponseMessage(RESPONSE_TYPE, "V2"));
+            }
+            @Override
+            public org.axonframework.messaging.core.VersionSpecifier supportedVersions() {
+                return org.axonframework.messaging.core.VersionSpecifier.range("2.0", "2.9");
+            }
+        };
+
+        testSubject.subscribe(QUERY_NAME, handler1);
+        testSubject.subscribe(QUERY_NAME, handler2);
+
+        // Dispatch V1 query
+        QueryMessage queryV1 = new GenericQueryMessage(new MessageType(QUERY_NAME, "1.5"), QUERY_PAYLOAD);
+        var actualV1 = testSubject.query(queryV1, null).first().asCompletableFuture().join();
+        assertThat(actualV1).isNotNull();
+        assertThat(actualV1.message().payload()).isEqualTo("V1");
+
+        // Dispatch V2 query
+        QueryMessage queryV2 = new GenericQueryMessage(new MessageType(QUERY_NAME, "2.1"), QUERY_PAYLOAD);
+        var actualV2 = testSubject.query(queryV2, null).first().asCompletableFuture().join();
+        assertThat(actualV2).isNotNull();
+        assertThat(actualV2.message().payload()).isEqualTo("V2");
+
+        // Dispatch V3 query (no handler)
+        QueryMessage queryV3 = new GenericQueryMessage(new MessageType(QUERY_NAME, "3.0"), QUERY_PAYLOAD);
+        var resultV3 = testSubject.query(queryV3, null);
+        assertThat(resultV3.error()).containsInstanceOf(NoHandlerForQueryException.class);
     }
 
     /**
