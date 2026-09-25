@@ -60,6 +60,9 @@ recipeList:
   - org.axonframework.migration.Axon4ToAxon5Bom
 
   # ── 4. Core framework module migrations ─────────────────────────────────
+  # Legacy runs before messaging so Saga-specific CommandGateway handling is
+  # complete before the general @EventHandler recipe is applied.
+  - org.axonframework.migration.Axon4ToAxon5Legacy
   - org.axonframework.migration.Axon4ToAxon5Common
   - org.axonframework.migration.Axon4ToAxon5Conversion
   - org.axonframework.migration.Axon4ToAxon5Messaging
