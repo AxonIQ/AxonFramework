@@ -56,6 +56,7 @@ import org.springframework.beans.factory.support.AbstractBeanDefinition;
 import org.springframework.beans.factory.support.BeanDefinitionBuilder;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.core.ResolvableType;
+import org.springframework.util.ClassUtils;
 
 import java.lang.invoke.MethodHandles;
 import java.util.ArrayList;
@@ -111,6 +112,14 @@ public class SpringComponentRegistry implements
      */
     private static final String CONFIGURATION_PROPERTIES_BINDING_QUALIFIER =
             "org.springframework.boot.context.properties.ConfigurationPropertiesBinding";
+
+    /**
+     * The type of Spring Boot's {@code ConfigurationPropertiesBindHandlerAdvisor}. Used by
+     * {@link #shouldDeferInitialization(String)} to detect advisor beans without a compile-time dependency on Spring
+     * Boot.
+     */
+    private static final String CONFIGURATION_PROPERTIES_BIND_HANDLER_ADVISOR_TYPE =
+            "org.springframework.boot.context.properties.ConfigurationPropertiesBindHandlerAdvisor";
 
     private final SpringLifecycleRegistry lifecycleRegistry;
 
@@ -334,6 +343,7 @@ public class SpringComponentRegistry implements
     public Object postProcessAfterInitialization(Object bean,
                                                  String beanName) throws BeansException {
         if (!initialized.get() && shouldDeferInitialization(beanName)) {
+            logger.debug("Deferring initialization while post processing bean with name [{}].", beanName);
             return bean;
         }
         // Ensure this ComponentRegistry is fully initialized, as this may set additional components and decorators.
@@ -387,6 +397,14 @@ public class SpringComponentRegistry implements
      * {@code BeanCurrentlyInCreationException}. Deferring on this qualifier keeps such converters from ever being the
      * bean that triggers {@link #initialize()} mid-construction.
      * <p>
+     * For the same reason, initialization is deferred for <b>any</b> bean while a Spring Boot
+     * {@code ConfigurationPropertiesBindHandlerAdvisor} is still in creation. Spring Boot resolves every advisor
+     * whenever it binds {@code @ConfigurationProperties}, so an advisor is typically created in the middle of the first
+     * binding. The bean that triggers {@link #initialize()} is then not the advisor itself, but a bean it depends on,
+     * such as the configuration class declaring it (Spring Cloud's {@code CommonsConfigAutoConfiguration}, for
+     * example). Any binding a {@link ConfigurationEnhancer} triggers at that point re-enters the still-in-creation
+     * advisor.
+     * <p>
      * The qualifier is matched via {@link BeanFactoryAnnotationUtils#isQualifierMatch} against the literal qualifier
      * value rather than the annotation type, since this module has no compile-time dependency on Spring Boot.
      * <p>
@@ -398,6 +416,9 @@ public class SpringComponentRegistry implements
      * otherwise
      */
     private boolean shouldDeferInitialization(String beanName) {
+        if (isBindHandlerAdvisorInCreation()) {
+            return true;
+        }
         if (!beanFactory.containsBeanDefinition(beanName)) {
             return false;
         }
@@ -407,6 +428,21 @@ public class SpringComponentRegistry implements
         return BeanFactoryAnnotationUtils.isQualifierMatch(
                 CONFIGURATION_PROPERTIES_BINDING_QUALIFIER::equals, beanName, beanFactory
         );
+    }
+
+    private boolean isBindHandlerAdvisorInCreation() {
+        ClassLoader classLoader = beanFactory.getBeanClassLoader();
+        if (!ClassUtils.isPresent(CONFIGURATION_PROPERTIES_BIND_HANDLER_ADVISOR_TYPE, classLoader)) {
+            return false;
+        }
+        Class<?> advisorType = ClassUtils.resolveClassName(CONFIGURATION_PROPERTIES_BIND_HANDLER_ADVISOR_TYPE,
+                                                           classLoader);
+        for (String advisorName : beanFactory.getBeanNamesForType(advisorType, true, false)) {
+            if (beanFactory.isCurrentlyInCreation(advisorName)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
