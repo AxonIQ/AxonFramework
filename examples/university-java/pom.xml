@@ -30,7 +30,7 @@
     <description>Plain Java Example application for demo and integration testing.</description>
 
     <properties>
-        <jackson.version>2.22.2</jackson.version>
+        <jackson.version>2.22.3</jackson.version>
     </properties>
 
     <dependencyManagement>
