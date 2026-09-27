@@ -39,7 +39,7 @@
         circular reference between applicationTaskExecutor and Axon's UnitOfWorkFactory; 4.1.1 resolves it.
         -->
         <spring.boot.version>4.1.1</spring.boot.version>
-        <jackson.version>3.2.2</jackson.version>
+        <jackson.version>3.2.3</jackson.version>
         <archunit.version>1.5.0</archunit.version>
     </properties>
 
