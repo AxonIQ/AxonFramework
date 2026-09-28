@@ -30,7 +30,7 @@ import static org.axonframework.common.Assert.notNull;
  * Describes the scope of an Aggregate by means of its type and identifier.
  * <p>
  * This is the aggregate counterpart of {@link org.axonframework.modelling.saga.SagaScopeDescriptor}. A
- * {@link org.axonframework.deadline.DeadlineManager} stores the descriptor a deadline was scheduled against, so on
+ * {@code DeadlineManager} stores the descriptor a deadline was scheduled against, so on
  * expiry it can tell an aggregate-scoped deadline from a saga-scoped one and resolve the right target. The two are
  * distinct types and never compare equal, even when their {@code type} and {@code identifier} coincide.
  * <p>

@@ -18,9 +18,11 @@ package org.axonframework.modelling.saga;
 
 import org.axonframework.common.Assert;
 import org.axonframework.common.infra.ComponentDescriptor;
+import org.axonframework.messaging.core.CurrentScope;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.QualifiedName;
+import org.axonframework.messaging.core.ScopeDescriptor;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.core.interception.annotation.MessageHandlerInterceptorMemberChain;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
@@ -151,10 +153,17 @@ public class AnnotatedSaga<T> implements Saga<T>, SagaLifecycle {
 
     /**
      * Returns the given {@code context} with this Saga registered as the active {@link SagaLifecycle}, which is what a
-     * handler declaring a {@code SagaLifecycle} parameter resolves against.
+     * handler declaring a {@code SagaLifecycle} parameter resolves against, and with a {@link SagaScopeDescriptor} for
+     * this Saga instance registered as the {@link CurrentScope}, which is what a handler declaring a
+     * {@link ScopeDescriptor} parameter resolves against.
+     * <p>
+     * The type used for the {@link SagaScopeDescriptor} is the simple class name of {@link #sagaInstance}, matching
+     * the exact convention {@link AbstractSagaManager#canResolve(ScopeDescriptor)} already compares against.
      */
     private ProcessingContext sagaContext(ProcessingContext context) {
-        return context.withResource(SagaLifecycle.RESOURCE_KEY, this);
+        return context.withResource(SagaLifecycle.RESOURCE_KEY, this)
+                       .withResource(CurrentScope.RESOURCE_KEY,
+                                     new SagaScopeDescriptor(sagaInstance.getClass().getSimpleName(), sagaId));
     }
 
     /**
