@@ -477,6 +477,11 @@ class SagaManagerTest {
             return singleton(associationValue);
         }
 
+        @Override
+        protected EventMessage withHandlerPayload(EventMessage event, ProcessingContext context) {
+            return event;
+        }
+
         public static class Builder extends AbstractSagaManager.Builder<Object> {
 
             private SagaCreationPolicy sagaCreationPolicy = SagaCreationPolicy.NONE;

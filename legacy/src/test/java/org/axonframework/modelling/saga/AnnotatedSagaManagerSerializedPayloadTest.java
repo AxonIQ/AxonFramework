@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2010-2026. Axon Framework
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.axonframework.modelling.saga;
 
 import org.axonframework.common.FutureUtils;
@@ -10,6 +26,7 @@ import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.messaging.eventhandling.conversion.EventConverter;
 import org.axonframework.modelling.saga.AnnotatedSagaManagerTest.MyTestSaga;
 import org.axonframework.modelling.saga.AnnotatedSagaManagerTest.StartingEvent;
+import org.axonframework.modelling.saga.AnnotatedSagaManagerTest.UnrelatedDomainEvent;
 import org.axonframework.modelling.saga.repository.AnnotatedSagaRepository;
 import org.axonframework.modelling.saga.repository.inmemory.InMemorySagaStore;
 import org.junit.jupiter.api.AfterEach;
@@ -68,6 +85,18 @@ class AnnotatedSagaManagerSerializedPayloadTest {
         handle(new GenericEventMessage(new MessageType(StartingEvent.class), new StartingEvent("456")));
 
         assertThat(sagaStore.findSagas(MyTestSaga.class, new AssociationValue("myIdentifier", "456"))).hasSize(1);
+    }
+
+    @Test
+    void aSerializedEventWithoutADeclaredHandlerPassesThroughUnconverted() {
+        // given a byte[] payload under a name no handler of the saga declares
+        EventMessage stored = new GenericEventMessage(new MessageType(UnrelatedDomainEvent.class), new byte[]{1, 2, 3});
+
+        // when
+        handle(stored);
+
+        // then no conversion was attempted and no saga was started
+        assertThat(sagaStore.size()).isZero();
     }
 
     private void handle(EventMessage event) {

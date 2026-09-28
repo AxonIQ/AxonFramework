@@ -135,6 +135,25 @@ class AnnotationSagaMetaModelFactoryTest {
         }
     }
 
+    @Nested
+    class PayloadTypeFor {
+
+        @Test
+        void returnsTheHandlerPayloadTypeForADeclaredEventName() {
+            SagaModel<MySaga> sagaModel = testSubject.modelOf(MySaga.class);
+
+            assertThat(sagaModel.payloadTypeFor(new QualifiedName(MySagaStartEvent.class)))
+                    .contains(MySagaStartEvent.class);
+        }
+
+        @Test
+        void returnsEmptyForAnEventNameWithoutAHandler() {
+            SagaModel<MySaga> sagaModel = testSubject.modelOf(MySaga.class);
+
+            assertThat(sagaModel.payloadTypeFor(new QualifiedName(String.class))).isEmpty();
+        }
+    }
+
     public static class MySaga {
 
         @StartSaga

@@ -217,13 +217,11 @@ public abstract class AbstractSagaManager<T> implements EventHandlingComponent, 
      * on the payload's runtime type, so without this step every such event is ignored. Events whose payload already
      * has the handler's type, and events no handler is declared for, are returned unchanged.
      *
-     * @param event   The event to convert.
-     * @param context The {@link ProcessingContext} providing the {@link EventConverter}.
+     * @param event   the event to convert
+     * @param context the {@link ProcessingContext} providing the {@link org.axonframework.messaging.eventhandling.conversion.EventConverter}
      * @return the event with a converted payload, or the given event
      */
-    protected EventMessage withHandlerPayload(EventMessage event, ProcessingContext context) {
-        return event;
-    }
+    protected abstract EventMessage withHandlerPayload(EventMessage event, ProcessingContext context);
 
     /**
      * Indicates whether a Saga of the given {@code sagaType} has a handler for the given {@code event}.
