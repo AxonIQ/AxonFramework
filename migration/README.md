@@ -56,7 +56,7 @@ After the migration run, search for every such location with:
   `EventCountSnapshotTriggerDefinition(snapshotter, N)` → `@Snapshotting(afterEvents = N)`;
   `AggregateLoadTimeSnapshotTriggerDefinition(snapshotter, millis)` → `@Snapshotting(afterSourcingTime = "PTxS")`.
   Custom implementations that cannot be inferred automatically receive a `// TODO(axon4to5):` comment instead.
-- **Test fixtures**: replaces `AggregateTestFixture`/`SagaTestFixture` with `AxonTestFixture` and rewrites the fluent
+- **Test fixtures**: replaces `AggregateTestFixture` with `AxonTestFixture` (saga tests keep `SagaTestFixture`, from `axon-legacy-test`) and rewrites the fluent
   Given-When-Then chain to the new phase-aware API.
 - **Commercial path** (`UpgradeAxon4ToAxoniq5` only): additionally re-namespaces Axon Server connector, DLQ,
   distributed-messaging, and Testcontainer classes from `org.axonframework.*` to `io.axoniq.framework.*` and swaps the
@@ -69,12 +69,16 @@ After the migration run, search for every such location with:
 Run a top-level recipe against a target project with the Maven plugin:
 
 ```bash
-mvn -U org.openrewrite.maven:rewrite-maven-plugin:run \
+mvn -U org.openrewrite.maven:rewrite-maven-plugin:6.46.1:run \
   -Drewrite.recipeArtifactCoordinates=org.axonframework:axon-migration:5.2.0 \
   -Drewrite.activeRecipes=io.axoniq.framework.migration.UpgradeAxon4ToAxoniq5
 ```
 
 Replace the recipe name with `org.axonframework.migration.UpgradeAxon4ToAxoniq5` for the non-commercial path.
+
+Keep the plugin version at 6.46.1 or newer. An older plugin (6.29.0 for example) fails inside the recipe with a
+`NoSuchMethodError` and then deletes every source file of the project. Run on a clean git working tree, so a bad run
+is one `git checkout .` away.
 
 ### Gradle
 

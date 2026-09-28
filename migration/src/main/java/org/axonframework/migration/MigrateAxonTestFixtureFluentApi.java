@@ -89,6 +89,11 @@ public class MigrateAxonTestFixtureFluentApi extends Recipe {
         return new JavaIsoVisitor<ExecutionContext>() {
             @Override
             public J.MethodInvocation visitMethodInvocation(J.MethodInvocation method, ExecutionContext ctx) {
+                if (usesSagaTestFixture()) {
+                    // SagaTestFixture keeps its Axon Framework 4 fluent API in axon-legacy-test. Rewriting its
+                    // chain into the AxonTestFixture phases does not compile there.
+                    return method;
+                }
                 J.MethodInvocation mi = super.visitMethodInvocation(method, ctx);
 
                 Expression select = mi.getSelect();
@@ -377,6 +382,37 @@ public class MigrateAxonTestFixtureFluentApi extends Recipe {
              * treat the escaped and unescaped forms as equivalent — the recipe's
              * semantic identity is the bare keyword.
              */
+
+            private static final String SAGA_TEST_FIXTURE = "org.axonframework.test.saga.SagaTestFixture";
+
+            private boolean usesSagaTestFixture() {
+                SourceFile sourceFile = getCursor().firstEnclosing(SourceFile.class);
+                if (sourceFile == null) {
+                    return false;
+                }
+                Boolean cached = getCursor().getRoot().getMessage(SAGA_TEST_FIXTURE);
+                if (cached != null) {
+                    return cached;
+                }
+                boolean uses = false;
+                if (sourceFile instanceof J.CompilationUnit cu) {
+                    for (J.Import anImport : cu.getImports()) {
+                        if (SAGA_TEST_FIXTURE.equals(anImport.getTypeName())) {
+                            uses = true;
+                            break;
+                        }
+                    }
+                } else if (sourceFile instanceof K.CompilationUnit kcu) {
+                    for (J.Import anImport : kcu.getImports()) {
+                        if (SAGA_TEST_FIXTURE.equals(anImport.getTypeName())) {
+                            uses = true;
+                            break;
+                        }
+                    }
+                }
+                getCursor().getRoot().putMessage(SAGA_TEST_FIXTURE, uses);
+                return uses;
+            }
             private String unescapeBackticks(String name) {
                 if (name.length() >= 2 && name.charAt(0) == '`'
                         && name.charAt(name.length() - 1) == '`') {

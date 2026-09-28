@@ -21,8 +21,9 @@ type: specs.openrewrite.org/v1beta/recipe
 name: org.axonframework.migration.Axon4ToAxon5Test
 displayName: Apply Axon Framework 5 test module renames
 description: >-
-  Renames `AggregateTestFixture` and `SagaTestFixture` to the unified
-  `AxonTestFixture` introduced in Axon Framework 5, and rewrites AF4-style
+  Renames `AggregateTestFixture` to the unified `AxonTestFixture` introduced
+  in Axon Framework 5 (`SagaTestFixture` stays, ported by `axon-legacy-test`),
+  and rewrites AF4-style
   flat fixture call chains (`fixture.given(...).when(...).expectEvents(...)`)
   to the AF5 fluent given/when/then API
   (`fixture.given().events(...).when().command(...).then().events(...)`).
@@ -33,9 +34,8 @@ description: >-
 recipeList:
   # Aggregate-fixture *setup* rewrite — must run BEFORE the
   # `AggregateTestFixture` → `AxonTestFixture` `ChangeType` below so the AF4
-  # type is still on the constructor expression and so SagaTestFixture
-  # constructor sites stay untouched (they share the renamed AF5 type after
-  # ChangeType, but only the AF4 AggregateTestFixture FQN is matched here).
+  # type is still on the constructor expression. SagaTestFixture constructor
+  # sites are never touched: that type is not renamed.
   # Reads the aggregate-id type from the cross-recipe map populated by
   # `AddEventTagAnnotation` while `@AggregateIdentifier` is still on the source.
   - org.axonframework.migration.MigrateAggregateTestFixtureSetup
@@ -45,9 +45,9 @@ recipeList:
   - org.openrewrite.java.ChangeType:
       oldFullyQualifiedTypeName: org.axonframework.test.aggregate.AggregateTestFixture
       newFullyQualifiedTypeName: org.axonframework.test.fixture.AxonTestFixture
-  - org.openrewrite.java.ChangeType:
-      oldFullyQualifiedTypeName: org.axonframework.test.saga.SagaTestFixture
-      newFullyQualifiedTypeName: org.axonframework.test.fixture.AxonTestFixture
+  # `SagaTestFixture` is NOT renamed: `axon-legacy-test` ports it for sagas that
+  # keep running on `axon-legacy`. `Axon4ToAxon5Legacy` adds that dependency and
+  # the `@AfterEach` tear-down the ported fixture needs.
   # FixtureConfiguration<T> is the interface type used as variable declarations
   # in many AF4 tests (e.g. `FixtureConfiguration<Dwelling> fixture`).
   # AF5 replaces it with the concrete AxonTestFixture — no type argument.
@@ -55,7 +55,7 @@ recipeList:
       oldFullyQualifiedTypeName: org.axonframework.test.aggregate.FixtureConfiguration
       newFullyQualifiedTypeName: org.axonframework.test.fixture.AxonTestFixture
   # AF5's AxonTestFixture is non-generic — drop the `<T>` payload parameter that
-  # AF4 used on AggregateTestFixture / SagaTestFixture / FixtureConfiguration so
+  # AF4 used on AggregateTestFixture / FixtureConfiguration so
   # call sites like `AxonTestFixture<Order>` collapse to a raw `AxonTestFixture`.
   - org.axonframework.migration.RemoveTypeArguments:
       fullyQualifiedTypeName: org.axonframework.test.fixture.AxonTestFixture

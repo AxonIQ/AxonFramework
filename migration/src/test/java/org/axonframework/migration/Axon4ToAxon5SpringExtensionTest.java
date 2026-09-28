@@ -177,4 +177,21 @@ class Axon4ToAxon5SpringExtensionTest implements RewriteTest {
                 )
         );
     }
+
+    @Test
+    void keepsTheSagaStereotypeInItsAxonFramework4Package() {
+        // axon-legacy ships @Saga as org.axonframework.spring.stereotype.Saga. The package moves skip stereotype.
+        rewriteRun(
+                java(
+                        """
+                        import org.axonframework.spring.stereotype.Saga;
+
+                        @Saga
+                        class PaymentSaga {
+                        }
+                        """
+                )
+        );
+    }
+
 }
