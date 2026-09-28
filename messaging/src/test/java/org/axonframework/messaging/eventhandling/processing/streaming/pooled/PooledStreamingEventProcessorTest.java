@@ -271,8 +271,7 @@ class PooledStreamingEventProcessorTest {
     @Test
     @Timeout(10)
     void mergedTokenDoesNotReprocessEventsAlreadyHandledByTheFurthestSegment() {
-        // Reproducer for AxonIQ/AxonFramework#5079: ported from the AF4 TrackingEventProcessor regression test in
-        // .ai/PAtch-AF4lts-regressiontest, adapted to PSEP's WorkPackage/AsyncInMemoryStreamableEventSource.
+        // Reproducer for AxonIQ/AxonFramework#5079.
         //
         // The payload doubles as the sequence identifier, so even payloads belong to the (pre-merge) lower segment
         // and odd payloads to the upper segment. AsyncInMemoryStreamableEventSource assigns the event carrying
@@ -317,9 +316,9 @@ class PooledStreamingEventProcessorTest {
                          .boxed()
                          .collect(Collectors.toList());
         List<Integer> handledPayloads = recordingComponent.recorded()
-                                                           .stream()
-                                                           .map(m -> (Integer) m.payload())
-                                                           .collect(Collectors.toList());
+                                                          .stream()
+                                                          .map(m -> (Integer) m.payload())
+                                                          .collect(Collectors.toList());
         assertThat(handledPayloads).containsExactlyElementsOf(expectedPayloads);
     }
 
