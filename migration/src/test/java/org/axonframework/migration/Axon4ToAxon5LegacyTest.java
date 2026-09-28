@@ -266,6 +266,61 @@ class Axon4ToAxon5LegacyTest implements RewriteTest {
                     )
             );
         }
+
+        @Test
+        void passesTheDispatcherIntoPrivateHelpersThatUseTheGateway() {
+            rewriteRun(
+                    kotlin(
+                            """
+                            package com.example
+
+                            import org.axonframework.commandhandling.gateway.CommandGateway
+                            import org.axonframework.modelling.saga.SagaEventHandler
+
+                            class OrderSaga {
+                                private lateinit var commandGateway: CommandGateway
+
+                                @SagaEventHandler(associationProperty = "orderId")
+                                fun on(event: Any) {
+                                    proceed("o-1")
+                                }
+
+                                private fun proceed(orderId: String) {
+                                    commandGateway.send(orderId)
+                                    compensate(orderId)
+                                }
+
+                                private fun compensate(orderId: String) {
+                                    commandGateway.sendAndWait<Any>(orderId)
+                                }
+                            }
+                            """,
+                            """
+                            package com.example
+
+                            import org.axonframework.common.FutureUtils
+                            import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher
+                            import org.axonframework.modelling.saga.SagaEventHandler
+
+                            class OrderSaga {
+                                @SagaEventHandler(associationProperty = "orderId")
+                                fun on(event: Any, commandDispatcher: CommandDispatcher) {
+                                    proceed("o-1", commandDispatcher)
+                                }
+
+                                private fun proceed(orderId: String, commandDispatcher: CommandDispatcher) {
+                                    commandDispatcher.send(orderId)
+                                    compensate(orderId, commandDispatcher)
+                                }
+
+                                private fun compensate(orderId: String, commandDispatcher: CommandDispatcher) {
+                                    FutureUtils.joinAndUnwrap(commandDispatcher.send(orderId).getResultMessage())
+                                }
+                            }
+                            """
+                    )
+            );
+        }
     }
 
     @Nested

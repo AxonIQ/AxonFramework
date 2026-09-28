@@ -22,7 +22,6 @@ import org.openrewrite.Recipe;
 import org.openrewrite.SourceFile;
 import org.openrewrite.Tree;
 import org.openrewrite.TreeVisitor;
-import org.openrewrite.marker.Markers;
 import org.openrewrite.java.JavaIsoVisitor;
 import org.openrewrite.java.JavaParser;
 import org.openrewrite.java.JavaTemplate;
@@ -34,13 +33,14 @@ import org.openrewrite.java.tree.Statement;
 import org.openrewrite.java.tree.TypeUtils;
 import org.openrewrite.kotlin.KotlinParser;
 import org.openrewrite.kotlin.tree.K;
+import org.openrewrite.marker.Markers;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.LinkedHashSet;
-import java.util.HashSet;
 
 /**
  * Migrates command dispatch from an Axon Framework 4 {@code CommandGateway} field in legacy Saga event handlers to
@@ -117,10 +117,6 @@ public class MigrateCommandGatewayInSagaEventHandler extends Recipe {
                 Set<String> hadDispatcher = getCursor().getNearestMessage("axon.sagaMethodsWithDispatcher");
                 if (gatewayFieldName == null || needingDispatcher == null
                         || !needingDispatcher.contains(signatureOf(method))) {
-                    return super.visitMethodDeclaration(method, ctx);
-                }
-                // Helper methods (not handlers) are migrated for Java sources only; Kotlin helpers stay for the hand.
-                if (!isSagaEventHandler(method) && isKotlinSource()) {
                     return super.visitMethodDeclaration(method, ctx);
                 }
 
