@@ -21,6 +21,7 @@ import org.axonframework.messaging.core.annotation.HandlerDefinition;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
+import org.axonframework.messaging.eventhandling.conversion.EventConverter;
 import org.axonframework.modelling.saga.metamodel.AnnotationSagaMetaModelFactory;
 import org.axonframework.modelling.saga.metamodel.SagaModel;
 
@@ -105,6 +106,14 @@ public class AnnotatedSagaManager<T> extends AbstractSagaManager<T> {
                             ))
                             .findFirst()
                             .orElse(SagaInitializationPolicy.NONE);
+    }
+
+    @Override
+    protected EventMessage withHandlerPayload(EventMessage event, ProcessingContext context) {
+        return sagaMetaModel.payloadTypeFor(event.type().qualifiedName())
+                            .filter(type -> !type.isInstance(event.payload()))
+                            .map(type -> event.withConvertedPayload(type, context.component(EventConverter.class)))
+                            .orElse(event);
     }
 
     @SuppressWarnings("unchecked")

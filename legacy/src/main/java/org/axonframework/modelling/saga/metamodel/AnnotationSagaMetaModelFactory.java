@@ -153,6 +153,15 @@ public class AnnotationSagaMetaModelFactory implements SagaMetaModelFactory {
         }
 
         @Override
+        public Optional<Class<?>> payloadTypeFor(QualifiedName eventName) {
+            return handlers.stream()
+                           .map(MessageHandlingMember::payloadType)
+                           .filter(type -> new QualifiedName(type).equals(eventName))
+                           .<Class<?>>map(type -> type)
+                           .findFirst();
+        }
+
+        @Override
         public List<MessageHandlingMember<? super T>> findHandlerMethods(EventMessage eventMessage,
                                                                          ProcessingContext context) {
             return handlers.stream().filter(h -> h.canHandle(eventMessage, context))
