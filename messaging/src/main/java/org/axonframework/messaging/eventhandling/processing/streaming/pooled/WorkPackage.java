@@ -107,8 +107,7 @@ class WorkPackage implements SegmentProgressContext {
     private final Clock clock;
     private final SegmentProgressStrategy progressStrategy;
 
-    private TrackingToken lastDeliveredToken; // For use only by event delivery threads, like Coordinator
-    private TrackingToken mergeProgressToken; // For use only by event delivery threads, like Coordinator
+    private @Nullable TrackingToken lastDeliveredToken; // For use only by event delivery threads, like Coordinator
     private @Nullable TrackingToken lastStoredToken;
     private final AtomicLong nextClaimExtension;
 
@@ -138,7 +137,6 @@ class WorkPackage implements SegmentProgressContext {
         this.batchProcessor = builder.batchProcessor;
         this.segment = builder.segment;
         this.lastDeliveredToken = builder.initialToken;
-        this.mergeProgressToken = builder.initialToken;
         this.batchSize = builder.batchSize;
         this.claimExtensionThreshold = builder.claimExtensionThreshold;
         this.segmentStatusUpdater = builder.segmentStatusUpdater;
@@ -201,11 +199,9 @@ class WorkPackage implements SegmentProgressContext {
             return false;
         }
 
-        // All entries share one TrackingToken (asserted above), so the handling segment is resolved once per batch,
-        // not per entry: resolving it per entry would find mergeProgressToken already advanced to that shared token
-        // after the first entry, making every subsequent entry fall back to the unnarrowed segment.
+        // All entries share one TrackingToken (asserted above), so the token is advanced once per batch.
         TrackingToken eventToken = TrackingToken.fromContext(eventEntries.getFirst()).orElse(null);
-        Segment handlingSegment = resolveHandlingSegment(eventToken);
+        Segment handlingSegment = advanceLastDeliveredToken(eventToken);
 
         BatchProcessingEntry batchProcessingEntry = new BatchProcessingEntry();
         boolean canHandleAny = eventEntries.stream()
@@ -219,7 +215,6 @@ class WorkPackage implements SegmentProgressContext {
                                            .orElse(false);
 
         processingQueue.add(batchProcessingEntry);
-        lastDeliveredToken = batchProcessingEntry.trackingToken();
         // the worker must always be scheduled to ensure claims are extended
         scheduleWorker();
 
@@ -265,11 +260,10 @@ class WorkPackage implements SegmentProgressContext {
                      eventToken != null ? eventToken.position().orElse(-1) : -1,
                      segment.getSegmentId());
 
-        Segment handlingSegment = resolveHandlingSegment(eventToken);
+        Segment handlingSegment = advanceLastDeliveredToken(eventToken);
         var canHandle = canHandleMessage(eventEntry, handlingSegment);
 
         processingQueue.add(new DefaultProcessingEntry(eventEntry, canHandle, handlingSegment));
-        lastDeliveredToken = eventToken;
         // the worker must always be scheduled to ensure claims are extended
         scheduleWorker();
 
@@ -311,7 +305,7 @@ class WorkPackage implements SegmentProgressContext {
      *
      * @param eventEntry      The event entry containing the message and associated resources to evaluate.
      * @param handlingSegment The (possibly merge-narrowed) segment to evaluate the event against, as resolved by
-     *                        {@link #resolveHandlingSegment(TrackingToken)}.
+     *                        {@link #advanceLastDeliveredToken(TrackingToken)}.
      * @return {@code true} if this {@code WorkPackage} can handle the event for processing, {@code false} otherwise
      * @see #canHandle(EventMessage, ProcessingContext, Segment)
      * @see EventSchedulingProcessingContext
@@ -344,29 +338,27 @@ class WorkPackage implements SegmentProgressContext {
     }
 
     /**
-     * Resolves the {@link Segment} to test the event carrying the given {@code eventToken} against.
+     * Advances the {@link #lastDeliveredToken} to the given {@code eventToken} and returns the part of this package's
+     * {@link #segment} that the event at that position is relevant to. Leaves the {@link #lastDeliveredToken}
+     * untouched when the given {@code eventToken} is {@code null}.
      * <p>
-     * Ordinarily this is simply {@link #segment}. When this {@code WorkPackage}'s segment resulted from a merge and
-     * only one of the two pre-merge halves has not yet reached {@code eventToken}, the event is only relevant to
-     * that half: this narrows the returned {@link Segment} to that half's original (pre-merge) sub-segment, obtained
-     * via {@link Segment#split()}, so the caller's {@link EventFilter} is evaluated against the correct hash range
-     * instead of the merged, and therefore too wide, one.
-     * <p>
-     * This mirrors the segment-splitting behavior the pre-5.0 {@code TrackingEventProcessor} performed for merged
-     * tokens, reinstating it for the pooled processor.
+     * Ordinarily the returned segment is simply {@link #segment}. When this {@code WorkPackage}'s segment resulted from
+     * a merge and only one of the two pre-merge halves has not yet reached the event's position, the event is only
+     * relevant to that half: the returned {@link Segment} is then narrowed to that half's original (pre-merge)
+     * sub-segment, obtained via {@link Segment#split()}, so the caller's {@link EventFilter} is evaluated against the
+     * correct hash range instead of the merged, and therefore too wide, one.
      *
-     * @param eventToken The tracking token of the event under consideration, or {@code null} when unavailable.
-     * @return the {@link Segment} to evaluate the event against
+     * @param eventToken the tracking token of the event being scheduled, or {@code null} when unavailable
+     * @return the assigned {@link #segment}, or a pre-merge sub-segment of it
      */
-    private Segment resolveHandlingSegment(@Nullable TrackingToken eventToken) {
-        if (eventToken == null) {
-            return segment;
+    private Segment advanceLastDeliveredToken(@Nullable TrackingToken eventToken) {
+        if (eventToken != null) {
+            lastDeliveredToken = WrappedToken.advance(lastDeliveredToken, eventToken);
         }
-        mergeProgressToken = WrappedToken.advance(mergeProgressToken, eventToken);
-        return narrowSegment(mergeProgressToken, segment);
+        return narrowSegment(lastDeliveredToken, segment);
     }
 
-    private static Segment narrowSegment(TrackingToken progressToken, Segment candidateSegment) {
+    private static Segment narrowSegment(@Nullable TrackingToken progressToken, Segment candidateSegment) {
         Optional<MergedTrackingToken> merged = WrappedToken.unwrap(progressToken, MergedTrackingToken.class);
         if (merged.isEmpty()) {
             return candidateSegment;
@@ -624,16 +616,18 @@ class WorkPackage implements SegmentProgressContext {
     }
 
     /**
-     * Returns the {@link TrackingToken} of the {@link MessageStream.Entry} that was delivered in the last
-     * {@link WorkPackage#scheduleEvent(MessageStream.Entry)} call.
+     * Returns the {@link TrackingToken} representing the position up to which events have been delivered to this
+     * {@code WorkPackage}, through either {@link #scheduleEvent(MessageStream.Entry)} or {@link #scheduleEvents(List)}.
+     * This is the initial token advanced with the token of every delivered event, so it may be a wrapped token, like a
+     * {@link MergedTrackingToken}.
      * <p>
      * <b>Threading note:</b> This method is only safe to call from {@link Coordinator} threads. The {@link
      * WorkPackage} threads must not rely on this method.
      *
-     * @return the {@link TrackingToken} of the last {@link MessageStream.Entry} that was delivered to this
-     * {@code WorkPackage}
+     * @return the position up to which events have been delivered to this {@code WorkPackage}, or {@code null} when
+     * no events have been delivered and no initial token was given
      */
-    public TrackingToken lastDeliveredToken() {
+    public @Nullable TrackingToken lastDeliveredToken() {
         return lastDeliveredToken;
     }
 
@@ -1011,7 +1005,7 @@ class WorkPackage implements SegmentProgressContext {
      * the {@code WorkPackage} should ingest.
      * <p>
      * {@code handlingSegment} is ordinarily this package's own {@link #segment}, but may be a narrower, pre-merge
-     * sub-segment (see {@link #resolveHandlingSegment(TrackingToken)}) while this package's segment resulted from a
+     * sub-segment (see {@link #advanceLastDeliveredToken(TrackingToken)}) while this package's segment resulted from a
      * merge whose two halves have not yet fully converged. It is attached per-event, rather than once for the whole
      * batch, because different events in the same batch can require different sub-segments.
      */
