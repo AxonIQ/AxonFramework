@@ -34,13 +34,6 @@
     </description>
 
     <properties>
-        <sonar.coverage.jacoco.xmlReportPaths>
-            ${project.basedir}/build/coverage-report/target/site/jacoco-aggregate/jacoco.xml,
-            ${project.basedir}/../build/coverage-report/target/site/jacoco-aggregate/jacoco.xml,
-            ${project.basedir}/../../build/coverage-report/target/site/jacoco-aggregate/jacoco.xml,
-            ${project.basedir}/../../../build/coverage-report/target/site/jacoco-aggregate/jacoco.xml
-        </sonar.coverage.jacoco.xmlReportPaths>
-
         <!-- Use Mockito as a Java agent during tests to avoid dynamic self-attachment warnings on newer JDKs -->
         <mockito.agent.argLine>
             -javaagent:${settings.localRepository}/org/mockito/mockito-core/${mockito.version}/mockito-core-${mockito.version}.jar

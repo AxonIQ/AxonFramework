@@ -19,11 +19,8 @@ jobs:
       matrix:
         include:
           - java-version: 21
-            # disable sonar for now
-            sonar-enabled: false
             deploy-enabled: true
           - java-version: 25
-            sonar-enabled: false
             deploy-enabled: false
 
     steps:
@@ -41,28 +38,10 @@ jobs:
           server-password: MAVEN_PASSWORD
 
       - name: Regular Build
-        if: ${{ !matrix.sonar-enabled }}
         run: |
           ./mvnw -B -U -ntp -Dstyle.color=always clean verify \
           -Pintegration-test -Djacoco.skip=true -Dsurefire.rerunFailingTestsCount=5 -Dfailsafe.rerunFailingTestsCount=5 \
           -Dparallel=classes -DthreadCount=1 -DforkCount=2
-      - name: Build with Coverage reports
-        if: matrix.sonar-enabled
-        run: |
-          ./mvnw -B -U -ntp -Dstyle.color=always clean verify \
-          -Dcoverage -Dsurefire.rerunFailingTestsCount=5 -Dfailsafe.rerunFailingTestsCount=5 \
-          -Dparallel=classes -DthreadCount=1 -DforkCount=2
-
-      - name: Sonar Analysis
-        if: matrix.sonar-enabled
-        run: |
-          ./mvnw -B -ntp -Dstyle.color=always org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
-          -Dsonar.projectKey=AxonIQ_AxonFramework \
-          -Dsonar.organization=axoniq \
-          -Dsonar.host.url=https://sonarcloud.io \
-          -Dsonar.login=${{ secrets.SONAR_TOKEN }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Deploy to Sonatype
         if: success() && matrix.deploy-enabled

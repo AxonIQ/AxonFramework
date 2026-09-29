@@ -19,10 +19,7 @@ jobs:
       matrix:
         include:
           - java-version: 21
-            # disable sonar for now
-            sonar-enabled: false
           - java-version: 25
-            sonar-enabled: false
 
     steps:
       - name: Checkout code
@@ -39,29 +36,10 @@ jobs:
           server-password: MAVEN_PASSWORD
 
       - name: Regular Build
-        if: ${{ !matrix.sonar-enabled }}
         run: |
           ./mvnw -B -U -ntp -Dstyle.color=always -Pintegration-test -Djacoco.skip=true clean verify \
           -Dsurefire.rerunFailingTestsCount=5 -Dfailsafe.rerunFailingTestsCount=5 \
           -Dparallel=classes -DthreadCount=1 -DforkCount=2
-
-      - name: Build with Coverage reports
-        if: matrix.sonar-enabled
-        run: |
-          ./mvnw -B -U -ntp -Dstyle.color=always -Dcoverage clean verify \
-          -Dsurefire.rerunFailingTestsCount=5 -Dfailsafe.rerunFailingTestsCount=5 \
-          -Dparallel=classes -DthreadCount=1 -DforkCount=2
-
-      - name: Sonar Analysis
-        if: ${{ success() && matrix.sonar-enabled && github.event.pull_request.head.repo.full_name == github.repository }}
-        run: |
-          ./mvnw -B -ntp -Dstyle.color=always org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
-          -Dsonar.projectKey=AxonIQ_AxonFramework \
-          -Dsonar.organization=axoniq \
-          -Dsonar.host.url=https://sonarcloud.io \
-          -Dsonar.login=${{ secrets.SONAR_TOKEN }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create test summary
         uses: test-summary/action@v2
