@@ -16,9 +16,12 @@
 
 package org.axonframework.deadline;
 
+import org.axonframework.common.Registration;
 import org.axonframework.messaging.core.ContextAwareScope;
 import org.axonframework.messaging.core.GenericMessage;
 import org.axonframework.messaging.core.Message;
+import org.axonframework.messaging.core.MessageDispatchInterceptor;
+import org.axonframework.messaging.core.MessageHandlerInterceptor;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.ScopeDescriptor;
@@ -487,6 +490,45 @@ class AbstractDeadlineManagerTest {
             assertThat(testSubject.scheduled).singleElement()
                                              .extracting(ScheduledCall::message)
                                              .isNull();
+        }
+    }
+
+    @Nested
+    class InterceptorRegistration {
+
+        /**
+         * As in Axon Framework 4, an interceptor for any supertype of {@link DeadlineMessage} can be registered, for
+         * both dispatch and handling, so a single interceptor for all messages can be shared with the buses.
+         */
+        @Test
+        void interceptorsForAnyMessageCanBeRegisteredForDispatchAndHandling() {
+            // given
+            MessageDispatchInterceptor<Message> dispatchInterceptor = (message, context, chain) ->
+                    chain.proceed(message, context);
+            MessageHandlerInterceptor<Message> handlerInterceptor = (message, context, chain) ->
+                    chain.proceed(message, context);
+
+            // when
+            testSubject.registerDispatchInterceptor(dispatchInterceptor);
+            testSubject.registerHandlerInterceptor(handlerInterceptor);
+
+            // then
+            assertThat(testSubject.dispatchInterceptors()).containsExactly(dispatchInterceptor);
+            assertThat(testSubject.handlerInterceptors()).containsExactly(handlerInterceptor);
+        }
+
+        @Test
+        void cancellingARegistrationRemovesTheInterceptor() {
+            // given
+            MessageHandlerInterceptor<DeadlineMessage> handlerInterceptor = (message, context, chain) ->
+                    chain.proceed(message, context);
+            Registration registration = testSubject.registerHandlerInterceptor(handlerInterceptor);
+
+            // when
+            registration.cancel();
+
+            // then
+            assertThat(testSubject.handlerInterceptors()).isEmpty();
         }
     }
 

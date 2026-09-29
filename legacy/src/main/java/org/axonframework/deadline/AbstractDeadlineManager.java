@@ -134,14 +134,28 @@ public abstract class AbstractDeadlineManager implements DeadlineManager {
         return raced != null ? raced : created;
     }
 
+    /**
+     * Registers the given {@code dispatchInterceptor}, applied to every deadline message this manager schedules, see
+     * {@link #processDispatchInterceptors(DeadlineMessage)}.
+     *
+     * @param dispatchInterceptor the interceptor to apply to deadline messages before they are scheduled
+     * @return a {@link Registration} to cancel to unregister the interceptor again
+     */
     public Registration registerDispatchInterceptor(
             MessageDispatchInterceptor<? super DeadlineMessage> dispatchInterceptor) {
         dispatchInterceptors.add(dispatchInterceptor);
         return () -> dispatchInterceptors.remove(dispatchInterceptor);
     }
 
+    /**
+     * Registers the given {@code handlerInterceptor}, to be applied by implementations to every deadline message they
+     * hand to its handler, see {@link #handlerInterceptors()}.
+     *
+     * @param handlerInterceptor the interceptor to apply to deadline messages when they are handled
+     * @return a {@link Registration} to cancel to unregister the interceptor again
+     */
     public Registration registerHandlerInterceptor(
-            MessageHandlerInterceptor<DeadlineMessage> handlerInterceptor) {
+            MessageHandlerInterceptor<? super DeadlineMessage> handlerInterceptor) {
         handlerInterceptors.add(handlerInterceptor);
         return () -> handlerInterceptors.remove(handlerInterceptor);
     }
