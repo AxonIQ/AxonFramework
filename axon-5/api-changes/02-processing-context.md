@@ -109,8 +109,29 @@ public class OrderSaga {
 ```
 
 Old sagas that called `SagaLifecycle.associateWith(...)`, `.end()`, etc. statically from anywhere in the handler body
-need this small adjustment. The `Scope` class that backed the old `ThreadLocal` mechanism is removed entirely, since
-`SagaLifecycle` was its only remaining consumer.
+need this small adjustment. The `Scope` class that backed the old `ThreadLocal` mechanism is no longer the base class
+of `SagaLifecycle`, but it is kept for the code that described the current Saga through it, see [Scope](#scope).
+
+### Scope
+
+`Scope` (now `org.axonframework.messaging.core.Scope`) is kept in `axon-legacy` unchanged. While a handler method of a
+Saga runs, the Saga is the current `Scope`, as in Axon Framework 4: `Scope.describeCurrentScope()` returns the Saga's
+`SagaScopeDescriptor`, and a `ScopeDescriptor` handler parameter resolves to it. Unlike `SagaLifecycle`, this still uses
+a `ThreadLocal`. It is set only around the synchronous handler invocation, which is one more reason a Saga handler must
+complete on the thread that invoked it.
+
+The legacy `DeadlineManager` relies on it. Its overloads without a `ScopeDescriptor` schedule or cancel within the
+current scope and throw an `IllegalStateException` outside one, exactly as before. A call made from a Saga handler is
+deferred until the handler's `ProcessingContext` prepares its commit, whether the `DeadlineManager` is a handler
+parameter or held by a collaborator the Saga delegates to. Two things differ from Axon Framework 4:
+
+- Deferral needs a Saga invocation. Axon Framework 4 deferred every call made while a unit of work was active. There is
+  no ambient unit of work anymore, so a call made outside a Saga handler runs immediately, even from within another
+  message handler.
+- Deferred calls run in a dedicated phase, `AbstractDeadlineManager.RUN_DEADLINE_CALLS`, after the Saga is written and
+  before the commit, instead of in the prepare-commit phase itself. This keeps scheduling working for a Saga invoked
+  from within the prepare-commit phase, which is where a subscribing event processor handles events published within a
+  `ProcessingContext`.
 
 ### SagaStore
 
