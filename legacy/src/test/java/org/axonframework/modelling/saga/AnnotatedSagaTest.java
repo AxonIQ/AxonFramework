@@ -48,6 +48,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -518,6 +519,59 @@ class AnnotatedSagaTest {
                    .asCompletableFuture()
                    .orTimeout(50, TimeUnit.MILLISECONDS)
                    .join();
+        }
+    }
+
+    /**
+     * Axon Framework 4 ran {@link Saga#invoke(java.util.function.Function)} and
+     * {@link Saga#execute(java.util.function.Consumer)} with the Saga as the current scope too. There is no
+     * {@code ProcessingContext} for such a call, so the scope carries none.
+     */
+    @Nested
+    class ScopeAroundInvokeAndExecute {
+
+        @Test
+        void invokeRunsWithinTheSagasScope() {
+            // when
+            ScopeDescriptor described = testSubject.invoke(saga -> Scope.describeCurrentScope());
+
+            // then
+            assertThat(described).isEqualTo(new SagaScopeDescriptor("StubAnnotatedSaga", "id"));
+            assertThatThrownBy(Scope::getCurrentScope).isInstanceOf(IllegalStateException.class);
+        }
+
+        @Test
+        void executeRunsWithinTheSagasScope() {
+            // given
+            AtomicReference<ScopeDescriptor> described = new AtomicReference<>();
+
+            // when
+            testSubject.execute(saga -> described.set(Scope.describeCurrentScope()));
+
+            // then
+            assertThat(described.get()).isEqualTo(new SagaScopeDescriptor("StubAnnotatedSaga", "id"));
+            assertThatThrownBy(Scope::getCurrentScope).isInstanceOf(IllegalStateException.class);
+        }
+
+        @Test
+        void theScopeOfInvokeCarriesNoProcessingContext() {
+            // when
+            var context = testSubject.invoke(saga -> ContextAwareScope.currentProcessingContext());
+
+            // then
+            assertThat(context).isEmpty();
+        }
+
+        @Test
+        void theScopeOfInvokeIsEndedWhenTheInvocationThrows() {
+            // when
+            Throwable failure = catchThrowable(() -> testSubject.invoke(saga -> {
+                throw new IllegalStateException("invocation failure");
+            }));
+
+            // then
+            assertThat(failure).isInstanceOf(IllegalStateException.class).hasMessage("invocation failure");
+            assertThatThrownBy(Scope::getCurrentScope).isInstanceOf(IllegalStateException.class);
         }
     }
 

@@ -101,14 +101,31 @@ public class AnnotatedSaga<T> implements Saga<T>, SagaLifecycle {
         return associationValues;
     }
 
+    /**
+     * {@inheritDoc}
+     * <p>
+     * The {@code invocation} runs with this Saga as the current {@link Scope}, as in Axon Framework 4. That scope carries
+     * no {@link ProcessingContext}, since none is given, so a {@code DeadlineManager} called from the
+     * {@code invocation} schedules within this Saga's scope but runs the call immediately.
+     */
     @Override
     public <R> R invoke(Function<T, R> invocation) {
-        return invocation.apply(sagaInstance);
+        return new SagaScope().run(() -> invocation.apply(sagaInstance));
     }
 
+    /**
+     * {@inheritDoc}
+     * <p>
+     * The {@code invocation} runs with this Saga as the current {@link Scope}, as in Axon Framework 4. That scope carries
+     * no {@link ProcessingContext}, since none is given, so a {@code DeadlineManager} called from the
+     * {@code invocation} schedules within this Saga's scope but runs the call immediately.
+     */
     @Override
     public void execute(Consumer<T> invocation) {
-        invocation.accept(sagaInstance);
+        new SagaScope().run(() -> {
+            invocation.accept(sagaInstance);
+            return null;
+        });
     }
 
     @Override
@@ -281,8 +298,41 @@ public class AnnotatedSaga<T> implements Saga<T>, SagaLifecycle {
 
         @Override
         public ScopeDescriptor describeScope() {
-            return new SagaScopeDescriptor(sagaInstance.getClass().getSimpleName(), sagaId);
+            return describeSaga();
         }
+    }
+
+    /**
+     * The {@link Scope} this Saga is during {@link #invoke(Function)} and {@link #execute(Consumer)}, which Axon
+     * Framework 4 ran within the Saga's scope as well. Unlike {@link InvocationScope} it carries no
+     * {@link ProcessingContext}, as neither method is given one.
+     */
+    private final class SagaScope extends Scope {
+
+        /**
+         * Runs the given {@code invocation} with this scope as the current {@link Scope}, ending the scope once the
+         * invocation returns or throws.
+         */
+        private <R> R run(Supplier<R> invocation) {
+            startScope();
+            try {
+                return invocation.get();
+            } finally {
+                endScope();
+            }
+        }
+
+        @Override
+        public ScopeDescriptor describeScope() {
+            return describeSaga();
+        }
+    }
+
+    /**
+     * Describes this Saga as Axon Framework 4 did: the simple class name of the Saga instance and the Saga identifier.
+     */
+    private ScopeDescriptor describeSaga() {
+        return new SagaScopeDescriptor(sagaInstance.getClass().getSimpleName(), sagaId);
     }
 
     @Override
