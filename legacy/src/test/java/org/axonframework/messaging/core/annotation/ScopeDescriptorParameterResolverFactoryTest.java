@@ -16,24 +16,24 @@
 
 package org.axonframework.messaging.core.annotation;
 
-import org.axonframework.messaging.core.CurrentScope;
 import org.axonframework.messaging.core.NoScopeDescriptor;
+import org.axonframework.messaging.core.Scope;
 import org.axonframework.messaging.core.ScopeDescriptor;
-import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.junit.jupiter.api.*;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Test class validating the {@link ScopeDescriptorParameterResolverFactory}, in particular that it recognizes any
  * handler method declaring a {@link ScopeDescriptor}-typed parameter (no annotation restriction, unlike
- * {@code SagaLifecycleParameterResolverFactory}), and that the resulting {@link ParameterResolver} resolves
- * {@link CurrentScope#describeCurrentScope(ProcessingContext)}.
+ * {@code SagaLifecycleParameterResolverFactory}), and that the resulting {@link ParameterResolver} resolves the
+ * description of the current {@link Scope}, falling back to {@link NoScopeDescriptor#INSTANCE} when none is active.
  */
 class ScopeDescriptorParameterResolverFactoryTest {
 
@@ -85,25 +85,29 @@ class ScopeDescriptorParameterResolverFactoryTest {
         }
 
         @Test
-        void resolveParameterValueReturnsScopeDescriptorRegisteredOnContext() {
-            ScopeDescriptor descriptor = new StubScopeDescriptor();
-            ProcessingContext context = new StubProcessingContext().withResource(CurrentScope.RESOURCE_KEY, descriptor);
+        void resolveParameterValueReturnsTheDescriptorOfTheCurrentScope() {
+            // given
+            TestScope scope = new TestScope();
 
-            ScopeDescriptor resolved = resolver.resolveParameterValue(context)
-                                               .orTimeout(50, TimeUnit.MILLISECONDS)
-                                               .join();
+            // when
+            ScopeDescriptor resolved = scope.run(
+                    () -> resolver.resolveParameterValue(new StubProcessingContext())
+                                  .orTimeout(50, TimeUnit.MILLISECONDS)
+                                  .join()
+            );
 
-            assertThat(resolved).isSameAs(descriptor);
+            // then
+            assertThat(resolved).isSameAs(scope.descriptor);
         }
 
         @Test
-        void resolveParameterValueFallsBackToNoScopeDescriptorWhenNothingIsRegistered() {
-            ProcessingContext context = new StubProcessingContext();
-
-            ScopeDescriptor resolved = resolver.resolveParameterValue(context)
+        void resolveParameterValueFallsBackToNoScopeDescriptorWhenNoScopeIsActive() {
+            // when
+            ScopeDescriptor resolved = resolver.resolveParameterValue(new StubProcessingContext())
                                                .orTimeout(50, TimeUnit.MILLISECONDS)
                                                .join();
 
+            // then
             assertThat(resolved).isSameAs(NoScopeDescriptor.INSTANCE);
         }
 
@@ -118,11 +122,22 @@ class ScopeDescriptorParameterResolverFactoryTest {
             }
         }
 
-        private record StubScopeDescriptor() implements ScopeDescriptor {
+        private static final class TestScope extends Scope {
+
+            private final ScopeDescriptor descriptor = () -> "TestScope";
+
+            private <R> R run(Supplier<R> task) {
+                startScope();
+                try {
+                    return task.get();
+                } finally {
+                    endScope();
+                }
+            }
 
             @Override
-            public String scopeDescription() {
-                return "StubScopeDescriptor";
+            public ScopeDescriptor describeScope() {
+                return descriptor;
             }
         }
     }

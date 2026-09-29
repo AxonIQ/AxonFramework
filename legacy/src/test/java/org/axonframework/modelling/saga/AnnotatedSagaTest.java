@@ -17,11 +17,12 @@
 package org.axonframework.modelling.saga;
 
 import org.axonframework.common.AxonConfigurationException;
-import org.axonframework.messaging.core.CurrentScope;
+import org.axonframework.messaging.core.Context;
+import org.axonframework.messaging.core.ContextAwareScope;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.Metadata;
-import org.axonframework.messaging.core.NoScopeDescriptor;
 import org.axonframework.messaging.core.QualifiedName;
+import org.axonframework.messaging.core.Scope;
 import org.axonframework.messaging.core.ScopeDescriptor;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.core.interception.annotation.ExceptionHandler;
@@ -404,55 +405,98 @@ class AnnotatedSagaTest {
     }
 
     /**
-     * A handler declaring a {@link ScopeDescriptor} parameter resolves it from {@link CurrentScope}, registered by
-     * the same {@code sagaContext(...)} call site that registers the {@link SagaLifecycle}.
+     * While a handler method runs, the Saga is the current {@link Scope}, as it was in Axon Framework 4, and that scope
+     * carries the handler's {@link ProcessingContext}. This is what a {@code DeadlineManager} reached from the handler
+     * relies on to schedule within the Saga's scope and to defer until the context prepares its commit.
      */
     @Nested
-    class CurrentScopeRegistration {
+    class ScopeParticipation {
+
+        private static final Context.ResourceKey<String> MARKER = Context.ResourceKey.withLabel("marker");
+
+        private ScopeCapturingSaga saga;
+        private AnnotatedSaga<ScopeCapturingSaga> subject;
+        private EventMessage event;
+
+        @BeforeEach
+        void setUp() {
+            saga = new ScopeCapturingSaga();
+            subject = new AnnotatedSaga<>("saga-id",
+                                          Collections.emptySet(),
+                                          saga,
+                                          new AnnotationSagaMetaModelFactory().modelOf(ScopeCapturingSaga.class),
+                                          NoMoreInterceptors.instance());
+            subject.associateWith(new AssociationValue("propertyName", "id"));
+            event = new GenericEventMessage(new MessageType("event"), new RegularEvent("id"));
+        }
 
         @Test
-        void handlerResolvesASagaScopeDescriptorForThisSagaInstance() {
-            // given
-            var metaModel = new AnnotationSagaMetaModelFactory().modelOf(ScopeCapturingSaga.class);
-            ScopeCapturingSaga saga = new ScopeCapturingSaga();
-            AnnotatedSaga<ScopeCapturingSaga> subject =
-                    new AnnotatedSaga<>("saga-id", Collections.emptySet(), saga, metaModel, NoMoreInterceptors.instance());
-            subject.associateWith(new AssociationValue("propertyName", "id"));
-
+        void aScopeDescriptorParameterResolvesToADescriptorOfThisSagaInstance() {
             // when
-            var event = new GenericEventMessage(new MessageType("event"), new RegularEvent("id"));
-            subject.handle(event, StubProcessingContext.forMessage(event))
-                   .asCompletableFuture()
-                   .orTimeout(50, TimeUnit.MILLISECONDS)
-                   .join();
+            handle(StubProcessingContext.forMessage(event));
 
             // then
-            assertThat(saga.capturedScope).isInstanceOf(SagaScopeDescriptor.class);
-            var scopeDescriptor = (SagaScopeDescriptor) saga.capturedScope;
+            assertThat(saga.parameterScope).isInstanceOf(SagaScopeDescriptor.class);
+            var scopeDescriptor = (SagaScopeDescriptor) saga.parameterScope;
             assertThat(scopeDescriptor.getType()).isEqualTo(ScopeCapturingSaga.class.getSimpleName());
             assertThat(scopeDescriptor.getIdentifier()).isEqualTo("saga-id");
         }
 
+        @Test
+        void theSagaIsTheCurrentScopeWhileItsHandlerRuns() {
+            // when
+            handle(StubProcessingContext.forMessage(event));
+
+            // then
+            assertThat(saga.currentScope).isEqualTo(new SagaScopeDescriptor("ScopeCapturingSaga", "saga-id"));
+        }
+
+        @Test
+        void theCurrentScopeCarriesTheProcessingContextTheHandlerRunsIn() {
+            // given
+            ProcessingContext context = StubProcessingContext.forMessage(event).withResource(MARKER, "marker");
+
+            // when
+            handle(context);
+
+            // then
+            assertThat(saga.scopeContext).isNotNull();
+            assertThat(saga.scopeContext.getResource(MARKER)).isEqualTo("marker");
+            assertThat(saga.scopeContext.getResource(SagaLifecycle.RESOURCE_KEY)).isSameAs(subject);
+        }
+
+        @Test
+        void noScopeIsActiveOnceTheHandlerCompleted() {
+            // when
+            handle(StubProcessingContext.forMessage(event));
+
+            // then
+            assertThatThrownBy(Scope::getCurrentScope).isInstanceOf(IllegalStateException.class);
+            assertThat(ContextAwareScope.currentProcessingContext()).isEmpty();
+        }
+
+        @Test
+        void noScopeIsActiveOnceTheHandlerFailed() {
+            // given
+            saga.failure = new IllegalStateException("handler failure");
+
+            // when
+            var result = subject.handle(event, StubProcessingContext.forMessage(event));
+
+            // then
+            assertThat(result.error()).containsInstanceOf(IllegalStateException.class);
+            assertThatThrownBy(Scope::getCurrentScope).isInstanceOf(IllegalStateException.class);
+        }
+
         /**
-         * Closes the loop on why the registered type must be the saga's simple class name:
-         * {@link AbstractSagaManager#canResolve(ScopeDescriptor)} already compares against
-         * {@code sagaType.getSimpleName()} (verified directly in {@code AbstractSagaManager.java}), so a mismatch
-         * here would silently break saga-scoped deadline delivery.
+         * Closes the loop on why the described type must be the saga's simple class name:
+         * {@link AbstractSagaManager#canResolve(ScopeDescriptor)} compares against {@code sagaType.getSimpleName()},
+         * so a mismatch here would silently break saga-scoped deadline delivery.
          */
         @Test
-        void theCapturedScopeDescriptorIsResolvableByASagaManagerForTheSameSagaType() {
+        void theDescribedScopeIsResolvableByASagaManagerForTheSameSagaType() {
             // given
-            var metaModel = new AnnotationSagaMetaModelFactory().modelOf(ScopeCapturingSaga.class);
-            ScopeCapturingSaga saga = new ScopeCapturingSaga();
-            AnnotatedSaga<ScopeCapturingSaga> subject =
-                    new AnnotatedSaga<>("saga-id", Collections.emptySet(), saga, metaModel, NoMoreInterceptors.instance());
-            subject.associateWith(new AssociationValue("propertyName", "id"));
-            var event = new GenericEventMessage(new MessageType("event"), new RegularEvent("id"));
-            subject.handle(event, StubProcessingContext.forMessage(event))
-                   .asCompletableFuture()
-                   .orTimeout(50, TimeUnit.MILLISECONDS)
-                   .join();
-
+            handle(StubProcessingContext.forMessage(event));
             AnnotatedSagaManager<ScopeCapturingSaga> sagaManager = AnnotatedSagaManager.<ScopeCapturingSaga>builder()
                     .sagaRepository(AnnotatedSagaRepository.<ScopeCapturingSaga>builder()
                                                             .sagaType(ScopeCapturingSaga.class)
@@ -463,14 +507,14 @@ class AnnotatedSagaTest {
                     .build();
 
             // when / then
-            assertThat(sagaManager.canResolve(saga.capturedScope)).isTrue();
+            assertThat(sagaManager.canResolve(saga.currentScope)).isTrue();
         }
 
-        @Test
-        void resolvesToNoScopeDescriptorWhenNoSagaIsRegisteredOnTheContext() {
-            ProcessingContext context = new StubProcessingContext();
-
-            assertThat(CurrentScope.describeCurrentScope(context)).isSameAs(NoScopeDescriptor.INSTANCE);
+        private void handle(ProcessingContext context) {
+            subject.handle(event, context)
+                   .asCompletableFuture()
+                   .orTimeout(50, TimeUnit.MILLISECONDS)
+                   .join();
         }
     }
 
@@ -860,11 +904,19 @@ class AnnotatedSagaTest {
     @SuppressWarnings("unused")
     private static class ScopeCapturingSaga {
 
-        private ScopeDescriptor capturedScope;
+        private ScopeDescriptor parameterScope;
+        private ScopeDescriptor currentScope;
+        private ProcessingContext scopeContext;
+        private RuntimeException failure;
 
         @SagaEventHandler(associationProperty = "propertyName")
         public void handleStubDomainEvent(RegularEvent event, ScopeDescriptor scope) {
-            this.capturedScope = scope;
+            this.parameterScope = scope;
+            this.currentScope = Scope.describeCurrentScope();
+            this.scopeContext = ContextAwareScope.currentProcessingContext().orElse(null);
+            if (failure != null) {
+                throw failure;
+            }
         }
     }
 

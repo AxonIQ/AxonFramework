@@ -16,7 +16,8 @@
 
 package org.axonframework.messaging.core.annotation;
 
-import org.axonframework.messaging.core.CurrentScope;
+import org.axonframework.messaging.core.NoScopeDescriptor;
+import org.axonframework.messaging.core.Scope;
 import org.axonframework.messaging.core.ScopeDescriptor;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.jspecify.annotations.Nullable;
@@ -26,18 +27,12 @@ import java.lang.reflect.Parameter;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * {@link ParameterResolverFactory} that resolves a {@link ScopeDescriptor}-typed parameter on any handler method to
- * the value of {@link CurrentScope#describeCurrentScope(ProcessingContext)}.
- * <p>
- * Unlike, for example, {@code SagaLifecycleParameterResolverFactory}, this factory places no restriction on which
- * handler methods it applies to: a {@link ScopeDescriptor}-typed parameter resolves on any handler method
- * declaring one, matching the Axon Framework 4 behaviour this factory replaces. This is deliberate, not an
- * oversight -- a Saga's {@code @DeadlineHandler} method is not itself meta-annotated {@code @SagaEventHandler}, so
- * gating on that annotation here would leave such a method unable to resolve a {@link ScopeDescriptor} parameter at
- * all.
+ * Factory for a {@link ScopeDescriptor} {@link ParameterResolver}. Will return the result of
+ * {@link Scope#describeCurrentScope()}. If no current scope is active, {@link NoScopeDescriptor#INSTANCE} will be
+ * returned.
  *
- * @author Jakob Hatzl
- * @since 5.4.0
+ * @author Steven van Beelen
+ * @since 4.5
  */
 public class ScopeDescriptorParameterResolverFactory implements ParameterResolverFactory {
 
@@ -46,20 +41,24 @@ public class ScopeDescriptorParameterResolverFactory implements ParameterResolve
     public ParameterResolver<ScopeDescriptor> createInstance(Executable executable,
                                                              Parameter[] parameters,
                                                              int parameterIndex) {
-        if (!ScopeDescriptor.class.isAssignableFrom(parameters[parameterIndex].getType())) {
-            return null;
+        return ScopeDescriptor.class.isAssignableFrom(parameters[parameterIndex].getType())
+                ? new ScopeDescriptorParameterResolver() : null;
+    }
+
+    private static class ScopeDescriptorParameterResolver implements ParameterResolver<ScopeDescriptor> {
+
+        @Override
+        public CompletableFuture<ScopeDescriptor> resolveParameterValue(ProcessingContext context) {
+            try {
+                return CompletableFuture.completedFuture(Scope.describeCurrentScope());
+            } catch (IllegalStateException e) {
+                return CompletableFuture.completedFuture(NoScopeDescriptor.INSTANCE);
+            }
         }
 
-        return new ParameterResolver<>() {
-            @Override
-            public CompletableFuture<ScopeDescriptor> resolveParameterValue(ProcessingContext context) {
-                return CompletableFuture.completedFuture(CurrentScope.describeCurrentScope(context));
-            }
-
-            @Override
-            public boolean matches(ProcessingContext context) {
-                return true;
-            }
-        };
+        @Override
+        public boolean matches(ProcessingContext context) {
+            return true;
+        }
     }
 }
