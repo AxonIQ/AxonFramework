@@ -188,6 +188,7 @@ A saga and an ordinary event handler cannot share a processor. When both resolve
 a `DuplicateModuleRegistrationException`. To put them on one processor on purpose, drop `@Saga` from the class and
 register a `Module` bean combining a declarative `SagaConfigurer.forType(...)` component with autodetected handlers.
 
+[#saga-store-selection]
 === Saga store selection
 
 A saga's store is resolved in this order:
@@ -221,13 +222,13 @@ discovered.
 
 * *`SagaConfigurer` is an Axon Framework 5 component builder.* `forType`, `configureSagaManager`,
 `configureRepository`, and `configureSagaStore` keep their Axon Framework 4 names, fluent return types, and override
-precedence. Their builder functions receive the Axon Framework 5
-`org.axonframework.common.configuration.Configuration`; the Axon Framework 4 `org.axonframework.config.Configuration`
-no longer exists. `configureSagaFactory` retains custom instance creation from the interim Axon Framework 5 Saga
-builder. Register the configurer as a declarative event handling component and call `build(Configuration)` where Axon
-Framework 4 called `initialize(Configuration)`. The returned object is the Saga manager itself; `SagaConfiguration`
-and its manager, repository, store, processing-group, processor, and error-handler accessors are not ported. Configure
-processor assignment and error handling on the `EventProcessorModule` instead.
+precedence, but their builder functions now receive the Axon Framework 5
+`org.axonframework.common.configuration.Configuration`. Register the configurer as a declarative event handling
+component; where Axon Framework 4 called `initialize(Configuration)`, the framework now calls `build(Configuration)`,
+which returns the Saga manager itself. `SagaConfiguration` and its manager, repository, store, processing-group,
+processor, and error-handler accessors are not ported. Configure processor assignment and error handling on the
+`EventProcessorModule` instead. `configureSagaFactory` has no Axon Framework 4 equivalent; use it when the Saga has no
+accessible no-argument constructor.
 * *Pooled streaming replaces the tracking processor.* A saga's processor is pooled streaming, not a
 `TrackingEventProcessor`, and needs a `TokenStore` bean as any pooled processor does. A saga still only sees events
 published after its processor first started; replaying into one requires setting an initial token explicitly, see
@@ -241,8 +242,14 @@ sagas with each other only: a saga and an ordinary event handler resolving to on
 * *Dead-letter queues are not supported for sagas.* Enabling a dead letter queue for a saga's processor by name has
 no effect.
 * *Deadlines are not ported yet* (see the note in <<legacy-module>>).
-* *The in-memory saga store is an explicit, overridable bean*, not an internal default. An application that wants a
-default store alongside named per-saga stores declares the default store itself.
+* *A `SagaStore` is mandatory.* Axon Framework 4 quietly fell back to an `InMemorySagaStore` when an application
+registered no `SagaStore`, so a misconfigured application started and stored its sagas in memory, losing them on
+restart. Axon Framework 5 refuses instead: with no `SagaStore` available, `SagaConfigurer` fails to build its Saga
+manager and throws an `AxonConfigurationException` naming the saga type. Spring Boot applications are unaffected in
+practice, because <<saga-store-selection>> ends in an `InMemorySagaStore` bean; the change is visible to applications
+configured without Spring, which must now register a `SagaStore` component explicitly. The in-memory store is
+therefore an explicit, overridable bean rather than an internal default, and an application that wants a default store
+alongside named per-saga stores declares that default itself.
 * *A `@Saga` class must be public with an accessible no-argument constructor.*
 * *Component-scan saga classes, or declare them with a `@Scope("prototype")` annotated `@Bean` method.* A plain `@Bean` method ignores the
 `@Scope("prototype")` that `@Saga` declares and requires to avoid the saga being registered additionally as a plain singleton event handling component bean. Annotate the bean method with `@Scope("prototype")` if the

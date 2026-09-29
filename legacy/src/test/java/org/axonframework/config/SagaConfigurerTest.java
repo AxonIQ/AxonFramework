@@ -21,6 +21,8 @@ import org.axonframework.common.FutureUtils;
 import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.messaging.core.MessageStream;
+import org.axonframework.messaging.core.annotation.HandlerDefinition;
+import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
 import org.axonframework.messaging.core.configuration.MessagingConfigurer;
 import org.axonframework.messaging.eventhandling.EventHandlingExceptionHandler;
 import org.axonframework.messaging.eventhandling.EventMessage;
@@ -387,7 +389,7 @@ class SagaConfigurerTest {
             assertThat(second).isSameAs(first);
             assertThatThrownBy(() -> sagaConfigurer.configureSagaStore(c -> sagaStore))
                     .isInstanceOf(AxonConfigurationException.class)
-                    .hasMessage("SagaConfiguration has already been created. Cannot make modifications.");
+                    .hasMessage("SagaConfigurer has already built its Saga manager. Cannot make modifications.");
         }
     }
 
@@ -468,9 +470,9 @@ class SagaConfigurerTest {
         AnnotatedSagaRepository.Builder<T> builder = AnnotatedSagaRepository.<T>builder()
                                                                               .sagaType(sagaType)
                                                                               .sagaStore(sagaStore);
-        configuration.getOptionalComponent(org.axonframework.messaging.core.annotation.ParameterResolverFactory.class)
+        configuration.getOptionalComponent(ParameterResolverFactory.class)
                      .ifPresent(builder::parameterResolverFactory);
-        configuration.getOptionalComponent(org.axonframework.messaging.core.annotation.HandlerDefinition.class)
+        configuration.getOptionalComponent(HandlerDefinition.class)
                      .ifPresent(builder::handlerDefinition);
         return builder.build();
     }
@@ -489,9 +491,9 @@ class SagaConfigurerTest {
                                                                                       configuration
                                                                               )
                                                                       );
-        configuration.getOptionalComponent(org.axonframework.messaging.core.annotation.ParameterResolverFactory.class)
+        configuration.getOptionalComponent(ParameterResolverFactory.class)
                      .ifPresent(builder::parameterResolverFactory);
-        configuration.getOptionalComponent(org.axonframework.messaging.core.annotation.HandlerDefinition.class)
+        configuration.getOptionalComponent(HandlerDefinition.class)
                      .ifPresent(builder::handlerDefinition);
         return builder.build();
     }

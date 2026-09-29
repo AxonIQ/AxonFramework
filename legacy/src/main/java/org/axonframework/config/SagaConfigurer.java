@@ -53,7 +53,10 @@ import static org.axonframework.common.BuilderUtils.assertNonNull;
  *                                            SagaConfigurer.forType(OrderSaga.class)))));
  * }</pre>
  * The first call to {@link #build(Configuration)} fixes this configurer's settings. Further configuration is rejected,
- * and repeated build calls return the same manager, matching the lifecycle of the Axon Framework 4 configurer.
+ * and repeated build calls return the same manager, matching the lifecycle of the Axon Framework 4 configurer. A
+ * configurer is therefore single-use and stays bound to the {@link Configuration} it was first built with: building it
+ * a second time returns the manager assembled from the first, ignoring the {@code Configuration} passed in. Register a
+ * separate configurer per Saga type, as Axon Framework 4's {@code SagaConfigurer#initialize(Configuration)} required.
  * <p>
  * A custom manager replaces the complete default assembly. A custom repository replaces the default repository and
  * its store dependency. Consequently, lower-level settings are only used when this configurer builds that level.
@@ -130,6 +133,10 @@ public class SagaConfigurer<T> implements ComponentBuilder<EventHandlingComponen
 
     /**
      * Configures the store used by the default Saga repository.
+     * <p>
+     * Without this setting the default repository resolves the {@link SagaStore} registered as a component. Unlike
+     * Axon Framework 4, which silently fell back to an in-memory store, building fails when neither is available: a
+     * Saga has to be told where it is stored.
      *
      * @param storeBuilder the function that builds the Saga store
      * @return this configurer for fluent configuration
@@ -161,10 +168,16 @@ public class SagaConfigurer<T> implements ComponentBuilder<EventHandlingComponen
 
     /**
      * Builds the Saga manager for this configuration. The first invocation fixes the configured builders; subsequent
-     * invocations return the same manager.
+     * invocations return the same manager, ignoring the {@code configuration} given to them.
+     * <p>
+     * The configured builders are fixed before the manager is assembled, so a configurer whose assembly failed stays
+     * fixed and cannot be reconfigured. This mirrors Axon Framework 4, where {@code initialize(Configuration)} likewise
+     * fixed the configurer before the manager, repository, and store components were resolved.
      *
      * @param configuration the configuration providing shared framework components
      * @return the Saga manager built by this configurer
+     * @throws AxonConfigurationException if the default repository is used and no {@link SagaStore} was configured
+     *                                    through {@link #configureSagaStore(Function)} or registered as a component
      */
     @Override
     public AbstractSagaManager<T> build(Configuration configuration) {
@@ -206,7 +219,7 @@ public class SagaConfigurer<T> implements ComponentBuilder<EventHandlingComponen
     private void verifyNotInitialized() {
         if (initialized) {
             throw new AxonConfigurationException(
-                    "SagaConfiguration has already been created. Cannot make modifications."
+                    "SagaConfigurer has already built its Saga manager. Cannot make modifications."
             );
         }
     }
