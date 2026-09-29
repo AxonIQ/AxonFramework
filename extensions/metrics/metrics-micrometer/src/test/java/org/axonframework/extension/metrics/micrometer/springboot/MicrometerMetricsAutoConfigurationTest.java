@@ -17,10 +17,12 @@
 package org.axonframework.extension.metrics.micrometer.springboot;
 
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.axonframework.extension.metrics.micrometer.MetricsConfigurationEnhancer;
 import org.junit.jupiter.api.*;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -40,6 +42,24 @@ class MicrometerMetricsAutoConfigurationTest {
     }
 
     @Test
+    void defaultMetricAutoConfigSetsMeterRegistryBeanForEnhancer() {
+        testContext.withPropertyValues("axon.metrics.enabled=true")
+                   .run(context -> {
+                       assertThat(context).hasSingleBean(MeterRegistry.class);
+                       assertThat(context).hasSingleBean(MetricsConfigurationEnhancer.class);
+                   });
+    }
+
+    @Test
+    void defaultMetricAutoConfigSetsMeterRegistryBeanForEnhancerWorksWithoutProperty() {
+        // Deliberately not included "axon.metrics.enabled=true" per test!
+        testContext.run(context -> {
+            assertThat(context).hasSingleBean(MeterRegistry.class);
+            assertThat(context).hasSingleBean(MetricsConfigurationEnhancer.class);
+        });
+    }
+
+    @Test
     void disabledMetricsDisablesMetricRegistryAndMetricsConfigurationEnhancer() {
         testContext.withPropertyValues("axon.metrics.enabled=false")
                    .run(context -> {
@@ -48,9 +68,32 @@ class MicrometerMetricsAutoConfigurationTest {
                    });
     }
 
+    @Test
+    void metricsConfigurationEnhancerReusesUserSuppliedMeterRegistry() {
+        new ApplicationContextRunner().withUserConfiguration(UserMeterRegistryContext.class)
+                                      .run(context -> {
+                                          assertThat(context).hasSingleBean(MeterRegistry.class);
+                                          assertThat(context.getBean(MeterRegistry.class))
+                                                  .isSameAs(UserMeterRegistryContext.USER_METER_REGISTRY);
+                                          assertThat(context).hasSingleBean(MetricsConfigurationEnhancer.class);
+                                      });
+    }
+
     @Configuration
     @EnableAutoConfiguration
     public static class TestContext {
 
+    }
+
+    @Configuration
+    @EnableAutoConfiguration
+    public static class UserMeterRegistryContext {
+
+        private static final MeterRegistry USER_METER_REGISTRY = new SimpleMeterRegistry();
+
+        @Bean
+        public MeterRegistry meterRegistry() {
+            return USER_METER_REGISTRY;
+        }
     }
 }
