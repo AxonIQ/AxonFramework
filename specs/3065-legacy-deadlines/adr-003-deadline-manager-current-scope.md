@@ -93,6 +93,10 @@ keeps the calls in the order they were made: actions registered for the same pha
 - Divergences Axon Framework 5 forces, documented in `axon-5/api-changes/02-processing-context.md#scope`:
   - deferral needs a Saga invocation: a call made outside a Saga handler runs immediately, even while some
     other `ProcessingContext` is running, because there is no ambient unit of work to find it through;
-  - deferred calls run in `RUN_DEADLINE_CALLS` instead of in `PREPARE_COMMIT` itself.
+  - deferred calls run in `RUN_DEADLINE_CALLS` instead of in `PREPARE_COMMIT` itself;
+  - as a result of both: prepare-commit work runs before every deferred call, all Saga writes of a context run
+    before all its deferred calls, a nested unit of work defers into the Saga's context, a call made while a
+    deferred call runs runs immediately, a scope without a context stacked on the Saga's disables deferral, and
+    the current scope is a per-invocation object rather than the `AnnotatedSaga`. Each is pinned by a test.
 - A Saga handler that hands work to another thread cannot schedule deadlines from there within the Saga's
   scope. Axon Framework 4 had the same limit, and the saga port already rejects such handlers.

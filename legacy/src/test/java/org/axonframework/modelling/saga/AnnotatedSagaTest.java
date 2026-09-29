@@ -469,6 +469,23 @@ class AnnotatedSagaTest {
             assertThat(saga.scopeContext.getResource(SagaLifecycle.RESOURCE_KEY)).isSameAs(subject);
         }
 
+        /**
+         * In Axon Framework 4 the {@code AnnotatedSaga} itself was the current scope, and code could cast it to
+         * {@code SagaLifecycle}. Here a per-invocation scope describing the Saga is current instead, since it carries
+         * the invocation's {@code ProcessingContext}.
+         */
+        @Test
+        void theCurrentScopeDescribesTheSagaButIsNotTheAnnotatedSagaItself() {
+            // when
+            handle(StubProcessingContext.forMessage(event));
+
+            // then
+            assertThat(saga.currentScopeObject).isNotNull()
+                                               .isNotInstanceOf(AnnotatedSaga.class)
+                                               .isNotInstanceOf(SagaLifecycle.class);
+            assertThat(saga.currentScopeObject.describeScope()).isEqualTo(saga.currentScope);
+        }
+
         @Test
         void noScopeIsActiveOnceTheHandlerCompleted() {
             // when
@@ -1061,6 +1078,7 @@ class AnnotatedSagaTest {
 
         private ScopeDescriptor parameterScope;
         private ScopeDescriptor currentScope;
+        private Scope currentScopeObject;
         private ProcessingContext scopeContext;
         private RuntimeException failure;
 
@@ -1068,6 +1086,7 @@ class AnnotatedSagaTest {
         public void handleStubDomainEvent(RegularEvent event, ScopeDescriptor scope) {
             this.parameterScope = scope;
             this.currentScope = Scope.describeCurrentScope();
+            this.currentScopeObject = Scope.getCurrentScope();
             this.scopeContext = ContextAwareScope.currentProcessingContext().orElse(null);
             if (failure != null) {
                 throw failure;

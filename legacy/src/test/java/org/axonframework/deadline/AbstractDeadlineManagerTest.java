@@ -23,6 +23,7 @@ import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageDispatchInterceptor;
 import org.axonframework.messaging.core.MessageHandlerInterceptor;
 import org.axonframework.messaging.core.MessageType;
+import org.axonframework.messaging.core.Scope;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.ScopeDescriptor;
 import org.axonframework.messaging.core.interception.CorrelationDataInterceptor;
@@ -493,6 +494,116 @@ class AbstractDeadlineManagerTest {
         }
     }
 
+    /**
+     * Differences from Axon Framework 4 that follow from Axon Framework 5 having no ambient unit of work and rejecting
+     * a registration for the phase a context is already in. Pinned so that a change to any of them is deliberate.
+     */
+    @Nested
+    class DivergencesForcedByAxonFramework5 {
+
+        /**
+         * Axon Framework 4 deferred such a call into the nested unit of work, the current one at that moment. Here
+         * only the Saga's scope says which context to defer to, so the call waits for the outer context and does
+         * not run when only the nested one commits.
+         */
+        @Test
+        void aCallFromANestedUnitOfWorkIsDeferredIntoTheContextOfTheCurrentScope() {
+            // given
+            AtomicInteger scheduledAfterNestedCommit = new AtomicInteger(-1);
+
+            // when
+            runInUnitOfWork(outerContext -> new TestScope(outerContext).run(() -> {
+                runInUnitOfWork(nestedContext -> testSubject.schedule(
+                        Instant.now(), "deadlineName", "payload", EXPLICIT_SCOPE
+                ));
+                scheduledAfterNestedCommit.set(testSubject.scheduled.size());
+            }));
+
+            // then
+            assertThat(scheduledAfterNestedCommit).hasValue(0);
+            assertThat(testSubject.scheduled).hasSize(1);
+        }
+
+        /**
+         * Axon Framework 4 interleaved each Saga's write with its deadline calls (write A, deadline A, write B,
+         * deadline B), since each write was registered when its Saga was loaded. With a phase per kind of work, all
+         * Saga writes of a context run first.
+         */
+        @Test
+        void allSagaWritesOfAContextRunBeforeItsDeadlineCalls() {
+            // when
+            runInUnitOfWork(context -> {
+                context.runOn(AnnotatedSagaRepository.WRITE_SAGA, c -> timeline.add("write A"));
+                new TestScope(context).run(() -> testSubject.schedule(Instant.now(), "A", "payload", EXPLICIT_SCOPE));
+                context.runOn(AnnotatedSagaRepository.WRITE_SAGA, c -> timeline.add("write B"));
+                new TestScope(context).run(() -> testSubject.schedule(Instant.now(), "B", "payload", EXPLICIT_SCOPE));
+            });
+
+            // then
+            assertThat(timeline).containsExactly("write A", "write B", "manager:schedule A", "manager:schedule B");
+        }
+
+        /**
+         * Axon Framework 4 ran prepare-commit work in registration order, so publishing an event after scheduling a
+         * deadline published after the deadline was scheduled. Deadline calls now follow all prepare-commit work.
+         */
+        @Test
+        void prepareCommitWorkRegisteredAfterADeadlineCallRunsBeforeIt() {
+            // when
+            runInUnitOfWork(context -> {
+                new TestScope(context).run(
+                        () -> testSubject.schedule(Instant.now(), "deadlineName", "payload", EXPLICIT_SCOPE)
+                );
+                context.runOnPrepareCommit(c -> timeline.add("publish"));
+            });
+
+            // then
+            assertThat(timeline).containsExactly("publish", "manager:schedule deadlineName");
+        }
+
+        /**
+         * Deferred calls run after the Saga's scope ended, so a deadline call made from within one of them, here by a
+         * dispatch interceptor, runs immediately. Axon Framework 4 appended it to the running prepare-commit phase,
+         * after the call it was made from.
+         */
+        @Test
+        void aCallMadeWhileADeferredCallRunsRunsImmediately() {
+            // given
+            testSubject.registerDispatchInterceptor((message, context, chain) -> {
+                testSubject.cancelAll("other");
+                return chain.proceed(message, context);
+            });
+
+            // when
+            runInUnitOfWork(context -> new TestScope(context).run(
+                    () -> testSubject.schedule(Instant.now(), "deadlineName", "payload", EXPLICIT_SCOPE)
+            ));
+
+            // then
+            assertThat(timeline).containsExactly("manager:cancelAll other", "manager:schedule deadlineName");
+        }
+
+        /**
+         * Only the innermost scope is asked for a context. A scope without one, started from within a Saga handler,
+         * therefore makes calls run immediately until it ends, where Axon Framework 4 still found the ambient unit of
+         * work.
+         */
+        @Test
+        void aScopeWithoutAContextStartedWithinTheSagasScopeMakesCallsRunImmediately() {
+            // given
+            AtomicInteger scheduledWithinPlainScope = new AtomicInteger(-1);
+
+            // when
+            runInUnitOfWork(context -> new TestScope(context).run(() -> new PlainScope().run(() -> {
+                testSubject.schedule(Instant.now(), "deadlineName", "payload", EXPLICIT_SCOPE);
+                scheduledWithinPlainScope.set(testSubject.scheduled.size());
+            })));
+
+            // then
+            assertThat(scheduledWithinPlainScope).hasValue(1);
+        }
+    }
+
     @Nested
     class InterceptorRegistration {
 
@@ -632,6 +743,26 @@ class AbstractDeadlineManagerTest {
         @Override
         public ScopeDescriptor describeScope() {
             return () -> "testScope";
+        }
+    }
+
+    /**
+     * A scope carrying no {@link ProcessingContext}, like a custom {@code Scope} a user might start.
+     */
+    private static final class PlainScope extends Scope {
+
+        private void run(Runnable task) {
+            startScope();
+            try {
+                task.run();
+            } finally {
+                endScope();
+            }
+        }
+
+        @Override
+        public ScopeDescriptor describeScope() {
+            return () -> "plainScope";
         }
     }
 

@@ -133,6 +133,25 @@ parameter or held by a collaborator the Saga delegates to. Two things differ fro
   from within the prepare-commit phase, which is where a subscribing event processor handles events published within a
   `ProcessingContext`.
 
+Both follow from Axon Framework 5 having no ambient unit of work and rejecting a registration for the phase a
+`ProcessingContext` is already in. They bring these smaller differences along:
+
+- Work registered for the prepare-commit phase, such as publishing an event within the `ProcessingContext`, runs before
+  every deferred deadline call, also when it was registered after the call. Axon Framework 4 ran both in the order they
+  were registered.
+- When several Sagas are handled in one `ProcessingContext`, all Saga writes run before all deferred deadline calls.
+  Axon Framework 4 ran each Saga's write before that Saga's own calls and after the previous Saga's calls.
+- A command handled synchronously from a Saga handler, in a unit of work of its own, defers its deadline calls into the
+  Saga's `ProcessingContext`, not into its own. Axon Framework 4 deferred them into the command's unit of work.
+- A deadline call made while a deferred call runs, for example by a dispatch interceptor, runs immediately. Axon
+  Framework 4 appended it to the running prepare-commit phase.
+- A `Scope` without a `ProcessingContext`, started from within a Saga handler, makes deadline calls run immediately
+  until it ends.
+- `Scope.getCurrentScope()` returns a per-invocation scope describing the Saga, not the `AnnotatedSaga` itself, so it
+  cannot be cast to `AnnotatedSaga` or `SagaLifecycle`.
+- `Saga.invoke(...)` and `Saga.execute(...)` run with the Saga as the current scope, but have no `ProcessingContext` to
+  defer to, so deadline calls made from them run immediately.
+
 ### SagaStore
 
 The saga stores in `axon-legacy` are an exception worth calling out, because the opposite would be a reasonable
