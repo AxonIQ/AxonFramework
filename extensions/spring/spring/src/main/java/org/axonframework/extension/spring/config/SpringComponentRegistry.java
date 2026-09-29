@@ -52,11 +52,11 @@ import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
+import org.springframework.beans.factory.config.InstantiationAwareBeanPostProcessor;
 import org.springframework.beans.factory.support.AbstractBeanDefinition;
 import org.springframework.beans.factory.support.BeanDefinitionBuilder;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.core.ResolvableType;
-import org.springframework.util.ClassUtils;
 
 import java.lang.invoke.MethodHandles;
 import java.util.ArrayList;
@@ -99,7 +99,7 @@ import static org.axonframework.common.configuration.DefaultComponentRegistry.cr
  */
 @Internal
 public class SpringComponentRegistry implements
-        BeanPostProcessor,
+        InstantiationAwareBeanPostProcessor,
         BeanFactoryPostProcessor,
         ComponentRegistry {
 
@@ -112,14 +112,6 @@ public class SpringComponentRegistry implements
      */
     private static final String CONFIGURATION_PROPERTIES_BINDING_QUALIFIER =
             "org.springframework.boot.context.properties.ConfigurationPropertiesBinding";
-
-    /**
-     * The type of Spring Boot's {@code ConfigurationPropertiesBindHandlerAdvisor}. Used by
-     * {@link #shouldDeferInitialization(String)} to detect advisor beans without a compile-time dependency on Spring
-     * Boot.
-     */
-    private static final String CONFIGURATION_PROPERTIES_BIND_HANDLER_ADVISOR_TYPE =
-            "org.springframework.boot.context.properties.ConfigurationPropertiesBindHandlerAdvisor";
 
     private final SpringLifecycleRegistry lifecycleRegistry;
 
@@ -322,6 +314,38 @@ public class SpringComponentRegistry implements
     }
 
     /**
+     * Initializes {@code this ComponentRegistry} just before the first top-level application bean is instantiated.
+     * <p>
+     * A top-level bean is one no other bean is waiting on: nothing else is in creation. Initializing at that moment
+     * means that whatever the {@link ConfigurationEnhancer enhancers} create cannot re-enter a bean that is still being
+     * created, which it could when initialization is triggered by a bean created as the dependency of another.
+     * <p>
+     * Should no such moment occur, {@link #postProcessAfterInitialization(Object, String)} initializes instead.
+     */
+    @Override
+    public @Nullable Object postProcessBeforeInstantiation(Class<?> beanClass, String beanName) {
+        if (!initialized.get() && isSafeToInitialize(beanClass, beanName)) {
+            initialize();
+        }
+        return null;
+    }
+
+    private boolean isSafeToInitialize(Class<?> beanClass, String beanName) {
+        if (!beanFactory.containsBeanDefinition(beanName)
+                || beanFactory.getBeanDefinition(beanName).getRole() == BeanDefinition.ROLE_INFRASTRUCTURE
+                || BeanPostProcessor.class.isAssignableFrom(beanClass)
+                || BeanFactoryPostProcessor.class.isAssignableFrom(beanClass)) {
+            return false;
+        }
+        for (String otherBean : beanFactory.getBeanDefinitionNames()) {
+            if (!otherBean.equals(beanName) && beanFactory.isCurrentlyInCreation(otherBean)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
      * Override from the {@link BeanPostProcessor} interface.
      * <p>
      * This ensures that {@link #registerDecorator(DecoratorDefinition) registered decorators} or decorators registered
@@ -397,14 +421,6 @@ public class SpringComponentRegistry implements
      * {@code BeanCurrentlyInCreationException}. Deferring on this qualifier keeps such converters from ever being the
      * bean that triggers {@link #initialize()} mid-construction.
      * <p>
-     * For the same reason, initialization is deferred for <b>any</b> bean while a Spring Boot
-     * {@code ConfigurationPropertiesBindHandlerAdvisor} is still in creation. Spring Boot resolves every advisor
-     * whenever it binds {@code @ConfigurationProperties}, so an advisor is typically created in the middle of the first
-     * binding. The bean that triggers {@link #initialize()} is then not the advisor itself, but a bean it depends on,
-     * such as the configuration class declaring it (Spring Cloud's {@code CommonsConfigAutoConfiguration}, for
-     * example). Any binding a {@link ConfigurationEnhancer} triggers at that point re-enters the still-in-creation
-     * advisor.
-     * <p>
      * The qualifier is matched via {@link BeanFactoryAnnotationUtils#isQualifierMatch} against the literal qualifier
      * value rather than the annotation type, since this module has no compile-time dependency on Spring Boot.
      * <p>
@@ -416,9 +432,6 @@ public class SpringComponentRegistry implements
      * otherwise
      */
     private boolean shouldDeferInitialization(String beanName) {
-        if (isBindHandlerAdvisorInCreation()) {
-            return true;
-        }
         if (!beanFactory.containsBeanDefinition(beanName)) {
             return false;
         }
@@ -428,21 +441,6 @@ public class SpringComponentRegistry implements
         return BeanFactoryAnnotationUtils.isQualifierMatch(
                 CONFIGURATION_PROPERTIES_BINDING_QUALIFIER::equals, beanName, beanFactory
         );
-    }
-
-    private boolean isBindHandlerAdvisorInCreation() {
-        ClassLoader classLoader = beanFactory.getBeanClassLoader();
-        if (!ClassUtils.isPresent(CONFIGURATION_PROPERTIES_BIND_HANDLER_ADVISOR_TYPE, classLoader)) {
-            return false;
-        }
-        Class<?> advisorType = ClassUtils.resolveClassName(CONFIGURATION_PROPERTIES_BIND_HANDLER_ADVISOR_TYPE,
-                                                           classLoader);
-        for (String advisorName : beanFactory.getBeanNamesForType(advisorType, true, false)) {
-            if (beanFactory.isCurrentlyInCreation(advisorName)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /**
@@ -544,7 +542,11 @@ public class SpringComponentRegistry implements
      */
     private void invokeEnhancers() {
         // last-minute registration of enhancers from Spring context
-        listableBeanFactory.getBeansOfType(ConfigurationEnhancer.class).forEach(this::doRegisterEnhancer);
+        // Each enhancer bean is retrieved by name: getBeansOfType silently skips a bean whose creation fails on a bean
+        // that is currently in creation, which would leave that enhancer out without notice.
+        for (String enhancerName : listableBeanFactory.getBeanNamesForType(ConfigurationEnhancer.class)) {
+            doRegisterEnhancer(enhancerName, listableBeanFactory.getBean(enhancerName, ConfigurationEnhancer.class));
+        }
         Set<String> processedEnhancerKeys = new HashSet<>();
 
         while (processedEnhancerKeys.size() < enhancers.size()) {
@@ -682,6 +684,37 @@ public class SpringComponentRegistry implements
     }
 
     private class SpringConfiguration implements Configuration {
+
+        // The hasComponent variants answer from bean definitions, without instantiating any bean, following the same
+        // resolution rules as the corresponding getOptionalComponent variants. Enhancers probe for components while
+        // the application context is still creating beans, and instantiating one at that point can re-enter a bean
+        // that is still in creation.
+
+        @Override
+        public boolean hasComponent(Class<?> type, @Nullable String name) {
+            String[] candidates = beanFactory.getBeanNamesForType(type, true, false);
+            List<String> candidateNames = Arrays.asList(candidates);
+            if (name != null) {
+                return candidateNames.contains(name);
+            }
+            return candidates.length == 1
+                    || candidateNames.contains(type.getName())
+                    || candidateNames.stream().filter(this::isPrimary).count() == 1;
+        }
+
+        @Override
+        public boolean hasComponent(TypeReference<?> typeReference, @Nullable String name) {
+            ResolvableType type = ResolvableType.forType(typeReference.getType());
+            if (name == null) {
+                return beanFactory.getBeanNamesForType(type, true, false).length > 0;
+            }
+            return beanFactory.containsBeanDefinition(name)
+                    && type.isAssignableFrom(beanFactory.getBeanDefinition(name).getResolvableType());
+        }
+
+        private boolean isPrimary(String beanName) {
+            return beanFactory.containsBeanDefinition(beanName) && beanFactory.getBeanDefinition(beanName).isPrimary();
+        }
 
         @Override
         public <C> C getComponent(Class<C> type) {

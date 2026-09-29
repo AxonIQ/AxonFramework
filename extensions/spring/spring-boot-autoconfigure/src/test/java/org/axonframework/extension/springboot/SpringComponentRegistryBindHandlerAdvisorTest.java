@@ -89,6 +89,14 @@ class SpringComponentRegistryBindHandlerAdvisorTest {
             );
             // Stands in for an enhancer that resolves a @ConfigurationProperties bean, such as Axon Server's.
             context.registerBean("secondProperties", SecondProperties.class, SecondProperties::new);
+            // Stands in for an enhancer bean that depends on a @ConfigurationProperties bean, such as the
+            // distributed tracing enhancer.
+            context.registerBean("thirdProperties", ThirdProperties.class, ThirdProperties::new);
+            context.registerBean(
+                    "propertiesDependentEnhancer",
+                    PropertiesDependentEnhancer.class,
+                    () -> new PropertiesDependentEnhancer(context.getBean(ThirdProperties.class))
+            );
             context.registerBean(
                     "propertiesResolvingEnhancer",
                     PropertiesResolvingEnhancer.class,
@@ -98,6 +106,7 @@ class SpringComponentRegistryBindHandlerAdvisorTest {
             // when / then
             assertThatCode(context::refresh).doesNotThrowAnyException();
             assertThat(context.getBean(PropertiesResolvingEnhancer.class).invoked).isTrue();
+            assertThat(context.getBean(PropertiesDependentEnhancer.class).invoked).isTrue();
         }
     }
 
@@ -109,6 +118,24 @@ class SpringComponentRegistryBindHandlerAdvisorTest {
     @ConfigurationProperties("second")
     static class SecondProperties {
 
+    }
+
+    @ConfigurationProperties("third")
+    static class ThirdProperties {
+
+    }
+
+    static class PropertiesDependentEnhancer implements ConfigurationEnhancer {
+
+        private boolean invoked = false;
+
+        PropertiesDependentEnhancer(ThirdProperties properties) {
+        }
+
+        @Override
+        public void enhance(ComponentRegistry registry) {
+            invoked = true;
+        }
     }
 
     static class AdvisorDeclaration {
