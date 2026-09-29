@@ -49,7 +49,8 @@ import java.util.function.Supplier;
  * invoking thread's transaction and work continuing on another thread would fall outside it. Axon Framework 4 had no
  * way to express an asynchronous handler at all, so nothing that worked there is refused here.
  * <p>
- * While a handler method runs, this Saga is the current {@link Scope}, as it was in Axon Framework 4. Code reached
+ * While a handler method runs, including its interceptors and exception handlers, a {@link Scope} describing this
+ * Saga is the current one, as in Axon Framework 4, where the {@code AnnotatedSaga} itself was that scope. Code reached
  * from the handler on the same thread, such as a {@code DeadlineManager}, can therefore describe the Saga through
  * {@link Scope#describeCurrentScope()} and reach the handler's {@link ProcessingContext} through
  * {@link ContextAwareScope#currentProcessingContext()}, without being handed either of them.

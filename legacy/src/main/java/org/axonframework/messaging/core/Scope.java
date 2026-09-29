@@ -95,7 +95,7 @@ public abstract class Scope {
 
     /**
      * {@link Scope} instance method to execute given {@code task} of type {@link Callable} in the context of this
-     * Scope. This update the thread's current scope before executing the task. If a scope is already registered with
+     * Scope. This updates the thread's current scope before executing the task. If a scope is already registered with
      * the current thread that one will be temporarily replaced with this scope until the task completes. This method
      * returns the execution result of the task.
      *

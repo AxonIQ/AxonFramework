@@ -90,7 +90,7 @@ uses the old `UnitOfWork` should be rewritten to put resources in this context.
 
 The Axon Framework 4 `SagaLifecycle` was a `static` utility backed by a `ThreadLocal` (through its `Scope` base
 class), pushed onto the current thread for the duration of a single event handler invocation and popped off again
-afterward. Axon Framework 5 does not use `ThreadLocal`s, so `SagaLifecycle` in `axon-legacy` is now an **instance**,
+afterward. Axon Framework 5 avoids `ThreadLocal`s, so `SagaLifecycle` in `axon-legacy` is now an **instance**,
 scoped to the `ProcessingContext` of the Saga currently handling an event, exposing the same operations
 (`associateWith`, `removeAssociationWith`, `end`, `associationValues`) as before, just non-static.
 
@@ -115,23 +115,24 @@ of `SagaLifecycle`, but it is kept for the code that described the current Saga 
 ### Scope
 
 `Scope` (now `org.axonframework.messaging.core.Scope`) is kept in `axon-legacy` unchanged. While a handler method of a
-Saga runs, the Saga is the current `Scope`, as in Axon Framework 4: `Scope.describeCurrentScope()` returns the Saga's
-`SagaScopeDescriptor`, and a `ScopeDescriptor` handler parameter resolves to it. Unlike `SagaLifecycle`, this still uses
-a `ThreadLocal`. It is set only around the synchronous handler invocation, which is one more reason a Saga handler must
-complete on the thread that invoked it.
+Saga runs, including its interceptors and exception handlers, a scope describing the Saga is the current `Scope`, as in
+Axon Framework 4: `Scope.describeCurrentScope()` returns the Saga's `SagaScopeDescriptor`, and a `ScopeDescriptor`
+handler parameter resolves to it. Unlike `SagaLifecycle`, this still uses a `ThreadLocal`. It is set only around the
+synchronous handler invocation, which is one more reason a Saga handler must complete on the thread that invoked it.
 
 The legacy `DeadlineManager` relies on it. Its overloads without a `ScopeDescriptor` schedule or cancel within the
 current scope and throw an `IllegalStateException` outside one, exactly as before. A call made from a Saga handler is
-deferred until the handler's `ProcessingContext` prepares its commit, whether the `DeadlineManager` is a handler
-parameter or held by a collaborator the Saga delegates to. Two things differ from Axon Framework 4:
+deferred until the handler's `ProcessingContext` commits, whether the `DeadlineManager` is a handler parameter or held
+by a collaborator the Saga delegates to, and a deadline created from a payload carries the handled message's
+correlation data. Two things differ from Axon Framework 4:
 
 - Deferral needs a Saga invocation. Axon Framework 4 deferred every call made while a unit of work was active. There is
   no ambient unit of work anymore, so a call made outside a Saga handler runs immediately, even from within another
   message handler.
 - Deferred calls run in a dedicated phase, `AbstractDeadlineManager.RUN_DEADLINE_CALLS`, after the Saga is written and
   before the commit, instead of in the prepare-commit phase itself. This keeps scheduling working for a Saga invoked
-  from within the prepare-commit phase, which is where a subscribing event processor handles events published within a
-  `ProcessingContext`.
+  from within the prepare-commit phase, which is where a subscribing event processor fed by the `SimpleEventBus`
+  handles events published within a `ProcessingContext`.
 
 Both follow from Axon Framework 5 having no ambient unit of work and rejecting a registration for the phase a
 `ProcessingContext` is already in. They bring these smaller differences along:

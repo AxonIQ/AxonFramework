@@ -39,8 +39,8 @@ implementation of this issue. Following the `SagaLifecycle` precedent, a `Deadli
 resolved to a wrapper bound to the invocation's `ProcessingContext`, and scope-less calls fell back to
 `NoScopeDescriptor`. Rejected after review, because it changed behaviour without Axon Framework 5 forcing it:
 
-- a `DeadlineManager` reached any other way (field, collaborator, custom Saga factory, the test fixture's
-  `StubDeadlineManager`) had no scope and no deferral: a scope-less `schedule(...)` stored a deadline no
+- a `DeadlineManager` reached any other way (field, collaborator, custom Saga factory, and the test fixture's
+  `StubDeadlineManager` once ported) had no scope and no deferral: a scope-less `schedule(...)` stored a deadline no
   `ScopeAware` can resolve, so it was silently never delivered, where Axon Framework 4 threw;
 - the parameter resolver outranked the configuration resolver but had nothing registering what it looked
   up, so a `DeadlineManager` parameter failed where Axon Framework 4 injected the configured manager;
@@ -54,14 +54,20 @@ resolved to a wrapper bound to the invocation's `ProcessingContext`, and scope-l
 Option A.
 
 - `Scope` lives in `axon-legacy` as `org.axonframework.messaging.core.Scope`, unchanged.
-- `AnnotatedSaga.handle(...)` makes a per-invocation `ContextAwareScope` the current scope for the duration of
-  the synchronous handler invocation. It describes the Saga as Axon Framework 4 did: the simple class name of
-  the Saga instance plus the Saga identifier, which is what `AbstractSagaManager.canResolve(...)` compares
-  against. `ScopeDescriptorParameterResolverFactory` gets its Axon Framework 4 body back.
+- `AnnotatedSaga.handle(...)` makes a per-invocation `ContextAwareScope` the current scope until the whole
+  handler chain completed: interceptors, the handler and exception handlers. The chain is lazy, so the scope
+  also covers consuming its result, which `requireCompleted` does. `Saga.invoke(...)` and `Saga.execute(...)`
+  run within a plain scope describing the Saga, without a context. Both describe the Saga as Axon Framework 4
+  did: the simple class name of the Saga instance plus the Saga identifier, which is what
+  `AbstractSagaManager.canResolve(...)` compares against. `ScopeDescriptorParameterResolverFactory` gets its
+  Axon Framework 4 body back.
 - `DeadlineManager`'s scope-less overloads use `Scope.describeCurrentScope()` again and throw outside a scope.
 - `AbstractDeadlineManager.runOnPrepareCommitOrNow(Runnable)` defers when a `ContextAwareScope` is current, and
-  runs the call immediately otherwise. Deferred calls of one manager and context go into a FIFO queue, drained
-  by a single action in `RUN_DEADLINE_CALLS` (`PREPARE_COMMIT + 7_500`).
+  runs the call immediately otherwise. The deferred calls of all managers go into one FIFO queue per context,
+  drained by a single action in `RUN_DEADLINE_CALLS` (`PREPARE_COMMIT + 7_500`), so they keep the order they
+  were made in and a failing call stops the ones after it, as the prepare-commit handlers of an Axon Framework
+  4 unit of work did. A deadline message built from a payload inside the scope takes the context's correlation
+  data, as an Axon Framework 4 message took the unit of work's.
 - A `DeadlineManager` handler parameter resolves through the configuration (or Spring) like any other
   component, as in Axon Framework 4. No dedicated resolver exists.
 
@@ -70,8 +76,9 @@ Option A.
 Axon Framework 5 avoids `ThreadLocal`s internally and allows them only at the edges, for imperative style.
 This one is such an edge: it lives in `axon-legacy` only, is set and cleared in a single `try`/`finally` at the
 hand-off to imperative user code, and is read only by legacy code. The merged saga port already fails a Saga
-handler that does not complete on the thread that invoked it, so the scope is never observed from a thread it
-was not set on. No Axon Framework 5 core module depends on `axon-legacy`, so only legacy code and applications
+handler whose returned result is not complete, so work the framework itself continues is never done outside
+the scope. A `void` handler that hands work to another thread on its own goes undetected, as in Axon
+Framework 4; that work sees no scope. No Axon Framework 5 core module depends on `axon-legacy`, so only legacy code and applications
 that opted into the module can reach `Scope` at all.
 
 ### Why `RUN_DEADLINE_CALLS` sits where it does
@@ -99,4 +106,6 @@ keeps the calls in the order they were made: actions registered for the same pha
     deferred call runs runs immediately, a scope without a context stacked on the Saga's disables deferral, and
     the current scope is a per-invocation object rather than the `AnnotatedSaga`. Each is pinned by a test.
 - A Saga handler that hands work to another thread cannot schedule deadlines from there within the Saga's
-  scope. Axon Framework 4 had the same limit, and the saga port already rejects such handlers.
+  scope: a scope-less call throws and an explicit-scope call runs immediately. Axon Framework 4 had the same
+  limit. The saga port rejects a handler returning an incomplete result, but cannot detect a `void` handler
+  doing this.

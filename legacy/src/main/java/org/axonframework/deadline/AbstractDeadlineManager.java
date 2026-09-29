@@ -46,7 +46,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
 /**
  * Abstract implementation of the {@link DeadlineManager} to be implemented by concrete solutions for the
  * DeadlineManager. Provides functionality to perform a call to the DeadlineManager when the {@link ProcessingContext}
- * of the current invocation prepares its commit. This {@link #runOnPrepareCommitOrNow(Runnable)} functionality is
+ * of the current invocation commits, after its prepare-commit phase and before the commit itself. This
+ * {@link #runOnPrepareCommitOrNow(Runnable)} functionality is
  * required, as the DeadlineManager schedules a Message which needs to happen on order with the other messages
  * published throughout the system.
  * <p>
@@ -98,8 +99,8 @@ public abstract class AbstractDeadlineManager implements DeadlineManager {
      * call fails the commit, and the calls made after it do not run. None of them run when the context rolls back
      * before reaching that phase.
      *
-     * @param deadlineCall a {@link Runnable} to be executed now, or when the {@link ProcessingContext} of the current
-     *                     scope prepares its commit
+     * @param deadlineCall a {@link Runnable} to be executed now, or in the {@link #RUN_DEADLINE_CALLS} phase of the
+     *                     {@link ProcessingContext} of the current scope
      */
     protected void runOnPrepareCommitOrNow(Runnable deadlineCall) {
         Optional<ProcessingContext> context = ContextAwareScope.currentProcessingContext();
