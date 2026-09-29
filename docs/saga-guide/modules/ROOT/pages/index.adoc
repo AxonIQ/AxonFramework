@@ -72,6 +72,7 @@ only approach that assembles an entity across both sides. The "Works across" col
 xref::choosing-an-approach.adoc#state-approaches[the comparison table] reports that constraint.
 ====
 
+ifdef::advanced-framework[]
 [NOTE]
 .Coming from Axon Framework 4
 ====
@@ -81,6 +82,7 @@ Axon Framework 4 construct to what replaces it. It explains the `axon-legacy` mo
 while you write their replacement. It covers testing and the drainage strategy. This guide does not repeat any of
 that.
 ====
+endif::[]
 
 [TIP]
 .Reach for Workflows first
