@@ -379,8 +379,9 @@ Note that **any**  changes here may have far extending impact on the original cl
 
 ### Adjusted Constants
 
-| Class               | Constant                    | Change                                | Why                                   |
-|---------------------|-----------------------------|---------------------------------------|---------------------------------------|
-| `HandlerAttributes` | `START_PHASE`               | Removed                               | StartHandler annotation is removed    |
-| `HandlerAttributes` | `SHUTDOWN_PHASE`            | Removed                               | ShutdownHandler annotation is removed |
-| `TagsUtil`          | `META_DATA_TAGGER_FUNCTION` | Renamed to `METADATA_TAGGER_FUNCTION` | Consistent spelling                   |
+| Class               | Constant                    | Change                                | Why                                                                                                                                                       |
+|---------------------|-----------------------------|---------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `HandlerAttributes` | `START_PHASE`               | Removed                               | StartHandler annotation is removed                                                                                                                        |
+| `HandlerAttributes` | `SHUTDOWN_PHASE`            | Removed                               | ShutdownHandler annotation is removed                                                                                                                     |
+| `HandlerAttributes` | `DEADLINE_NAME`             | Removed                               | `@DeadlineHandler` support moved to `axon-legacy`, which now owns the `DeadlineHandler.deadlineName` attribute key instead of the core `messaging` module |
+| `TagsUtil`          | `META_DATA_TAGGER_FUNCTION` | Renamed to `METADATA_TAGGER_FUNCTION` | Consistent spelling                                                                                                                                       |
