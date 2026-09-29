@@ -18,7 +18,7 @@ package org.axonframework.deadline;
 
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.Metadata;
-import org.axonframework.messaging.core.NoScopeDescriptor;
+import org.axonframework.messaging.core.Scope;
 import org.axonframework.messaging.core.ScopeDescriptor;
 import org.jspecify.annotations.Nullable;
 
@@ -28,12 +28,10 @@ import java.time.Instant;
 /**
  * Contract for deadline managers. Contains methods for scheduling a deadline and for cancelling a deadline.
  * <p>
- * A {@code DeadlineManager} instance obtained through field or constructor injection has no scope of its own: the
- * convenience overloads below that do not take an explicit {@link ScopeDescriptor} resolve to
- * {@link NoScopeDescriptor#INSTANCE} rather than any actual scope. A {@code DeadlineManager} declared as a parameter
- * on a {@code Saga}'s {@code @SagaEventHandler} or {@code @DeadlineHandler} method is resolved instead to an instance
- * that knows the scope of the Saga currently handling that method, and schedules/cancels deferred until the
- * surrounding transaction commits.
+ * The overloads that take no {@link ScopeDescriptor} use {@link Scope#describeCurrentScope()}, as in Axon Framework
+ * 4. A Saga is the current {@link Scope} while one of its handler methods runs, so calling them from a Saga handler
+ * schedules or cancels within that Saga's scope, regardless of how the {@code DeadlineManager} was obtained. Calling
+ * them while no scope is active throws an {@link IllegalStateException}.
  *
  * @author Milan Savic
  * @author Steven van Beelen
@@ -74,7 +72,7 @@ public interface DeadlineManager {
      */
     default String schedule(Instant triggerDateTime, String deadlineName,
                             @Nullable Object messageOrPayload) {
-        return schedule(triggerDateTime, deadlineName, messageOrPayload, NoScopeDescriptor.INSTANCE);
+        return schedule(triggerDateTime, deadlineName, messageOrPayload, Scope.describeCurrentScope());
     }
 
     /**
@@ -133,7 +131,7 @@ public interface DeadlineManager {
      */
     default String schedule(Duration triggerDuration, String deadlineName,
                             @Nullable Object messageOrPayload) {
-        return schedule(triggerDuration, deadlineName, messageOrPayload, NoScopeDescriptor.INSTANCE);
+        return schedule(triggerDuration, deadlineName, messageOrPayload, Scope.describeCurrentScope());
     }
 
     /**
@@ -181,13 +179,13 @@ public interface DeadlineManager {
     void cancelAll(String deadlineName);
 
     /**
-     * Cancels all deadlines corresponding to the given {@code deadlineName} that are scheduled within the scope this
-     * DeadlineManager itself retrieves. This method has no impact on deadlines which have already been triggered.
+     * Cancels all deadlines corresponding to the given {@code deadlineName} that are scheduled within
+     * {@link Scope#describeCurrentScope()}. This method has no impact on deadlines which have already been triggered.
      *
      * @param deadlineName a {@link String} representing the name of the deadlines to cancel
      */
     default void cancelAllWithinScope(String deadlineName) {
-        cancelAllWithinScope(deadlineName, NoScopeDescriptor.INSTANCE);
+        cancelAllWithinScope(deadlineName, Scope.describeCurrentScope());
     }
 
     /**

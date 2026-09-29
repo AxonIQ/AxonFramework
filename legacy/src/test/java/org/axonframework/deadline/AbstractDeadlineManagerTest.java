@@ -16,117 +16,287 @@
 
 package org.axonframework.deadline;
 
-import org.axonframework.messaging.core.CurrentScope;
-import org.axonframework.messaging.core.NoScopeDescriptor;
+import org.axonframework.messaging.core.ContextAwareScope;
+import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.ScopeDescriptor;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
-import org.axonframework.messaging.core.unitofwork.ProcessingLifecycle;
-import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
+import org.axonframework.messaging.core.unitofwork.UnitOfWork;
+import org.axonframework.messaging.core.unitofwork.UnitOfWorkTestUtils;
+import org.axonframework.modelling.saga.repository.AnnotatedSagaRepository;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.*;
 
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Test class validating {@link AbstractDeadlineManager}, in particular that:
- * <ul>
- *     <li>a call made without a bound {@link ProcessingContext} (field/constructor-injected usage) runs
- *     immediately;</li>
- *     <li>a call made through {@link AbstractDeadlineManager#withContext(ProcessingContext)} defers to that
- *     context's prepare-commit phase, and resolves an omitted scope through {@link CurrentScope} rather than
- *     {@link NoScopeDescriptor#INSTANCE}; and</li>
- *     <li>a dispatch interceptor's failure surfaces to the caller instead of being swallowed.</li>
- * </ul>
+ * Test class validating {@link AbstractDeadlineManager#runOnPrepareCommitOrNow(Runnable)} and
+ * {@link AbstractDeadlineManager#processDispatchInterceptors(DeadlineMessage)}, driven through a recording subclass
+ * shaped like the Axon Framework 4 {@code SimpleDeadlineManager}: it creates the message and schedule id up front and
+ * defers the interception and the actual call.
  */
 class AbstractDeadlineManagerTest {
 
+    private static final ScopeDescriptor EXPLICIT_SCOPE = () -> "explicitScope";
+
+    private List<String> timeline;
     private RecordingDeadlineManager testSubject;
 
     @BeforeEach
     void setUp() {
-        testSubject = new RecordingDeadlineManager();
+        timeline = new CopyOnWriteArrayList<>();
+        testSubject = new RecordingDeadlineManager("manager", timeline);
     }
 
     @Nested
-    class UnboundUsage {
+    class WithoutAnActiveScope {
 
         @Test
         void scheduleRunsImmediately() {
-            testSubject.schedule(Instant.now(), "deadlineName", "payload", new StubScopeDescriptor("scope"));
+            // when
+            String scheduleId = testSubject.schedule(Instant.now(), "deadlineName", "payload", EXPLICIT_SCOPE);
 
-            assertThat(testSubject.scheduled).hasSize(1);
-        }
-
-        @Test
-        void scheduleWithoutExplicitScopeFallsBackToNoScopeDescriptor() {
-            testSubject.schedule(Instant.now(), "deadlineName", "payload");
-
+            // then
             assertThat(testSubject.scheduled).singleElement()
-                                             .extracting(RecordingDeadlineManager.ScheduledCall::scope)
-                                             .isSameAs(NoScopeDescriptor.INSTANCE);
+                                             .satisfies(call -> {
+                                                 assertThat(call.scheduleId()).isEqualTo(scheduleId);
+                                                 assertThat(call.scope()).isSameAs(EXPLICIT_SCOPE);
+                                             });
         }
 
         @Test
-        void cancelScheduleRunsImmediately() {
+        void cancelCallsRunImmediately() {
+            // when
             testSubject.cancelSchedule("deadlineName", "scheduleId");
+            testSubject.cancelAll("deadlineName");
+            testSubject.cancelAllWithinScope("deadlineName", EXPLICIT_SCOPE);
 
-            assertThat(testSubject.cancelledSchedules).containsExactly("deadlineName/scheduleId");
+            // then
+            assertThat(timeline).containsExactly("manager:cancelSchedule deadlineName/scheduleId",
+                                                 "manager:cancelAll deadlineName",
+                                                 "manager:cancelAllWithinScope deadlineName@explicitScope");
+        }
+
+        /**
+         * Axon Framework 4 threw here as well: the scope-less overloads ask for the current scope, and there is none.
+         * Failing is what keeps a deadline from being stored under a scope nothing can resolve.
+         */
+        @Test
+        void scheduleWithoutAScopeDescriptorThrows() {
+            // when / then
+            assertThatThrownBy(() -> testSubject.schedule(Instant.now(), "deadlineName", "payload"))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessage("Cannot request current Scope if none is active");
+            assertThat(testSubject.scheduled).isEmpty();
         }
 
         @Test
-        void cancelAllRunsImmediately() {
-            testSubject.cancelAll("deadlineName");
+        void cancelAllWithinScopeWithoutAScopeDescriptorThrows() {
+            // when / then
+            assertThatThrownBy(() -> testSubject.cancelAllWithinScope("deadlineName"))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessage("Cannot request current Scope if none is active");
+            assertThat(timeline).isEmpty();
+        }
 
-            assertThat(testSubject.cancelledAll).containsExactly("deadlineName");
+        /**
+         * Axon Framework 4 deferred whenever a unit of work was active. Axon Framework 5 has no ambient one, so
+         * without a scope carrying the context there is nothing to defer to, even while a context is running.
+         */
+        @Test
+        void aCallMadeWhileAContextRunsButNoScopeIsActiveRunsImmediately() {
+            // given
+            AtomicInteger scheduledDuringInvocation = new AtomicInteger(-1);
+
+            // when
+            runInUnitOfWork(context -> {
+                testSubject.schedule(Instant.now(), "deadlineName", "payload", EXPLICIT_SCOPE);
+                scheduledDuringInvocation.set(testSubject.scheduled.size());
+            });
+
+            // then
+            assertThat(scheduledDuringInvocation).hasValue(1);
         }
     }
 
     @Nested
-    class ContextBoundUsage {
+    class WithinAContextAwareScope {
 
         @Test
-        void scheduleIsDeferredUntilThePrepareCommitPhase() {
-            StubProcessingContext context = new StubProcessingContext();
-            DeadlineManager bound = testSubject.withContext(context);
+        void scheduleIsDeferredUntilTheContextPreparesItsCommit() {
+            // given
+            AtomicInteger scheduledDuringInvocation = new AtomicInteger(-1);
 
-            bound.schedule(Instant.now(), "deadlineName", "payload", new StubScopeDescriptor("scope"));
-            assertThat(testSubject.scheduled).isEmpty();
+            // when
+            runInUnitOfWork(context -> new TestScope(context).run(() -> {
+                testSubject.schedule(Instant.now(), "deadlineName", "payload", EXPLICIT_SCOPE);
+                scheduledDuringInvocation.set(testSubject.scheduled.size());
+            }));
 
-            context.moveToPhase(ProcessingLifecycle.DefaultPhases.PREPARE_COMMIT);
+            // then
+            assertThat(scheduledDuringInvocation).hasValue(0);
             assertThat(testSubject.scheduled).hasSize(1);
         }
 
         @Test
-        void scheduleWithoutExplicitScopeResolvesTheScopeRegisteredOnTheContext() {
-            ScopeDescriptor registeredScope = new StubScopeDescriptor("registered");
-            StubProcessingContext context = new StubProcessingContext();
-            context.putResource(CurrentScope.RESOURCE_KEY, registeredScope);
-            DeadlineManager bound = testSubject.withContext(context);
+        void cancelCallsAreDeferredUntilTheContextPreparesItsCommit() {
+            // given
+            AtomicInteger callsDuringInvocation = new AtomicInteger(-1);
 
-            bound.schedule(Instant.now(), "deadlineName", "payload");
-            context.moveToPhase(ProcessingLifecycle.DefaultPhases.PREPARE_COMMIT);
+            // when
+            runInUnitOfWork(context -> new TestScope(context).run(() -> {
+                testSubject.cancelSchedule("deadlineName", "scheduleId");
+                testSubject.cancelAll("deadlineName");
+                testSubject.cancelAllWithinScope("deadlineName");
+                callsDuringInvocation.set(timeline.size());
+            }));
 
-            assertThat(testSubject.scheduled).singleElement()
-                                             .extracting(RecordingDeadlineManager.ScheduledCall::scope)
-                                             .isSameAs(registeredScope);
+            // then
+            assertThat(callsDuringInvocation).hasValue(0);
+            assertThat(timeline).containsExactly("manager:cancelSchedule deadlineName/scheduleId",
+                                                 "manager:cancelAll deadlineName",
+                                                 "manager:cancelAllWithinScope deadlineName@testScope");
         }
 
         @Test
-        void cancelScheduleIsDeferredUntilThePrepareCommitPhase() {
-            StubProcessingContext context = new StubProcessingContext();
-            DeadlineManager bound = testSubject.withContext(context);
+        void scheduleWithoutAScopeDescriptorUsesTheDescriptorOfTheCurrentScope() {
+            // when
+            runInUnitOfWork(context -> new TestScope(context).run(
+                    () -> testSubject.schedule(Instant.now(), "deadlineName", "payload")
+            ));
 
-            bound.cancelSchedule("deadlineName", "scheduleId");
-            assertThat(testSubject.cancelledSchedules).isEmpty();
+            // then
+            assertThat(testSubject.scheduled).singleElement()
+                                             .extracting(ScheduledCall::scope)
+                                             .extracting(ScopeDescriptor::scopeDescription)
+                                             .isEqualTo("testScope");
+        }
 
-            context.moveToPhase(ProcessingLifecycle.DefaultPhases.PREPARE_COMMIT);
-            assertThat(testSubject.cancelledSchedules).containsExactly("deadlineName/scheduleId");
+        /**
+         * Inherited from Axon Framework 4: the schedule id is known when the call is made and returned right away,
+         * although the call itself only runs once the context prepares its commit.
+         */
+        @Test
+        void theScheduleIdIsReturnedBeforeTheDeferredCallRuns() {
+            // given
+            AtomicReference<String> returnedId = new AtomicReference<>();
+
+            // when
+            runInUnitOfWork(context -> new TestScope(context).run(() -> returnedId.set(
+                    testSubject.schedule(Instant.now(), "deadlineName", "payload", EXPLICIT_SCOPE)
+            )));
+
+            // then
+            assertThat(returnedId.get()).isNotNull();
+            assertThat(testSubject.scheduled).singleElement()
+                                             .extracting(ScheduledCall::scheduleId)
+                                             .isEqualTo(returnedId.get());
+        }
+
+        @Test
+        void deferredCallsNeverRunWhenTheContextRollsBack() {
+            // given
+            UnitOfWork unitOfWork = UnitOfWorkTestUtils.aUnitOfWork();
+
+            // when
+            CompletableFuture<Object> result = unitOfWork.executeWithResult(context -> {
+                new TestScope(context).run(() -> {
+                    testSubject.schedule(Instant.now(), "deadlineName", "payload", EXPLICIT_SCOPE);
+                    testSubject.cancelAll("deadlineName");
+                });
+                return CompletableFuture.failedFuture(new IllegalStateException("handler failure"));
+            });
+
+            // then
+            assertThatThrownBy(() -> result.orTimeout(1, TimeUnit.SECONDS).join())
+                    .hasRootCauseInstanceOf(IllegalStateException.class);
+            assertThat(testSubject.scheduled).isEmpty();
+            assertThat(timeline).isEmpty();
+        }
+
+        /**
+         * A subscribing event processor fed by a {@code SimpleEventBus} invokes a Saga from within
+         * {@code PREPARE_COMMIT}, where registering for {@code PREPARE_COMMIT} itself is rejected.
+         */
+        @Test
+        void aCallMadeFromWithinPrepareCommitIsStillDeferredAndRuns() {
+            // given
+            UnitOfWork unitOfWork = UnitOfWorkTestUtils.aUnitOfWork();
+            AtomicInteger scheduledDuringPrepareCommit = new AtomicInteger(-1);
+            unitOfWork.runOnPrepareCommit(context -> new TestScope(context).run(() -> {
+                testSubject.schedule(Instant.now(), "deadlineName", "payload", EXPLICIT_SCOPE);
+                scheduledDuringPrepareCommit.set(testSubject.scheduled.size());
+            }));
+
+            // when
+            unitOfWork.execute().orTimeout(1, TimeUnit.SECONDS).join();
+
+            // then
+            assertThat(scheduledDuringPrepareCommit).hasValue(0);
+            assertThat(testSubject.scheduled).hasSize(1);
+        }
+
+        @Test
+        void deferredCallsRunInTheOrderTheyWereMade() {
+            // when
+            runInUnitOfWork(context -> {
+                new TestScope(context).run(() -> {
+                    testSubject.schedule(Instant.now(), "first", "payload", EXPLICIT_SCOPE);
+                    testSubject.cancelAll("first");
+                });
+                new TestScope(context).run(() -> testSubject.schedule(Instant.now(), "second", "payload",
+                                                                     EXPLICIT_SCOPE));
+            });
+
+            // then
+            assertThat(timeline).containsExactly("manager:schedule first",
+                                                 "manager:cancelAll first",
+                                                 "manager:schedule second");
+        }
+
+        @Test
+        void deferredCallsRunAfterTheSagaWriteAndBeforeCommit() {
+            // given
+            UnitOfWork unitOfWork = UnitOfWorkTestUtils.aUnitOfWork();
+            unitOfWork.runOn(AnnotatedSagaRepository.WRITE_SAGA, context -> timeline.add("sagaWrite"));
+            unitOfWork.runOnCommit(context -> timeline.add("commit"));
+
+            // when
+            unitOfWork.executeWithResult(context -> {
+                new TestScope(context).run(
+                        () -> testSubject.schedule(Instant.now(), "deadlineName", "payload", EXPLICIT_SCOPE)
+                );
+                return CompletableFuture.completedFuture(null);
+            }).orTimeout(1, TimeUnit.SECONDS).join();
+
+            // then
+            assertThat(timeline).containsExactly("sagaWrite", "manager:schedule deadlineName", "commit");
+        }
+
+        @Test
+        void eachDeadlineManagerRunsItsOwnDeferredCalls() {
+            // given
+            RecordingDeadlineManager otherManager = new RecordingDeadlineManager("other", timeline);
+
+            // when
+            runInUnitOfWork(context -> new TestScope(context).run(() -> {
+                testSubject.schedule(Instant.now(), "deadlineName", "payload", EXPLICIT_SCOPE);
+                otherManager.schedule(Instant.now(), "deadlineName", "payload", EXPLICIT_SCOPE);
+            }));
+
+            // then
+            assertThat(testSubject.scheduled).hasSize(1);
+            assertThat(otherManager.scheduled).hasSize(1);
         }
     }
 
@@ -134,64 +304,211 @@ class AbstractDeadlineManagerTest {
     class DispatchInterceptors {
 
         @Test
-        void aFailingDispatchInterceptorSurfacesItsExceptionRatherThanBeingSwallowed() {
+        void interceptorsRunWithinTheDeferredCall() {
+            // given
+            AtomicInteger interceptions = new AtomicInteger();
+            AtomicInteger interceptionsDuringInvocation = new AtomicInteger(-1);
+            testSubject.registerDispatchInterceptor((message, context, chain) -> {
+                interceptions.incrementAndGet();
+                return chain.proceed(message, context);
+            });
+
+            // when
+            runInUnitOfWork(context -> new TestScope(context).run(() -> {
+                testSubject.schedule(Instant.now(), "deadlineName", "payload", EXPLICIT_SCOPE);
+                interceptionsDuringInvocation.set(interceptions.get());
+            }));
+
+            // then
+            assertThat(interceptionsDuringInvocation).hasValue(0);
+            assertThat(interceptions).hasValue(1);
+        }
+
+        @Test
+        void interceptorsDoNotRunWhenTheContextRollsBack() {
+            // given
+            AtomicInteger interceptions = new AtomicInteger();
+            testSubject.registerDispatchInterceptor((message, context, chain) -> {
+                interceptions.incrementAndGet();
+                return chain.proceed(message, context);
+            });
+
+            // when
+            CompletableFuture<Object> result = UnitOfWorkTestUtils.aUnitOfWork().executeWithResult(context -> {
+                new TestScope(context).run(
+                        () -> testSubject.schedule(Instant.now(), "deadlineName", "payload", EXPLICIT_SCOPE)
+                );
+                return CompletableFuture.failedFuture(new IllegalStateException("handler failure"));
+            });
+
+            // then
+            assertThatThrownBy(() -> result.orTimeout(1, TimeUnit.SECONDS).join())
+                    .hasRootCauseInstanceOf(IllegalStateException.class);
+            assertThat(interceptions).hasValue(0);
+        }
+
+        @Test
+        void theScheduledMessageIsTheInterceptedOne() {
+            // given
+            testSubject.registerDispatchInterceptor(
+                    (message, context, chain) -> chain.proceed(message.andMetadata(Map.of("key", "value")), context)
+            );
+
+            // when
+            testSubject.schedule(Instant.now(), "deadlineName", "payload", EXPLICIT_SCOPE);
+
+            // then
+            assertThat(testSubject.scheduled).singleElement()
+                                             .satisfies(call -> assertThat(call.message().metadata())
+                                                     .containsEntry("key", "value"));
+        }
+
+        @Test
+        void aFailingInterceptorSurfacesItsExceptionWhenTheCallRunsImmediately() {
+            // given
             testSubject.registerDispatchInterceptor((message, context, chain) -> {
                 throw new IllegalStateException("interceptor failure");
             });
 
+            // when / then
             assertThatThrownBy(
-                    () -> testSubject.schedule(Instant.now(), "deadlineName", "payload", new StubScopeDescriptor("scope"))
+                    () -> testSubject.schedule(Instant.now(), "deadlineName", "payload", EXPLICIT_SCOPE)
             ).isInstanceOf(IllegalStateException.class).hasMessage("interceptor failure");
             assertThat(testSubject.scheduled).isEmpty();
         }
-    }
 
-    private record StubScopeDescriptor(String description) implements ScopeDescriptor {
+        @Test
+        void aFailingInterceptorFailsTheContextWhenTheCallIsDeferred() {
+            // given
+            testSubject.registerDispatchInterceptor((message, context, chain) -> {
+                throw new IllegalStateException("interceptor failure");
+            });
 
-        @Override
-        public String scopeDescription() {
-            return description;
+            // when
+            CompletableFuture<Object> result = UnitOfWorkTestUtils.aUnitOfWork().executeWithResult(context -> {
+                new TestScope(context).run(
+                        () -> testSubject.schedule(Instant.now(), "deadlineName", "payload", EXPLICIT_SCOPE)
+                );
+                return CompletableFuture.completedFuture(null);
+            });
+
+            // then
+            assertThatThrownBy(() -> result.orTimeout(1, TimeUnit.SECONDS).join())
+                    .hasRootCauseInstanceOf(IllegalStateException.class)
+                    .hasRootCauseMessage("interceptor failure");
+            assertThat(testSubject.scheduled).isEmpty();
+        }
+
+        /**
+         * The counterpart of an Axon Framework 4 interceptor returning {@code null}, which then got scheduled as
+         * {@code null}. Passing it on is left to the implementation, as it was there.
+         */
+        @Test
+        void anInterceptorEndingTheChainWithoutAMessageYieldsNull() {
+            // given
+            testSubject.registerDispatchInterceptor((message, context, chain) -> MessageStream.empty());
+
+            // when
+            testSubject.schedule(Instant.now(), "deadlineName", "payload", EXPLICIT_SCOPE);
+
+            // then
+            assertThat(testSubject.scheduled).singleElement()
+                                             .extracting(ScheduledCall::message)
+                                             .isNull();
         }
     }
 
+    private static void runInUnitOfWork(Consumer<ProcessingContext> invocation) {
+        UnitOfWorkTestUtils.aUnitOfWork()
+                           .executeWithResult(context -> {
+                               invocation.accept(context);
+                               return CompletableFuture.completedFuture(null);
+                           })
+                           .orTimeout(1, TimeUnit.SECONDS)
+                           .join();
+    }
+
     /**
-     * A minimal, test-only {@link AbstractDeadlineManager} subclass: records every call it receives instead of
-     * actually scheduling/cancelling anything against a real backend.
+     * Stands in for the scope a Saga starts around its handler invocation.
+     */
+    private static final class TestScope extends ContextAwareScope {
+
+        private final ProcessingContext context;
+
+        private TestScope(ProcessingContext context) {
+            this.context = context;
+        }
+
+        private void run(Runnable task) {
+            startScope();
+            try {
+                task.run();
+            } finally {
+                endScope();
+            }
+        }
+
+        @Override
+        public ProcessingContext processingContext() {
+            return context;
+        }
+
+        @Override
+        public ScopeDescriptor describeScope() {
+            return () -> "testScope";
+        }
+    }
+
+    private record ScheduledCall(String scheduleId, @Nullable DeadlineMessage message, ScopeDescriptor scope) {
+
+    }
+
+    /**
+     * A test-only {@link AbstractDeadlineManager} recording every call instead of scheduling against a backend. Each
+     * method follows the Axon Framework 4 {@code SimpleDeadlineManager}: whatever the caller needs back is computed
+     * right away, everything else runs through {@link #runOnPrepareCommitOrNow(Runnable)}.
      */
     private static final class RecordingDeadlineManager extends AbstractDeadlineManager {
 
-        private final List<ScheduledCall> scheduled = new ArrayList<>();
-        private final List<String> cancelledSchedules = new ArrayList<>();
-        private final List<String> cancelledAll = new ArrayList<>();
-        private final AtomicInteger idGenerator = new AtomicInteger();
+        private final String name;
+        private final List<String> timeline;
+        private final List<ScheduledCall> scheduled = new CopyOnWriteArrayList<>();
+
+        private RecordingDeadlineManager(String name, List<String> timeline) {
+            this.name = name;
+            this.timeline = timeline;
+        }
 
         @Override
-        protected String doSchedule(DeadlineMessage deadlineMessage,
-                                    ScopeDescriptor scope,
-                                    @Nullable ProcessingContext context) {
-            String scheduleId = "schedule-" + idGenerator.incrementAndGet();
-            runOnPrepareCommitOrNow(context, () -> scheduled.add(new ScheduledCall(scheduleId, deadlineMessage, scope)));
+        public String schedule(Instant triggerDateTime,
+                               String deadlineName,
+                               @Nullable Object messageOrPayload,
+                               ScopeDescriptor deadlineScope) {
+            DeadlineMessage deadlineMessage = asDeadlineMessage(deadlineName, messageOrPayload, triggerDateTime);
+            String scheduleId = deadlineMessage.identifier();
+            runOnPrepareCommitOrNow(() -> {
+                DeadlineMessage intercepted = processDispatchInterceptors(deadlineMessage);
+                scheduled.add(new ScheduledCall(scheduleId, intercepted, deadlineScope));
+                timeline.add(name + ":schedule " + deadlineName);
+            });
             return scheduleId;
         }
 
         @Override
-        protected void doCancelSchedule(String deadlineName, String scheduleId, @Nullable ProcessingContext context) {
-            runOnPrepareCommitOrNow(context, () -> cancelledSchedules.add(deadlineName + "/" + scheduleId));
+        public void cancelSchedule(String deadlineName, String scheduleId) {
+            runOnPrepareCommitOrNow(() -> timeline.add(name + ":cancelSchedule " + deadlineName + "/" + scheduleId));
         }
 
         @Override
-        protected void doCancelAll(String deadlineName, @Nullable ProcessingContext context) {
-            runOnPrepareCommitOrNow(context, () -> cancelledAll.add(deadlineName));
+        public void cancelAll(String deadlineName) {
+            runOnPrepareCommitOrNow(() -> timeline.add(name + ":cancelAll " + deadlineName));
         }
 
         @Override
-        protected void doCancelAllWithinScope(String deadlineName,
-                                              ScopeDescriptor scope,
-                                              @Nullable ProcessingContext context) {
-            runOnPrepareCommitOrNow(context, () -> cancelledAll.add(deadlineName + "@" + scope.scopeDescription()));
-        }
-
-        private record ScheduledCall(String scheduleId, DeadlineMessage message, ScopeDescriptor scope) {
+        public void cancelAllWithinScope(String deadlineName, ScopeDescriptor scope) {
+            runOnPrepareCommitOrNow(() -> timeline.add(
+                    name + ":cancelAllWithinScope " + deadlineName + "@" + scope.scopeDescription()
+            ));
         }
     }
 }
