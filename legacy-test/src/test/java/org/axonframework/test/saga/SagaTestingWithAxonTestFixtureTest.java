@@ -16,6 +16,7 @@
 
 package org.axonframework.test.saga;
 
+import org.axonframework.config.SagaConfigurer;
 import org.axonframework.messaging.commandhandling.CommandBus;
 import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher;
 import org.axonframework.messaging.core.MessageStream;
@@ -25,7 +26,6 @@ import org.axonframework.modelling.saga.EndSaga;
 import org.axonframework.modelling.saga.SagaEventHandler;
 import org.axonframework.modelling.saga.SagaLifecycle;
 import org.axonframework.modelling.saga.StartSaga;
-import org.axonframework.modelling.saga.configuration.Sagas;
 import org.axonframework.modelling.saga.repository.SagaStore;
 import org.axonframework.modelling.saga.repository.inmemory.InMemorySagaStore;
 import org.axonframework.test.fixture.AxonTestFixture;
@@ -66,7 +66,7 @@ class SagaTestingWithAxonTestFixtureTest {
                                                    "OrderSaga",
                                                    components -> components.declarative(
                                                            "Saga[OrderSaga]",
-                                                           Sagas.of(OrderSaga.class)))
+                                                           SagaConfigurer.forType(OrderSaga.class)))
                                    ));
 
         fixture = AxonTestFixture.with(configurer);

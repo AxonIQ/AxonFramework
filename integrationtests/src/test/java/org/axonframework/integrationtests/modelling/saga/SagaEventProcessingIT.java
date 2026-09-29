@@ -19,6 +19,7 @@ package org.axonframework.integrationtests.modelling.saga;
 import org.axonframework.common.FutureUtils;
 import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.common.configuration.Configuration;
+import org.axonframework.config.SagaConfigurer;
 import org.axonframework.messaging.core.configuration.MessagingConfigurer;
 import org.axonframework.messaging.eventhandling.configuration.EventProcessorModule;
 import org.axonframework.messaging.core.EmptyApplicationContext;
@@ -48,7 +49,6 @@ import org.axonframework.modelling.saga.EndSaga;
 import org.axonframework.modelling.saga.SagaEventHandler;
 import org.axonframework.modelling.saga.SagaLifecycle;
 import org.axonframework.modelling.saga.StartSaga;
-import org.axonframework.modelling.saga.configuration.Sagas;
 import org.axonframework.modelling.saga.repository.AnnotatedSagaRepository;
 import org.axonframework.modelling.saga.repository.SagaStore;
 import org.axonframework.modelling.saga.repository.inmemory.InMemorySagaStore;
@@ -363,7 +363,7 @@ class SagaEventProcessingIT {
                                                .eventHandlingComponents(
                                                        components -> components.declarative(
                                                                "Saga[OrderSaga]",
-                                                               Sagas.of(OrderSaga.class)
+                                                               SagaConfigurer.forType(OrderSaga.class)
                                                        )
                                                )
                                                .notCustomized())

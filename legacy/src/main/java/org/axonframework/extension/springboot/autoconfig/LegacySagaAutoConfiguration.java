@@ -33,7 +33,8 @@ import org.springframework.context.annotation.Role;
  * <p>
  * Registers the {@link SpringSagaLookup} that discovers {@code @Saga}-annotated beans, and provides an
  * {@link InMemorySagaStore} as a last-resort {@link SagaStore} bean. Without any {@link SagaStore} component,
- * {@code Sagas.of(...)} refuses to build a Saga's {@link org.axonframework.messaging.eventhandling.EventHandlingComponent}
+ * {@link org.axonframework.config.SagaConfigurer SagaConfigurer.forType(...)} refuses to build a Saga's
+ * {@link org.axonframework.messaging.eventhandling.EventHandlingComponent}
  * at all, so a store is a hard requirement, not merely a convenience. Axon Framework 4 hid this same default inside
  * its {@code SagaConfigurer}; here it is an explicit, overridable bean instead.
  * <p>

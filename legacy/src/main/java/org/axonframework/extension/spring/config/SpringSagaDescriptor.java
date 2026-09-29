@@ -19,8 +19,8 @@ package org.axonframework.extension.spring.config;
 import org.axonframework.common.StringUtils;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.configuration.ComponentBuilder;
+import org.axonframework.config.SagaConfigurer;
 import org.axonframework.messaging.eventhandling.EventHandlingComponent;
-import org.axonframework.modelling.saga.configuration.Sagas;
 import org.axonframework.modelling.saga.repository.SagaStore;
 import org.jspecify.annotations.Nullable;
 import org.springframework.beans.BeansException;
@@ -171,13 +171,12 @@ public class SpringSagaDescriptor
 
     private <T> ComponentBuilder<EventHandlingComponent> sagaComponent(Class<T> type) {
         if (StringUtils.emptyOrNull(sagaStore)) {
-            return Sagas.of(type);
+            return SagaConfigurer.forType(type);
         }
         String sagaStoreBeanName = sagaStore;
         ApplicationContext context = requireApplicationContext();
-        ComponentBuilder<SagaStore<? super T>> storeBuilder =
-                configuration -> sagaStore(context, sagaStoreBeanName);
-        return Sagas.of(type, storeBuilder);
+        return SagaConfigurer.forType(type)
+                             .configureSagaStore(configuration -> sagaStore(context, sagaStoreBeanName));
     }
 
     @SuppressWarnings("unchecked")
