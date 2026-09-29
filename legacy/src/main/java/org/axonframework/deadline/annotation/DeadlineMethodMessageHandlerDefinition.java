@@ -18,7 +18,6 @@ package org.axonframework.deadline.annotation;
 
 import org.axonframework.deadline.DeadlineMessage;
 import org.axonframework.messaging.core.Message;
-import org.axonframework.messaging.core.annotation.HandlerAttributes;
 import org.axonframework.messaging.core.annotation.HandlerEnhancerDefinition;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.core.annotation.WrappedMessageHandlingMember;
@@ -33,10 +32,12 @@ import org.axonframework.messaging.core.unitofwork.ProcessingContext;
  */
 public class DeadlineMethodMessageHandlerDefinition implements HandlerEnhancerDefinition {
 
+    private static final String DEADLINE_NAME_ATTRIBUTE = "DeadlineHandler.deadlineName";
+
     @Override
     public <T> MessageHandlingMember<T> wrapHandler(MessageHandlingMember<T> original) {
         //noinspection rawtypes,unchecked
-        return original.<String>attribute(HandlerAttributes.DEADLINE_NAME)
+        return original.<String>attribute(DEADLINE_NAME_ATTRIBUTE)
                        .map(deadlineName -> (MessageHandlingMember<T>) new DeadlineMethodMessageHandlingMember(
                                original, deadlineName
                        ))

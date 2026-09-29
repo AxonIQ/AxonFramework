@@ -120,12 +120,6 @@ public interface HandlerAttributes {
     String SEQUENCING_POLICY_PARAMETERS = "SequencingPolicy.parameters";
 
     /**
-     * Attribute key referencing the name of the {@code org.axonframework.deadline.DeadlineMessage} the handler can
-     * handle.
-     */
-    String DEADLINE_NAME = "DeadlineHandler.deadlineName";
-
-    /**
      * Retrieve the attribute for the given {@code attributeKey}. Might be {@code null} if there is no attribute present
      * for the given key.
      *
