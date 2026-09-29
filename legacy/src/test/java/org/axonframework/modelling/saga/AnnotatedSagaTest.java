@@ -26,10 +26,12 @@ import org.axonframework.messaging.core.Scope;
 import org.axonframework.messaging.core.ScopeDescriptor;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.core.interception.annotation.ExceptionHandler;
+import org.axonframework.messaging.core.interception.annotation.MessageHandlerInterceptor;
 import org.axonframework.messaging.core.interception.annotation.NoMoreInterceptors;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
+import org.axonframework.messaging.eventhandling.EventTestUtils;
 import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.messaging.eventhandling.replay.ResetContext;
 import org.axonframework.messaging.eventhandling.replay.ResetNotSupportedException;
@@ -37,6 +39,7 @@ import org.axonframework.modelling.saga.metamodel.AnnotationSagaMetaModelFactory
 import org.axonframework.modelling.saga.repository.AnnotatedSagaRepository;
 import org.axonframework.modelling.saga.repository.inmemory.InMemorySagaStore;
 import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.*;
 
 import java.util.Collections;
@@ -519,6 +522,104 @@ class AnnotatedSagaTest {
     }
 
     /**
+     * Axon Framework 4 ran the Saga's whole interceptor chain inside the Saga's scope: its interceptors, the handler
+     * and its exception handlers. The chain here is built lazily, so the scope has to stay current until the chain
+     * completed, not only while it is assembled.
+     */
+    @Nested
+    class ScopeAroundTheInterceptorChain {
+
+        private final EventMessage event = EventTestUtils.asEventMessage(new RegularEvent("id"));
+
+        @Test
+        void aVoidMessageHandlerInterceptorAndTheHandlerBothRunWithinTheSagasScope() {
+            // given
+            InterceptedSaga saga = new InterceptedSaga();
+
+            // when
+            handle(sagaFor(InterceptedSaga.class, saga));
+
+            // then
+            assertThat(saga.interceptorScope).isEqualTo(new SagaScopeDescriptor("InterceptedSaga", "saga-id"));
+            assertThat(saga.handlerScope).isEqualTo(new SagaScopeDescriptor("InterceptedSaga", "saga-id"));
+        }
+
+        @Test
+        void anExceptionHandlerRunsWithinTheSagasScope() {
+            // given
+            ExceptionHandlingSaga saga = new ExceptionHandlingSaga();
+
+            // when
+            handle(sagaFor(ExceptionHandlingSaga.class, saga));
+
+            // then
+            assertThat(saga.exceptionHandlerScope)
+                    .isEqualTo(new SagaScopeDescriptor("ExceptionHandlingSaga", "saga-id"));
+        }
+
+        /**
+         * A Saga reached while another Saga's handler runs on the same thread, for example through an event published
+         * without a {@code ProcessingContext}, must describe itself rather than the Saga whose scope is below it.
+         */
+        @Test
+        void aSagaHandledWhileAnotherSagasScopeIsActiveSeesItsOwnScope() {
+            // given
+            InterceptedSaga inner = new InterceptedSaga();
+            AnnotatedSaga<InterceptedSaga> innerSaga = sagaFor(InterceptedSaga.class, inner, "inner-id");
+            NestingSaga outer = new NestingSaga(() -> handle(innerSaga));
+
+            // when
+            handle(sagaFor(NestingSaga.class, outer, "outer-id"));
+
+            // then
+            assertThat(inner.handlerScope).isEqualTo(new SagaScopeDescriptor("InterceptedSaga", "inner-id"));
+            assertThat(outer.scopeAfterInnerSaga).isEqualTo(new SagaScopeDescriptor("NestingSaga", "outer-id"));
+        }
+
+        @Test
+        void noScopeIsActiveOnceTheInterceptorChainThrows() {
+            // given
+            AnnotatedSaga<StubAnnotatedSaga> subject = new AnnotatedSaga<>(
+                    "saga-id", Collections.emptySet(), new StubAnnotatedSaga(),
+                    new AnnotationSagaMetaModelFactory().modelOf(StubAnnotatedSaga.class),
+                    (message, context, target, handler) -> {
+                        throw new IllegalStateException("chain failure");
+                    }
+            );
+            subject.associateWith(new AssociationValue("propertyName", "id"));
+
+            // when
+            Throwable failure = catchThrowable(() -> subject.handle(event, StubProcessingContext.forMessage(event)));
+
+            // then
+            assertThat(failure).isInstanceOf(IllegalStateException.class).hasMessage("chain failure");
+            assertThatThrownBy(Scope::getCurrentScope).isInstanceOf(IllegalStateException.class);
+        }
+
+        private <T> AnnotatedSaga<T> sagaFor(Class<T> sagaType, T instance) {
+            return sagaFor(sagaType, instance, "saga-id");
+        }
+
+        private <T> AnnotatedSaga<T> sagaFor(Class<T> sagaType, T instance, String sagaId) {
+            AnnotationSagaMetaModelFactory factory = new AnnotationSagaMetaModelFactory();
+            AnnotatedSaga<T> saga = new AnnotatedSaga<>(sagaId,
+                                                        Collections.emptySet(),
+                                                        instance,
+                                                        factory.modelOf(sagaType),
+                                                        factory.chainedInterceptor(sagaType));
+            saga.associateWith(new AssociationValue("propertyName", "id"));
+            return saga;
+        }
+
+        private void handle(AnnotatedSaga<?> saga) {
+            saga.handle(event, StubProcessingContext.forMessage(event))
+                .asCompletableFuture()
+                .orTimeout(1, TimeUnit.SECONDS)
+                .join();
+        }
+    }
+
+    /**
      * Axon Framework 4 sagas were synchronous by construction: {@code EventMessageHandler#handleSync} returned the
      * handler's value, which the framework ignored, so an asynchronous result was dropped and never took part in the
      * transaction. {@link org.axonframework.messaging.eventhandling.EventHandlingComponent} can express one, and the
@@ -917,6 +1018,64 @@ class AnnotatedSagaTest {
             if (failure != null) {
                 throw failure;
             }
+        }
+    }
+
+    private static @Nullable ScopeDescriptor currentScopeOrNull() {
+        try {
+            return Scope.describeCurrentScope();
+        } catch (IllegalStateException e) {
+            return null;
+        }
+    }
+
+    @SuppressWarnings("unused")
+    private static class InterceptedSaga {
+
+        private ScopeDescriptor interceptorScope;
+        private ScopeDescriptor handlerScope;
+
+        @MessageHandlerInterceptor
+        public void beforeHandling(EventMessage event) {
+            this.interceptorScope = currentScopeOrNull();
+        }
+
+        @SagaEventHandler(associationProperty = "propertyName")
+        public void handle(RegularEvent event) {
+            this.handlerScope = currentScopeOrNull();
+        }
+    }
+
+    @SuppressWarnings("unused")
+    private static class ExceptionHandlingSaga {
+
+        private ScopeDescriptor exceptionHandlerScope;
+
+        @SagaEventHandler(associationProperty = "propertyName")
+        public void handle(RegularEvent event) {
+            throw new IllegalStateException("handler failure");
+        }
+
+        @ExceptionHandler
+        public void onFailure(IllegalStateException failure) {
+            this.exceptionHandlerScope = currentScopeOrNull();
+        }
+    }
+
+    @SuppressWarnings("unused")
+    private static class NestingSaga {
+
+        private final Runnable whileHandling;
+        private ScopeDescriptor scopeAfterInnerSaga;
+
+        private NestingSaga(Runnable whileHandling) {
+            this.whileHandling = whileHandling;
+        }
+
+        @SagaEventHandler(associationProperty = "propertyName")
+        public void handle(RegularEvent event) {
+            whileHandling.run();
+            this.scopeAfterInnerSaga = currentScopeOrNull();
         }
     }
 

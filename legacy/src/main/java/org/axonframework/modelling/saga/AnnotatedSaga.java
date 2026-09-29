@@ -136,14 +136,13 @@ public class AnnotatedSaga<T> implements Saga<T>, SagaLifecycle {
 
         ProcessingContext sagaContext = sagaContext(context);
         return matchingHandler(event, sagaContext)
-                .map(handler -> requireCompleted(
-                        new InvocationScope(sagaContext)
-                                .run(() -> chainedInterceptor.handle(event, sagaContext, sagaInstance, handler))
-                                .onErrorContinue(failure -> MessageStream.failed(wrapIfChecked(failure)))
-                                .ignoreEntries()
-                                .cast(),
+                .map(handler -> new InvocationScope(sagaContext).run(() -> requireCompleted(
+                        chainedInterceptor.handle(event, sagaContext, sagaInstance, handler)
+                                          .onErrorContinue(failure -> MessageStream.failed(wrapIfChecked(failure)))
+                                          .ignoreEntries()
+                                          .cast(),
                         handler
-                ))
+                )))
                 .orElse(MessageStream.empty());
     }
 
@@ -261,8 +260,10 @@ public class AnnotatedSaga<T> implements Saga<T>, SagaLifecycle {
          * invocation returns or throws.
          * <p>
          * Does what {@link Scope#executeWithResult(java.util.concurrent.Callable)} does, without its
-         * {@code throws Exception}: a failure is turned into what Axon Framework 4 rethrew by
-         * {@link #wrapIfChecked(Throwable)}, outside the scope, as before.
+         * {@code throws Exception}. The invocation has to include completing the handler's result, not only
+         * requesting it: the interceptor chain is assembled lazily, so a before-interceptor's handler and an
+         * exception handler only run once the result is consumed. {@link #requireCompleted} consumes it, which is
+         * why it runs within this scope too.
          */
         private <R> R run(Supplier<R> invocation) {
             startScope();
