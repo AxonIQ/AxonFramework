@@ -17,8 +17,12 @@
 package org.axonframework.deadline;
 
 import org.axonframework.messaging.core.ContextAwareScope;
+import org.axonframework.messaging.core.GenericMessage;
+import org.axonframework.messaging.core.Message;
+import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.ScopeDescriptor;
+import org.axonframework.messaging.core.interception.CorrelationDataInterceptor;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.ProcessingLifecycle;
 import org.axonframework.messaging.core.unitofwork.UnitOfWork;
@@ -483,6 +487,68 @@ class AbstractDeadlineManagerTest {
             assertThat(testSubject.scheduled).singleElement()
                                              .extracting(ScheduledCall::message)
                                              .isNull();
+        }
+    }
+
+    /**
+     * Axon Framework 4 attached the correlation data of the current unit of work to every new message, so a deadline
+     * scheduled from a Saga handler carried the handled event's correlation identifiers.
+     */
+    @Nested
+    class CorrelationData {
+
+        private static final Map<String, String> CORRELATION = Map.of("correlationId", "correlation-1");
+
+        @Test
+        void aDeadlineCreatedFromAPayloadCarriesTheCorrelationDataOfTheCurrentScopesContext() {
+            // when
+            runInUnitOfWork(context -> {
+                context.putResource(CorrelationDataInterceptor.CORRELATION_DATA, CORRELATION);
+                new TestScope(context).run(
+                        () -> testSubject.schedule(Instant.now(), "deadlineName", "payload", EXPLICIT_SCOPE)
+                );
+            });
+
+            // then
+            assertThat(testSubject.scheduled).singleElement()
+                                             .satisfies(call -> assertThat(call.message().metadata())
+                                                     .containsEntry("correlationId", "correlation-1"));
+        }
+
+        /**
+         * Inherited from Axon Framework 4: a given message is taken over as it is, so it only carries the correlation
+         * data it already had.
+         */
+        @Test
+        void aDeadlineCreatedFromAGivenMessageKeepsOnlyThatMessagesMetadata() {
+            // given
+            Message given = new GenericMessage(new MessageType("payload"), "payload", Map.of("own", "value"));
+
+            // when
+            runInUnitOfWork(context -> {
+                context.putResource(CorrelationDataInterceptor.CORRELATION_DATA, CORRELATION);
+                new TestScope(context).run(
+                        () -> testSubject.schedule(Instant.now(), "deadlineName", given, EXPLICIT_SCOPE)
+                );
+            });
+
+            // then
+            assertThat(testSubject.scheduled).singleElement()
+                                             .satisfies(call -> assertThat(call.message().metadata())
+                                                     .containsExactlyEntriesOf(Map.of("own", "value")));
+        }
+
+        @Test
+        void aDeadlineCreatedWithoutAnActiveScopeCarriesNoCorrelationData() {
+            // when
+            runInUnitOfWork(context -> {
+                context.putResource(CorrelationDataInterceptor.CORRELATION_DATA, CORRELATION);
+                testSubject.schedule(Instant.now(), "deadlineName", "payload", EXPLICIT_SCOPE);
+            });
+
+            // then
+            assertThat(testSubject.scheduled).singleElement()
+                                             .satisfies(call -> assertThat(call.message().metadata()).isEmpty());
         }
     }
 

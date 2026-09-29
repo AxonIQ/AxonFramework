@@ -38,6 +38,7 @@ import org.junit.jupiter.api.*;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -143,6 +144,27 @@ class SagaDeadlineSchedulingTest {
         }
     }
 
+    @Nested
+    class CorrelationData {
+
+        @Test
+        void theDeadlineCarriesTheCorrelationDataOfTheEventTheSagaHandled() {
+            // given
+            startWith(Sagas.of(ParameterSaga.class));
+            EventMessage event = asEventMessage(new OrderPlaced("order-1"));
+
+            // when
+            publish(event);
+
+            // then
+            assertThat(deadlineManager.scheduled).singleElement()
+                                                 .extracting(ScheduledDeadline::metadata)
+                                                 .satisfies(metadata -> assertThat(metadata)
+                                                         .containsEntry("correlationId", event.identifier())
+                                                         .containsEntry("causationId", event.identifier()));
+        }
+    }
+
     /**
      * Axon Framework 4 users often kept the {@code DeadlineManager} in a service the Saga delegates to. Such a
      * collaborator is not a handler parameter, yet it still schedules within the Saga's scope and deferred to the
@@ -234,7 +256,10 @@ class SagaDeadlineSchedulingTest {
         }
     }
 
-    private record ScheduledDeadline(String deadlineName, ScopeDescriptor scope, boolean sagaStoredWhenScheduled) {
+    private record ScheduledDeadline(String deadlineName,
+                                     ScopeDescriptor scope,
+                                     boolean sagaStoredWhenScheduled,
+                                     Map<String, String> metadata) {
 
     }
 
@@ -258,7 +283,7 @@ class SagaDeadlineSchedulingTest {
                                ScopeDescriptor deadlineScope) {
             DeadlineMessage deadlineMessage = asDeadlineMessage(deadlineName, messageOrPayload, triggerDateTime);
             runOnPrepareCommitOrNow(() -> scheduled.add(new ScheduledDeadline(
-                    deadlineName, deadlineScope, sagaStore.size() > 0
+                    deadlineName, deadlineScope, sagaStore.size() > 0, deadlineMessage.metadata()
             )));
             return deadlineMessage.identifier();
         }

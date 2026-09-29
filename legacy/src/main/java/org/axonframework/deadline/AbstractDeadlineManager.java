@@ -29,6 +29,7 @@ import org.axonframework.messaging.core.MessageDispatchInterceptor;
 import org.axonframework.messaging.core.MessageHandlerInterceptor;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.MessageTypeResolver;
+import org.axonframework.messaging.core.interception.CorrelationDataInterceptor;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.ProcessingLifecycle;
 import org.jspecify.annotations.Nullable;
@@ -36,6 +37,7 @@ import org.jspecify.annotations.Nullable;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -190,6 +192,10 @@ public abstract class AbstractDeadlineManager implements DeadlineManager {
      * given {@code expiryTime}. If the {@code messageOrPayload} parameter is of type {@link Message}, a new
      * {@code DeadlineMessage} instance will be created using the payload and meta data of the given message. Otherwise,
      * the given {@code messageOrPayload} is wrapped into a {@code GenericDeadlineMessage} as its payload.
+     * <p>
+     * A message wrapping a payload carries the correlation data of the {@link ProcessingContext} of the current
+     * {@link ContextAwareScope}, if any, as an Axon Framework 4 message carried the correlation data of the current
+     * unit of work. A given {@link Message} is taken over as it is, as it was in Axon Framework 4.
      *
      * @param deadlineName     the name for this {@link DeadlineMessage}
      * @param messageOrPayload a {@link Message} or payload to wrap as a DeadlineMessage
@@ -207,7 +213,13 @@ public abstract class AbstractDeadlineManager implements DeadlineManager {
         }
         MessageType type = messageTypeResolver.resolveOrThrow(ObjectUtils.nullSafeTypeOf(messageOrPayload));
         return new GenericDeadlineMessage(
-                deadlineName, new GenericMessage(type, messageOrPayload), () -> expiryTime
+                deadlineName, new GenericMessage(type, messageOrPayload, currentCorrelationData()), () -> expiryTime
         );
+    }
+
+    private static Map<String, String> currentCorrelationData() {
+        return ContextAwareScope.currentProcessingContext()
+                                .map(context -> context.getResource(CorrelationDataInterceptor.CORRELATION_DATA))
+                                .orElse(Map.of());
     }
 }
