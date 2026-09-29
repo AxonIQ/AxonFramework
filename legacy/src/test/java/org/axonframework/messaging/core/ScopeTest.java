@@ -32,6 +32,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class ScopeTest {
 
+    @AfterEach
+    void assertNoScopeIsLeftActive() {
+        // A scope left behind would leak into whichever test runs next on this thread.
+        assertThatThrownBy(Scope::getCurrentScope).isInstanceOf(IllegalStateException.class);
+    }
+
     @Nested
     class WithoutAnActiveScope {
 

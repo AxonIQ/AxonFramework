@@ -19,6 +19,7 @@ package org.axonframework.deadline;
 import org.axonframework.common.FutureUtils;
 import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.common.configuration.ComponentBuilder;
+import org.axonframework.messaging.core.Scope;
 import org.axonframework.messaging.core.ScopeDescriptor;
 import org.axonframework.messaging.core.configuration.MessagingConfigurer;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
@@ -39,10 +40,12 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.axonframework.messaging.eventhandling.EventTestUtils.asEventMessage;
 
 /**
@@ -65,6 +68,8 @@ class SagaDeadlineSchedulingTest {
         if (configuration != null) {
             configuration.shutdown();
         }
+        // A scope left behind would leak into whichever test runs next on this thread.
+        assertThatThrownBy(Scope::getCurrentScope).isInstanceOf(IllegalStateException.class);
     }
 
     @Nested
@@ -109,8 +114,28 @@ class SagaDeadlineSchedulingTest {
 
             // then
             assertThat(deadlineManager.scheduled).singleElement()
-                                                 .extracting(ScheduledDeadline::sagaStoredWhenScheduled)
-                                                 .isEqualTo(true);
+                                                 .satisfies(deadline -> assertThat(deadline.sagaStoredWhenScheduled())
+                                                         .isTrue());
+        }
+
+        /**
+         * The Axon Framework 4 counterpart is {@code deadlineCancellationWithinScopeOnSaga}: a scope-less
+         * {@code cancelAllWithinScope(name)} from a Saga handler cancels within that Saga's scope.
+         */
+        @Test
+        void cancelAllWithinScopeWithoutAScopeDescriptorCancelsWithinTheScopeOfTheSaga() {
+            // given
+            startWith(Sagas.of(ParameterSaga.class));
+            publish(asEventMessage(new OrderPlaced("order-1")));
+
+            // when
+            publish(asEventMessage(new OrderPaid("order-1")));
+
+            // then
+            String sagaId = sagaIdOf(ParameterSaga.class);
+            assertThat(deadlineManager.cancelledWithinScope).containsExactly(
+                    "paymentReminder@" + new SagaScopeDescriptor("ParameterSaga", sagaId).scopeDescription()
+            );
         }
 
         /**
@@ -121,8 +146,8 @@ class SagaDeadlineSchedulingTest {
         void aSagaInvokedWhileTheUnitOfWorkPreparesItsCommitSchedulesToo() {
             // given
             startWith(Sagas.of(ParameterSaga.class));
-            UnitOfWorkFactory unitOfWorkFactory = configuration.getComponent(UnitOfWorkFactory.class);
-            EventSink eventSink = configuration.getComponent(EventSink.class);
+            UnitOfWorkFactory unitOfWorkFactory = configuration().getComponent(UnitOfWorkFactory.class);
+            EventSink eventSink = configuration().getComponent(EventSink.class);
 
             // when
             FutureUtils.joinAndUnwrap(
@@ -209,8 +234,12 @@ class SagaDeadlineSchedulingTest {
 
     private void publish(EventMessage event) {
         FutureUtils.joinAndUnwrap(
-                configuration.getComponent(EventSink.class).publish(null, List.of(event)), TIMEOUT
+                configuration().getComponent(EventSink.class).publish(null, List.of(event)), TIMEOUT
         );
+    }
+
+    private AxonConfiguration configuration() {
+        return Objects.requireNonNull(configuration, "The configuration has not been started");
     }
 
     private String sagaIdOf(Class<?> sagaType) {
@@ -223,6 +252,10 @@ class SagaDeadlineSchedulingTest {
 
     }
 
+    public record OrderPaid(String orderId) {
+
+    }
+
     @SuppressWarnings({"unused", "removal"})
     public static class ParameterSaga {
 
@@ -230,6 +263,11 @@ class SagaDeadlineSchedulingTest {
         @SagaEventHandler(associationProperty = "orderId")
         public void on(OrderPlaced event, DeadlineManager deadlineManager) {
             deadlineManager.schedule(Duration.ofMinutes(5), "paymentReminder");
+        }
+
+        @SagaEventHandler(associationProperty = "orderId")
+        public void on(OrderPaid event, DeadlineManager deadlineManager) {
+            deadlineManager.cancelAllWithinScope("paymentReminder");
         }
     }
 
@@ -265,12 +303,13 @@ class SagaDeadlineSchedulingTest {
 
     /**
      * Records every deadline it is asked to schedule, together with whether the Saga was already in the store at the
-     * moment the deferred call ran.
+     * moment the deferred call ran, and every cancellation within a scope.
      */
     private static final class RecordingDeadlineManager extends AbstractDeadlineManager {
 
         private final InMemorySagaStore sagaStore;
         private final List<ScheduledDeadline> scheduled = new CopyOnWriteArrayList<>();
+        private final List<String> cancelledWithinScope = new CopyOnWriteArrayList<>();
 
         private RecordingDeadlineManager(InMemorySagaStore sagaStore) {
             this.sagaStore = sagaStore;
@@ -300,7 +339,9 @@ class SagaDeadlineSchedulingTest {
 
         @Override
         public void cancelAllWithinScope(String deadlineName, ScopeDescriptor scope) {
-            throw new UnsupportedOperationException("Not used by this test");
+            runOnPrepareCommitOrNow(
+                    () -> cancelledWithinScope.add(deadlineName + "@" + scope.scopeDescription())
+            );
         }
     }
 }

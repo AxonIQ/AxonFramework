@@ -77,6 +77,12 @@ class AnnotatedSagaTest {
         );
     }
 
+    @AfterEach
+    void assertNoScopeIsLeftActive() {
+        // A scope left behind would leak into whichever test runs next on this thread.
+        assertThatThrownBy(Scope::getCurrentScope).isInstanceOf(IllegalStateException.class);
+    }
+
     @Nested
     class EventHandling {
 
@@ -431,7 +437,7 @@ class AnnotatedSagaTest {
                                           new AnnotationSagaMetaModelFactory().modelOf(ScopeCapturingSaga.class),
                                           NoMoreInterceptors.instance());
             subject.associateWith(new AssociationValue("propertyName", "id"));
-            event = new GenericEventMessage(new MessageType("event"), new RegularEvent("id"));
+            event = EventTestUtils.asEventMessage(new RegularEvent("id"));
         }
 
         @Test

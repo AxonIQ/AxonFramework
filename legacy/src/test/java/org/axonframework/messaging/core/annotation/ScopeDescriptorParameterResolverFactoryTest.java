@@ -28,6 +28,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Test class validating the {@link ScopeDescriptorParameterResolverFactory}, in particular that it recognizes any
@@ -39,29 +40,41 @@ class ScopeDescriptorParameterResolverFactoryTest {
 
     private final ScopeDescriptorParameterResolverFactory testSubject = new ScopeDescriptorParameterResolverFactory();
 
+    @AfterEach
+    void assertNoScopeIsLeftActive() {
+        // A scope left behind would leak into whichever test runs next on this thread.
+        assertThatThrownBy(Scope::getCurrentScope).isInstanceOf(IllegalStateException.class);
+    }
+
     @Nested
     class CreateInstance {
 
         @Test
         void returnsResolverForAnyMethodWithScopeDescriptorParameter() throws NoSuchMethodException {
+            // when
             var resolver = createInstanceFor(SomeHandler.class, "handleWithoutAnnotation", Object.class,
                                              ScopeDescriptor.class);
 
+            // then
             assertThat(resolver).isNotNull();
         }
 
         @Test
         void returnsResolverForAnnotatedMethodWithScopeDescriptorParameterToo() throws NoSuchMethodException {
+            // when
             var resolver = createInstanceFor(SomeHandler.class, "handleWithSomeAnnotation", Object.class,
                                              ScopeDescriptor.class);
 
+            // then
             assertThat(resolver).isNotNull();
         }
 
         @Test
         void returnsNullWhenParameterIsNotOfTypeScopeDescriptor() throws NoSuchMethodException {
+            // when
             var resolver = createInstanceFor(SomeHandler.class, "handleWithoutScopeDescriptor", Object.class);
 
+            // then
             assertThat(resolver).isNull();
         }
 
@@ -81,7 +94,11 @@ class ScopeDescriptorParameterResolverFactoryTest {
 
         @Test
         void matchesAlwaysReturnsTrue() {
-            assertThat(resolver.matches(new StubProcessingContext())).isTrue();
+            // when
+            boolean matches = resolver.matches(new StubProcessingContext());
+
+            // then
+            assertThat(matches).isTrue();
         }
 
         @Test

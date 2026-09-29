@@ -23,12 +23,19 @@ import org.junit.jupiter.api.*;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Test class validating {@link ContextAwareScope#currentProcessingContext()}, which is how code without a
  * {@link ProcessingContext} parameter of its own finds the context of the handler invocation it is called from.
  */
 class ContextAwareScopeTest {
+
+    @AfterEach
+    void assertNoScopeIsLeftActive() {
+        // A scope left behind would leak into whichever test runs next on this thread.
+        assertThatThrownBy(Scope::getCurrentScope).isInstanceOf(IllegalStateException.class);
+    }
 
     @Test
     void currentProcessingContextIsEmptyWhenNoScopeIsActive() {

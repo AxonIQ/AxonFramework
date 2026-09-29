@@ -67,6 +67,12 @@ class AbstractDeadlineManagerTest {
         testSubject = new RecordingDeadlineManager("manager", timeline);
     }
 
+    @AfterEach
+    void assertNoScopeIsLeftActive() {
+        // A scope left behind would leak into whichever test runs next on this thread.
+        assertThatThrownBy(Scope::getCurrentScope).isInstanceOf(IllegalStateException.class);
+    }
+
     @Nested
     class WithoutAnActiveScope {
 
@@ -275,18 +281,15 @@ class AbstractDeadlineManagerTest {
 
         @Test
         void deferredCallsRunAfterTheSagaWriteAndBeforeCommit() {
-            // given
-            UnitOfWork unitOfWork = UnitOfWorkTestUtils.aUnitOfWork();
-            unitOfWork.runOn(AnnotatedSagaRepository.WRITE_SAGA, context -> timeline.add("sagaWrite"));
-            unitOfWork.runOnCommit(context -> timeline.add("commit"));
-
             // when
-            unitOfWork.executeWithResult(context -> {
+            runInUnitOfWork(context -> {
                 new TestScope(context).run(
                         () -> testSubject.schedule(Instant.now(), "deadlineName", "payload", EXPLICIT_SCOPE)
                 );
-                return CompletableFuture.completedFuture(null);
-            }).orTimeout(1, TimeUnit.SECONDS).join();
+                // Registered after the deadline call, so only the phase order can put the Saga write first.
+                context.runOn(AnnotatedSagaRepository.WRITE_SAGA, c -> timeline.add("sagaWrite"));
+                context.runOnCommit(c -> timeline.add("commit"));
+            });
 
             // then
             assertThat(timeline).containsExactly("sagaWrite", "manager:schedule deadlineName", "commit");
@@ -376,6 +379,12 @@ class AbstractDeadlineManagerTest {
         }
     }
 
+    /**
+     * Where the interceptors run relative to the deferral is decided by the implementation, which calls
+     * {@link AbstractDeadlineManager#processDispatchInterceptors(DeadlineMessage)} from within the deferred call as the
+     * Axon Framework 4 backends did. These tests pin that contract through the recording implementation, together with
+     * what {@code processDispatchInterceptors} itself returns and throws.
+     */
     @Nested
     class DispatchInterceptors {
 
