@@ -16,3 +16,4 @@
 
 org.axonframework.modelling.saga.SagaMethodMessageHandlerDefinition
 org.axonframework.modelling.saga.EndSagaMessageHandlerDefinition
+org.axonframework.deadline.annotation.DeadlineMethodMessageHandlerDefinition

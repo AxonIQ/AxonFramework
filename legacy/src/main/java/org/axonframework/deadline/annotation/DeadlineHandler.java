@@ -43,7 +43,7 @@ public @interface DeadlineHandler {
      * The name of the Deadline this handler listens to. Defaults to the fully qualified class name of the payload type
      * (i.e. first parameter).
      *
-     * @return The name of the deadline as a {@link String}
+     * @return the name of the deadline as a {@link String}
      */
     String deadlineName() default "";
 
@@ -51,7 +51,7 @@ public @interface DeadlineHandler {
      * Specifies the type of message payload that can be handled by the member method. The payload of the message should
      * be assignable to this type. Defaults to any {@link Object}.
      *
-     * @return The payload type handled by the function annotated with {@code @DeadlineHandler}.
+     * @return the payload type handled by the function annotated with {@code @DeadlineHandler}
      */
     Class<?> payloadType() default Object.class;
 }

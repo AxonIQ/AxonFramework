@@ -16,14 +16,14 @@
 
 package org.axonframework.deadline;
 
-import org.jspecify.annotations.Nullable;
 import org.axonframework.common.ObjectUtils;
-import org.axonframework.messaging.eventhandling.GenericEventMessage;
+import org.axonframework.conversion.Converter;
 import org.axonframework.messaging.core.GenericMessage;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.Metadata;
-import org.axonframework.conversion.Converter;
+import org.axonframework.messaging.eventhandling.GenericEventMessage;
+import org.jspecify.annotations.Nullable;
 
 import java.lang.reflect.Type;
 import java.time.Instant;
@@ -46,8 +46,8 @@ public class GenericDeadlineMessage extends GenericEventMessage implements Deadl
      * <p>
      * The {@link #payload()} defaults to {@code null} and the {@link Metadata} defaults to an empty instance.
      *
-     * @param type         The {@link MessageType type} for this {@link DeadlineMessage}.
-     * @param deadlineName The type for this {@link DeadlineMessage}.
+     * @param type         the {@link MessageType type} for this {@link DeadlineMessage}
+     * @param deadlineName the type for this {@link DeadlineMessage}
      */
     public GenericDeadlineMessage(MessageType type,
                                   String deadlineName) {
@@ -60,9 +60,9 @@ public class GenericDeadlineMessage extends GenericEventMessage implements Deadl
      * <p>
      * The {@link Metadata} defaults to an empty instance.
      *
-     * @param deadlineName The type for this {@link DeadlineMessage}.
-     * @param type         The {@link MessageType type} for this {@link DeadlineMessage}.
-     * @param payload      The payload for this {@link DeadlineMessage}.
+     * @param deadlineName the type for this {@link DeadlineMessage}
+     * @param type         the {@link MessageType type} for this {@link DeadlineMessage}
+     * @param payload      the payload for this {@link DeadlineMessage}
      */
     public GenericDeadlineMessage(String deadlineName,
                                   MessageType type,
@@ -74,10 +74,10 @@ public class GenericDeadlineMessage extends GenericEventMessage implements Deadl
      * Constructs a {@code GenericDeadlineMessage} for the given {@code deadlineName}, {@code type}, {@code payload},
      * and {@code metadata}.
      *
-     * @param deadlineName The name for this {@link DeadlineMessage}.
-     * @param type         The {@link MessageType type} for this {@link DeadlineMessage}.
-     * @param payload      The payload for this {@link DeadlineMessage}.
-     * @param metadata     The metadata for this {@link DeadlineMessage}.
+     * @param deadlineName the name for this {@link DeadlineMessage}
+     * @param type         the {@link MessageType type} for this {@link DeadlineMessage}
+     * @param payload      the payload for this {@link DeadlineMessage}
+     * @param metadata     the metadata for this {@link DeadlineMessage}
      */
     public GenericDeadlineMessage(String deadlineName,
                                   MessageType type,
@@ -91,12 +91,12 @@ public class GenericDeadlineMessage extends GenericEventMessage implements Deadl
      * Constructs a {@code GenericDeadlineMessage} for the given {@code deadlineName}, {@code identifier}, {@code type},
      * {@code payload}, {@code metadata}, and {@code timestamp}.
      *
-     * @param deadlineName The name for this {@link DeadlineMessage}.
-     * @param identifier   The identifier of this {@link DeadlineMessage}.
-     * @param type         The {@link MessageType type} for this {@link DeadlineMessage}.
-     * @param payload      The payloadfor this {@link DeadlineMessage}.
-     * @param metadata     The metadata for this {@link DeadlineMessage}.
-     * @param timestamp    The {@link Instant timestamp} of this {@link DeadlineMessage DeadlineMessage's} creation.
+     * @param deadlineName the name for this {@link DeadlineMessage}
+     * @param identifier   the identifier of this {@link DeadlineMessage}
+     * @param type         the {@link MessageType type} for this {@link DeadlineMessage}
+     * @param payload      the payload for this {@link DeadlineMessage}
+     * @param metadata     the metadata for this {@link DeadlineMessage}
+     * @param timestamp    the {@link Instant timestamp} of this {@link DeadlineMessage DeadlineMessage's} creation
      */
     public GenericDeadlineMessage(String deadlineName,
                                   String identifier,
@@ -118,12 +118,12 @@ public class GenericDeadlineMessage extends GenericEventMessage implements Deadl
      * Unlike the other constructors, this constructor will not attempt to retrieve any correlation data from the Unit
      * of Work.
      *
-     * @param deadlineName      The name for this {@link DeadlineMessage}.
-     * @param delegate          The {@link Message} containing {@link Message#payload() payload},
+     * @param deadlineName      the name for this {@link DeadlineMessage}
+     * @param delegate          the {@link Message} containing {@link Message#payload() payload},
      *                          {@link Message#type() type}, {@link Message#identifier() identifier} and
-     *                          {@link Message#metadata() metadata} for the {@link DeadlineMessage} to reconstruct.
+     *                          {@link Message#metadata() metadata} for the {@link DeadlineMessage} to reconstruct
      * @param timestampSupplier {@link Supplier} for the {@link Instant timestamp} of the
-     *                          {@link DeadlineMessage DeadlineMessage's} creation.
+     *                          {@link DeadlineMessage DeadlineMessage's} creation
      */
     public GenericDeadlineMessage(String deadlineName,
                                   Message delegate,
@@ -133,33 +133,33 @@ public class GenericDeadlineMessage extends GenericEventMessage implements Deadl
     }
 
     @Override
-        public String getDeadlineName() {
+    public String getDeadlineName() {
         return deadlineName;
     }
 
     @Override
-        public DeadlineMessage withMetadata(Map<String, String> metadata) {
+    public DeadlineMessage withMetadata(Map<String, String> metadata) {
         return new GenericDeadlineMessage(deadlineName, delegate().withMetadata(metadata), this::timestamp);
     }
 
     @Override
-        public DeadlineMessage andMetadata(Map<String, String> additionalMetadata) {
+    public DeadlineMessage andMetadata(Map<String, String> additionalMetadata) {
         return new GenericDeadlineMessage(
                 deadlineName, delegate().andMetadata(additionalMetadata), this::timestamp
         );
     }
 
     @Override
-        public DeadlineMessage withConvertedPayload(Type type, Converter converter) {
+    public DeadlineMessage withConvertedPayload(Type type, Converter converter) {
         Object convertedPayload = payloadAs(type, converter);
         if (ObjectUtils.nullSafeTypeOf(convertedPayload).isAssignableFrom(payloadType())) {
             return this;
         }
         Message delegate = delegate();
         Message converted = new GenericMessage(delegate.identifier(),
-                                                    delegate.type(),
-                                                    convertedPayload,
-                                                    delegate.metadata());
+                                               delegate.type(),
+                                               convertedPayload,
+                                               delegate.metadata());
         return new GenericDeadlineMessage(getDeadlineName(), converted, this::timestamp);
     }
 

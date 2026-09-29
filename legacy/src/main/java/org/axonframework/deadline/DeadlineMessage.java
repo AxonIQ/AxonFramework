@@ -17,8 +17,8 @@
 package org.axonframework.deadline;
 
 import org.axonframework.common.TypeReference;
-import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.conversion.Converter;
+import org.axonframework.messaging.eventhandling.EventMessage;
 
 import java.lang.reflect.Type;
 import java.util.Map;
@@ -39,7 +39,7 @@ public interface DeadlineMessage extends EventMessage {
     /**
      * Returns the name of the {@link DeadlineMessage deadline} to be handled.
      *
-     * @return The name of the {@link DeadlineMessage deadline}.
+     * @return the name of the {@link DeadlineMessage deadline}
      */
     String getDeadlineName();
 
@@ -50,12 +50,12 @@ public interface DeadlineMessage extends EventMessage {
     DeadlineMessage andMetadata(Map<String, String> additionalMetadata);
 
     @Override
-        default DeadlineMessage withConvertedPayload(Class<?> type, Converter converter) {
+    default DeadlineMessage withConvertedPayload(Class<?> type, Converter converter) {
         return withConvertedPayload((Type) type, converter);
     }
 
     @Override
-        default DeadlineMessage withConvertedPayload(TypeReference<?> type, Converter converter) {
+    default DeadlineMessage withConvertedPayload(TypeReference<?> type, Converter converter) {
         return withConvertedPayload(type.getType(), converter);
     }
 

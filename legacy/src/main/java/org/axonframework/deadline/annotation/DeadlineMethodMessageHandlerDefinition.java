@@ -17,8 +17,8 @@
 package org.axonframework.deadline.annotation;
 
 import org.axonframework.deadline.DeadlineMessage;
-import org.axonframework.messaging.core.annotation.HandlerAttributes;
 import org.axonframework.messaging.core.Message;
+import org.axonframework.messaging.core.annotation.HandlerAttributes;
 import org.axonframework.messaging.core.annotation.HandlerEnhancerDefinition;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.core.annotation.WrappedMessageHandlingMember;

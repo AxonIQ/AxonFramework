@@ -16,17 +16,24 @@
 
 package org.axonframework.deadline;
 
-import org.jspecify.annotations.Nullable;
-import org.axonframework.messaging.core.Scope;
-import org.axonframework.messaging.core.ScopeDescriptor;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.Metadata;
+import org.axonframework.messaging.core.NoScopeDescriptor;
+import org.axonframework.messaging.core.ScopeDescriptor;
+import org.jspecify.annotations.Nullable;
 
 import java.time.Duration;
 import java.time.Instant;
 
 /**
  * Contract for deadline managers. Contains methods for scheduling a deadline and for cancelling a deadline.
+ * <p>
+ * A {@code DeadlineManager} instance obtained through field or constructor injection has no scope of its own: the
+ * convenience overloads below that do not take an explicit {@link ScopeDescriptor} resolve to
+ * {@link NoScopeDescriptor#INSTANCE} rather than any actual scope. A {@code DeadlineManager} declared as a parameter
+ * on a {@code Saga}'s {@code @SagaEventHandler} or {@code @DeadlineHandler} method is resolved instead to an instance
+ * that knows the scope of the Saga currently handling that method, and schedules/cancels deferred until the
+ * surrounding transaction commits.
  *
  * @author Milan Savic
  * @author Steven van Beelen
@@ -40,8 +47,8 @@ public interface DeadlineManager {
      * deadlineName} combination can be used to cancel the scheduled deadline. The scope within which this call is made
      * will be retrieved by the DeadlineManager itself.
      *
-     * @param triggerDateTime A {@link java.time.Instant} denoting the moment to trigger the deadline handling
-     * @param deadlineName    A {@link String} representing the name of the deadline to schedule
+     * @param triggerDateTime a {@link java.time.Instant} denoting the moment to trigger the deadline handling
+     * @param deadlineName    a {@link String} representing the name of the deadline to schedule
      * @return the {@code scheduleId} as a {@link String} to use when cancelling the schedule
      */
     default String schedule(Instant triggerDateTime, String deadlineName) {
@@ -59,15 +66,15 @@ public interface DeadlineManager {
      * {@link DeadlineMessage}.
      * </p>
      *
-     * @param triggerDateTime  A {@link java.time.Instant} denoting the moment to trigger the deadline handling
-     * @param deadlineName     A {@link String} representing the name of the deadline to schedule
-     * @param messageOrPayload A {@link Message} or payload for a message as an
+     * @param triggerDateTime  a {@link java.time.Instant} denoting the moment to trigger the deadline handling
+     * @param deadlineName     a {@link String} representing the name of the deadline to schedule
+     * @param messageOrPayload a {@link Message} or payload for a message as an
      *                         {@link Object}
      * @return the {@code scheduleId} as a {@link String} to use when cancelling the schedule
      */
     default String schedule(Instant triggerDateTime, String deadlineName,
                             @Nullable Object messageOrPayload) {
-        return schedule(triggerDateTime, deadlineName, messageOrPayload, Scope.describeCurrentScope());
+        return schedule(triggerDateTime, deadlineName, messageOrPayload, NoScopeDescriptor.INSTANCE);
     }
 
     /**
@@ -80,11 +87,11 @@ public interface DeadlineManager {
      * {@link DeadlineMessage}.
      * </p>
      *
-     * @param triggerDateTime  A {@link Instant} denoting the moment to trigger the deadline handling
-     * @param deadlineName     A {@link String} representing the name of the deadline to schedule
-     * @param messageOrPayload A {@link Message} or payload for a message as an
+     * @param triggerDateTime  a {@link Instant} denoting the moment to trigger the deadline handling
+     * @param deadlineName     a {@link String} representing the name of the deadline to schedule
+     * @param messageOrPayload a {@link Message} or payload for a message as an
      *                         {@link Object}
-     * @param deadlineScope    A {@link ScopeDescriptor} describing the scope within which the deadline was scheduled
+     * @param deadlineScope    a {@link ScopeDescriptor} describing the scope within which the deadline was scheduled
      * @return the {@code scheduleId} as a {@link String} to use when cancelling the schedule
      */
     String schedule(Instant triggerDateTime,
@@ -98,8 +105,8 @@ public interface DeadlineManager {
      * deadlineName} combination can be used to cancel the scheduled deadline. The scope within which this call is made
      * will be retrieved by the DeadlineManager itself.
      *
-     * @param triggerDuration A {@link java.time.Duration} describing the waiting period before handling the deadline
-     * @param deadlineName    A {@link String} representing the name of the deadline to schedule
+     * @param triggerDuration a {@link java.time.Duration} describing the waiting period before handling the deadline
+     * @param deadlineName    a {@link String} representing the name of the deadline to schedule
      * @return the {@code scheduleId} as a {@link String} to use when cancelling the schedule
      */
     default String schedule(Duration triggerDuration, String deadlineName) {
@@ -118,15 +125,15 @@ public interface DeadlineManager {
      * {@link DeadlineMessage}.
      * </p>
      *
-     * @param triggerDuration  A {@link java.time.Duration} describing the waiting period before handling the deadline
-     * @param deadlineName     A {@link String} representing the name of the deadline to schedule
-     * @param messageOrPayload A {@link Message} or payload for a message as an
+     * @param triggerDuration  a {@link java.time.Duration} describing the waiting period before handling the deadline
+     * @param deadlineName     a {@link String} representing the name of the deadline to schedule
+     * @param messageOrPayload a {@link Message} or payload for a message as an
      *                         {@link Object}
      * @return the {@code scheduleId} as a {@link String} to use when cancelling the schedule
      */
     default String schedule(Duration triggerDuration, String deadlineName,
                             @Nullable Object messageOrPayload) {
-        return schedule(triggerDuration, deadlineName, messageOrPayload, Scope.describeCurrentScope());
+        return schedule(triggerDuration, deadlineName, messageOrPayload, NoScopeDescriptor.INSTANCE);
     }
 
     /**
@@ -139,11 +146,11 @@ public interface DeadlineManager {
      * {@link DeadlineMessage}.
      * </p>
      *
-     * @param triggerDuration  A {@link Duration} describing the waiting period before handling the deadline
-     * @param deadlineName     A {@link String} representing the name of the deadline to schedule
-     * @param messageOrPayload A {@link Message} or payload for a message as an
+     * @param triggerDuration  a {@link Duration} describing the waiting period before handling the deadline
+     * @param deadlineName     a {@link String} representing the name of the deadline to schedule
+     * @param messageOrPayload a {@link Message} or payload for a message as an
      *                         {@link Object}
-     * @param deadlineScope    A {@link ScopeDescriptor} describing the scope within which the deadline was scheduled
+     * @param deadlineScope    a {@link ScopeDescriptor} describing the scope within which the deadline was scheduled
      * @return the {@code scheduleId} as a {@link String} to use when cancelling the schedule
      */
     default String schedule(Duration triggerDuration,
@@ -174,13 +181,13 @@ public interface DeadlineManager {
     void cancelAll(String deadlineName);
 
     /**
-     * Cancels all deadlines corresponding to the given {@code deadlineName} that are scheduled within {@link
-     * Scope#describeCurrentScope()}. This method has no impact on deadlines which have already been triggered.
+     * Cancels all deadlines corresponding to the given {@code deadlineName} that are scheduled within the scope this
+     * DeadlineManager itself retrieves. This method has no impact on deadlines which have already been triggered.
      *
      * @param deadlineName a {@link String} representing the name of the deadlines to cancel
      */
     default void cancelAllWithinScope(String deadlineName) {
-        cancelAllWithinScope(deadlineName, Scope.describeCurrentScope());
+        cancelAllWithinScope(deadlineName, NoScopeDescriptor.INSTANCE);
     }
 
     /**
