@@ -42,7 +42,7 @@ public class DefaultDeadlineManagerSpanFactory implements DeadlineManagerSpanFac
      * </ul>
      * The {@code spanFactory} is a required field and should be provided.
      *
-     * @param builder The builder to build the {@link DefaultDeadlineManagerSpanFactory} from.
+     * @param builder the builder to build the {@link DefaultDeadlineManagerSpanFactory} from
      */
     protected DefaultDeadlineManagerSpanFactory(Builder builder) {
         builder.validate();
@@ -59,7 +59,7 @@ public class DefaultDeadlineManagerSpanFactory implements DeadlineManagerSpanFac
      * </ul>
      * The {@code spanFactory} is a required field and should be provided.
      *
-     * @return The {@link Builder} to build a {@link DefaultDeadlineManagerSpanFactory} with.
+     * @return the {@link Builder} to build a {@link DefaultDeadlineManagerSpanFactory} with
      */
     public static Builder builder() {
         return new Builder();
@@ -120,8 +120,8 @@ public class DefaultDeadlineManagerSpanFactory implements DeadlineManagerSpanFac
         /**
          * Sets the {@link SpanFactory} to use to create the spans. This is a required field.
          *
-         * @param spanFactory The {@link SpanFactory} to use to create the spans.
-         * @return The current Builder instance, for fluent interfacing.
+         * @param spanFactory the {@link SpanFactory} to use to create the spans
+         * @return the current Builder instance, for fluent interfacing
          */
         public Builder spanFactory(SpanFactory spanFactory) {
             BuilderUtils.assertNonNull(spanFactory, "spanFactory may not be null");
@@ -132,8 +132,8 @@ public class DefaultDeadlineManagerSpanFactory implements DeadlineManagerSpanFac
         /**
          * Sets the attribute key to use for the deadline id. Defaults to {@code axon.deadlineId}.
          *
-         * @param deadlineIdAttribute The attribute key to use for the deadline id.
-         * @return The current Builder instance, for fluent interfacing.
+         * @param deadlineIdAttribute the attribute key to use for the deadline id
+         * @return the current Builder instance, for fluent interfacing
          */
         public Builder deadlineIdAttribute(String deadlineIdAttribute) {
             BuilderUtils.assertNonEmpty(deadlineIdAttribute, "deadlineIdAttribute may not be null");
@@ -144,8 +144,8 @@ public class DefaultDeadlineManagerSpanFactory implements DeadlineManagerSpanFac
         /**
          * Sets the attribute key to use for the deadline scope. Defaults to {@code axon.deadlineScope}.
          *
-         * @param scopeAttribute The attribute key to use for the deadline scope.
-         * @return The current Builder instance, for fluent interfacing.
+         * @param scopeAttribute the attribute key to use for the deadline scope
+         * @return the current Builder instance, for fluent interfacing
          */
         public Builder scopeAttribute(String scopeAttribute) {
             BuilderUtils.assertNonEmpty(scopeAttribute, "scopeAttribute may not be null");
@@ -165,7 +165,7 @@ public class DefaultDeadlineManagerSpanFactory implements DeadlineManagerSpanFac
         /**
          * Initializes a {@link DefaultDeadlineManagerSpanFactory} as specified through this Builder.
          *
-         * @return The {@link DefaultDeadlineManagerSpanFactory} as specified through this Builder.
+         * @return the {@link DefaultDeadlineManagerSpanFactory} as specified through this Builder
          */
         public DefaultDeadlineManagerSpanFactory build() {
             return new DefaultDeadlineManagerSpanFactory(this);

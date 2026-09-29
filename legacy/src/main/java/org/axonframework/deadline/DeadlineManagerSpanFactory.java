@@ -31,46 +31,46 @@ public interface DeadlineManagerSpanFactory {
     /**
      * Creates a span that represents the scheduling of a deadline.
      *
-     * @param deadlineName    The name of the deadline.
-     * @param deadlineId      The id of the deadline.
-     * @param deadlineMessage The message of the deadline.
-     * @return The created span.
+     * @param deadlineName    the name of the deadline
+     * @param deadlineId      the id of the deadline
+     * @param deadlineMessage the message of the deadline
+     * @return the created span
      */
     Span createScheduleSpan(String deadlineName, String deadlineId, DeadlineMessage deadlineMessage);
 
     /**
      * Creates a span that represents the cancellation of a specific deadline.
      *
-     * @param deadlineName The name of the deadline.
-     * @param deadlineId   The id of the deadline.
-     * @return The created span.
+     * @param deadlineName the name of the deadline
+     * @param deadlineId   the id of the deadline
+     * @return the created span
      */
     Span createCancelScheduleSpan(String deadlineName, String deadlineId);
 
     /**
      * Creates a span that represents the cancellation of all deadlines with a certain name.
      *
-     * @param deadlineName The name of the deadlines.
-     * @return The created span.
+     * @param deadlineName the name of the deadlines
+     * @return the created span
      */
     Span createCancelAllSpan(String deadlineName);
 
     /**
      * Creates a span that represents the cancellation of all deadlines with a certain name within a certain scope.
      *
-     * @param deadlineName    The name of the deadlines.
-     * @param scopeDescriptor The scope descriptor of the deadlines.
-     * @return The created span.
+     * @param deadlineName    the name of the deadlines
+     * @param scopeDescriptor the scope descriptor of the deadlines
+     * @return the created span
      */
     Span createCancelAllWithinScopeSpan(String deadlineName, ScopeDescriptor scopeDescriptor);
 
     /**
      * Creates a span that represents the execution of a deadline.
      *
-     * @param deadlineName    The name of the deadline.
-     * @param deadlineId      The id of the deadline.
-     * @param deadlineMessage The message of the deadline.
-     * @return The created span.
+     * @param deadlineName    the name of the deadline
+     * @param deadlineId      the id of the deadline
+     * @param deadlineMessage the message of the deadline
+     * @return the created span
      */
     Span createExecuteSpan(String deadlineName, String deadlineId, DeadlineMessage deadlineMessage);
 
