@@ -72,12 +72,18 @@ public abstract class AbstractDeadlineManager implements DeadlineManager {
     public static final ProcessingLifecycle.Phase RUN_DEADLINE_CALLS =
             () -> ProcessingLifecycle.DefaultPhases.PREPARE_COMMIT.order() + 7_500;
 
+    /**
+     * Shared by every deadline manager on purpose: one queue per {@link ProcessingContext} keeps the calls of all
+     * managers in the order they were made, as the single prepare-commit handler list of an Axon Framework 4 unit of
+     * work did.
+     */
+    private static final Context.ResourceKey<Queue<Runnable>> DEFERRED_CALLS =
+            Context.ResourceKey.withLabel("deferredDeadlineCalls");
+
     private final List<MessageDispatchInterceptor<? super DeadlineMessage>> dispatchInterceptors =
             new CopyOnWriteArrayList<>();
     private final List<MessageHandlerInterceptor<? super DeadlineMessage>> handlerInterceptors =
             new CopyOnWriteArrayList<>();
-    private final Context.ResourceKey<Queue<Runnable>> deferredCallsKey =
-            Context.ResourceKey.withLabel("deferredDeadlineCalls");
     protected MessageTypeResolver messageTypeResolver = new ClassBasedMessageTypeResolver();
 
     /**
@@ -85,9 +91,10 @@ public abstract class AbstractDeadlineManager implements DeadlineManager {
      * {@link ProcessingContext} carried by the current {@link ContextAwareScope}, if one is active. This is required as
      * the DeadlineManager schedules messages which we want to happen in order with other messages being handled.
      * <p>
-     * Deferred calls run in the order they were made, also across Sagas sharing the same {@link ProcessingContext}, as
-     * they did in the prepare-commit phase of an Axon Framework 4 unit of work. They never run when the context rolls
-     * back before reaching that phase.
+     * Deferred calls run in the order they were made, also across Sagas and deadline managers sharing the same
+     * {@link ProcessingContext}, as they did in the prepare-commit phase of an Axon Framework 4 unit of work. A failing
+     * call fails the commit, and the calls made after it do not run. None of them run when the context rolls back
+     * before reaching that phase.
      *
      * @param deadlineCall a {@link Runnable} to be executed now, or when the {@link ProcessingContext} of the current
      *                     scope prepares its commit
@@ -102,8 +109,8 @@ public abstract class AbstractDeadlineManager implements DeadlineManager {
     }
 
     /**
-     * Returns the queue of calls deferred to the given {@code context}, creating it and registering its
-     * {@link #RUN_DEADLINE_CALLS} action on first use.
+     * Returns the queue of calls deferred to the given {@code context} by any deadline manager, creating it and
+     * registering its {@link #RUN_DEADLINE_CALLS} action on first use.
      * <p>
      * One phase action drains the whole queue so that the calls keep their order: the actions registered for a single
      * phase may run concurrently. The action is registered before the queue is stored on the context, so a call made
@@ -111,17 +118,17 @@ public abstract class AbstractDeadlineManager implements DeadlineManager {
      * a queue behind that later calls would join without anything draining it. The queue is removed before it is
      * drained for the same reason.
      */
-    private Queue<Runnable> deferredCalls(ProcessingContext context) {
-        Queue<Runnable> existing = context.getResource(deferredCallsKey);
+    private static Queue<Runnable> deferredCalls(ProcessingContext context) {
+        Queue<Runnable> existing = context.getResource(DEFERRED_CALLS);
         if (existing != null) {
             return existing;
         }
         Queue<Runnable> created = new ConcurrentLinkedQueue<>();
         context.runOn(RUN_DEADLINE_CALLS, phaseContext -> {
-            phaseContext.removeResource(deferredCallsKey, created);
+            phaseContext.removeResource(DEFERRED_CALLS, created);
             created.forEach(Runnable::run);
         });
-        Queue<Runnable> raced = context.putResourceIfAbsent(deferredCallsKey, created);
+        Queue<Runnable> raced = context.putResourceIfAbsent(DEFERRED_CALLS, created);
         return raced != null ? raced : created;
     }
 

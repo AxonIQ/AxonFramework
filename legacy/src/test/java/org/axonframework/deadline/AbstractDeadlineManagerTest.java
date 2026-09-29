@@ -317,20 +317,54 @@ class AbstractDeadlineManagerTest {
             assertThat(timeline).containsExactly("manager:schedule inTime");
         }
 
+        /**
+         * Axon Framework 4 kept one list of prepare-commit handlers per unit of work, so calls made through different
+         * deadline managers ran in the order they were made.
+         */
         @Test
-        void eachDeadlineManagerRunsItsOwnDeferredCalls() {
+        void callsMadeThroughDifferentDeadlineManagersRunInTheOrderTheyWereMade() {
             // given
             RecordingDeadlineManager otherManager = new RecordingDeadlineManager("other", timeline);
 
             // when
             runInUnitOfWork(context -> new TestScope(context).run(() -> {
-                testSubject.schedule(Instant.now(), "deadlineName", "payload", EXPLICIT_SCOPE);
-                otherManager.schedule(Instant.now(), "deadlineName", "payload", EXPLICIT_SCOPE);
+                testSubject.schedule(Instant.now(), "first", "payload", EXPLICIT_SCOPE);
+                otherManager.schedule(Instant.now(), "second", "payload", EXPLICIT_SCOPE);
+                testSubject.schedule(Instant.now(), "third", "payload", EXPLICIT_SCOPE);
             }));
 
             // then
-            assertThat(testSubject.scheduled).hasSize(1);
-            assertThat(otherManager.scheduled).hasSize(1);
+            assertThat(timeline).containsExactly("manager:schedule first",
+                                                 "other:schedule second",
+                                                 "manager:schedule third");
+        }
+
+        /**
+         * As in Axon Framework 4, a failing call fails the commit and the calls made after it do not run, also when
+         * they were made through another deadline manager.
+         */
+        @Test
+        void aFailingCallStopsTheCallsMadeAfterItThroughAnyDeadlineManager() {
+            // given
+            RecordingDeadlineManager failingManager = new RecordingDeadlineManager("failing", timeline);
+            failingManager.registerDispatchInterceptor((message, context, chain) -> {
+                throw new IllegalStateException("interceptor failure");
+            });
+
+            // when
+            CompletableFuture<Object> result = UnitOfWorkTestUtils.aUnitOfWork().executeWithResult(context -> {
+                new TestScope(context).run(() -> {
+                    testSubject.schedule(Instant.now(), "first", "payload", EXPLICIT_SCOPE);
+                    failingManager.schedule(Instant.now(), "second", "payload", EXPLICIT_SCOPE);
+                    testSubject.schedule(Instant.now(), "third", "payload", EXPLICIT_SCOPE);
+                });
+                return CompletableFuture.completedFuture(null);
+            });
+
+            // then
+            assertThatThrownBy(() -> result.orTimeout(1, TimeUnit.SECONDS).join())
+                    .hasRootCauseMessage("interceptor failure");
+            assertThat(timeline).containsExactly("manager:schedule first");
         }
     }
 
