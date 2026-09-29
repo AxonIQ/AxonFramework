@@ -106,8 +106,10 @@ public abstract class AbstractDeadlineManager implements DeadlineManager {
      * {@link #RUN_DEADLINE_CALLS} action on first use.
      * <p>
      * One phase action drains the whole queue so that the calls keep their order: the actions registered for a single
-     * phase may run concurrently. The queue is removed before it is drained, so a call deferred after the phase started
-     * attempts a fresh registration, which the context rejects, instead of joining a queue nobody drains anymore.
+     * phase may run concurrently. The action is registered before the queue is stored on the context, so a call made
+     * once the phase started fails on that registration, as every such call did in Axon Framework 4, and never leaves
+     * a queue behind that later calls would join without anything draining it. The queue is removed before it is
+     * drained for the same reason.
      */
     private Queue<Runnable> deferredCalls(ProcessingContext context) {
         Queue<Runnable> existing = context.getResource(deferredCallsKey);
@@ -115,15 +117,12 @@ public abstract class AbstractDeadlineManager implements DeadlineManager {
             return existing;
         }
         Queue<Runnable> created = new ConcurrentLinkedQueue<>();
-        Queue<Runnable> raced = context.putResourceIfAbsent(deferredCallsKey, created);
-        if (raced != null) {
-            return raced;
-        }
         context.runOn(RUN_DEADLINE_CALLS, phaseContext -> {
-            phaseContext.removeResource(deferredCallsKey);
+            phaseContext.removeResource(deferredCallsKey, created);
             created.forEach(Runnable::run);
         });
-        return created;
+        Queue<Runnable> raced = context.putResourceIfAbsent(deferredCallsKey, created);
+        return raced != null ? raced : created;
     }
 
     public Registration registerDispatchInterceptor(

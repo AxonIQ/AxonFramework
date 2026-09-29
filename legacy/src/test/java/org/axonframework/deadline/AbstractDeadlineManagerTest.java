@@ -20,6 +20,7 @@ import org.axonframework.messaging.core.ContextAwareScope;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.ScopeDescriptor;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.core.unitofwork.ProcessingLifecycle;
 import org.axonframework.messaging.core.unitofwork.UnitOfWork;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkTestUtils;
 import org.axonframework.modelling.saga.repository.AnnotatedSagaRepository;
@@ -281,6 +282,39 @@ class AbstractDeadlineManagerTest {
 
             // then
             assertThat(timeline).containsExactly("sagaWrite", "manager:schedule deadlineName", "commit");
+        }
+
+        /**
+         * Axon Framework 4 checked the phase on every registration, so every call made too late failed. The same holds
+         * here for every late call, not only the first one.
+         */
+        @Test
+        void everyCallDeferredAfterTheDeadlinePhaseStartedIsRejected() {
+            // given
+            UnitOfWork unitOfWork = UnitOfWorkTestUtils.aUnitOfWork();
+            List<Throwable> lateFailures = new CopyOnWriteArrayList<>();
+            ProcessingLifecycle.Phase afterDeadlinePhase = () -> AbstractDeadlineManager.RUN_DEADLINE_CALLS.order() + 1;
+            unitOfWork.runOn(afterDeadlinePhase, context -> new TestScope(context).run(() -> {
+                for (String deadlineName : List.of("late1", "late2")) {
+                    try {
+                        testSubject.schedule(Instant.now(), deadlineName, "payload", EXPLICIT_SCOPE);
+                    } catch (IllegalStateException e) {
+                        lateFailures.add(e);
+                    }
+                }
+            }));
+
+            // when
+            unitOfWork.executeWithResult(context -> {
+                new TestScope(context).run(
+                        () -> testSubject.schedule(Instant.now(), "inTime", "payload", EXPLICIT_SCOPE)
+                );
+                return CompletableFuture.completedFuture(null);
+            }).orTimeout(1, TimeUnit.SECONDS).join();
+
+            // then
+            assertThat(lateFailures).hasSize(2);
+            assertThat(timeline).containsExactly("manager:schedule inTime");
         }
 
         @Test
