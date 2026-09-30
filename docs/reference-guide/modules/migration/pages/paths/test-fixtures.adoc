@@ -7,6 +7,7 @@ The `AggregateTestFixture` and `SagaTestFixture` from Axon Framework 4 have been
 This guide covers the migration path for users transitioning their test suites from Axon Framework 4 to Axon Framework 5.
 If you are curious about more details on the `AxonTestFixture`, be sure to read the new xref:testing:index.adoc[testing chapter].
 
+ifdef::advanced-framework[]
 [NOTE]
 ====
 For sagas kept running through the `axon-legacy` module, `SagaTestFixture` (`org.axonframework.test.saga.SagaTestFixture`)
@@ -16,6 +17,7 @@ Simple sagas can also be written and tested without the legacy module, as an aut
 `AxonTestFixture`. Check out our xref:axon-framework-5-getting-started::implement-stateful-event-handler.adoc[getting started]
 for an example on how to do this.
 ====
+endif::[]
 
 == Why the change?
 
