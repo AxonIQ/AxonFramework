@@ -1,0 +1,13 @@
+### Create a course through the portal
+# @name createCourse
+POST {{portalUrl}}/courses
+Content-Type: application/json
+
+{
+  "courseId": "{{courseId}}",
+  "name": "Axon Framework 5"
+}
+
+### Query the course through the portal
+GET {{portalUrl}}/courses/{{courseId}}
+

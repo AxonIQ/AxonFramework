@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~ Copyright (c) 2010-2026. AxonIQ B.V.
+  ~
+  ~ Licensed under the AXONIQ TERMS OF SERVICE,
+  ~ Version 29 April 2026 (the "License");
+  ~
+  ~ The software is available for evaluation use without registration.
+  ~ Continued use beyond the evaluation period requires registration
+  ~ and a commercial license. See the License for the specific language
+  ~ governing permissions and limitations under the License.
+  ~ You may not use this file except in compliance with the License.
+  ~
+  ~ You may obtain a copy of the License at:
+  ~  https://www.axoniq.io/legal/terms-of-service
+  ~
+  ~ For licensing information and to register, visit:
+  ~  https://www.axoniq.io/pricing
+  -->
+
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.axonframework.examples</groupId>
+        <artifactId>axon-framework-examples-spring-cloud</artifactId>
+        <version>${revision}</version>
+    </parent>
+
+    <artifactId>university-springboot3</artifactId>
+
+    <name>Axoniq Framework Example - University Spring Boot 3 Spring Cloud</name>
+    <description>
+        University example using Spring Boot 3.5 and Spring Cloud 2025.0 to distribute commands and queries without
+        Axon Server.
+    </description>
+
+    <properties>
+        <maven-enforcer.allow-spring-dependencies>true</maven-enforcer.allow-spring-dependencies>
+        <axoniq-framework.version>${project.version}</axoniq-framework.version>
+        <jackson2.version>2.22</jackson2.version>
+        <spring-boot.version>3.5.16</spring-boot.version>
+        <spring-cloud.version>2025.0.3</spring-cloud.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>${spring-boot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-dependencies</artifactId>
+                <version>${spring-cloud.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.axoniq.framework</groupId>
+            <artifactId>axoniq-spring-boot-starter</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.axoniq.framework</groupId>
+            <artifactId>axoniq-springcloud</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-netflix-eureka-server</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.netflix.eureka</groupId>
+            <artifactId>eureka-client-jersey3</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-annotations</artifactId>
+            <version>${jackson2.version}</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <version>${spring-boot.version}</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
