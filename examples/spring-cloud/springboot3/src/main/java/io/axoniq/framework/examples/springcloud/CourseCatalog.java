@@ -20,18 +20,26 @@
 package io.axoniq.framework.examples.springcloud;
 
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
+import org.axonframework.messaging.eventhandling.annotation.EventHandler;
+import org.axonframework.messaging.eventhandling.gateway.EventAppender;
+import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.queryhandling.QueryUpdateEmitter;
 import org.axonframework.messaging.queryhandling.annotation.QueryHandler;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Map;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 @Profile("courses")
 public class CourseCatalog {
 
+    private static final Logger logger = LoggerFactory.getLogger(CourseCatalog.class);
     private final Map<String, Course> courses = new ConcurrentHashMap<>();
     private final String nodeName;
 
@@ -43,6 +51,32 @@ public class CourseCatalog {
     public Course create(CreateCourse command) {
         return courses.compute(command.courseId(),
                                (courseId, ignored) -> new Course(courseId, command.name(), nodeName));
+    }
+
+    @CommandHandler
+    public Course rename(RenameCourse command, EventAppender eventAppender) {
+        Course renamed = courses.computeIfPresent(command.courseId(),
+                                                  (courseId, course) -> new Course(courseId,
+                                                                                   command.name(),
+                                                                                   course.handledBy()));
+        if (renamed == null) {
+            throw new IllegalArgumentException("Unknown course: " + command.courseId());
+        }
+
+        logger.info("Publishing CourseRenamed for course {}", command.courseId());
+        eventAppender.append(List.of(new CourseRenamed(command.courseId(), command.name())));
+        return renamed;
+    }
+
+    @EventHandler
+    public void courseRenamed(CourseRenamed event, ProcessingContext context) {
+        Course renamed = courses.get(event.courseId());
+        logger.info("Emitting FindCourse update for course {}: {}", event.courseId(), renamed);
+        QueryUpdateEmitter.forContext(context).emit(
+                FindCourse.class,
+                query -> event.courseId().equals(query.courseId()),
+                () -> renamed
+        );
     }
 
     @QueryHandler

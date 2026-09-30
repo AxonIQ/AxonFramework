@@ -3,3 +3,9 @@ server:
 
 university:
   node-name: courses
+
+axon:
+  eventhandling:
+    processors:
+      "[io.axoniq.framework.examples.springcloud]":
+        mode: subscribing

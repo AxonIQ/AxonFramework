@@ -21,15 +21,22 @@ package io.axoniq.framework.examples.springcloud;
 
 import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
 import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
+import org.reactivestreams.Publisher;
 import org.springframework.context.annotation.Profile;
+import org.springframework.http.MediaType;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.concurrent.CompletableFuture;
+
+import org.reactivestreams.Subscriber;
+import org.reactivestreams.Subscription;
 
 @RestController
 @Profile("portal")
@@ -52,5 +59,49 @@ class CourseController {
     @GetMapping("/{courseId}")
     CompletableFuture<Course> find(@PathVariable("courseId") String courseId) {
         return queryGateway.query(new FindCourse(courseId), Course.class, null);
+    }
+
+    @PutMapping("/{courseId}")
+    CompletableFuture<Course> rename(@PathVariable("courseId") String courseId,
+                                     @RequestBody RenameCourseRequest request) {
+        return commandGateway.send(new RenameCourse(courseId, request.name())).resultAs(Course.class);
+    }
+
+    @GetMapping(path = "/{courseId}/subscription", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    SseEmitter subscribe(@PathVariable("courseId") String courseId) {
+        SseEmitter emitter = new SseEmitter(0L);
+        Publisher<Course> updates = queryGateway.subscriptionQuery(new FindCourse(courseId), Course.class, 16);
+
+        Subscriber<Course> subscriber = new Subscriber<>() {
+            @Override
+            public void onSubscribe(Subscription subscription) {
+                emitter.onCompletion(subscription::cancel);
+                emitter.onTimeout(subscription::cancel);
+                emitter.onError(ignored -> subscription.cancel());
+                subscription.request(Long.MAX_VALUE);
+            }
+
+            @Override
+            public void onNext(Course course) {
+                try {
+                    emitter.send(SseEmitter.event().name("course").data(course));
+                } catch (Exception exception) {
+                    emitter.completeWithError(exception);
+                }
+            }
+
+            @Override
+            public void onError(Throwable throwable) {
+                emitter.completeWithError(throwable);
+            }
+
+            @Override
+            public void onComplete() {
+                emitter.complete();
+            }
+        };
+
+        updates.subscribe(subscriber);
+        return emitter;
     }
 }
