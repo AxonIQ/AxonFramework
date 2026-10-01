@@ -44,13 +44,13 @@ import javax.sql.DataSource;
  * @author John Hendrikx
  * @since 5.0.2
  */
-@Internal
 public class JdbcTransactionalExecutorProvider implements TransactionalExecutorProvider<Connection> {
 
     /**
      * The resource key for the {@link ConnectionExecutor} supplier.
      */
-    public static final ResourceKey<Supplier<ConnectionExecutor>> SUPPLIER_KEY = ResourceKey.withLabel(ConnectionExecutor.class.getSimpleName());
+    public static final ResourceKey<Supplier<ConnectionExecutor>> SUPPLIER_KEY =
+            ResourceKey.withLabel(ConnectionExecutor.class.getSimpleName());
 
     private final DataSource dataSource;
 

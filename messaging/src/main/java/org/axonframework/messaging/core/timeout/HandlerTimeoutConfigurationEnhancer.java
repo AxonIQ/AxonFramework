@@ -20,6 +20,8 @@ import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.ConfigurationEnhancer;
 import org.axonframework.messaging.core.configuration.reflection.HandlerEnhancerDefinitionUtils;
 
+import java.util.concurrent.ScheduledExecutorService;
+
 /**
  * A {@link ConfigurationEnhancer} that registers a {@link HandlerTimeoutHandlerEnhancerDefinition}, driven by the
  * {@link HandlerTimeoutConfiguration} present in the {@link org.axonframework.common.configuration.Configuration}.
@@ -42,9 +44,14 @@ public class HandlerTimeoutConfigurationEnhancer implements ConfigurationEnhance
     @Override
     public void enhance(ComponentRegistry registry) {
         registry.registerIfNotPresent(HandlerTimeoutConfiguration.class, c -> HandlerTimeoutConfiguration.DEFAULT);
+        registry.registerIfNotPresent(AxonTaskJanitor.executor());
         HandlerEnhancerDefinitionUtils.registerToComponentRegistry(
                 registry,
-                c -> new HandlerTimeoutHandlerEnhancerDefinition(c.getComponent(HandlerTimeoutConfiguration.class))
+                c -> new HandlerTimeoutHandlerEnhancerDefinition(
+                        c.getComponent(HandlerTimeoutConfiguration.class),
+                        c.getComponent(ScheduledExecutorService.class, AxonTaskJanitor.EXECUTOR_COMPONENT_NAME),
+                        AxonTaskJanitor.LOGGER
+                )
         );
     }
 }

@@ -215,7 +215,9 @@ class CombinedTimeoutTests {
                 new SimpleMessageHandlingMember(callable),
                 timeout,
                 500,
-                100
+                100,
+                AxonTaskJanitor.INSTANCE,
+                AxonTaskJanitor.LOGGER
         );
     }
 

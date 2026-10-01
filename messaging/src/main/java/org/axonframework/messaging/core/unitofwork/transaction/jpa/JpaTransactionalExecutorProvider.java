@@ -43,13 +43,13 @@ import java.util.function.Supplier;
  * @author John Hendrikx
  * @since 5.0.2
  */
-@Internal
 public class JpaTransactionalExecutorProvider implements TransactionalExecutorProvider<EntityManager> {
 
     /**
      * The resource key for the {@link EntityManagerExecutor} supplier.
      */
-    public static final ResourceKey<Supplier<EntityManagerExecutor>> SUPPLIER_KEY = ResourceKey.withLabel(EntityManagerExecutor.class.getSimpleName());
+    public static final ResourceKey<Supplier<EntityManagerExecutor>> SUPPLIER_KEY =
+            ResourceKey.withLabel(EntityManagerExecutor.class.getSimpleName());
 
     private final EntityManagerFactory entityManagerFactory;
 

@@ -47,11 +47,15 @@ class HandlerTimeoutHandlerEnhancerDefinitionTest {
         parameterResolver = ClasspathParameterResolverFactory.forClass(getClass());
         handlerDefinition = new AnnotatedMessageHandlingMemberDefinition();
 
-        handlerEnhancerDefinition = new HandlerTimeoutHandlerEnhancerDefinition(new HandlerTimeoutConfiguration(
-                new TaskTimeoutSettings(40000, 34000, 4000),
-                new TaskTimeoutSettings(30000, 24000, 3000),
-                new TaskTimeoutSettings(20000, 14000, 2000)
-        ));
+        handlerEnhancerDefinition = new HandlerTimeoutHandlerEnhancerDefinition(
+                new HandlerTimeoutConfiguration(
+                        new TaskTimeoutSettings(40000, 34000, 4000),
+                        new TaskTimeoutSettings(30000, 24000, 3000),
+                        new TaskTimeoutSettings(20000, 14000, 2000)
+                ),
+                AxonTaskJanitor.INSTANCE,
+                AxonTaskJanitor.LOGGER
+        );
     }
 
     @Test

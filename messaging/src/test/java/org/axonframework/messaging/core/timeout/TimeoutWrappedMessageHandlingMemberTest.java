@@ -54,7 +54,9 @@ class TimeoutWrappedMessageHandlingMemberTest {
     void interruptsMessageHandlingMemberWhenHandlingExceedsTimeout() throws NoSuchMethodException {
         MessageHandlingMember<TestMessageHandler> original = getHandler(TestMessageHandler.class, "handle");
         TimeoutWrappedMessageHandlingMember<TestMessageHandler> wrappedHandler =
-                new TimeoutWrappedMessageHandlingMember<>(original, 100, 500, 10);
+                new TimeoutWrappedMessageHandlingMember<>(
+                        original, 100, 500, 10, AxonTaskJanitor.INSTANCE, AxonTaskJanitor.LOGGER
+                );
 
         EventMessage event = EventTestUtils.asEventMessage("my-message");
 
@@ -71,7 +73,9 @@ class TimeoutWrappedMessageHandlingMemberTest {
     void doesNotInterruptMessageHandlingMemberWhenHandlingCompletesInTime() throws NoSuchMethodException {
         MessageHandlingMember<TestMessageHandler> original = getHandler(TestMessageHandler.class, "handleFast");
         TimeoutWrappedMessageHandlingMember<TestMessageHandler> wrappedHandler =
-                new TimeoutWrappedMessageHandlingMember<>(original, 200, 500, 10);
+                new TimeoutWrappedMessageHandlingMember<>(
+                        original, 200, 500, 10, AxonTaskJanitor.INSTANCE, AxonTaskJanitor.LOGGER
+                );
 
         EventMessage event = EventTestUtils.asEventMessage("my-message");
 

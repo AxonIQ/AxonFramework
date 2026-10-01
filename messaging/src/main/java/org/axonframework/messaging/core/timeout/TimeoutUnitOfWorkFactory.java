@@ -82,36 +82,10 @@ public class TimeoutUnitOfWorkFactory implements UnitOfWorkFactory {
 
     /**
      * Creates a new {@code TimeoutUnitOfWorkFactory} decorating the given {@code delegate}, for the given
-     * {@code componentName} with the given {@code timeout}, {@code warningThreshold} and {@code warningInterval}. The
-     * warnings and timeout will be scheduled on the {@link AxonTaskJanitor#INSTANCE}. If you want to use a different
-     * {@link ScheduledExecutorService} or {@link Logger} to log on, use the other
-     * {@link #TimeoutUnitOfWorkFactory(UnitOfWorkFactory, String, int, int, int, ScheduledExecutorService, Logger)}.
-     *
-     * @param delegate         the delegate {@link UnitOfWorkFactory} used to create the actual {@link UnitOfWork}
-     * @param componentName    the name of the component to be included in the logging
-     * @param timeout          the timeout in milliseconds
-     * @param warningThreshold the threshold in milliseconds after which a warning is logged. Setting this to a value
-     *                         higher than {@code timeout} will disable warnings
-     * @param warningInterval  the interval in milliseconds between warnings
-     */
-    public TimeoutUnitOfWorkFactory(UnitOfWorkFactory delegate,
-                                    String componentName,
-                                    int timeout,
-                                    int warningThreshold,
-                                    int warningInterval) {
-        this(delegate,
-             componentName,
-             timeout,
-             warningThreshold,
-             warningInterval,
-             AxonTaskJanitor.INSTANCE,
-             AxonTaskJanitor.LOGGER);
-    }
-
-    /**
-     * Creates a new {@code TimeoutUnitOfWorkFactory} decorating the given {@code delegate}, for the given
-     * {@code componentName} with the given {@code timeout}, {@code warningThreshold} and {@code warningInterval}. The
-     * warnings and timeout will be scheduled on the provided {@code executorService}.
+     * {@code componentName} with the given {@code timeout}, {@code warningThreshold}, {@code warningInterval} used to
+     * decide when a timeout and warning should occur, while messages are logged through the given {@code logger}.
+     * <p>
+     * The warnings and timeout will be scheduled on the provided {@code executorService}, which is strongly recommended to be the {@link ScheduledExecutorService} provided by the {@link AxonTaskJanitor} to ensure a single executor is used throughout.
      *
      * @param delegate         the delegate {@link UnitOfWorkFactory} used to create the actual {@link UnitOfWork}
      * @param componentName    the name of the component to be included in the logging

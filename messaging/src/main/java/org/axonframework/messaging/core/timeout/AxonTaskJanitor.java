@@ -17,15 +17,27 @@
 package org.axonframework.messaging.core.timeout;
 
 import org.axonframework.common.AxonThreadFactory;
+import org.axonframework.common.configuration.ComponentDefinition;
+import org.axonframework.common.configuration.Configuration;
+import org.axonframework.common.lifecycle.Phase;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Container of unique {@link ScheduledExecutorService} and {@link Logger} instances for the
  * {@link AxonTimeLimitedTask}.
+ * <p>
+ * {@link #INSTANCE} is a JVM-wide fallback, intended for standalone/manual construction of {@link AxonTimeLimitedTask}
+ * or {@link TimeoutUnitOfWorkFactory} outside of a {@link Configuration}. It is not tied to any {@code Configuration}'s
+ * lifecycle, so callers using it directly are responsible for its lifecycle themselves. Message handling and unit of
+ * work timeouts driven through an Axon {@code Configuration} instead use {@link #executor()} to obtain a
+ * {@link ComponentDefinition} for an executor scoped to, and shut down with, that specific {@code Configuration} - so
+ * that shutting down one {@code Configuration} can never affect timeout enforcement in another {@code Configuration}
+ * sharing the same JVM.
  *
  * @author Mitchell Herrijgers
  * @see AxonTimeLimitedTask
@@ -34,10 +46,16 @@ import java.util.concurrent.ScheduledThreadPoolExecutor;
 public class AxonTaskJanitor {
 
     /**
+     * The name under which the {@link Configuration}-scoped {@link ScheduledExecutorService}, defined by
+     * {@link #executor()}, is known in the {@link Configuration}.
+     */
+    public static final String EXECUTOR_COMPONENT_NAME = "AxonTaskJanitorScheduledExecutorService";
+
+    /**
      * Unique instances of the {@link ScheduledExecutorService} for the {@link AxonTimeLimitedTask} to schedule warnings
      * and interrupts.
      */
-    public static final ScheduledExecutorService INSTANCE = createJanitorExecutorService();
+    protected static final ScheduledExecutorService INSTANCE = createJanitorExecutorService();
 
     /**
      * Unique instance of the {@link Logger} for the {@link AxonTimeLimitedTask} to log warnings and errors.
@@ -46,6 +64,25 @@ public class AxonTaskJanitor {
 
     private AxonTaskJanitor() {
         // Utility class
+    }
+
+    /**
+     * Creates a {@link ComponentDefinition} for a {@link ScheduledExecutorService}, named
+     * {@link #EXECUTOR_COMPONENT_NAME}, scoped to whichever {@link Configuration} it is registered with (for example
+     * through
+     * {@link org.axonframework.common.configuration.ComponentRegistry#registerIfNotPresent(ComponentDefinition)}).
+     * <p>
+     * The defined executor is created lazily, on first use, and is shut down automatically when the owning
+     * {@code Configuration} shuts down. Since the executor is scoped to a single {@code Configuration}, shutting that
+     * {@code Configuration} down can never affect timeout enforcement in another {@code Configuration} sharing the same
+     * JVM.
+     *
+     * @return a {@link ComponentDefinition} for a {@link Configuration}-scoped {@link ScheduledExecutorService}
+     */
+    public static ComponentDefinition<ScheduledExecutorService> executor() {
+        return ComponentDefinition.ofTypeAndName(ScheduledExecutorService.class, EXECUTOR_COMPONENT_NAME)
+                                  .withBuilder(c -> createJanitorExecutorService())
+                                  .onShutdown(Phase.EXTERNAL_CONNECTIONS - 10, AxonTaskJanitor::gracefulShutdown);
     }
 
     /**
@@ -59,5 +96,17 @@ public class AxonTaskJanitor {
         // Clean up tasks in the queue when canceled. Performance is equal but reduces memory pressure.
         janitor.setRemoveOnCancelPolicy(true);
         return janitor;
+    }
+
+    private static void gracefulShutdown(ScheduledExecutorService executor) {
+        executor.shutdown();
+        try {
+            if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
+                executor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            executor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 }

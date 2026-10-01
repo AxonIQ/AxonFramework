@@ -22,6 +22,8 @@ import org.axonframework.messaging.core.annotation.HandlerEnhancerDefinition;
 import org.axonframework.messaging.core.annotation.MultiHandlerEnhancerDefinition;
 import org.junit.jupiter.api.*;
 
+import java.util.concurrent.ScheduledExecutorService;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
@@ -69,5 +71,21 @@ class HandlerTimeoutConfigurationEnhancerTest {
         assertThat(((MultiHandlerEnhancerDefinition) result).getDelegates()).contains(customEnhancer);
         assertThat(((MultiHandlerEnhancerDefinition) result).getDelegates())
                 .anyMatch(HandlerTimeoutHandlerEnhancerDefinition.class::isInstance);
+    }
+
+    @Test
+    void registersAxonTaskJanitorAsAConfigurationScopedComponent() {
+        // given
+        componentRegistry.registerEnhancer(new HandlerTimeoutConfigurationEnhancer());
+
+        // when
+        Configuration config = componentRegistry.build(mock(LifecycleRegistry.class));
+
+        // then -- a fresh, Configuration-scoped executor is registered, distinct from the JVM-wide INSTANCE
+        // fallback, so shutting this Configuration down can never affect another Configuration's timeout
+        // enforcement.
+        assertThat(config.getComponent(ScheduledExecutorService.class, AxonTaskJanitor.EXECUTOR_COMPONENT_NAME))
+                .isNotNull()
+                .isNotSameAs(AxonTaskJanitor.INSTANCE);
     }
 }
