@@ -16,8 +16,6 @@
 
 package org.axonframework.messaging.core.unitofwork.transaction.jpa;
 
-import org.axonframework.common.annotation.Internal;
-import org.jspecify.annotations.Nullable;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import jakarta.persistence.EntityTransaction;
@@ -27,18 +25,18 @@ import org.axonframework.common.tx.TransactionalExecutor;
 import org.axonframework.messaging.core.Context.ResourceKey;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.transaction.TransactionalExecutorProvider;
+import org.jspecify.annotations.Nullable;
 
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 
 /**
- * A {@link TransactionalExecutorProvider} implementation for JPA {@link EntityManager EntityManagers} which
- * provides a {@link TransactionalExecutor}.
+ * A {@link TransactionalExecutorProvider} implementation for JPA {@link EntityManager EntityManagers} which provides a
+ * {@link TransactionalExecutor}.
  * <p>
- * When a processing context is supplied, supplies the {@link TransactionalExecutor} it must contain.
- * If no processing context is supplied, creates an executor that executes the supplied functions
- * in their own transaction.
+ * When a processing context is supplied, supplies the {@link TransactionalExecutor} it must contain. If no processing
+ * context is supplied, creates an executor that executes the supplied functions in their own transaction.
  *
  * @author John Hendrikx
  * @since 5.0.2
@@ -56,14 +54,16 @@ public class JpaTransactionalExecutorProvider implements TransactionalExecutorPr
     /**
      * Constructs a new instance.
      *
-     * @param entityManagerFactory A factory constructing an {@link EntityManager} used when no processing context is supplied.
+     * @param entityManagerFactory A factory constructing an {@link EntityManager} used when no processing context is
+     *                             supplied.
      */
     public JpaTransactionalExecutorProvider(EntityManagerFactory entityManagerFactory) {
         this.entityManagerFactory = Objects.requireNonNull(entityManagerFactory, "entityManagerFactory");
     }
 
     @Override
-    public TransactionalExecutor<EntityManager> getTransactionalExecutor(@Nullable ProcessingContext processingContext) {
+    public TransactionalExecutor<EntityManager> getTransactionalExecutor(
+            @Nullable ProcessingContext processingContext) {
         if (processingContext != null) {
             Supplier<EntityManagerExecutor> executorSupplier = processingContext.getResource(SUPPLIER_KEY);
 
@@ -89,15 +89,13 @@ public class JpaTransactionalExecutorProvider implements TransactionalExecutorPr
                     tx.commit();
 
                     return CompletableFuture.completedFuture(result);
-                }
-                catch (Exception e) {
+                } catch (Exception e) {
                     if (tx.isActive()) {
                         tx.rollback();
                     }
 
                     return CompletableFuture.failedFuture(e);
-                }
-                finally {
+                } finally {
                     entityManager.close();
                 }
             }

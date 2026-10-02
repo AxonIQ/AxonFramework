@@ -16,30 +16,27 @@
 
 package org.axonframework.messaging.core.unitofwork.transaction.jdbc;
 
-import org.axonframework.common.annotation.Internal;
-import org.jspecify.annotations.Nullable;
 import org.axonframework.common.function.ThrowingFunction;
 import org.axonframework.common.jdbc.ConnectionExecutor;
 import org.axonframework.common.tx.TransactionalExecutor;
 import org.axonframework.messaging.core.Context.ResourceKey;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.transaction.TransactionalExecutorProvider;
+import org.jspecify.annotations.Nullable;
 
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
-
 import javax.sql.DataSource;
 
 /**
- * A {@link TransactionalExecutorProvider} implementation for JDBC {@link Connection Connections} which
- * provides a {@link TransactionalExecutor}.
+ * A {@link TransactionalExecutorProvider} implementation for JDBC {@link Connection Connections} which provides a
+ * {@link TransactionalExecutor}.
  * <p>
- * When a processing context is supplied, supplies the {@link TransactionalExecutor} it must contain.
- * If no processing context is supplied, creates an executor that executes the supplied functions
- * in their own transaction.
+ * When a processing context is supplied, supplies the {@link TransactionalExecutor} it must contain. If no processing
+ * context is supplied, creates an executor that executes the supplied functions in their own transaction.
  *
  * @author John Hendrikx
  * @since 5.0.2
@@ -80,13 +77,13 @@ public class JdbcTransactionalExecutorProvider implements TransactionalExecutorP
             public <R> CompletableFuture<R> apply(ThrowingFunction<Connection, R, Exception> function) {
                 try {
                     return applyInTx(function, dataSource.getConnection());
-                }
-                catch (SQLException e) {
+                } catch (SQLException e) {
                     return CompletableFuture.failedFuture(e);
                 }
             }
 
-            private <R> CompletableFuture<R> applyInTx(ThrowingFunction<Connection, R, Exception> function, Connection connection) {
+            private <R> CompletableFuture<R> applyInTx(ThrowingFunction<Connection, R, Exception> function,
+                                                       Connection connection) {
                 try {
                     connection.setAutoCommit(false);
 
@@ -95,22 +92,18 @@ public class JdbcTransactionalExecutorProvider implements TransactionalExecutorP
                     connection.commit();
 
                     return CompletableFuture.completedFuture(result);
-                }
-                catch (Exception e) {
+                } catch (Exception e) {
                     try {
                         connection.rollback();
-                    }
-                    catch (SQLException se) {
+                    } catch (SQLException se) {
                         e.addSuppressed(se);
                     }
 
                     return CompletableFuture.failedFuture(e);
-                }
-                finally {
+                } finally {
                     try {
                         connection.close();
-                    }
-                    catch (SQLException e) {
+                    } catch (SQLException e) {
                         // Ignore, if closing fails, the system is likely in a bad state already
                     }
                 }
