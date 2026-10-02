@@ -43,7 +43,6 @@ import java.util.function.Supplier;
  * @author John Hendrikx
  * @since 5.0.2
  */
-@Internal
 public class JpaTransactionalExecutorProvider implements TransactionalExecutorProvider<EntityManager> {
 
     /**

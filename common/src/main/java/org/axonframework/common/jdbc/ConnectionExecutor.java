@@ -18,21 +18,27 @@ package org.axonframework.common.jdbc;
 
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.function.ThrowingFunction;
+import org.axonframework.common.tx.MaterializationAware;
+import org.axonframework.common.tx.MaterializingResource;
 import org.axonframework.common.tx.TransactionalExecutor;
 
 import java.sql.Connection;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Function;
 
 /**
  * A {@link TransactionalExecutor} implementation for JDBC {@link Connection Connections}.
+ * <p>
+ * The connection is obtained from the given {@link ConnectionProvider} at most once, the first time
+ * {@link #apply} is called, and reused for the remainder of this instance's lifetime.
  *
  * @author John Hendrikx
  * @since 5.0.2
  */
 @Internal
-public class ConnectionExecutor implements TransactionalExecutor<Connection> {
-    private final ConnectionProvider provider;
+public class ConnectionExecutor implements TransactionalExecutor<Connection>, MaterializationAware {
+    private final MaterializingResource<Connection> delegate;
 
     /**
      * Creates a new instance.
@@ -41,16 +47,18 @@ public class ConnectionExecutor implements TransactionalExecutor<Connection> {
      * @throws NullPointerException If any argument is {@code null}.
      */
     public ConnectionExecutor(ConnectionProvider provider) {
-        this.provider = Objects.requireNonNull(provider, "provider");
+        Objects.requireNonNull(provider, "provider");
+
+        this.delegate = new MaterializingResource<>(provider::getConnection);
+    }
+
+    @Override
+    public <R> R withMaterializationShielded(Function<Boolean, R> decision) {
+        return delegate.withMaterializationShielded(decision);
     }
 
     @Override
     public <R> CompletableFuture<R> apply(ThrowingFunction<Connection, R, Exception> function) {
-        try {
-            return CompletableFuture.completedFuture(function.apply(provider.getConnection()));
-        }
-        catch (Exception e) {
-            return CompletableFuture.failedFuture(e);
-        }
+        return delegate.apply(function);
     }
 }

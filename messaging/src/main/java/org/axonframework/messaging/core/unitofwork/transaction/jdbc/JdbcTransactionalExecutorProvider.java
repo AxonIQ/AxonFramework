@@ -16,7 +16,6 @@
 
 package org.axonframework.messaging.core.unitofwork.transaction.jdbc;
 
-import org.axonframework.common.annotation.Internal;
 import org.jspecify.annotations.Nullable;
 import org.axonframework.common.function.ThrowingFunction;
 import org.axonframework.common.jdbc.ConnectionExecutor;
@@ -44,7 +43,6 @@ import javax.sql.DataSource;
  * @author John Hendrikx
  * @since 5.0.2
  */
-@Internal
 public class JdbcTransactionalExecutorProvider implements TransactionalExecutorProvider<Connection> {
 
     /**
