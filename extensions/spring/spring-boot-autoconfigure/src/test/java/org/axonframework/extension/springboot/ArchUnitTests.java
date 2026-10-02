@@ -102,7 +102,6 @@ class ArchUnitTests {
     }
 
 
-
     private static Set<String> autoConfigurationImports() {
         try {
             return StreamUtils.copyToString(new ClassPathResource(RESOURCE_PATH).getInputStream(),

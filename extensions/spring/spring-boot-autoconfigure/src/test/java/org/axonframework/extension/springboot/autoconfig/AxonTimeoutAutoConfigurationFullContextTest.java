@@ -18,7 +18,7 @@ package org.axonframework.extension.springboot.autoconfig;
 
 import org.axonframework.messaging.commandhandling.CommandBus;
 import org.axonframework.messaging.queryhandling.QueryBus;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.*;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.builder.SpringApplicationBuilder;
@@ -28,15 +28,15 @@ import org.springframework.context.annotation.Configuration;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Test class validating that {@link AxonTimeoutAutoConfiguration}, as part of the full set of autoconfiguration
- * classes picked up through {@code spring.factories}/{@code AutoConfiguration.imports}, does not break Spring context
+ * Test class validating that {@link AxonTimeoutAutoConfiguration}, as part of the full set of autoconfiguration classes
+ * picked up through {@code spring.factories}/{@code AutoConfiguration.imports}, does not break Spring context
  * creation.
  * <p>
- * Earlier timeout wiring resolved the {@link CommandBus} and {@link QueryBus} beans while those beans were still
- * being constructed, which Spring reported as a {@code BeanCurrentlyInCreationException}. The current
- * {@code HandlerTimeoutConfigurationEnhancer} and {@code TimeoutUnitOfWorkFactoryConfigurationEnhancer} decorate
- * named {@code UnitOfWorkFactory} components instead of resolving the {@code CommandBus}/{@code QueryBus} beans
- * directly, so this regression no longer applies.
+ * Earlier timeout wiring resolved the {@link CommandBus} and {@link QueryBus} beans while those beans were still being
+ * constructed, which Spring reported as a {@code BeanCurrentlyInCreationException}. The current
+ * {@code HandlerTimeoutConfigurationEnhancer} and {@code TimeoutUnitOfWorkFactoryConfigurationEnhancer} decorate named
+ * {@code UnitOfWorkFactory} components instead of resolving the {@code CommandBus}/{@code QueryBus} beans directly, so
+ * this regression no longer applies.
  *
  * @author Steven van Beelen
  */
