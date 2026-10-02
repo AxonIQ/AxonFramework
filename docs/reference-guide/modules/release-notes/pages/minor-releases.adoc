@@ -6,6 +6,25 @@ Any patch release made for an Axon project is tailored towards resolving bugs. T
 [#release_5_3]
 == Release 5.3
 
+=== Release 5.3.3
+
+==== Bug fixes
+
+- `UpdateChecker` parameters should not be in headers (link:https://github.com/AxonIQ/AxonFramework/pull/5094[PR #5094], by @CodeDrivenMitch)
+- Ensure Micrometer `MessageMonitors` are Spring Boot-autoconfigured (link:https://github.com/AxonIQ/AxonFramework/issues/5077[#5077], link:https://github.com/AxonIQ/AxonFramework/pull/5091[PR #5091], by @smcvb)
+- Prevent PSEP from redelivering events to a lagging half of a merged segment (link:https://github.com/AxonIQ/AxonFramework/issues/5079[#5079], link:https://github.com/AxonIQ/AxonFramework/pull/5087[PR #5087], by @hatzlj)
+- Token claims stolen from segments waiting for a worker thread, despite coordinator claim extension (link:https://github.com/AxonIQ/AxonFramework/pull/5065[PR #5065], by @abuijze)
+- Fix `NullPointerException` for `@CommandHandlerInterceptor` on creational commands (link:https://github.com/AxonIQ/AxonFramework/pull/5064[PR #5064], by @abuijze)
+
+==== Contributors
+
+A heartfelt thank you to all contributors who worked on this section:
+
+- link:https://github.com/abuijze[@abuijze]
+- link:https://github.com/CodeDrivenMitch[@CodeDrivenMitch]
+- link:https://github.com/hatzlj[@hatzlj]
+- link:https://github.com/smcvb[@smcvb]
+
 === Release 5.3.2
 
 ==== Enhancements
