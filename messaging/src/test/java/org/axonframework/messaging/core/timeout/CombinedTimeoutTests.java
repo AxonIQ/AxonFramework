@@ -34,6 +34,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -45,29 +46,26 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class CombinedTimeoutTests {
 
-    @AfterEach
-    void tearDown() throws InterruptedException {
-        //noinspection ResultOfMethodCallIgnored | Awaiting termination to ensure none of the AxonTimeLimitedTask hang
-        AxonTaskJanitor.INSTANCE.awaitTermination(250, TimeUnit.MILLISECONDS);
-    }
-
     /**
      * Simple test where the message handling member takes longer than the timeout specified, and the unit of work
      * timeout is not reached.
      */
     @Test
-    void onMessageHandlerInterruptWorks() {
+    void onMessageHandlerInterruptWorks() throws InterruptedException {
+        ScheduledThreadPoolExecutor executor = AxonTaskJanitor.createExecutor();
         TimeoutWrappedMessageHandlingMember<Object> mhm = createMessageHandlingMember(100, () -> {
             Thread.sleep(200);
             return null;
-        });
-        TimeoutUnitOfWorkFactory factory = createTimeoutFactory(500);
+        }, executor);
+        TimeoutUnitOfWorkFactory factory = createTimeoutFactory(500, executor);
 
         CompletableFuture<?> result = doExecution(factory, mhm);
 
         assertTrue(result.isCompletedExceptionally());
         assertInstanceOf(AxonTimeoutException.class, result.exceptionNow());
         assertFalse(Thread.interrupted());
+        //noinspection ResultOfMethodCallIgnored | Awaiting termination to ensure none of the AxonTimeLimitedTask hang
+        executor.awaitTermination(250, TimeUnit.MILLISECONDS);
     }
 
     /**
@@ -75,22 +73,26 @@ class CombinedTimeoutTests {
      * work timeout should kick in.
      */
     @Test
-    void onUnitOfWorkInterruptWorks() {
+    void onUnitOfWorkInterruptWorks() throws InterruptedException {
+        ScheduledThreadPoolExecutor executor = AxonTaskJanitor.createExecutor();
         TimeoutWrappedMessageHandlingMember<Object> mhm = createMessageHandlingMember(500, () -> {
             Thread.sleep(200);
             return null;
-        });
-        TimeoutUnitOfWorkFactory factory = createTimeoutFactory(100);
+        }, executor);
+        TimeoutUnitOfWorkFactory factory = createTimeoutFactory(100, executor);
 
         CompletableFuture<?> result = doExecution(factory, mhm);
 
         assertTrue(result.isCompletedExceptionally());
         assertInstanceOf(AxonTimeoutException.class, result.exceptionNow());
         assertFalse(Thread.interrupted());
+        //noinspection ResultOfMethodCallIgnored | Awaiting termination to ensure none of the AxonTimeLimitedTask hang
+        executor.awaitTermination(250, TimeUnit.MILLISECONDS);
     }
 
     @Test
-    void handlingMemberInterruptStillWorksIfExceptionIsWrapped() {
+    void handlingMemberInterruptStillWorksIfExceptionIsWrapped() throws InterruptedException {
+        ScheduledThreadPoolExecutor executor = AxonTaskJanitor.createExecutor();
         TimeoutWrappedMessageHandlingMember<Object> mhm = createMessageHandlingMember(100, () -> {
             try {
                 Thread.sleep(200);
@@ -98,18 +100,21 @@ class CombinedTimeoutTests {
                 throw new RuntimeException("Wrapped exception", e);
             }
             return null;
-        });
-        TimeoutUnitOfWorkFactory factory = createTimeoutFactory(500);
+        }, executor);
+        TimeoutUnitOfWorkFactory factory = createTimeoutFactory(500, executor);
 
         CompletableFuture<?> result = doExecution(factory, mhm);
 
         assertTrue(result.isCompletedExceptionally());
         assertInstanceOf(AxonTimeoutException.class, result.exceptionNow());
         assertFalse(Thread.interrupted());
+        //noinspection ResultOfMethodCallIgnored | Awaiting termination to ensure none of the AxonTimeLimitedTask hang
+        executor.awaitTermination(250, TimeUnit.MILLISECONDS);
     }
 
     @Test
-    void handlingMemberInterruptStillWorksIfExceptionIsIgnored() {
+    void handlingMemberInterruptStillWorksIfExceptionIsIgnored() throws InterruptedException {
+        ScheduledThreadPoolExecutor executor = AxonTaskJanitor.createExecutor();
         TimeoutWrappedMessageHandlingMember<Object> mhm = createMessageHandlingMember(100, () -> {
             try {
                 Thread.sleep(200);
@@ -117,18 +122,21 @@ class CombinedTimeoutTests {
                 // Ignored
             }
             return null;
-        });
-        TimeoutUnitOfWorkFactory factory = createTimeoutFactory(500);
+        }, executor);
+        TimeoutUnitOfWorkFactory factory = createTimeoutFactory(500, executor);
 
         CompletableFuture<?> result = doExecution(factory, mhm);
 
         assertTrue(result.isCompletedExceptionally());
         assertInstanceOf(AxonTimeoutException.class, result.exceptionNow());
         assertFalse(Thread.interrupted());
+        //noinspection ResultOfMethodCallIgnored | Awaiting termination to ensure none of the AxonTimeLimitedTask hang
+        executor.awaitTermination(250, TimeUnit.MILLISECONDS);
     }
 
     @Test
-    void unitOfWorkInterruptStillWorksIfExceptionIsWrapped() {
+    void unitOfWorkInterruptStillWorksIfExceptionIsWrapped() throws InterruptedException {
+        ScheduledThreadPoolExecutor executor = AxonTaskJanitor.createExecutor();
         TimeoutWrappedMessageHandlingMember<Object> mhm = createMessageHandlingMember(500, () -> {
             try {
                 Thread.sleep(200);
@@ -136,18 +144,21 @@ class CombinedTimeoutTests {
                 throw new RuntimeException("Wrapped exception", e);
             }
             return null;
-        });
-        TimeoutUnitOfWorkFactory factory = createTimeoutFactory(300);
+        }, executor);
+        TimeoutUnitOfWorkFactory factory = createTimeoutFactory(300, executor);
 
         CompletableFuture<?> result = doExecution(factory, mhm);
 
         assertTrue(result.isCompletedExceptionally());
         assertInstanceOf(AxonTimeoutException.class, result.exceptionNow());
         assertFalse(Thread.interrupted());
+        //noinspection ResultOfMethodCallIgnored | Awaiting termination to ensure none of the AxonTimeLimitedTask hang
+        executor.awaitTermination(250, TimeUnit.MILLISECONDS);
     }
 
     @Test
-    void unitOfWorkInterruptStillWorksIfExceptionIsIgnored() {
+    void unitOfWorkInterruptStillWorksIfExceptionIsIgnored() throws InterruptedException {
+        ScheduledThreadPoolExecutor executor = AxonTaskJanitor.createExecutor();
         TimeoutWrappedMessageHandlingMember<Object> mhm = createMessageHandlingMember(500, () -> {
             try {
                 Thread.sleep(200);
@@ -155,30 +166,35 @@ class CombinedTimeoutTests {
                 // Ignored
             }
             return null;
-        });
-        TimeoutUnitOfWorkFactory factory = createTimeoutFactory(300);
+        }, executor);
+        TimeoutUnitOfWorkFactory factory = createTimeoutFactory(300, executor);
 
         CompletableFuture<?> result = doExecution(factory, mhm);
 
         assertTrue(result.isCompletedExceptionally());
         assertInstanceOf(AxonTimeoutException.class, result.exceptionNow());
         assertFalse(Thread.interrupted());
+        //noinspection ResultOfMethodCallIgnored | Awaiting termination to ensure none of the AxonTimeLimitedTask hang
+        executor.awaitTermination(250, TimeUnit.MILLISECONDS);
     }
 
     @Test
-    void whenThreadIsInterruptedFromUnrelatedProcessTheInterruptIsPreserved() {
+    void whenThreadIsInterruptedFromUnrelatedProcessTheInterruptIsPreserved() throws InterruptedException {
+        ScheduledThreadPoolExecutor executor = AxonTaskJanitor.createExecutor();
         TimeoutWrappedMessageHandlingMember<Object> mhm = createMessageHandlingMember(100000, () -> {
             Thread.sleep(20);
             Thread.currentThread().interrupt();
             return null;
-        });
-        TimeoutUnitOfWorkFactory factory = createTimeoutFactory(100000);
+        }, executor);
+        TimeoutUnitOfWorkFactory factory = createTimeoutFactory(100000, executor);
 
         CompletableFuture<?> result = doExecution(factory, mhm);
 
         assertTrue(result.isCompletedExceptionally());
         assertInstanceOf(InterruptedException.class, result.exceptionNow());
         assertTrue(Thread.interrupted());
+        //noinspection ResultOfMethodCallIgnored | Awaiting termination to ensure none of the AxonTimeLimitedTask hang
+        executor.awaitTermination(250, TimeUnit.MILLISECONDS);
     }
 
     /**
@@ -209,25 +225,22 @@ class CombinedTimeoutTests {
         );
     }
 
-    private TimeoutWrappedMessageHandlingMember<Object> createMessageHandlingMember(int timeout,
-                                                                                    Callable<Object> callable) {
+    private TimeoutWrappedMessageHandlingMember<Object> createMessageHandlingMember(
+            int timeout,
+            Callable<Object> callable,
+            ScheduledThreadPoolExecutor executor
+    ) {
         return new TimeoutWrappedMessageHandlingMember<>(
-                new SimpleMessageHandlingMember(callable),
-                timeout,
-                500,
-                100
+                new SimpleMessageHandlingMember(callable), timeout, 500, 100, executor
         );
     }
 
-    private TimeoutUnitOfWorkFactory createTimeoutFactory(int timeout) {
+    private TimeoutUnitOfWorkFactory createTimeoutFactory(
+            int timeout,
+            ScheduledThreadPoolExecutor executor
+    ) {
         return new TimeoutUnitOfWorkFactory(
-                UnitOfWorkTestUtils.SIMPLE_FACTORY,
-                "TestComponent",
-                timeout,
-                500,
-                100,
-                AxonTaskJanitor.INSTANCE,
-                AxonTaskJanitor.LOGGER
+                UnitOfWorkTestUtils.SIMPLE_FACTORY, "TestComponent", timeout, 500, 100, executor
         );
     }
 

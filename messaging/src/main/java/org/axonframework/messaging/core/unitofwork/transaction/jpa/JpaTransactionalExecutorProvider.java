@@ -16,11 +16,11 @@
 
 package org.axonframework.messaging.core.unitofwork.transaction.jpa;
 
+import org.axonframework.common.annotation.Internal;
 import org.jspecify.annotations.Nullable;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import jakarta.persistence.EntityTransaction;
-import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.function.ThrowingFunction;
 import org.axonframework.common.jpa.EntityManagerExecutor;
 import org.axonframework.common.tx.TransactionalExecutor;
@@ -49,7 +49,8 @@ public class JpaTransactionalExecutorProvider implements TransactionalExecutorPr
     /**
      * The resource key for the {@link EntityManagerExecutor} supplier.
      */
-    public static final ResourceKey<Supplier<EntityManagerExecutor>> SUPPLIER_KEY = ResourceKey.withLabel(EntityManagerExecutor.class.getSimpleName());
+    public static final ResourceKey<Supplier<EntityManagerExecutor>> SUPPLIER_KEY =
+            ResourceKey.withLabel(EntityManagerExecutor.class.getSimpleName());
 
     private final EntityManagerFactory entityManagerFactory;
 

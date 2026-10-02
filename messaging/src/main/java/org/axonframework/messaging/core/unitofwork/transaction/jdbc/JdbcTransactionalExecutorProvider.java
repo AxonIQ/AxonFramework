@@ -16,8 +16,8 @@
 
 package org.axonframework.messaging.core.unitofwork.transaction.jdbc;
 
-import org.jspecify.annotations.Nullable;
 import org.axonframework.common.annotation.Internal;
+import org.jspecify.annotations.Nullable;
 import org.axonframework.common.function.ThrowingFunction;
 import org.axonframework.common.jdbc.ConnectionExecutor;
 import org.axonframework.common.tx.TransactionalExecutor;
@@ -50,7 +50,8 @@ public class JdbcTransactionalExecutorProvider implements TransactionalExecutorP
     /**
      * The resource key for the {@link ConnectionExecutor} supplier.
      */
-    public static final ResourceKey<Supplier<ConnectionExecutor>> SUPPLIER_KEY = ResourceKey.withLabel(ConnectionExecutor.class.getSimpleName());
+    public static final ResourceKey<Supplier<ConnectionExecutor>> SUPPLIER_KEY =
+            ResourceKey.withLabel(ConnectionExecutor.class.getSimpleName());
 
     private final DataSource dataSource;
 
