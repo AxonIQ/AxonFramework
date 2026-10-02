@@ -36,28 +36,43 @@ import java.util.concurrent.CompletableFuture;
 public interface TransactionalExecutorProvider<T> {
 
     /**
+     * Provides the {@link TransactionalExecutor} bound to {@code processingContext}.
+     *
+     * @param processingContext a {@link ProcessingContext}, can be {@code null}
+     * @return the bound {@link TransactionalExecutor}, or {@code null} if {@code processingContext} is not
+     *         {@code null} but has no executor bound to it
+     */
+    @Nullable TransactionalExecutor<T> findTransactionalExecutor(@Nullable ProcessingContext processingContext);
+
+    /**
      * Provides a {@link TransactionalExecutor}, using the optional processing context.
      *
      * @param processingContext a {@link ProcessingContext}, can be {@code null}
      * @return a {@link TransactionalExecutor}, never {@code null}
+     * @throws IllegalStateException when {@code processingContext} is not {@code null} but has no executor bound to it
      */
-    TransactionalExecutor<T> getTransactionalExecutor(@Nullable ProcessingContext processingContext);
+    default TransactionalExecutor<T> getTransactionalExecutor(@Nullable ProcessingContext processingContext) {
+        TransactionalExecutor<T> executor = findTransactionalExecutor(processingContext);
+
+        if (executor == null) {
+            throw new IllegalStateException("No transactional executor bound to the given processing context.");
+        }
+
+        return executor;
+    }
 
     /**
      * Provides a {@link TransactionalExecutor} that prefers an independently-managed resource over
      * materializing the {@code processingContext}-bound executor's resource if it isn't active yet.
      * <p>
      * The returned executor's {@link TransactionalExecutor#apply} reuses the {@code processingContext}-bound
-     * executor's resource if it's already active at the time of that call, or uses an independently-managed
-     * resource instead (as if {@code processingContext} were {@code null}) if it isn't, so a caller that
-     * doesn't need to participate in the unit of work's transaction never forces it to start one just by
-     * reading. The decision is deliberately deferred to {@link TransactionalExecutor#apply} itself, rather
-     * than made here, and shielded against a concurrent materialization for its duration; see
-     * {@link MaterializationAware}.
+     * executor's resource if it's already active at the time of that call, otherwise uses an
+     * independently-managed resource instead (as if {@code processingContext} were {@code null}), shielded
+     * against a concurrent materialization for the duration of that check; see {@link MaterializationAware}.
      * <p>
-     * Falls back to {@link #getTransactionalExecutor(ProcessingContext)}'s behavior when the context-bound
-     * executor doesn't implement {@link MaterializationAware}, since then there's no way to tell whether it's
-     * already active.
+     * Also falls back to an independently-managed resource when {@code processingContext} has no executor
+     * bound to it at all, and uses the context-bound executor unconditionally when it doesn't implement
+     * {@link MaterializationAware}.
      *
      * @param processingContext a {@link ProcessingContext}, can be {@code null}
      * @return a {@link TransactionalExecutor}, never {@code null}
@@ -67,19 +82,23 @@ public interface TransactionalExecutorProvider<T> {
             return getTransactionalExecutor(null);
         }
 
-        TransactionalExecutor<T> ambient = getTransactionalExecutor(processingContext);
+        return new TransactionalExecutor<>() {
+            @Override
+            public <R> CompletableFuture<R> apply(ThrowingFunction<T, R, Exception> function) {
+                TransactionalExecutor<T> ambient = findTransactionalExecutor(processingContext);
 
-        if (ambient instanceof MaterializationAware materializationAware) {
-            return new TransactionalExecutor<>() {
-                @Override
-                public <R> CompletableFuture<R> apply(ThrowingFunction<T, R, Exception> function) {
+                if (ambient == null) {
+                    return getTransactionalExecutor(null).apply(function);
+                }
+
+                if (ambient instanceof MaterializationAware materializationAware) {
                     return materializationAware.withMaterializationShielded(active ->
                         active ? ambient.apply(function) : getTransactionalExecutor(null).apply(function)
                     );
                 }
-            };
-        }
 
-        return ambient;
+                return ambient.apply(function);
+            }
+        };
     }
 }
