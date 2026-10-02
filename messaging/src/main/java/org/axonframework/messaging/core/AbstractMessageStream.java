@@ -496,7 +496,90 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
 
     @Override
     public final synchronized boolean isCompleted() {
+        if (!completed && peekedEntry == null) {
+
+            /*
+             * The completed flag is set by a read that observes a terminal result, so it does not yet cover a
+             * stream whose source is exhausted but has not been read past. terminalState() covers that without
+             * a fetch, keeping this check free of side effects and independent of composition depth.
+             */
+
+            switch (terminalState()) {
+                case FetchResult.Completed() -> markTerminal(null);
+                case FetchResult.Error(Throwable throwable) -> markTerminal(throwable);
+                case FetchResult.Value(Entry<M> ignored) -> throw new IllegalStateException(
+                        "terminalState() returned a Value; it must never hand out entries.");
+                case FetchResult.NotReady() -> {
+                    // Not determinable without reading, so the stream stays open.
+                }
+            }
+        }
+
         return completed;
+    }
+
+    /**
+     * Determines, <b>without consuming from its source</b>, whether no further {@link Entry entries} will arrive.
+     * <p>
+     * A source-backed stream determines this from state it already holds: an iterator with no next element, a buffer
+     * that was sealed and drained, a future that resolved and was handed out. A composed stream determines it from
+     * the stream it wraps, for which {@link #terminalStateOf(MessageStream)} is provided.
+     * <p>
+     * Implementations must be cheap and free of side effects. In particular, they must not consume, buffer, or
+     * otherwise advance the source, and must not complete or close the stream: returning the terminal result is how
+     * termination is reported, exactly as in {@link #fetchNext()}.
+     * <p>
+     * The default implementation returns {@link FetchResult.NotReady}, leaving completion to be observed by a read.
+     *
+     * @return {@link FetchResult.Completed} or {@link FetchResult.Error} when this stream is terminal,
+     * {@link FetchResult.NotReady} when that cannot be determined without reading; never {@link FetchResult.Value}
+     */
+    protected FetchResult<Entry<M>> terminalState() {
+        return FetchResult.notReady();
+    }
+
+    /**
+     * Returns the terminal state of the given {@code delegate}, for a composed stream to return from its own
+     * {@link #terminalState()}.
+     *
+     * @param delegate the stream to report the terminal state of
+     * @param <T>      the entry type of the returned result
+     * @return the terminal state the given {@code delegate} reports, or {@link FetchResult.NotReady} when it is not
+     * terminal
+     */
+    protected static <T extends Entry<?>> FetchResult<T> terminalStateOf(MessageStream<?> delegate) {
+        if (!delegate.isCompleted()) {
+            return FetchResult.notReady();
+        }
+
+        return delegate.error()
+                       .<FetchResult<T>>map(FetchResult::error)
+                       .orElseGet(FetchResult::completed);
+    }
+
+    /**
+     * Records that this stream reached its terminal state, as observed by {@link #isCompleted()}. Callers must hold
+     * this stream's lock.
+     * <p>
+     * The notification recorded by {@link #complete()} is not flushed here, since the consumer reading the completion
+     * status receives it as the return value. It is flushed by the next consumer-side call.
+     *
+     * @param error the failure this stream completed with, or {@code null} when it completed normally
+     */
+    private void markTerminal(@Nullable Throwable error) {
+
+        /*
+         * Reaching a terminal state here counts as the interaction that initializes the stream, which is otherwise
+         * done by the first read.
+         */
+
+        this.initialized = true;
+
+        if (error == null) {
+            complete();
+        } else {
+            completeExceptionally(error);
+        }
     }
 
     @Override

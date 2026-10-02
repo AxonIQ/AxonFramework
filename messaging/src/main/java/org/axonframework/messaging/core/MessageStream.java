@@ -378,6 +378,10 @@ public interface MessageStream<M extends Message> {
      * Indicates whether this stream has been completed. A completed stream will never return {@link Entry entries} from
      * {@link #next()}, and {@link #hasNextAvailable()} will always return {@code false}. If the stream completed with
      * an error, {@link #error()} will report so.
+     * <p>
+     * Returns {@code true} as soon as the stream determines that no further {@link Entry entries} will arrive,
+     * including directly after {@link #next()} returned the last one. Returns {@code false} while an {@link Entry} is
+     * available for reading, and for as long as the outcome cannot be determined without consuming entries.
      *
      * @return {@code true} if the stream completed, otherwise {@code false}.
      */

@@ -91,6 +91,19 @@ class SingleValueMessageStream<M extends Message> extends AbstractMessageStream<
     }
 
     @Override
+    protected FetchResult<Entry<M>> terminalState() {
+        if (!source.isDone()) {
+            return FetchResult.notReady();
+        }
+
+        if (source.isCompletedExceptionally()) {
+            return FetchResult.error(source.exceptionNow());
+        }
+
+        return read.get() ? FetchResult.completed() : FetchResult.notReady();
+    }
+
+    @Override
     protected final void onCompleted() {
         if (!source.isDone()) {
             source.cancel(false);
