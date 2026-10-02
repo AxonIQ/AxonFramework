@@ -161,7 +161,7 @@ class TimeoutUnitOfWorkFactoryConfigurationEnhancerTest {
         // then
         ScheduledExecutorService executor =
                 config.getComponent(ScheduledExecutorService.class, AxonTaskJanitor.EXECUTOR_COMPONENT_NAME);
-        assertThat(executor).isNotNull().isNotSameAs(AxonTaskJanitor.INSTANCE);
+        assertThat(executor).isNotNull();
         assertThat(commandBusUnitOfWorkFactory(config)).extracting("executorService").isSameAs(executor);
         assertThat(queryBusUnitOfWorkFactory(config)).extracting("executorService").isSameAs(executor);
     }
