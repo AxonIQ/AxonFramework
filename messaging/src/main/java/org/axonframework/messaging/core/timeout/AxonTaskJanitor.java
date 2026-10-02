@@ -102,9 +102,11 @@ public class AxonTaskJanitor {
         executor.shutdown();
         try {
             if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
+                LOGGER.warn("The janitor's executor did not terminate within 5 seconds. Forcing shutdown.");
                 executor.shutdownNow();
             }
         } catch (InterruptedException e) {
+            LOGGER.warn("Interrupted while awaiting the janitor's executor termination. Forcing shutdown.");
             executor.shutdownNow();
             Thread.currentThread().interrupt();
         }
