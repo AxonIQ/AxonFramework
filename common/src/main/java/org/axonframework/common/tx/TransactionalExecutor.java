@@ -19,8 +19,6 @@ package org.axonframework.common.tx;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.function.ThrowingConsumer;
 import org.axonframework.common.function.ThrowingFunction;
-import org.jspecify.annotations.Nullable;
-
 
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
@@ -38,7 +36,7 @@ import java.util.concurrent.CompletableFuture;
  * This interface provides convenience methods for both operations that return
  * a result and operations that are purely side-effecting.
  *
- * @param <T> The type of the resource.
+ * @param <T> the type of the resource
  * @author John Hendrikx
  * @since 5.0.2
  */
@@ -51,10 +49,10 @@ public interface TransactionalExecutor<T> {
      * Implementations are responsible for managing the lifecycle of the
      * provided resource, including obtaining, closing, commit and rollback.
      *
-     * @param consumer A consumer which accepts the transactional resource of type {@code T};
-     *     cannot be {@code null}.
-     * @return A {@link CompletableFuture} with a void result, never {@code null}.
-     * @throws NullPointerException When {@code consumer} is {@code null}.
+     * @param consumer a consumer which accepts the transactional resource of type {@code T};
+     *     cannot be {@code null}
+     * @return a {@link CompletableFuture} with a void result, never {@code null}
+     * @throws NullPointerException when {@code consumer} is {@code null}
      */
     default CompletableFuture<Void> accept(ThrowingConsumer<T, Exception> consumer) {
         Objects.requireNonNull(consumer, "consumer");
@@ -71,12 +69,12 @@ public interface TransactionalExecutor<T> {
      * Implementations are responsible for managing the lifecycle of the
      * provided resource, including obtaining, closing, commit and rollback.
      *
-     * @param <R> The type of the result returned by the function.
-     * @param function A function that accepts the transactional resource of type {@code T}
-     *     and produces a result of type {@code R}; cannot be {@code null}.
-     * @return A {@link CompletableFuture} which when it completes contains the result of
-     *     the provided function, never {@code null}.
-     * @throws NullPointerException When {@code function} is {@code null}.
+     * @param <R> the type of the result returned by the function
+     * @param function a function that accepts the transactional resource of type {@code T}
+     *     and produces a result of type {@code R}; cannot be {@code null}
+     * @return a {@link CompletableFuture} which when it completes contains the result of
+     *     the provided function, never {@code null}
+     * @throws NullPointerException when {@code function} is {@code null}
      */
     <R> CompletableFuture<R> apply(ThrowingFunction<T, R, Exception> function);
 }
