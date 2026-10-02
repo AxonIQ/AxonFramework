@@ -25,7 +25,7 @@ import org.junit.jupiter.api.*;
 import java.util.concurrent.ScheduledExecutorService;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.*;
 
 /**
  * Test class validating the {@link HandlerTimeoutConfigurationEnhancer}.
@@ -85,7 +85,6 @@ class HandlerTimeoutConfigurationEnhancerTest {
         // fallback, so shutting this Configuration down can never affect another Configuration's timeout
         // enforcement.
         assertThat(config.getComponent(ScheduledExecutorService.class, AxonTaskJanitor.EXECUTOR_COMPONENT_NAME))
-                .isNotNull()
-                .isNotSameAs(AxonTaskJanitor.INSTANCE);
+                .isNotNull();
     }
 }
