@@ -44,7 +44,6 @@ import javax.sql.DataSource;
  * @author John Hendrikx
  * @since 5.0.2
  */
-@Internal
 public class JdbcTransactionalExecutorProvider implements TransactionalExecutorProvider<Connection> {
 
     /**
