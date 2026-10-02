@@ -90,7 +90,7 @@ uses the old `UnitOfWork` should be rewritten to put resources in this context.
 
 The Axon Framework 4 `SagaLifecycle` was a `static` utility backed by a `ThreadLocal` (through its `Scope` base
 class), pushed onto the current thread for the duration of a single event handler invocation and popped off again
-afterward. Axon Framework 5 does not use `ThreadLocal`s, so `SagaLifecycle` in `axon-legacy` is now an **instance**,
+afterward. Axon Framework 5 does not use `ThreadLocal`s, so `SagaLifecycle` in `axoniq-legacy` is now an **instance**,
 scoped to the `ProcessingContext` of the Saga currently handling an event, exposing the same operations
 (`associateWith`, `removeAssociationWith`, `end`, `associationValues`) as before, just non-static.
 
@@ -109,12 +109,56 @@ public class OrderSaga {
 ```
 
 Old sagas that called `SagaLifecycle.associateWith(...)`, `.end()`, etc. statically from anywhere in the handler body
-need this small adjustment. The `Scope` class that backed the old `ThreadLocal` mechanism is removed entirely, since
-`SagaLifecycle` was its only remaining consumer.
+need this small adjustment. `SagaLifecycle` no longer extends `Scope`; the `Scope` class itself lives on in
+`axoniq-legacy` for deadline support, see [Scope](#scope).
+
+### Scope
+
+`Scope` (`describeCurrentScope()`, `getCurrentScope()`) is kept in `axoniq-legacy`, unchanged, in package
+`org.axonframework.messaging.core` instead of `org.axonframework.messaging`. It remains `ThreadLocal`-based: an
+annotated Saga is the current scope while one of its handler methods runs, exactly as in Axon Framework 4. This is what
+keeps an Axon Framework 4 Saga that schedules or cancels deadlines working without changes, whether it receives the
+`DeadlineManager` as a handler parameter, holds it in a field, or delegates to a collaborator that does:
+
+```java
+public class PaymentSaga {
+
+    @StartSaga
+    @SagaEventHandler(associationProperty = "paymentId")
+    public void on(PaymentRequestedEvent event, DeadlineManager deadlineManager) {
+        // No ScopeDescriptor given: scheduled within this Saga's scope, as in Axon Framework 4
+        deadlineManager.schedule(Duration.ofMinutes(30), "paymentTimeout");
+    }
+
+    @SagaEventHandler(associationProperty = "paymentId")
+    public void on(PaymentCompletedEvent event, DeadlineManager deadlineManager) {
+        deadlineManager.cancelAllWithinScope("paymentTimeout");
+    }
+}
+```
+
+The `DeadlineManager` overloads without a `ScopeDescriptor` use `Scope.describeCurrentScope()` and throw an
+`IllegalStateException` when no scope is active, as before. A `ScopeDescriptor` handler parameter still resolves to
+the current scope, or to `NoScopeDescriptor.INSTANCE` outside of one.
+
+Axon Framework 4 deferred `DeadlineManager` calls to the prepare-commit phase of the current unit of work. Axon
+Framework 5 has no ambient unit of work, which leads to two differences:
+
+- A deadline call is deferred only when it is made while a Saga handler runs. It then runs in the dedicated
+  `AbstractDeadlineManager.RUN_DEADLINE_CALLS` phase of that handler's `ProcessingContext`, after the Saga is written
+  and before the commit, in the order the calls were made. It never runs when the context rolls back.
+- A call made anywhere else runs immediately, even while some other `ProcessingContext` is active.
+
+A Saga handler that hands work to another thread cannot schedule deadlines within the Saga's scope from there. This
+was already the case in Axon Framework 4.
+
+All `DeadlineManager.schedule(...)` overloads are deprecated: they are kept so Axon Framework 4 Sagas keep running
+while migrating, not for new code. Schedule a command with a scheduler of your choice that dispatches it through the
+`CommandGateway` instead, or replace the Saga with a Workflow. Cancelling deadlines stays fully supported.
 
 ### SagaStore
 
-The saga stores in `axon-legacy` are an exception worth calling out, because the opposite would be a reasonable
+The saga stores in `axoniq-legacy` are an exception worth calling out, because the opposite would be a reasonable
 assumption. `SagaStore` keeps its Axon Framework 4 signatures and takes no `ProcessingContext` on any of its five
 operations, and neither `InMemorySagaStore`, `JdbcSagaStore`, `JpaSagaStore` nor `CachingSagaStore` is aware of the
 processing lifecycle. `JdbcSagaStore` and `JpaSagaStore` join the surrounding transaction through the
