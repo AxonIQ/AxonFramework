@@ -109,8 +109,52 @@ public class OrderSaga {
 ```
 
 Old sagas that called `SagaLifecycle.associateWith(...)`, `.end()`, etc. statically from anywhere in the handler body
-need this small adjustment. The `Scope` class that backed the old `ThreadLocal` mechanism is removed entirely, since
-`SagaLifecycle` was its only remaining consumer.
+need this small adjustment. `SagaLifecycle` no longer extends `Scope`; the `Scope` class itself lives on in
+`axoniq-legacy` for deadline support, see [Scope](#scope).
+
+### Scope
+
+`Scope` (`describeCurrentScope()`, `getCurrentScope()`) is kept in `axoniq-legacy`, unchanged, in package
+`org.axonframework.messaging.core` instead of `org.axonframework.messaging`. It remains `ThreadLocal`-based: an
+annotated Saga is the current scope while one of its handler methods runs, exactly as in Axon Framework 4. This is what
+keeps an Axon Framework 4 Saga that schedules or cancels deadlines working without changes, whether it receives the
+`DeadlineManager` as a handler parameter, holds it in a field, or delegates to a collaborator that does:
+
+```java
+public class PaymentSaga {
+
+    @StartSaga
+    @SagaEventHandler(associationProperty = "paymentId")
+    public void on(PaymentRequestedEvent event, DeadlineManager deadlineManager) {
+        // No ScopeDescriptor given: scheduled within this Saga's scope, as in Axon Framework 4
+        deadlineManager.schedule(Duration.ofMinutes(30), "paymentTimeout");
+    }
+
+    @SagaEventHandler(associationProperty = "paymentId")
+    public void on(PaymentCompletedEvent event, DeadlineManager deadlineManager) {
+        deadlineManager.cancelAllWithinScope("paymentTimeout");
+    }
+}
+```
+
+The `DeadlineManager` overloads without a `ScopeDescriptor` use `Scope.describeCurrentScope()` and throw an
+`IllegalStateException` when no scope is active, as before. A `ScopeDescriptor` handler parameter still resolves to
+the current scope, or to `NoScopeDescriptor.INSTANCE` outside of one.
+
+Axon Framework 4 deferred `DeadlineManager` calls to the prepare-commit phase of the current unit of work. Axon
+Framework 5 has no ambient unit of work, which leads to two differences:
+
+- A deadline call is deferred only when it is made while a Saga handler runs. It then runs in the dedicated
+  `AbstractDeadlineManager.RUN_DEADLINE_CALLS` phase of that handler's `ProcessingContext`, after the Saga is written
+  and before the commit, in the order the calls were made. It never runs when the context rolls back.
+- A call made anywhere else runs immediately, even while some other `ProcessingContext` is active.
+
+A Saga handler that hands work to another thread cannot schedule deadlines within the Saga's scope from there. This
+was already the case in Axon Framework 4.
+
+All `DeadlineManager.schedule(...)` overloads are deprecated: they are kept so Axon Framework 4 Sagas keep running
+while migrating, not for new code. Schedule a command with a scheduler of your choice that dispatches it through the
+`CommandGateway` instead, or replace the Saga with a Workflow. Cancelling deadlines stays fully supported.
 
 ### SagaStore
 
