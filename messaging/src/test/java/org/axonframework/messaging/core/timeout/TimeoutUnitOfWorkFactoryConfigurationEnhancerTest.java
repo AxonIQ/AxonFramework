@@ -158,12 +158,12 @@ class TimeoutUnitOfWorkFactoryConfigurationEnhancerTest {
         // given / when
         Configuration config = componentRegistry.build(mock(LifecycleRegistry.class));
 
-        // then -- a fresh, Configuration-scoped executor is registered, distinct from the JVM-wide INSTANCE
-        // fallback, so shutting this Configuration down can never affect another Configuration's timeout
-        // enforcement.
-        assertThat(config.getComponent(ScheduledExecutorService.class, AxonTaskJanitor.EXECUTOR_COMPONENT_NAME))
-                .isNotNull()
-                .isNotSameAs(AxonTaskJanitor.INSTANCE);
+        // then
+        ScheduledExecutorService executor =
+                config.getComponent(ScheduledExecutorService.class, AxonTaskJanitor.EXECUTOR_COMPONENT_NAME);
+        assertThat(executor).isNotNull().isNotSameAs(AxonTaskJanitor.INSTANCE);
+        assertThat(commandBusUnitOfWorkFactory(config)).extracting("executorService").isSameAs(executor);
+        assertThat(queryBusUnitOfWorkFactory(config)).extracting("executorService").isSameAs(executor);
     }
 
     private static UnitOfWorkFactory commandBusUnitOfWorkFactory(Configuration config) {
