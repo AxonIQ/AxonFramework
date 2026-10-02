@@ -63,15 +63,11 @@ public class JdbcTransactionalExecutorProvider implements TransactionalExecutorP
     }
 
     @Override
-    public TransactionalExecutor<Connection> getTransactionalExecutor(@Nullable ProcessingContext processingContext) {
+    public @Nullable TransactionalExecutor<Connection> findTransactionalExecutor(@Nullable ProcessingContext processingContext) {
         if (processingContext != null) {
             Supplier<ConnectionExecutor> executorSupplier = processingContext.getResource(SUPPLIER_KEY);
 
-            if (executorSupplier == null) {
-                throw new IllegalStateException("A connection executor must be present in the processing context.");
-            }
-
-            return executorSupplier.get();
+            return executorSupplier == null ? null : executorSupplier.get();
         }
 
         return new TransactionalExecutor<>() {

@@ -16,7 +16,6 @@
 
 package org.axonframework.messaging.core.unitofwork.transaction.jpa;
 
-import org.axonframework.common.annotation.Internal;
 import org.jspecify.annotations.Nullable;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
@@ -63,15 +62,11 @@ public class JpaTransactionalExecutorProvider implements TransactionalExecutorPr
     }
 
     @Override
-    public TransactionalExecutor<EntityManager> getTransactionalExecutor(@Nullable ProcessingContext processingContext) {
+    public @Nullable TransactionalExecutor<EntityManager> findTransactionalExecutor(@Nullable ProcessingContext processingContext) {
         if (processingContext != null) {
             Supplier<EntityManagerExecutor> executorSupplier = processingContext.getResource(SUPPLIER_KEY);
 
-            if (executorSupplier == null) {
-                throw new IllegalStateException("An entity manager executor must be present in the processing context.");
-            }
-
-            return executorSupplier.get();
+            return executorSupplier == null ? null : executorSupplier.get();
         }
 
         return new TransactionalExecutor<>() {
