@@ -19,6 +19,7 @@ package org.axonframework.messaging.eventstreaming;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
 import org.jspecify.annotations.Nullable;
 
+import static java.util.Objects.requireNonNull;
 
 /**
  * Interface describing the condition to {@link StreamableEventSource#open(StreamingCondition,
@@ -83,6 +84,17 @@ public sealed interface StreamingCondition extends EventsCondition permits Defau
      * @throws NullPointerException if {@code criteria} is {@code null}
      */
     StreamingCondition withCriteria(EventCriteria criteria);
+
+    /**
+     * Returns a copy of this {@code StreamingCondition} that starts streaming from the given {@code position},
+     * preserving the current {@link #criteria()}.
+     *
+     * @param position the {@link TrackingToken} to start streaming from
+     * @return a copy of this {@code StreamingCondition} starting from the given {@code position}
+     */
+    default StreamingCondition withPosition(TrackingToken position) {
+        return conditionFor(requireNonNull(position, "The position cannot be null"), criteria());
+    }
 
     /**
      * Combines the {@link #criteria()} of {@code this} {@code  StreamingCondition} with the given {@code criteria}.
