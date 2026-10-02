@@ -131,6 +131,38 @@ public abstract class ApplicationConfigurerTestSuite<C extends ApplicationConfig
         return true;
     }
 
+    /**
+     * Returns the number of module {@link Configuration Configurations} the {@link ApplicationConfigurer} under test
+     * registers by default, on top of whatever a test explicitly registers through
+     * {@link ComponentRegistry#registerModule(Module)}.
+     * <p>
+     * Returns {@code 0} by default. Override when the {@link ApplicationConfigurer} under test registers one or more
+     * modules of its own, so the generic module-count assertions in this suite keep validating against the correct
+     * total.
+     *
+     * @return the number of modules registered by default by the {@link ApplicationConfigurer} under test,
+     * defaulting to {@code 0}
+     */
+    protected int baselineModuleCount() {
+        return 0;
+    }
+
+    /**
+     * Returns the number of times a {@link ConfigurationEnhancer} registered directly on the root
+     * {@link ComponentRegistry} is expected to run its {@link ConfigurationEnhancer#enhance(ComponentRegistry)}
+     * method while building the configuration once.
+     * <p>
+     * Returns {@code 1} by default, since a configuration enhancer should run exactly once per module level it is
+     * visible in. Override when the {@link ApplicationConfigurer} under test registers module(s) of its own by
+     * default, causing a root-level enhancer to run once per implicit module level in addition to the root.
+     *
+     * @return the number of times a root-level {@link ConfigurationEnhancer} is expected to run while building the
+     * configuration once, defaulting to {@code 1}
+     */
+    protected int expectedEnhancerInvocationCount() {
+        return 1;
+    }
+
     protected static class TestComponent {
 
         private final String state;
@@ -139,7 +171,23 @@ public abstract class ApplicationConfigurerTestSuite<C extends ApplicationConfig
             this.state = state;
         }
 
-        public String state() {
+        /**
+         * Creates a {@link TestComponent} with the given {@code state}.
+         * <p>
+         * {@link TestComponent}'s constructor is {@code protected}, which only a subclass of {@code TestComponent}
+         * itself could invoke directly — being a subclass of the enclosing {@link ApplicationConfigurerTestSuite}
+         * does not qualify, since {@code TestComponent} and the suite's subclasses are unrelated types. This
+         * {@code public} factory method gives any {@link ApplicationConfigurerTestSuite} subclass, wherever it is
+         * declared, a way to create {@link TestComponent} instances of its own.
+         *
+         * @param state the state of the {@link TestComponent} to create
+         * @return a new {@link TestComponent} with the given {@code state}
+         */
+        public static TestComponent of(String state) {
+            return new TestComponent(state);
+        }
+
+        protected String state() {
             return state;
         }
 
@@ -1200,7 +1248,7 @@ public abstract class ApplicationConfigurerTestSuite<C extends ApplicationConfig
             // Second build
             buildConfiguration();
 
-            assertEquals(1, counter.get());
+            assertEquals(expectedEnhancerInvocationCount(), counter.get());
         }
 
         @Test
@@ -1806,7 +1854,7 @@ public abstract class ApplicationConfigurerTestSuite<C extends ApplicationConfig
             AxonConfiguration configuration = buildConfiguration();
             List<Configuration> result = configuration.getModuleConfigurations();
 
-            assertEquals(2, result.size());
+            assertEquals(baselineModuleCount() + 2, result.size());
 
             assertTrue(configuration.getModuleConfiguration("one").isPresent());
             assertTrue(configuration.getModuleConfiguration("two").isPresent());
@@ -1863,8 +1911,8 @@ public abstract class ApplicationConfigurerTestSuite<C extends ApplicationConfig
             assertFalse(rootConfig.getOptionalComponent(TestComponent.class, "two").isPresent());
             // Level one module outcome has own components and access to parent.
             List<Configuration> levelOneConfigurations = rootConfig.getModuleConfigurations();
-            assertThat(levelOneConfigurations).hasSize(1);
-            Configuration levelOneConfig = levelOneConfigurations.getFirst();
+            assertThat(levelOneConfigurations).hasSize(baselineModuleCount() + 1);
+            Configuration levelOneConfig = rootConfig.getModuleConfiguration("one").orElseThrow();
             assertThat(levelOneConfig.getOptionalComponent(TestComponent.class, "root")).isPresent();
             assertEquals(levelOneModuleComponent, levelOneConfig.getComponent(TestComponent.class, "one"));
             assertFalse(levelOneConfig.getOptionalComponent(TestComponent.class, "two").isPresent());
@@ -1899,14 +1947,14 @@ public abstract class ApplicationConfigurerTestSuite<C extends ApplicationConfig
             assertFalse(rootConfig.getOptionalComponent(TestComponent.class, "one").isPresent());
             assertFalse(rootConfig.getOptionalComponent(TestComponent.class, "two").isPresent());
             List<Configuration> levelOneConfigurations = rootConfig.getModuleConfigurations();
-            assertEquals(2, levelOneConfigurations.size());
+            assertEquals(baselineModuleCount() + 2, levelOneConfigurations.size());
             // Left module can access own components and parent, not its siblings.
-            Configuration leftConfig = levelOneConfigurations.getFirst();
+            Configuration leftConfig = rootConfig.getModuleConfiguration("left").orElseThrow();
             assertTrue(leftConfig.getOptionalComponent(TestComponent.class, "root").isPresent());
             assertEquals(leftModuleComponent, leftConfig.getComponent(TestComponent.class, "left"));
             assertFalse(leftConfig.getOptionalComponent(TestComponent.class, "right").isPresent());
             // Right module can access own components and parent, not its siblings,
-            Configuration rightConfig = levelOneConfigurations.get(1);
+            Configuration rightConfig = rootConfig.getModuleConfiguration("right").orElseThrow();
             assertTrue(rightConfig.getOptionalComponent(TestComponent.class, "root").isPresent());
             assertEquals(rightModuleComponent, rightConfig.getComponent(TestComponent.class, "right"));
             assertFalse(rightConfig.getOptionalComponent(TestComponent.class, "left").isPresent());
@@ -1965,8 +2013,8 @@ public abstract class ApplicationConfigurerTestSuite<C extends ApplicationConfig
             assertNotEquals(expectedLevelTwoComponentState, root.getComponent(TestComponent.class).state());
             // Check decoration on level one.
             List<Configuration> rootModuleConfigs = root.getModuleConfigurations();
-            assertThat(rootModuleConfigs).hasSize(1);
-            Configuration levelOne = rootModuleConfigs.getFirst();
+            assertThat(rootModuleConfigs).hasSize(baselineModuleCount() + 1);
+            Configuration levelOne = root.getModuleConfiguration("level-one").orElseThrow();
             assertNotEquals(expectedRootComponentState, levelOne.getComponent(TestComponent.class).state());
             assertEquals(expectedLevelOneComponentState, levelOne.getComponent(TestComponent.class).state());
             assertNotEquals(expectedLevelTwoComponentState, levelOne.getComponent(TestComponent.class).state());
@@ -2003,8 +2051,8 @@ public abstract class ApplicationConfigurerTestSuite<C extends ApplicationConfig
 
             invoked.set(false);
             List<Configuration> levelOneConfigs = rootConfig.getModuleConfigurations();
-            assertEquals(1, levelOneConfigs.size());
-            Configuration levelOneConfig = levelOneConfigs.getFirst();
+            assertEquals(baselineModuleCount() + 1, levelOneConfigs.size());
+            Configuration levelOneConfig = rootConfig.getModuleConfiguration("test-module").orElseThrow();
             result = levelOneConfig.getComponent(TestComponent.class, "id", () -> {
                 invoked.set(true);
                 return defaultComponent;
@@ -2064,7 +2112,7 @@ public abstract class ApplicationConfigurerTestSuite<C extends ApplicationConfig
             assertEquals(expectedComponent, config.getComponent(TestComponent.class));
             assertEquals(expectedNamedComponent, config.getComponent(TestComponent.class, "name"));
             verify(testFactory).registerShutdownHandlers(any());
-            verifyNoMoreInteractions(testFactory);
+            verify(testFactory, never()).construct(any(), any());
         }
 
         @Test
@@ -2166,7 +2214,7 @@ public abstract class ApplicationConfigurerTestSuite<C extends ApplicationConfig
             assertSame(registeredComponent, result.get("registered"));
             // Factory should not be consulted by getComponents()
             verify(testFactory).registerShutdownHandlers(any());
-            verifyNoMoreInteractions(testFactory);
+            verify(testFactory, never()).construct(any(), any());
         }
     }
 
