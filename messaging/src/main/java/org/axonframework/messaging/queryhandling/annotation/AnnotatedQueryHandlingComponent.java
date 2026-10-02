@@ -22,8 +22,10 @@ import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.annotation.AnnotatedHandlerInspector;
+import org.axonframework.messaging.core.annotation.HandlerAttributes;
 import org.axonframework.messaging.core.annotation.HandlerDefinition;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
+import org.axonframework.messaging.core.VersionSpecifier;
 import org.axonframework.messaging.core.conversion.MessageConverter;
 import org.axonframework.messaging.core.interception.annotation.MessageHandlerInterceptorMemberChain;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
@@ -115,24 +117,11 @@ public class AnnotatedQueryHandlingComponent<T> implements QueryHandlingComponen
 
     private QueryHandler constructQueryHandlerFor(QueryHandlingMember<? super T> handler) {
         MessageHandlerInterceptorMemberChain<T> interceptorChain = model.chainedInterceptor(target.getClass());
-        return (query, context) -> {
-            MessageStream<QueryResponseMessage> resultStream =
-                    interceptorChain.handle(
-                                            query.withConvertedPayload(handler.payloadType(), converter),
-                                            context,
-                                            target,
-                                            handler
-                                    )
-                                    .mapMessage(this::asQueryResponseMessage);
-            Optional<Throwable> handlingException = resultStream.error();
-            if (handlingException.isPresent() && !(handlingException.get() instanceof QueryExecutionException)) {
-                return MessageStream.failed(new QueryExecutionException(
-                        "Handling query with identifier [" + query.identifier() + "] failed.",
-                        handlingException.get()
-                ));
-            }
-            return resultStream;
-        };
+        VersionSpecifier versionSpecifier = handler.<String>attribute(HandlerAttributes.QUERY_VERSION_RANGE)
+                                                   .map(VersionSpecifier::parse)
+                                                   .orElse(VersionSpecifier.any());
+
+        return new AdapterQueryHandler(handler, interceptorChain, versionSpecifier);
     }
 
     private QueryResponseMessage asQueryResponseMessage(Message queryResponse) {
@@ -158,5 +147,44 @@ public class AnnotatedQueryHandlingComponent<T> implements QueryHandlingComponen
         descriptor.describeWrapperOf(handlingComponent);
         descriptor.describeProperty("messageTypeResolver", messageTypeResolver);
         descriptor.describeProperty("converter", converter);
+    }
+
+    private class AdapterQueryHandler implements QueryHandler {
+        private final QueryHandlingMember<? super T> delegate;
+        private final MessageHandlerInterceptorMemberChain<T> interceptorChain;
+        private final VersionSpecifier versionSpecifier;
+
+        private AdapterQueryHandler(QueryHandlingMember<? super T> delegate,
+                                    MessageHandlerInterceptorMemberChain<T> interceptorChain,
+                                    VersionSpecifier versionSpecifier) {
+            this.delegate = delegate;
+            this.interceptorChain = interceptorChain;
+            this.versionSpecifier = versionSpecifier;
+        }
+
+        @Override
+        public MessageStream<QueryResponseMessage> handle(QueryMessage query, ProcessingContext context) {
+            MessageStream<QueryResponseMessage> resultStream =
+                    interceptorChain.handle(
+                                            query.withConvertedPayload(delegate.payloadType(), converter),
+                                            context,
+                                            target,
+                                            delegate
+                                    )
+                                    .mapMessage(AnnotatedQueryHandlingComponent.this::asQueryResponseMessage);
+            Optional<Throwable> handlingException = resultStream.error();
+            if (handlingException.isPresent() && !(handlingException.get() instanceof QueryExecutionException)) {
+                return MessageStream.failed(new QueryExecutionException(
+                        "Handling query with identifier [" + query.identifier() + "] failed.",
+                        handlingException.get()
+                ));
+            }
+            return resultStream;
+        }
+
+        @Override
+        public VersionSpecifier supportedVersions() {
+            return versionSpecifier;
+        }
     }
 }

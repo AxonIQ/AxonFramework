@@ -62,6 +62,7 @@ class AnnotatedHandlerAttributesTest {
         expected.put(HandlerAttributes.PAYLOAD_TYPE, String.class);
         expected.put(HandlerAttributes.COMMAND_NAME, "my-command");
         expected.put(HandlerAttributes.COMMAND_ROUTING_KEY, "my-routing-key");
+        expected.put(HandlerAttributes.COMMAND_VERSION_RANGE, "");
         expected.put(CommandHandler.class.getSimpleName() + ".payloadType", String.class);
 
         AnnotatedHandlerAttributes testSubject = new AnnotatedHandlerAttributes(messageHandlingMember);
@@ -81,6 +82,7 @@ class AnnotatedHandlerAttributesTest {
         expected.put(HandlerAttributes.ALLOW_REPLAY, true);
         expected.put(HandlerAttributes.MESSAGE_TYPE, EventMessage.class);
         expected.put(HandlerAttributes.PAYLOAD_TYPE, Boolean.class);
+        expected.put(HandlerAttributes.EVENT_VERSION_RANGE, "");
         expected.put(EventHandler.class.getSimpleName() + ".payloadType", Boolean.class);
 
         AnnotatedHandlerAttributes testSubject = new AnnotatedHandlerAttributes(messageHandlingMember);
@@ -127,6 +129,7 @@ class AnnotatedHandlerAttributesTest {
         expected.put(HandlerAttributes.PAYLOAD_TYPE, Long.class);
         expected.put(HandlerAttributes.COMMAND_NAME, "custom-custom-name");
         expected.put(HandlerAttributes.COMMAND_ROUTING_KEY, "custom-routing-key");
+        expected.put(HandlerAttributes.COMMAND_VERSION_RANGE, "");
         expected.put(CommandHandler.class.getSimpleName() + ".payloadType", Long.class);
         expected.put(CustomCommandHandler.class.getSimpleName() + ".additionalAttribute", 42);
         expected.put(CustomCommandHandler.class.getSimpleName() + ".payloadType", Long.class);
