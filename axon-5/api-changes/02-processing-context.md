@@ -90,7 +90,7 @@ uses the old `UnitOfWork` should be rewritten to put resources in this context.
 
 The Axon Framework 4 `SagaLifecycle` was a `static` utility backed by a `ThreadLocal` (through its `Scope` base
 class), pushed onto the current thread for the duration of a single event handler invocation and popped off again
-afterward. Axon Framework 5 does not use `ThreadLocal`s, so `SagaLifecycle` in `axon-legacy` is now an **instance**,
+afterward. Axon Framework 5 does not use `ThreadLocal`s, so `SagaLifecycle` in `axoniq-legacy` is now an **instance**,
 scoped to the `ProcessingContext` of the Saga currently handling an event, exposing the same operations
 (`associateWith`, `removeAssociationWith`, `end`, `associationValues`) as before, just non-static.
 
@@ -158,7 +158,7 @@ while migrating, not for new code. Schedule a command with a scheduler of your c
 
 ### SagaStore
 
-The saga stores in `axon-legacy` are an exception worth calling out, because the opposite would be a reasonable
+The saga stores in `axoniq-legacy` are an exception worth calling out, because the opposite would be a reasonable
 assumption. `SagaStore` keeps its Axon Framework 4 signatures and takes no `ProcessingContext` on any of its five
 operations, and neither `InMemorySagaStore`, `JdbcSagaStore`, `JpaSagaStore` nor `CachingSagaStore` is aware of the
 processing lifecycle. `JdbcSagaStore` and `JpaSagaStore` join the surrounding transaction through the
