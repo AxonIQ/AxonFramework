@@ -25,6 +25,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -36,18 +37,14 @@ import static org.mockito.Mockito.*;
  *
  * @author Mitchell Herrijgers
  */
+@SuppressWarnings("ResultOfMethodCallIgnored")
 class AxonTimeLimitedTaskTest {
 
-    @AfterEach
-    void tearDown() throws InterruptedException {
-        //noinspection ResultOfMethodCallIgnored | Awaiting termination to ensure none of the AxonTimeLimitedTask hang
-        AxonTaskJanitor.INSTANCE.awaitTermination(250, TimeUnit.MILLISECONDS);
-    }
-
     @Test
-    void correctlyInterruptsTaskWhenNoWarningWasConfiguredOnUncustomizedConstructor() {
+    void interruptsTaskWhenTimeoutIsExceededWithoutWarnings() throws InterruptedException {
+        ScheduledThreadPoolExecutor executor = AxonTaskJanitor.createExecutor();
         AxonTimeLimitedTask testSubject = new AxonTimeLimitedTask(
-                "My test task", 100, 100, 1, AxonTaskJanitor.INSTANCE, AxonTaskJanitor.LOGGER, null
+                "My test task", 100, 100, 1, executor, AxonTaskJanitor.LOGGER, null
         );
         testSubject.bindToCurrentThread();
 
@@ -60,13 +57,16 @@ class AxonTimeLimitedTaskTest {
 
         assertTrue(testSubject.isInterrupted());
         assertFalse(testSubject.isCompleted());
+        // Awaiting termination to ensure none of the AxonTimeLimitedTask hang
+        executor.awaitTermination(250, TimeUnit.MILLISECONDS);
     }
 
-
     @Test
-    void correctlyInterruptsTaskWithWarningWasConfiguredOnUncustomizedConstructor() {
+    void interruptsTaskAndLogsWarningsWhenTimeoutIsExceeded() throws InterruptedException {
+        ScheduledThreadPoolExecutor executor = AxonTaskJanitor.createExecutor();
+        Logger logger = spy(LoggerFactory.getLogger("MyLogger"));
         AxonTimeLimitedTask testSubject = new AxonTimeLimitedTask(
-                "My test task", 100, 50, 10, AxonTaskJanitor.INSTANCE, AxonTaskJanitor.LOGGER, null
+                "My test task", 100, 50, 10, executor, logger, null
         );
         testSubject.bindToCurrentThread();
 
@@ -79,12 +79,16 @@ class AxonTimeLimitedTaskTest {
 
         assertTrue(testSubject.isInterrupted());
         assertFalse(testSubject.isCompleted());
+        verify(logger, atLeast(3)).warn(anyString(), any(), any(), any(), any());
+        // Awaiting termination to ensure none of the AxonTimeLimitedTask hang
+        executor.awaitTermination(250, TimeUnit.MILLISECONDS);
     }
 
     @Test
     void bindToCurrentThreadRedirectsTheScheduledInterruptToTheRebindThread() throws InterruptedException {
+        ScheduledThreadPoolExecutor executor = AxonTaskJanitor.createExecutor();
         AxonTimeLimitedTask testSubject = new AxonTimeLimitedTask(
-                "My test task", 200, 200, 1, AxonTaskJanitor.INSTANCE, AxonTaskJanitor.LOGGER, null
+                "My test task", 200, 200, 1, executor, AxonTaskJanitor.LOGGER, null
         );
         AtomicBoolean workerWasInterrupted = new AtomicBoolean(false);
         CountDownLatch workerBound = new CountDownLatch(1);
@@ -109,12 +113,15 @@ class AxonTimeLimitedTaskTest {
         assertFalse(Thread.currentThread().isInterrupted(),
                     "The creator (test) thread should not have been interrupted");
         assertTrue(testSubject.isInterrupted());
+        // Awaiting termination to ensure none of the AxonTimeLimitedTask hang
+        executor.awaitTermination(250, TimeUnit.MILLISECONDS);
     }
 
     @Test
-    void startIfNotStartedIsANoOpAfterTheTaskAlreadyStarted() {
+    void startIfNotStartedIsANoOpAfterTheTaskAlreadyStarted() throws InterruptedException {
+        ScheduledThreadPoolExecutor executor = AxonTaskJanitor.createExecutor();
         AxonTimeLimitedTask testSubject = new AxonTimeLimitedTask(
-                "My test task", 1000, 1000, 1, AxonTaskJanitor.INSTANCE, AxonTaskJanitor.LOGGER, null
+                "My test task", 1000, 1000, 1, executor, AxonTaskJanitor.LOGGER, null
         );
         testSubject.bindToCurrentThread();
 
@@ -124,12 +131,15 @@ class AxonTimeLimitedTaskTest {
 
         assertFalse(testSubject.isInterrupted());
         testSubject.complete();
+        // Awaiting termination to ensure none of the AxonTimeLimitedTask hang
+        executor.awaitTermination(250, TimeUnit.MILLISECONDS);
     }
 
     @Test
     void startIfNotStartedStartsExactlyOnceUnderConcurrentCallers() throws InterruptedException {
+        ScheduledThreadPoolExecutor executor = AxonTaskJanitor.createExecutor();
         AxonTimeLimitedTask testSubject = new AxonTimeLimitedTask(
-                "My test task", 200, 200, 1, AxonTaskJanitor.INSTANCE, AxonTaskJanitor.LOGGER, null
+                "My test task", 200, 200, 1, executor, AxonTaskJanitor.LOGGER, null
         );
         testSubject.bindToCurrentThread();
         int callerCount = 10;
@@ -161,32 +171,16 @@ class AxonTimeLimitedTaskTest {
         assertTrue(errors.isEmpty(), "No concurrent caller of startIfNotStarted() should throw: " + errors);
         assertThrows(InterruptedException.class, () -> Thread.sleep(300));
         assertTrue(testSubject.isInterrupted());
-    }
-
-    @Test
-    void correctlyLogsWarningsAndInterruptsWhenWarningWasConfiguredOnCustomizedConstructor() {
-        Logger logger = spy(LoggerFactory.getLogger("MyLogger"));
-        AxonTimeLimitedTask testSubject =
-                new AxonTimeLimitedTask("My test task", 1000, 100, 100, AxonTaskJanitor.INSTANCE, logger);
-        testSubject.bindToCurrentThread();
-
-        assertThrows(InterruptedException.class, () -> {
-            testSubject.start();
-            // Even though the timeout is 100ms, the InterruptedException apparently needs time to travel up.
-            // We accept a 1500ms delay.
-            Thread.sleep(1500);
-        });
-
-        assertTrue(testSubject.isInterrupted());
-        assertFalse(testSubject.isCompleted());
-        verify(logger, atLeast(8)).warn(anyString(), any(), any(), any(), any());
+        // Awaiting termination to ensure none of the AxonTimeLimitedTask hang
+        executor.awaitTermination(250, TimeUnit.MILLISECONDS);
     }
 
     @Test
     void doesNotInterruptButLogsWarningsIfProcessWasCompletedBeforeTimeout() throws InterruptedException {
+        ScheduledThreadPoolExecutor executor = AxonTaskJanitor.createExecutor();
         Logger logger = spy(LoggerFactory.getLogger("MyLogger"));
         AxonTimeLimitedTask testSubject =
-                new AxonTimeLimitedTask("My test task", 1000, 100, 100, AxonTaskJanitor.INSTANCE, logger);
+                new AxonTimeLimitedTask("My test task", 1000, 100, 100, executor, logger);
         testSubject.bindToCurrentThread();
 
         testSubject.start();
@@ -199,12 +193,15 @@ class AxonTimeLimitedTaskTest {
         // Complete manually to ensure it does not block the AxonTaskJanitor!
         testSubject.complete();
         verify(logger, atLeast(3)).warn(anyString(), any(), any(), any(), any());
+        // Awaiting termination to ensure none of the AxonTimeLimitedTask hang
+        executor.awaitTermination(250, TimeUnit.MILLISECONDS);
     }
 
     @Test
     void interruptsAllConcurrentlyActiveThreadsWhenTimeoutFires() throws InterruptedException {
+        ScheduledThreadPoolExecutor executor = AxonTaskJanitor.createExecutor();
         AxonTimeLimitedTask testSubject = new AxonTimeLimitedTask(
-                "My test task", 100, 100, 1, AxonTaskJanitor.INSTANCE, AxonTaskJanitor.LOGGER, null
+                "My test task", 100, 100, 1, executor, AxonTaskJanitor.LOGGER, null
         );
         AtomicBoolean firstWorkerInterrupted = new AtomicBoolean(false);
         AtomicBoolean secondWorkerInterrupted = new AtomicBoolean(false);
@@ -238,12 +235,15 @@ class AxonTimeLimitedTaskTest {
 
         assertTrue(firstWorkerInterrupted.get(), "The first concurrently active thread must be interrupted");
         assertTrue(secondWorkerInterrupted.get(), "The second concurrently active thread must be interrupted");
+        // Awaiting termination to ensure none of the AxonTimeLimitedTask hang
+        executor.awaitTermination(250, TimeUnit.MILLISECONDS);
     }
 
     @Test
     void unbindRemovesOnlyTheGivenThreadNotOthersStillActive() throws InterruptedException {
+        ScheduledThreadPoolExecutor executor = AxonTaskJanitor.createExecutor();
         AxonTimeLimitedTask testSubject = new AxonTimeLimitedTask(
-                "My test task", 200, 200, 1, AxonTaskJanitor.INSTANCE, AxonTaskJanitor.LOGGER, null
+                "My test task", 200, 200, 1, executor, AxonTaskJanitor.LOGGER, null
         );
         AtomicBoolean finishedWorkerInterrupted = new AtomicBoolean(false);
         AtomicBoolean slowWorkerInterrupted = new AtomicBoolean(false);
@@ -281,10 +281,13 @@ class AxonTimeLimitedTaskTest {
         assertFalse(finishedWorkerInterrupted.get(),
                     "The already-unbound thread must not be interrupted");
         assertTrue(slowWorkerInterrupted.get(), "The still-bound, still-active thread must be interrupted");
+        // Awaiting termination to ensure none of the AxonTimeLimitedTask hang
+        executor.awaitTermination(250, TimeUnit.MILLISECONDS);
     }
 
     @Test
     void startDoesNotThrowWhenTheExecutorHasAlreadyBeenShutDown() {
+        // given
         ScheduledExecutorService shutdownExecutor = Executors.newSingleThreadScheduledExecutor();
         shutdownExecutor.shutdown();
         Logger logger = spy(LoggerFactory.getLogger("MyLogger"));
@@ -292,8 +295,10 @@ class AxonTimeLimitedTaskTest {
                 new AxonTimeLimitedTask("My test task", 100, 100, 1, shutdownExecutor, logger);
         testSubject.bindToCurrentThread();
 
+        // when
         assertDoesNotThrow(testSubject::start);
 
+        // then
         assertFalse(testSubject.isInterrupted());
         assertFalse(testSubject.isCompleted());
         verify(logger).warn(anyString(), eq("My test task"), any(Throwable.class));
@@ -302,15 +307,17 @@ class AxonTimeLimitedTaskTest {
 
     @Test
     void startIfNotStartedDoesNotThrowWhenTheExecutorHasAlreadyBeenShutDown() {
+        // given
         ScheduledExecutorService shutdownExecutor = Executors.newSingleThreadScheduledExecutor();
         shutdownExecutor.shutdown();
-        Logger logger = spy(LoggerFactory.getLogger("MyLogger"));
         AxonTimeLimitedTask testSubject =
-                new AxonTimeLimitedTask("My test task", 100, 100, 1, shutdownExecutor, logger);
+                new AxonTimeLimitedTask("My test task", 100, 100, 1, shutdownExecutor, AxonTaskJanitor.LOGGER);
         testSubject.bindToCurrentThread();
 
+        // when
         assertDoesNotThrow(testSubject::startIfNotStarted);
 
+        // then
         assertFalse(testSubject.isInterrupted());
         testSubject.complete();
     }

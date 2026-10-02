@@ -21,7 +21,6 @@ import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.core.annotation.WrappedMessageHandlingMember;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.jspecify.annotations.Nullable;
-import org.slf4j.Logger;
 
 import java.util.Objects;
 import java.util.concurrent.ScheduledExecutorService;
@@ -47,11 +46,11 @@ class TimeoutWrappedMessageHandlingMember<T> extends WrappedMessageHandlingMembe
     private final int warningThreshold;
     private final int warningInterval;
     private final ScheduledExecutorService executorService;
-    private final Logger logger;
 
     /**
      * Creates a new {@code TimeoutWrappedMessageHandlingMember} for the given {@code original} handler with the given
-     * {@code timeout}, {@code warningThreshold}, {@code warningInterval} used to decide when a timeout and warning should occur, while messages are logged through the given {@code logger}.
+     * {@code timeout}, {@code warningThreshold}, {@code warningInterval} used to decide when a timeout and warning
+     * should occur.
      * <p>
      * Warnings and the timeout will be scheduled on the given {@code executorService}, which is strongly recommended to
      * be the {@link ScheduledExecutorService} provided by the {@link AxonTaskJanitor} to ensure a single executor is
@@ -61,22 +60,19 @@ class TimeoutWrappedMessageHandlingMember<T> extends WrappedMessageHandlingMembe
      * @param timeout          the timeout in milliseconds
      * @param warningThreshold the threshold in milliseconds after which a warning is logged. Setting this to a value
      *                         higher than or equal to {@code timeout} will disable warnings
-     * @param warningInterval  the interval in milliseconds between warnings.
+     * @param warningInterval  the interval in milliseconds between warnings
      * @param executorService  the executor service to schedule the timeout and warnings
-     * @param logger           the logger to log the warnings and errors
      */
     TimeoutWrappedMessageHandlingMember(MessageHandlingMember<T> original,
                                         int timeout,
                                         int warningThreshold,
                                         int warningInterval,
-                                        ScheduledExecutorService executorService,
-                                        Logger logger) {
+                                        ScheduledExecutorService executorService) {
         super(original);
         this.timeout = timeout;
         this.warningThreshold = warningThreshold;
         this.warningInterval = warningInterval;
         this.executorService = Objects.requireNonNull(executorService, "The executor service may not be null.");
-        this.logger = Objects.requireNonNull(logger, "The logger may not be null.");
     }
 
     @Override
@@ -84,9 +80,13 @@ class TimeoutWrappedMessageHandlingMember<T> extends WrappedMessageHandlingMembe
         String taskName = String.format("Message [%s] for handler [%s]",
                                         message.type().name(),
                                         target != null ? target.getClass().getName() : null);
-        AxonTimeLimitedTask task = new AxonTimeLimitedTask(
-                taskName, timeout, warningThreshold, warningInterval, executorService, logger, getClass()
-        );
+        AxonTimeLimitedTask task = new AxonTimeLimitedTask(taskName,
+                                                           timeout,
+                                                           warningThreshold,
+                                                           warningInterval,
+                                                           executorService,
+                                                           AxonTaskJanitor.LOGGER,
+                                                           getClass());
         task.bindToCurrentThread();
         task.start();
         try {

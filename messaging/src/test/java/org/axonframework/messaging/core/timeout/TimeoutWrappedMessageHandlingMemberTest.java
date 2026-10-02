@@ -28,6 +28,7 @@ import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.junit.jupiter.api.*;
 
 import java.util.Optional;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 import static org.axonframework.messaging.core.annotation.MessageStreamResolverUtils.resolveToStream;
@@ -37,26 +38,26 @@ class TimeoutWrappedMessageHandlingMemberTest {
 
     private AnnotatedMessageHandlingMemberDefinition handlerDefinition;
     private ParameterResolverFactory parameterResolver;
+    private ScheduledThreadPoolExecutor executor;
 
     @BeforeEach
     void setUp() {
         parameterResolver = ClasspathParameterResolverFactory.forClass(getClass());
         handlerDefinition = new AnnotatedMessageHandlingMemberDefinition();
+        executor = AxonTaskJanitor.createExecutor();
     }
 
     @AfterEach
     void tearDown() throws InterruptedException {
         //noinspection ResultOfMethodCallIgnored | Awaiting termination to ensure none of the AxonTimeLimitedTask hang
-        AxonTaskJanitor.INSTANCE.awaitTermination(250, TimeUnit.MILLISECONDS);
+        executor.awaitTermination(250, TimeUnit.MILLISECONDS);
     }
 
     @Test
     void interruptsMessageHandlingMemberWhenHandlingExceedsTimeout() throws NoSuchMethodException {
         MessageHandlingMember<TestMessageHandler> original = getHandler(TestMessageHandler.class, "handle");
         TimeoutWrappedMessageHandlingMember<TestMessageHandler> wrappedHandler =
-                new TimeoutWrappedMessageHandlingMember<>(
-                        original, 100, 500, 10, AxonTaskJanitor.INSTANCE, AxonTaskJanitor.LOGGER
-                );
+                new TimeoutWrappedMessageHandlingMember<>(original, 100, 500, 10, executor);
 
         EventMessage event = EventTestUtils.asEventMessage("my-message");
 
@@ -73,9 +74,7 @@ class TimeoutWrappedMessageHandlingMemberTest {
     void doesNotInterruptMessageHandlingMemberWhenHandlingCompletesInTime() throws NoSuchMethodException {
         MessageHandlingMember<TestMessageHandler> original = getHandler(TestMessageHandler.class, "handleFast");
         TimeoutWrappedMessageHandlingMember<TestMessageHandler> wrappedHandler =
-                new TimeoutWrappedMessageHandlingMember<>(
-                        original, 200, 500, 10, AxonTaskJanitor.INSTANCE, AxonTaskJanitor.LOGGER
-                );
+                new TimeoutWrappedMessageHandlingMember<>(original, 200, 500, 10, executor);
 
         EventMessage event = EventTestUtils.asEventMessage("my-message");
 

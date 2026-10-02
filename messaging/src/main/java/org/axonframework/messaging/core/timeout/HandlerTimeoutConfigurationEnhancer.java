@@ -44,13 +44,12 @@ public class HandlerTimeoutConfigurationEnhancer implements ConfigurationEnhance
     @Override
     public void enhance(ComponentRegistry registry) {
         registry.registerIfNotPresent(HandlerTimeoutConfiguration.class, c -> HandlerTimeoutConfiguration.DEFAULT);
-        registry.registerIfNotPresent(AxonTaskJanitor.executor());
+        registry.registerIfNotPresent(AxonTaskJanitor.executorComponent());
         HandlerEnhancerDefinitionUtils.registerToComponentRegistry(
                 registry,
                 c -> new HandlerTimeoutHandlerEnhancerDefinition(
                         c.getComponent(HandlerTimeoutConfiguration.class),
-                        c.getComponent(ScheduledExecutorService.class, AxonTaskJanitor.EXECUTOR_COMPONENT_NAME),
-                        AxonTaskJanitor.LOGGER
+                        c.getComponent(ScheduledExecutorService.class, AxonTaskJanitor.EXECUTOR_COMPONENT_NAME)
                 )
         );
     }

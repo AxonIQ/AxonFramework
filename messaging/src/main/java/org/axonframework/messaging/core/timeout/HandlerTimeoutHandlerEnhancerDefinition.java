@@ -23,7 +23,6 @@ import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.queryhandling.QueryMessage;
 import org.jspecify.annotations.Nullable;
-import org.slf4j.Logger;
 
 import java.util.Objects;
 import java.util.concurrent.ScheduledExecutorService;
@@ -44,11 +43,9 @@ public class HandlerTimeoutHandlerEnhancerDefinition implements HandlerEnhancerD
 
     private final HandlerTimeoutConfiguration configuration;
     private final ScheduledExecutorService executorService;
-    private final Logger logger;
 
     /**
-     * Creates a new {@code HandlerTimeoutHandlerEnhancerDefinition} with the given {@code configuration}, logging
-     * messages through the given {@code logger}.
+     * Creates a new {@code HandlerTimeoutHandlerEnhancerDefinition} with the given {@code configuration}.
      * <p>
      * Warnings and the timeout will be scheduled on the given {@code executorService}, which is strongly recommended to
      * be the {@link ScheduledExecutorService} provided by the {@link AxonTaskJanitor} to ensure a single executor is
@@ -59,14 +56,11 @@ public class HandlerTimeoutHandlerEnhancerDefinition implements HandlerEnhancerD
      *
      * @param configuration   the configuration for the timeout settings
      * @param executorService the executor service to schedule the timeout and warnings
-     * @param logger          the logger to log the warnings and errors
      */
     public HandlerTimeoutHandlerEnhancerDefinition(HandlerTimeoutConfiguration configuration,
-                                                   ScheduledExecutorService executorService,
-                                                   Logger logger) {
+                                                   ScheduledExecutorService executorService) {
         this.configuration = configuration;
         this.executorService = Objects.requireNonNull(executorService, "The executor service may not be null.");
-        this.logger = Objects.requireNonNull(logger, "The logger may not be null.");
     }
 
     @Override
@@ -87,9 +81,7 @@ public class HandlerTimeoutHandlerEnhancerDefinition implements HandlerEnhancerD
             return original;
         }
 
-        return new TimeoutWrappedMessageHandlingMember<>(
-                original, timeout, warning, warningInterval, executorService, logger
-        );
+        return new TimeoutWrappedMessageHandlingMember<>(original, timeout, warning, warningInterval, executorService);
     }
 
     /**

@@ -28,18 +28,16 @@ import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Container of unique {@link ScheduledExecutorService} and {@link Logger} instances for the
+ * Utility constructing a {@link ScheduledExecutorService} and providing {@link Logger} instances for the
  * {@link AxonTimeLimitedTask}.
  * <p>
- * {@link #INSTANCE} is a JVM-wide fallback, intended for standalone/manual construction of {@link AxonTimeLimitedTask}
- * or {@link TimeoutUnitOfWorkFactory} outside of a {@link Configuration}. It is not tied to any {@code Configuration}'s
- * lifecycle, so callers using it directly are responsible for its lifecycle themselves. Message handling and unit of
- * work timeouts driven through an Axon {@code Configuration} instead use {@link #executor()} to obtain a
- * {@link ComponentDefinition} for an executor scoped to, and shut down with, that specific {@code Configuration} - so
- * that shutting down one {@code Configuration} can never affect timeout enforcement in another {@code Configuration}
- * sharing the same JVM.
+ * To ensure a unique executor is used throughout, the {@link #executorComponent()} should be registered with an
+ * applications {@link Configuration} just once under the {@link #EXECUTOR_COMPONENT_NAME}. Doing so on top level
+ * ensures (1) that there is a single instance throughout and (2) that it's lifecycle is tied to the application's
+ * lifecycle.
  *
  * @author Mitchell Herrijgers
+ * @author Steven van Beelen
  * @see AxonTimeLimitedTask
  * @since 4.11.0
  */
@@ -47,15 +45,9 @@ public class AxonTaskJanitor {
 
     /**
      * The name under which the {@link Configuration}-scoped {@link ScheduledExecutorService}, defined by
-     * {@link #executor()}, is known in the {@link Configuration}.
+     * {@link #executorComponent()}, is known in the {@link Configuration}.
      */
     public static final String EXECUTOR_COMPONENT_NAME = "AxonTaskJanitorScheduledExecutorService";
-
-    /**
-     * Unique instances of the {@link ScheduledExecutorService} for the {@link AxonTimeLimitedTask} to schedule warnings
-     * and interrupts.
-     */
-    protected static final ScheduledExecutorService INSTANCE = createJanitorExecutorService();
 
     /**
      * Unique instance of the {@link Logger} for the {@link AxonTimeLimitedTask} to log warnings and errors.
@@ -79,19 +71,20 @@ public class AxonTaskJanitor {
      *
      * @return a {@link ComponentDefinition} for a {@link Configuration}-scoped {@link ScheduledExecutorService}
      */
-    public static ComponentDefinition<ScheduledExecutorService> executor() {
+    public static ComponentDefinition<ScheduledExecutorService> executorComponent() {
         return ComponentDefinition.ofTypeAndName(ScheduledExecutorService.class, EXECUTOR_COMPONENT_NAME)
-                                  .withBuilder(c -> createJanitorExecutorService())
+                                  .withBuilder(c -> createExecutor())
                                   .onShutdown(Phase.EXTERNAL_CONNECTIONS - 10, AxonTaskJanitor::gracefulShutdown);
     }
 
     /**
-     * Creates the ScheduledExecutorService used for scheduling the interrupting task. It only has one thread as the
-     * load is very low. Cancelling the tasks will clean it up to reduce memory pressure.
+     * Creates the {@link ScheduledExecutorService} used for scheduling the interrupting task.
+     * <p>
+     * It only has one thread as the load is very low. Cancelling the tasks will clean it up to reduce memory pressure.
      *
-     * @return The ScheduledExecutorService
+     * @return the {@link ScheduledExecutorService} used for scheduling the interrupting task
      */
-    private static ScheduledThreadPoolExecutor createJanitorExecutorService() {
+    protected static ScheduledThreadPoolExecutor createExecutor() {
         ScheduledThreadPoolExecutor janitor = new ScheduledThreadPoolExecutor(1, new AxonThreadFactory("axon-janitor"));
         // Clean up tasks in the queue when canceled. Performance is equal but reduces memory pressure.
         janitor.setRemoveOnCancelPolicy(true);

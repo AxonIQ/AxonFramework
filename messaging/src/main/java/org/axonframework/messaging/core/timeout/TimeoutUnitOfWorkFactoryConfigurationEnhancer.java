@@ -64,7 +64,7 @@ public class TimeoutUnitOfWorkFactoryConfigurationEnhancer implements Configurat
     public void enhance(ComponentRegistry registry) {
         registry.registerIfNotPresent(TimeoutUnitOfWorkFactoryConfiguration.class,
                                       c -> TimeoutUnitOfWorkFactoryConfiguration.DEFAULT);
-        registry.registerIfNotPresent(AxonTaskJanitor.executor());
+        registry.registerIfNotPresent(AxonTaskJanitor.executorComponent());
 
         registry.registerDecorator(
                 UnitOfWorkFactory.class,
@@ -74,7 +74,7 @@ public class TimeoutUnitOfWorkFactoryConfigurationEnhancer implements Configurat
                         delegate,
                         "CommandBus",
                         config.getComponent(TimeoutUnitOfWorkFactoryConfiguration.class).getCommandBus(),
-                        config.getComponent(ScheduledExecutorService.class, AxonTaskJanitor.EXECUTOR_COMPONENT_NAME)
+                        config
                 )
         );
         registry.registerDecorator(
@@ -85,7 +85,7 @@ public class TimeoutUnitOfWorkFactoryConfigurationEnhancer implements Configurat
                         delegate,
                         "QueryBus",
                         config.getComponent(TimeoutUnitOfWorkFactoryConfiguration.class).getQueryBus(),
-                        config.getComponent(ScheduledExecutorService.class, AxonTaskJanitor.EXECUTOR_COMPONENT_NAME)
+                        config
                 )
         );
         registry.registerDecorator(
@@ -98,9 +98,7 @@ public class TimeoutUnitOfWorkFactoryConfigurationEnhancer implements Configurat
                                         "EventProcessor " + processorConfig.processorName(),
                                         axonConfig.getComponent(TimeoutUnitOfWorkFactoryConfiguration.class)
                                                   .eventProcessorSettings(processorConfig.processorName()),
-                                        axonConfig.getComponent(
-                                                ScheduledExecutorService.class, AxonTaskJanitor.EXECUTOR_COMPONENT_NAME
-                                        )
+                                        axonConfig
                                 )
                         )
                 )
@@ -116,27 +114,32 @@ public class TimeoutUnitOfWorkFactoryConfigurationEnhancer implements Configurat
      * Wraps the given {@code delegate} in a {@link TimeoutUnitOfWorkFactory} using the given {@code componentName} and
      * {@code settings}, or returns the {@code delegate} unchanged when {@code settings} are
      * {@link TaskTimeoutSettings#isDisabled() disabled}.
+     * <p>
+     * The {@link AxonTaskJanitor#EXECUTOR_COMPONENT_NAME executor} is only resolved from the given {@code config} when
+     * {@code settings} are enabled, so a disabled setting never triggers the executor's lazy creation.
      *
-     * @param delegate        the {@link UnitOfWorkFactory} to wrap
-     * @param componentName   the name of the component to be included in the logging
-     * @param settings        the timeout settings to apply
-     * @param executorService the executor service to schedule the timeout and warnings on
+     * @param delegate      the {@link UnitOfWorkFactory} to wrap
+     * @param componentName the name of the component to be included in the logging
+     * @param settings      the timeout settings to apply
+     * @param config        the {@link Configuration} to resolve the executor service from, when needed
      * @return a timeout-decorated {@link UnitOfWorkFactory}, or {@code delegate} unchanged when disabled
      */
     private static UnitOfWorkFactory wrapOrDelegate(
             UnitOfWorkFactory delegate,
             String componentName,
             TaskTimeoutSettings settings,
-            ScheduledExecutorService executorService
+            Configuration config
     ) {
-        return settings.isDisabled()
-                ? delegate
-                : new TimeoutUnitOfWorkFactory(delegate,
-                                               componentName,
-                                               settings.timeoutMs(),
-                                               settings.warningThresholdMs(),
-                                               settings.warningIntervalMs(),
-                                               executorService,
-                                               AxonTaskJanitor.LOGGER);
+        if (settings.isDisabled()) {
+            return delegate;
+        }
+        ScheduledExecutorService executorService =
+                config.getComponent(ScheduledExecutorService.class, AxonTaskJanitor.EXECUTOR_COMPONENT_NAME);
+        return new TimeoutUnitOfWorkFactory(delegate,
+                                            componentName,
+                                            settings.timeoutMs(),
+                                            settings.warningThresholdMs(),
+                                            settings.warningIntervalMs(),
+                                            executorService);
     }
 }

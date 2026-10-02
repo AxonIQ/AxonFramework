@@ -29,7 +29,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
@@ -39,10 +38,10 @@ import static org.awaitility.Awaitility.await;
  * Reproduces the scenario reported in issue #5078: two independent {@link AxonConfiguration Configurations} sharing a
  * single JVM, where shutting one down must not break timeout enforcement in the other.
  * <p>
- * Prior to the fix, {@link AxonTaskJanitor#INSTANCE} was a JVM-wide {@link ScheduledExecutorService} that any
- * {@code Configuration} could shut down on behalf of every other one, causing an uncaught
- * {@link java.util.concurrent.RejectedExecutionException} to escape message handling. Each {@code Configuration} now
- * gets its own executor, defined by {@link AxonTaskJanitor#executor()}.
+ * Prior to the fix, a JVM-wide {@link ScheduledExecutorService} that any {@code Configuration} could shut down on
+ * behalf of every other one, causing an uncaught {@link java.util.concurrent.RejectedExecutionException} to escape
+ * message handling. Each {@code Configuration} now gets its own executor, defined by
+ * {@link AxonTaskJanitor#executorComponent()}.
  *
  * @author Steven van Beelen
  */
@@ -86,14 +85,19 @@ class AxonTaskJanitorConfigurationIsolationTest {
 
         // no RejectedExecutionException escapes; the short timeout fires and fails the command instead
         Throwable dispatchFailure = catchThrowable(() -> result.get(2, TimeUnit.SECONDS));
-        assertThat(dispatchFailure).isInstanceOfAny(ExecutionException.class, TimeoutException.class);
+        assertThat(dispatchFailure).isInstanceOf(ExecutionException.class)
+                                   .cause()
+                                   .isInstanceOf(AxonTimeoutException.class);
     }
 
     private AxonConfiguration buildConfigurationWithSlowCommandHandler() {
         Object slowCommandHandler = new Object() {
+            @SuppressWarnings("unused")
             @CommandHandler
             public void handle(String command) throws InterruptedException {
-                Thread.sleep(5_000);
+                // Well above the 50ms timeout configured below, but short enough that a regression of the fixed
+                // behavior (the timeout not firing) doesn't leave this handler thread sleeping well past the test.
+                Thread.sleep(1_000);
             }
         };
         HandlerTimeoutConfiguration shortCommandTimeout = new HandlerTimeoutConfiguration(
@@ -108,11 +112,11 @@ class AxonTaskJanitorConfigurationIsolationTest {
                                   ))
                                   .componentRegistry(cr -> cr.registerModule(
                                           CommandHandlingModule.named("slow-command-handler")
-                                                                .commandHandlers()
-                                                                .autodetectedCommandHandlingComponent(
-                                                                        c -> slowCommandHandler
-                                                                )
-                                                                .build()
+                                                               .commandHandlers()
+                                                               .autodetectedCommandHandlingComponent(
+                                                                       c -> slowCommandHandler
+                                                               )
+                                                               .build()
                                   ))
                                   .start();
     }

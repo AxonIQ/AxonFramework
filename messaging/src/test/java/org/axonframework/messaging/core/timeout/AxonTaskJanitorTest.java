@@ -26,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
 /**
- * Test class validating {@link AxonTaskJanitor#executor()}.
+ * Test class validating {@link AxonTaskJanitor#executorComponent()}.
  *
  * @author Steven van Beelen
  */
@@ -41,9 +41,9 @@ class AxonTaskJanitorTest {
     }
 
     @Test
-    void definesAWorkingScheduledExecutorServiceComponentIndependentFromTheSharedInstance() {
+    void definesAWorkingScheduledExecutorComponentServiceComponentIndependentFromTheSharedInstance() {
         // given
-        componentRegistry.registerIfNotPresent(AxonTaskJanitor.executor());
+        componentRegistry.registerIfNotPresent(AxonTaskJanitor.executorComponent());
 
         // when
         Configuration config = componentRegistry.build(mock(LifecycleRegistry.class));
@@ -52,15 +52,15 @@ class AxonTaskJanitorTest {
 
         // then -- a fresh executor is created per Configuration, distinct from the JVM-wide INSTANCE fallback, so
         // shutting one Configuration down can never affect another Configuration's timeout enforcement.
-        assertThat(executor).isNotNull().isNotSameAs(AxonTaskJanitor.INSTANCE);
+        assertThat(executor).isNotNull().isNotSameAs(AxonTaskJanitor.createExecutor());
         assertThat(executor.isShutdown()).isFalse();
     }
 
     @Test
-    void registeringTheDefinitionTwiceReusesTheSameExecutorInstance() {
-        // given
-        componentRegistry.registerIfNotPresent(AxonTaskJanitor.executor());
-        componentRegistry.registerIfNotPresent(AxonTaskJanitor.executor());
+    void bothTimeoutEnhancersRegisteringTheExecutorComponentIndependentlyShareTheSameInstance() {
+        // given -- both enhancers independently call registerIfNotPresent(AxonTaskJanitor.executor())
+        componentRegistry.registerEnhancer(new HandlerTimeoutConfigurationEnhancer());
+        componentRegistry.registerEnhancer(new TimeoutUnitOfWorkFactoryConfigurationEnhancer());
 
         // when
         Configuration config = componentRegistry.build(mock(LifecycleRegistry.class));
@@ -69,7 +69,7 @@ class AxonTaskJanitorTest {
         ScheduledExecutorService second =
                 config.getComponent(ScheduledExecutorService.class, AxonTaskJanitor.EXECUTOR_COMPONENT_NAME);
 
-        // then
-        assertThat(first).isSameAs(second);
+        // then -- handler timeouts and unit of work timeouts are enforced on a single, shared executor
+        assertThat(first).isNotNull().isNotSameAs(AxonTaskJanitor.createExecutor()).isSameAs(second);
     }
 }

@@ -27,6 +27,8 @@ import org.axonframework.messaging.queryhandling.annotation.QueryHandler;
 import org.junit.jupiter.api.*;
 
 import java.util.Optional;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 import static org.axonframework.messaging.core.annotation.MessageStreamResolverUtils.resolveToStream;
 import static org.junit.jupiter.api.Assertions.*;
@@ -40,29 +42,37 @@ class HandlerTimeoutHandlerEnhancerDefinitionTest {
 
     private AnnotatedMessageHandlingMemberDefinition handlerDefinition;
     private ParameterResolverFactory parameterResolver;
-    private HandlerTimeoutHandlerEnhancerDefinition handlerEnhancerDefinition;
+    private ScheduledThreadPoolExecutor executor;
+
+    private HandlerTimeoutHandlerEnhancerDefinition testSubject;
 
     @BeforeEach
     void setUp() {
         parameterResolver = ClasspathParameterResolverFactory.forClass(getClass());
         handlerDefinition = new AnnotatedMessageHandlingMemberDefinition();
+        executor = AxonTaskJanitor.createExecutor();
 
-        handlerEnhancerDefinition = new HandlerTimeoutHandlerEnhancerDefinition(
+        testSubject = new HandlerTimeoutHandlerEnhancerDefinition(
                 new HandlerTimeoutConfiguration(
                         new TaskTimeoutSettings(40000, 34000, 4000),
                         new TaskTimeoutSettings(30000, 24000, 3000),
                         new TaskTimeoutSettings(20000, 14000, 2000)
                 ),
-                AxonTaskJanitor.INSTANCE,
-                AxonTaskJanitor.LOGGER
+                executor
         );
+    }
+
+    @AfterEach
+    void tearDown() throws InterruptedException {
+        //noinspection ResultOfMethodCallIgnored | Awaiting termination to ensure none of the AxonTimeLimitedTask hang
+        executor.awaitTermination(250, TimeUnit.MILLISECONDS);
     }
 
     @Test
     void createsCorrectHandlerEnhancerDefinitionForQueryHandlerWithAnnotation() throws NoSuchMethodException {
         MessageHandlingMember<QueryHandlerWithAnnotation> handler =
                 getHandler(QueryHandlerWithAnnotation.class, "handle");
-        MessageHandlingMember<QueryHandlerWithAnnotation> result = handlerEnhancerDefinition.wrapHandler(handler);
+        MessageHandlingMember<QueryHandlerWithAnnotation> result = testSubject.wrapHandler(handler);
 
         assertIsWrappedAndAssert(result, 100, 50, 10);
 
@@ -74,7 +84,7 @@ class HandlerTimeoutHandlerEnhancerDefinitionTest {
     void createsCorrectHandlerEnhancerDefinitionForQueryHandlerWithoutAnnotation() throws NoSuchMethodException {
         MessageHandlingMember<QueryHandlerWithAnnotation> handler =
                 getHandler(QueryHandlerWithAnnotation.class, "handleDefault");
-        MessageHandlingMember<QueryHandlerWithAnnotation> result = handlerEnhancerDefinition.wrapHandler(handler);
+        MessageHandlingMember<QueryHandlerWithAnnotation> result = testSubject.wrapHandler(handler);
 
         assertIsWrappedAndAssert(result, 20000, 14000, 2000);
 
@@ -86,7 +96,7 @@ class HandlerTimeoutHandlerEnhancerDefinitionTest {
     void createsCorrectHandlerEnhancerDefinitionForCommandHandlerWithAnnotation() throws NoSuchMethodException {
         MessageHandlingMember<CommandHandlerWithAnnotation> handler =
                 getHandler(CommandHandlerWithAnnotation.class, "handle");
-        MessageHandlingMember<CommandHandlerWithAnnotation> result = handlerEnhancerDefinition.wrapHandler(handler);
+        MessageHandlingMember<CommandHandlerWithAnnotation> result = testSubject.wrapHandler(handler);
 
         assertIsWrappedAndAssert(result, 100, 50, 10);
 
@@ -98,7 +108,7 @@ class HandlerTimeoutHandlerEnhancerDefinitionTest {
     void createsCorrectHandlerEnhancerDefinitionForCommandHandlerWithoutAnnotation() throws NoSuchMethodException {
         MessageHandlingMember<CommandHandlerWithAnnotation> handler =
                 getHandler(CommandHandlerWithAnnotation.class, "handleDefault");
-        MessageHandlingMember<CommandHandlerWithAnnotation> result = handlerEnhancerDefinition.wrapHandler(handler);
+        MessageHandlingMember<CommandHandlerWithAnnotation> result = testSubject.wrapHandler(handler);
 
         assertIsWrappedAndAssert(result, 30000, 24000, 3000);
 
@@ -110,7 +120,7 @@ class HandlerTimeoutHandlerEnhancerDefinitionTest {
     void createsCorrectHandlerEnhancerDefinitionForEventHandlerWithAnnotation() throws NoSuchMethodException {
         MessageHandlingMember<EventHandlerWithAnnotation> handler =
                 getHandler(EventHandlerWithAnnotation.class, "handle");
-        MessageHandlingMember<EventHandlerWithAnnotation> result = handlerEnhancerDefinition.wrapHandler(handler);
+        MessageHandlingMember<EventHandlerWithAnnotation> result = testSubject.wrapHandler(handler);
 
         assertIsWrappedAndAssert(result, 100, 50, 10);
 
@@ -122,7 +132,7 @@ class HandlerTimeoutHandlerEnhancerDefinitionTest {
     void createsCorrectHandlerEnhancerDefinitionForEventHandlerWithoutAnnotation() throws NoSuchMethodException {
         MessageHandlingMember<EventHandlerWithAnnotation> handler =
                 getHandler(EventHandlerWithAnnotation.class, "handleDefault");
-        MessageHandlingMember<EventHandlerWithAnnotation> result = handlerEnhancerDefinition.wrapHandler(handler);
+        MessageHandlingMember<EventHandlerWithAnnotation> result = testSubject.wrapHandler(handler);
 
         assertIsWrappedAndAssert(result, 40000, 34000, 4000);
 

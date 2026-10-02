@@ -79,8 +79,9 @@ class AxonTimeLimitedTask {
      * <p>
      * Runs the provided task on the current thread after scheduling a timeout and warnings on the provided
      * {@code scheduledExecutorService}. It is <b>strongly</b> recommended that this {@code scheduledExecutorService} is
-     * based on the {@link AxonTaskJanitor#executor()} at all times and for each task, to ensure a single executor is
-     * used throughout.
+     * the instance registered in the current {@code Configuration} based on {@link AxonTaskJanitor#executorComponent()}
+     * at all times and for each task, to ensure a single executor that is tied to the lifecycle of that
+     * {@code Configuration} is used throughout.
      *
      * @param taskName                 the task's name to be included in the logging
      * @param timeout                  the timeout in milliseconds
