@@ -46,8 +46,8 @@
         <c3p0.version>0.9.1.2</c3p0.version>
         <hikari.version>7.1.0</hikari.version>
         <hsqldb.version>2.7.4</hsqldb.version>
-        <hibernate-core.version>7.4.10.Final</hibernate-core.version>
-        <mongo.driver.version>5.12.0</mongo.driver.version>
+        <hibernate-core.version>7.4.11.Final</hibernate-core.version>
+        <mongo.driver.version>5.13.0</mongo.driver.version>
         <mysql-connector-java.version>26.7.0</mysql-connector-java.version>
         <postgresql.version>42.7.13</postgresql.version>
         <ojdbc.version>23.26.3.0.0</ojdbc.version>
@@ -87,7 +87,7 @@
         <jackson2.version>2.22.3</jackson2.version>
         <!-- Scheduling -->
         <db-scheduler.version>16.12.0</db-scheduler.version>
-        <jobrunr.version>8.8.2</jobrunr.version>
+        <jobrunr.version>9.0.0</jobrunr.version>
         <quartz.version>2.5.2</quartz.version>
         <!-- Spring -->
         <spring.version>6.2.19</spring.version>
@@ -101,13 +101,13 @@
         <mockito.version>5.24.0</mockito.version>
         <testcontainers.version>2.0.5</testcontainers.version>
         <assertj.version>3.27.7</assertj.version>
-        <archunit.version>1.5.0</archunit.version>
+        <archunit.version>1.5.1</archunit.version>
         <!-- Validation -->
         <hibernate-validator.version>9.1.4.Final</hibernate-validator.version>
 
         <!-- Maven plugins -->
         <checkstyle-maven-plugin.version>3.6.0</checkstyle-maven-plugin.version>
-        <checkstyle.version>14.1.0</checkstyle.version>
+        <checkstyle.version>14.3.0</checkstyle.version>
     </properties>
 
     <dependencyManagement>
