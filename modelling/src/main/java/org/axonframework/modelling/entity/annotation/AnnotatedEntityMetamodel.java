@@ -35,7 +35,6 @@ import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.annotation.AnnotatedHandlerInspector;
 import org.axonframework.messaging.core.annotation.HandlerDefinition;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
-import org.axonframework.messaging.core.annotation.MultiParameterResolverFactory;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
 import org.axonframework.modelling.annotation.StaticEventSourcingHandlerParameterResolverFactory;
 import org.axonframework.messaging.core.conversion.MessageConverter;
@@ -337,10 +336,7 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
      * inspection; it does not affect instance or command handlers.
      */
     private ParameterResolverFactory withStaticEventSourcingHandlerSupport() {
-        return MultiParameterResolverFactory.ordered(
-                new StaticEventSourcingHandlerParameterResolverFactory(),
-                parameterResolverFactory
-        );
+        return StaticEventSourcingHandlerParameterResolverFactory.wrapping(parameterResolverFactory);
     }
 
     private boolean hasEntityMembers(Class<?> type) {

@@ -18,6 +18,8 @@ package org.axonframework.eventsourcing.annotation;
 
 import org.axonframework.conversion.jackson.JacksonConverter;
 import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
+import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
+import org.axonframework.messaging.core.annotation.ClasspathParameterResolverFactory;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.conversion.DelegatingEventConverter;
@@ -43,7 +45,9 @@ class StaticEventSourcingHandlerAnnotationTest {
     private static final ClassBasedMessageTypeResolver messageTypeResolver = new ClassBasedMessageTypeResolver();
 
     private static final EntityEvolver<Account> EVOLVER =
-            new AnnotationBasedEntityEvolvingComponent<>(Account.class, converter, messageTypeResolver);
+            new AnnotationBasedEntityEvolvingComponent<>(Account.class, converter, messageTypeResolver,
+                                                         ClasspathParameterResolverFactory.forClass(Account.class),
+                                                         ClasspathHandlerDefinition.forClass(Account.class));
 
     private record Opened(String id) {
 
@@ -101,7 +105,9 @@ class StaticEventSourcingHandlerAnnotationTest {
     class StaticCreateThenInstanceEvolve {
 
         private final EntityEvolver<BankAccount> evolver =
-                new AnnotationBasedEntityEvolvingComponent<>(BankAccount.class, converter, messageTypeResolver);
+                new AnnotationBasedEntityEvolvingComponent<>(BankAccount.class, converter, messageTypeResolver,
+                                                             ClasspathParameterResolverFactory.forClass(BankAccount.class),
+                                                             ClasspathHandlerDefinition.forClass(BankAccount.class));
 
         @Test
         void firstEventCreatesViaStaticHandlerThenInstanceHandlersEvolve() {

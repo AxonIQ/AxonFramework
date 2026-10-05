@@ -25,7 +25,6 @@ import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
 import org.axonframework.messaging.core.annotation.ClasspathParameterResolverFactory;
 import org.axonframework.messaging.core.annotation.HandlerDefinition;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
-import org.axonframework.messaging.core.annotation.MultiParameterResolverFactory;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
@@ -86,17 +85,10 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
                                                   EventConverter converter,
                                                   MessageTypeResolver messageTypeResolver) {
         this(entityType,
-             AnnotatedHandlerInspector.inspectType(
-                     entityType,
-                     messageTypeResolver,
-                     MultiParameterResolverFactory.ordered(
-                             new StaticEventSourcingHandlerParameterResolverFactory(),
-                             ClasspathParameterResolverFactory.forClass(entityType)
-                     ),
-                     ClasspathHandlerDefinition.forClass(entityType)
-             ),
              converter,
-             messageTypeResolver);
+             messageTypeResolver,
+             ClasspathParameterResolverFactory.forClass(entityType),
+             ClasspathHandlerDefinition.forClass(entityType));
     }
 
     /**
@@ -119,7 +111,7 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
                 AnnotatedHandlerInspector.inspectType(
                         entityType,
                         messageTypeResolver,
-                        parameterResolverFactory,
+                        StaticEventSourcingHandlerParameterResolverFactory.wrapping(parameterResolverFactory),
                         handlerDefinition
                 ),
                 converter,

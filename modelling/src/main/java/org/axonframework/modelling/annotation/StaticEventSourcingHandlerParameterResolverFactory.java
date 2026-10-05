@@ -21,6 +21,7 @@ import org.axonframework.common.annotation.AnnotationUtils;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.Metadata;
+import org.axonframework.messaging.core.annotation.MultiParameterResolverFactory;
 import org.axonframework.messaging.core.annotation.ParameterResolver;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
 import org.axonframework.messaging.core.annotation.PayloadParameterResolver;
@@ -56,6 +57,28 @@ import java.lang.reflect.Parameter;
 public class StaticEventSourcingHandlerParameterResolverFactory implements ParameterResolverFactory {
 
     private final ActiveEntityParameterResolver activeEntityResolver = new ActiveEntityParameterResolver();
+
+    /**
+     * Returns a {@link ParameterResolverFactory} that prepends static event sourcing handler support in front of the
+     * given {@code delegate}. This lets {@code static} {@code @EventHandler}-meta handlers receive the current,
+     * possibly {@code null}, entity state as their first argument, while all other parameter resolution falls through
+     * to {@code delegate}.
+     * <p>
+     * This is the single place that enables static handler support on an entity evolving component, so that every
+     * construction path behaves identically regardless of the {@link ParameterResolverFactory} supplied by the caller.
+     * The wrapping is additive and scoped: {@link #createInstance(Executable, Parameter[], int)} only acts on
+     * {@code static}, {@code @EventHandler}-annotated methods with an entity-typed parameter, so it never changes
+     * resolution for instance handlers, command handlers, or entities without static handlers.
+     *
+     * @param delegate the factory to resolve all non-static-state parameters
+     * @return a factory that adds static event sourcing handler support on top of {@code delegate}
+     */
+    public static ParameterResolverFactory wrapping(ParameterResolverFactory delegate) {
+        return MultiParameterResolverFactory.ordered(
+                new StaticEventSourcingHandlerParameterResolverFactory(),
+                delegate
+        );
+    }
 
     @Nullable
     @Override

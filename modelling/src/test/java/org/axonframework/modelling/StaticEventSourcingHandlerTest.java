@@ -21,7 +21,6 @@ import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
 import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
 import org.axonframework.messaging.core.annotation.ClasspathParameterResolverFactory;
 import org.axonframework.messaging.core.annotation.MetadataValue;
-import org.axonframework.messaging.core.annotation.MultiParameterResolverFactory;
 import org.axonframework.modelling.annotation.StaticEventSourcingHandlerParameterResolverFactory;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
@@ -54,7 +53,9 @@ class StaticEventSourcingHandlerTest {
     private static final ClassBasedMessageTypeResolver messageTypeResolver = new ClassBasedMessageTypeResolver();
 
     private static final EntityEvolver<Counter> COUNTER_EVOLVER = new AnnotationBasedEntityEvolvingComponent<>(
-            Counter.class, converter, messageTypeResolver
+            Counter.class, converter, messageTypeResolver,
+            ClasspathParameterResolverFactory.forClass(Counter.class),
+            ClasspathHandlerDefinition.forClass(Counter.class)
     );
 
     private record Created() {
@@ -184,7 +185,9 @@ class StaticEventSourcingHandlerTest {
         }
 
         private final EntityEvolver<FromEvent> evolver = new AnnotationBasedEntityEvolvingComponent<>(
-                FromEvent.class, converter, messageTypeResolver
+                FromEvent.class, converter, messageTypeResolver,
+                ClasspathParameterResolverFactory.forClass(FromEvent.class),
+                ClasspathHandlerDefinition.forClass(FromEvent.class)
         );
 
         @Test
@@ -244,7 +247,9 @@ class StaticEventSourcingHandlerTest {
         }
 
         private static final EntityEvolver<MixedCounter> MIXED_EVOLVER = new AnnotationBasedEntityEvolvingComponent<>(
-                MixedCounter.class, converter, messageTypeResolver
+                MixedCounter.class, converter, messageTypeResolver,
+                ClasspathParameterResolverFactory.forClass(MixedCounter.class),
+                ClasspathHandlerDefinition.forClass(MixedCounter.class)
         );
 
         @Test
@@ -292,7 +297,9 @@ class StaticEventSourcingHandlerTest {
         void resolvesEventPayloadAndAdditionalParametersAlongsideNullableState() {
             // given
             EntityEvolver<MetadataAware> evolver = new AnnotationBasedEntityEvolvingComponent<>(
-                    MetadataAware.class, converter, messageTypeResolver
+                    MetadataAware.class, converter, messageTypeResolver,
+                    ClasspathParameterResolverFactory.forClass(MetadataAware.class),
+                    ClasspathHandlerDefinition.forClass(MetadataAware.class)
             );
             EventMessage event = new org.axonframework.messaging.eventhandling.GenericEventMessage(
                     messageTypeResolver.resolveOrThrow(Created.class),
@@ -341,8 +348,7 @@ class StaticEventSourcingHandlerTest {
                     inspectType(
                             Shape.class,
                             messageTypeResolver,
-                            MultiParameterResolverFactory.ordered(
-                                    new StaticEventSourcingHandlerParameterResolverFactory(),
+                            StaticEventSourcingHandlerParameterResolverFactory.wrapping(
                                     ClasspathParameterResolverFactory.forClass(Shape.class)
                             ),
                             ClasspathHandlerDefinition.forClass(Shape.class),
