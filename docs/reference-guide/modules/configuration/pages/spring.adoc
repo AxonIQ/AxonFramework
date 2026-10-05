@@ -20,6 +20,24 @@ If you declare your own `@Bean` of a matching infrastructure type, Axon picks it
 include::example$configuration/spring/AxonConfig.java[tag=command-bus-bean-example]
 ----
 
+[#axon-components-as-spring-beans]
+Components registered through the `ComponentRegistry`, whether by Axon's defaults or by a `ConfigurationEnhancer`, become Spring beans as follows:
+
+* A component registered by type only becomes a bean named after the fully qualified name of that type, for example `org.axonframework.messaging.commandhandling.CommandBus`.
+Injecting the type yields this component, also when named components of the same type exist.
+* A component registered under a name becomes a bean with that name.
+Inject it with `@Qualifier` carrying the component name.
+Without a qualifier, Spring only injects a named component when it is the only candidate for the type.
+
+Properties that refer to a component by its name, such as the `source` and `token-store` settings of an event processor, use these bean names.
+
+[source,java]
+----
+include::example$configuration/spring/NamedComponentExamples.java[tags=named-component-registration;named-component-injection]
+----
+<1> The default `TokenStore`, injected by type.
+<2> The `TokenStore` registered under the name `replayTokenStore`.
+
 You rarely need to register message handlers or entities yourself either.
 Methods annotated with `@CommandHandler`, `@EventHandler`, or `@QueryHandler` on any Spring bean, and classes annotated with `@EventSourced`, are discovered automatically and registered as `Modules`, out of the box.
 See xref:#handling-component-detection[Component detection] and xref:module.adoc[Modules] for the details.
@@ -246,6 +264,11 @@ The `SpringComponentRegistry` makes the behavior described above possible in two
 As a `BeanPostProcessor`, it checks, right after Spring creates a bean, whether any registered decorator or enhancer targets that bean's type; if so, the decorator is applied and the wrapped instance is used in place of the original, so the standard Axon decorator mechanism works seamlessly for Spring-managed beans.
 As a `BeanFactoryPostProcessor`, it allows the resulting `Configuration` to look up any bean from the Spring `ApplicationContext`, not just those explicitly registered with the `ComponentRegistry`.
 This is what makes the `CommandBus` bean shown above available to Axon: it is treated as the registered `CommandBus` component, and any decorator registered through the `ComponentRegistry` (or through a `ConfigurationEnhancer`) is applied on top of it.
+
+Components registered with the `ComponentRegistry` become bean definitions when the registry initializes, just before Spring creates the first application bean.
+A named component is registered as a fallback bean (`AbstractBeanDefinition#setFallback`).
+When an unqualified injection point matches both the type-level component and named components, Spring selects the single non-fallback candidate: the type-level component.
+A `@Qualifier` selects a named component by its bean name.
 
 === Lifecycle integration
 

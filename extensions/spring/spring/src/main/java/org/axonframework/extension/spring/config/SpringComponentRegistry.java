@@ -613,13 +613,23 @@ public class SpringComponentRegistry implements
      * The registration of {@code Components} should occur <b>after</b> all
      * {@link ConfigurationEnhancer ConfigurationEnhancers} have enhanced the configuration. By doing so, we ensure that
      * any defaults or overrides are present in the Application Context too.
+     * <p>
+     * A {@code Component} registered under a name becomes a
+     * {@link AbstractBeanDefinition#setFallback(boolean) fallback} bean. When a dependency of its type is autowired
+     * without a {@link org.springframework.beans.factory.annotation.Qualifier @Qualifier}, Spring prefers the unique
+     * non-fallback candidate, which is the type-level {@code Component}, over the named ones. That mirrors how the
+     * {@link Configuration} resolves the type-level component when several components of a type exist. A named
+     * {@code Component} remains injectable through a {@code @Qualifier} carrying its name, which Spring matches
+     * against the bean name. Unlike a primary bean, a fallback bean never competes with a {@code @Primary} bean of the
+     * same type, nor does it affect lookups of the component's supertypes.
      */
     private void registerLocalComponentsWithApplicationContext() {
         components.postProcessComponents(component -> {
-            String name = Objects.requireNonNullElseGet(component.identifier().name(),
+            String componentName = component.identifier().name();
+            String beanName = Objects.requireNonNullElseGet(componentName,
                                                         () -> component.identifier().typeAsClass().getName());
-            if (beanFactory.containsBeanDefinition(name)) {
-                logger.info("Component with name [{}] is already available. Skipping registration.", name);
+            if (beanFactory.containsBeanDefinition(beanName)) {
+                logger.info("Component with name [{}] is already available. Skipping registration.", beanName);
                 return;
             }
 
@@ -629,7 +639,11 @@ public class SpringComponentRegistry implements
                                                  () -> component.resolve(configuration)
                                          )
                                          .getBeanDefinition();
-            ((BeanDefinitionRegistry) beanFactory).registerBeanDefinition(name, definition);
+            if (componentName != null) {
+                // Named components step aside for the type-level component when a dependency is autowired by type.
+                definition.setFallback(true);
+            }
+            ((BeanDefinitionRegistry) beanFactory).registerBeanDefinition(beanName, definition);
             // Initialize the components lifecycle handlers, by adapting them into SmartLifecycle beans through the SpringLifecycleRegistry.
             component.initLifecycle(configuration, lifecycleRegistry);
         });
