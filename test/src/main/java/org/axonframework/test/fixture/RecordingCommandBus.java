@@ -27,7 +27,9 @@ import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 
-import java.util.HashMap;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -45,7 +47,14 @@ import java.util.concurrent.CompletableFuture;
 public class RecordingCommandBus implements CommandBus {
 
     private final CommandBus delegate;
-    private final Map<CommandMessage, Message> recorded = new HashMap<>();
+
+    /**
+     * Recorded commands, mapped to their result. A {@link LinkedHashMap} because assertions compare dispatched
+     * commands positionally, and a synchronized one because a streaming event processor dispatches from several
+     * worker threads at once. Every iteration of this map synchronizes on it, as
+     * {@link Collections#synchronizedMap(Map)} requires.
+     */
+    private final Map<CommandMessage, Message> recorded = Collections.synchronizedMap(new LinkedHashMap<>());
 
     /**
      * Creates a new {@code RecordingCommandBus} that will record all commands dispatched to the given
@@ -62,11 +71,11 @@ public class RecordingCommandBus implements CommandBus {
                                                             @Nullable ProcessingContext processingContext) {
         recorded.put(command, null);
         var commandResult = delegate.dispatch(command, processingContext);
-        commandResult.thenApply(result -> {
-            recorded.put(command, result);
-            return result;
+        return commandResult.whenComplete((result, exception) -> {
+            if (exception == null) {
+                recorded.put(command, result);
+            }
         });
-        return commandResult;
     }
 
     @Override
@@ -80,28 +89,36 @@ public class RecordingCommandBus implements CommandBus {
     }
 
     /**
-     * Returns map of all the {@link CommandMessage CommandMessages} dispatched, and their corresponding results.
+     * Returns map of all the {@link CommandMessage CommandMessages} dispatched, and their corresponding results, in
+     * dispatch order.
+     * <p>
+     * A command that has been dispatched but has not completed yet, or whose dispatch failed, maps to {@code null}.
      *
      * @return A map of all the {@link CommandMessage CommandMessages} dispatched, and their corresponding results.
      */
     public Map<CommandMessage, Message> recorded() {
-        return Map.copyOf(recorded);
+        synchronized (recorded) {
+            return Collections.unmodifiableMap(new LinkedHashMap<>(recorded));
+        }
     }
 
     /**
-     * Returns the commands that have been dispatched to this {@link CommandBus}.
+     * Returns the commands that have been dispatched to this {@link CommandBus}, in dispatch order.
      *
      * @return The commands that have been dispatched to this {@link CommandBus}
      */
     public List<CommandMessage> recordedCommands() {
-        return List.copyOf(recorded.keySet());
+        synchronized (recorded) {
+            return Collections.unmodifiableList(new ArrayList<>(recorded.keySet()));
+        }
     }
 
     /**
      * Returns the result of the given {@code command}.
      *
      * @param command The command for which the result is returned.
-     * @return The result of the given {@code command}. May be {@code null} if the command has not been dispatched yet.
+     * @return The result of the given {@code command}. May be {@code null} if the command has not been dispatched, is
+     * still being handled, or completed exceptionally.
      */
     @Nullable
     public Message resultOf(CommandMessage command) {

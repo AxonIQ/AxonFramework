@@ -21,6 +21,7 @@ import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.annotation.AnnotatedHandlerInspector;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.jspecify.annotations.Nullable;
 
 /**
  * This will implement {@link MessageHandlerInterceptorMemberChain} with no more interceptors. It can be used a default
@@ -46,7 +47,7 @@ public class NoMoreInterceptors<T> implements MessageHandlerInterceptorMemberCha
     @Override
     public MessageStream<?> handle(Message message,
                                    ProcessingContext context,
-                                   T target,
+                                   @Nullable T target,
                                    MessageHandlingMember<? super T> handler) {
         return handler.handle(message, context, target);
     }

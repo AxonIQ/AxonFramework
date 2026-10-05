@@ -1,0 +1,297 @@
+= Configurers, Components, and Decorators
+
+This page is entirely about configuring an application, before it starts.
+It explains the three core building blocks you interact with while doing so:
+
+* xref:configurers[`ApplicationConfigurer`] - the entry point you use to describe your application
+* xref:components[`Component`] - how individual infrastructure pieces are registered
+* xref:decorators[`ComponentDecorator`] - how registered components can be wrapped with additional behavior
+
+[NOTE]
+.Retrieving components once configured
+====
+Once your application is built (and started), you no longer interact with the `ApplicationConfigurer` implementation.
+Instead, you retrieve the components you registered through the resulting xref:configuration.adoc[`Configuration`].
+Head to that page if you're looking for `getComponent`, `getComponents`, or similar retrieval methods.
+====
+
+[#configurers]
+== Configurers
+
+Axon Framework applications start with a configurer.
+There are multiple implementations of the configurer, specific per core module of the framework.
+As such, there is a xref:messaging-configurer[`MessagingConfigurer`], xref:modelling-configurer[`ModellingConfigurer`], and xref:eventsourcing-configurer[`EventSourcingConfigurer`].
+
+Each of these builds on the base interface called `ApplicationConfigurer`, which exposes the following operations:
+
+* `componentRegistry(Consumer<ComponentRegistry>)` - Provides access to the xref:registries.adoc#component-registry[`ComponentRegistry`], which is the registry containing all xref:components[Components], xref:decorators[Decorators], xref:module.adoc[Modules], xref:configuration-enhancer.adoc[Enhancers], and xref:component-factory.adoc[Factories].
+* `lifecycleRegistry(Consumer<LifecycleRegistry>)` - Provides access to the xref:registries.adoc#lifecycle-registry[`LifecycleRegistry`], the registry that ensures xref:components[Components] are started and stopped at the intended point in time.
+* `build()` - Builds the read-only xref:configuration.adoc[Configuration] based on everything that's configured, without starting it.
+* `start()` - Builds **and** starts read-only xref:configuration.adoc[Configuration] based on everything that's configured.
+
+Although the `componentRegistry(Consumer<ComponentRegistry>)` will provide you all the access you require to register what you need, we recommend picking an appropriate implementation of the `ApplicationConfigurer`.
+These not only provide dedicated registration methods for ease of use, they also provide sane defaults for Axon's infrastructure components.
+
+[NOTE]
+.Which configurer do I pick?
+====
+Pick your starting point based on what your application needs:
+
+* `MessagingConfigurer` - messaging only (`CommandBus`, `EventSink`, `QueryBus`), no modeling or event sourcing.
+* `ModellingConfigurer` - adds stateful entities without event sourcing.
+* `EventSourcingConfigurer` - adds event sourcing; the most common starting point for Axon Framework applications.
+* Or none of the above, if you are using Spring.
+Axon's xref:spring.adoc[Spring] integration selects the right set of components for you, through the `SpringAxonApplication`.
+
+Each configurer wraps the one below it, so lower-layer registration methods remain accessible (see xref:configurer.adoc#accessing-lower-level-configurers[Accessing lower-level configurers]).
+====
+
+[#messaging-configurer]
+=== `MessagingConfigurer`
+
+`MessagingConfigurer` is the lowest-level concrete configurer, providing all the basic message support.
+As such, it arguably does the most compared to the other configurers.
+Some of the infra it sets are the `CommandBus`, `EventSink`, and `QueryBus`.
+
+It also provides convenience methods to register command, event, and query-specific components:
+
+[source,java]
+----
+include::example$configuration/configurer/messagingconfigurer/AxonApp.java[tag=messaging-configurer-example]
+----
+
+[#modelling-configurer]
+=== `ModellingConfigurer`
+
+`ModellingConfigurer` wraps a `MessagingConfigurer` and adds support for entities that represent a model of your application.
+As such, it forms the entry point to provide distinct xref:module.adoc[Modules] for said entities to maintain modularization of your application.
+
+Next to several convenience methods, the most noteworthy unique operation is the `registerEntity(EntityModule)` method.
+The expected `EntityModule` can either be state-based (`StateBasedEntityModule`) or event-sourced (`EventSourcedEntityModule`).
+The latter requires the xref:eventsourcing-configurer[`EventSourcingConfigurer`].
+
+Let's look at an example usage of the `StateBasedEntityModule`:
+
+[source,java]
+----
+include::example$configuration/configurer/modellingconfigurer/AxonApp.java[tag=modelling-configurer-example]
+----
+
+[#eventsourcing-configurer]
+=== `EventSourcingConfigurer`
+
+The `EventSourcingConfigurer` further builds on the entity-support given by the `ModellingConfigurer`, adding defaults for event sourcing infrastructure, as well as convenience registration methods like:
+
+* `registerEventStorageEngine(ComponentBuilder<EventStorageEngine>)`
+* `registerEventStore(ComponentBuilder<EventStore>)`
+* `registerTagResolver(ComponentBuilder<TagResolver>)`
+* `registerEntity(EntityModule)`
+
+Let's look at an example that registers an `EventSourcedEntityModule` instead of a `StateBasedEntityModule` as shown earlier:
+
+[source,java]
+----
+include::example$configuration/configurer/eventsourcingconfigurer/AxonApp.java[tag=eventsourcing-configurer-example]
+----
+
+[#accessing-lower-level-configurers]
+=== Accessing lower-level configurers
+
+Because each configurer wraps the one below it, some operations are only available at a specific layer.
+To access these layers, every wrapping `ApplicationConfigurer` provides accessor methods.
+Let's look at an example of the `EventSourcingConfigurer` accessing the modeling and messaging layer:
+
+[source,java]
+----
+include::example$configuration/configurer/accessinglowerlevel/AxonApp.java[tag=accessing-lower-level-example]
+----
+
+The `componentRegistry(Consumer<ComponentRegistry>)` and `lifecycleRegistry(Consumer<LifecycleRegistry>)` operations are available on every configurer layer and always target the same underlying registries.
+
+[#components]
+== Registering components
+
+Every piece of Axon infrastructure registered through the configuration API is tracked as a `Component`.
+A `Component` holds a type identifier, an optional name, and a lazy supplier that produces the actual instance on first access.
+
+Components are registered through the `ComponentRegistry` using a `ComponentBuilder`, which is a functional interface that receives the `Configuration` and returns the instance.
+The "main" component of a given type, the one you get back when you do not specify a name, is registered with just that type:
+
+[source,java]
+----
+include::example$configuration/configurer/component/RegisterComponentExample.java[tag=register-component-example]
+----
+
+The `Configuration` passed to the `ComponentBuilder` allows retrieving other components to use during construction.
+In doing so, the `ComponentBuilder` supports lazy initialization.
+The builder is only called the first time the component is requested, and the resulting instance is cached for subsequent requests.
+
+When several components of the same type need to coexist, for example multiple `EventStorageEngine` instances, register each under a distinct **name** instead:
+
+[source,java]
+----
+include::example$configuration/configurer/component/NamedComponentsExample.java[tag=named-components-example]
+----
+
+To retrieve components registered with a name, use the `getComponent` operation that expects you to provide the name.
+Thus to retrieve the component registered in the sample above, invoke `configuration.getComponent(EventStorageEngine.class, "primary-context")`.
+
+Both `registerComponent(Class<C>, ComponentBuilder<C>)` and `registerComponent(Class<C>, String, ComponentBuilder<C>)`
+are convenience shortcuts around the richer `ComponentDefinition` API.
+A `ComponentDefinition` is built through
+`ComponentDefinition.ofType(Class<C>)`, or `ComponentDefinition.ofTypeAndName(Class<C>, String)` for a named component, and completed with `.withBuilder(ComponentBuilder<C>)`, or `.withInstance(C)` when the instance already exists rather than needing to be built lazily.
+Reach for `ComponentDefinition` directly whenever you need more than a plain builder, for example to attach startup or shutdown behavior (see xref:component-lifecycle[Component lifecycle]
+below), or to register a component under a generic type through its `TypeReference`-based `ofType`/`ofTypeAndName`
+overloads.
+
+[source,java]
+----
+include::example$configuration/configurer/component/ComponentDefinitionExample.java[tag=component-definition-example]
+----
+
+When running with the Spring Boot Starter, a component does not have to go through `registerComponent` at all: simply declare a `@Bean` of the matching type, and Axon picks it up automatically.
+See xref:spring.adoc#spring-and-axon-impl-details[Implementation details] for how this works.
+
+[#component-lifecycle]
+=== Component lifecycle
+
+When a component requires startup or shutdown logic, use `ComponentDefinition` to attach lifecycle handlers directly to the registration.
+This ensures components are started and stopped in the correct phase without requiring eager initialization:
+
+[source,java]
+----
+include::example$configuration/configurer/component/ComponentLifecycleExample.java[tag=component-lifecycle-example]
+----
+
+The `Phase` constant determines the relative order in which startup and shutdown are invoked across all components.
+Lower phase values start first; shutdown proceeds in reverse order.
+
+=== Conditional and default registration
+
+The `registerIfNotPresent(Class<C>, ComponentBuilder<C>)` method registers a component only when no component of that type has been registered yet.
+Axon uses this internally to provide defaults of all important components without overriding what users might configure themselves.
+Thus, the following sample will set a `CommandBus` **if** no `CommandBus` has already been set:
+
+[source,java]
+----
+include::example$configuration/configurer/component/ConditionalDefaultRegistrationExample.java[tag=conditional-default-example]
+----
+
+A typical use case for `registerIfNotPresent` semantics is in a `ConfigurationEnhancer`, as explained in more detail xref:configuration-enhancer.adoc[here].
+It's `ConfigurationEnhancer` implementations that set all the defaults in Axon Framework, by means of `registerIfNotPresent`.
+Hence, if you have components that should conditionally be added to your configuration, an enhancer with `registerIfNotPresent` is the way to go.
+
+[#decorators]
+== Decorating components
+
+A `ComponentDecorator` wraps an existing component with additional behavior, without requiring knowledge of its concrete type.
+This is the mechanism Axon uses internally to add xref:messaging-concepts:message-intercepting.adoc[intercepting] and xref:monitoring:tracing.adoc[tracing] to its infrastructure components, for example.
+
+A decorator is registered with `ComponentRegistry#registerDecorator(Class<C>, int order, ComponentDecorator<C, D>)`.
+The decorator receives the current `Configuration`, the component name, and the delegate instance, and is invoked on the given xref:decorator-order[order]:
+
+[source,java]
+----
+include::example$configuration/configurer/decorator/DecoratorExample.java[tag=decorator-example]
+----
+
+To decorate only a component registered under a specific name instead of every component of that type, use
+`registerDecorator(Class<C>, String name, int order, ComponentDecorator<C, D>)` instead:
+
+[source,java]
+----
+include::example$configuration/configurer/decorator/NamedDecoratorExample.java[tag=named-decorator-example]
+----
+
+Both overloads are convenience shortcuts around the richer `DecoratorDefinition` API.
+A `DecoratorDefinition` is built through `DecoratorDefinition.forType(Class<C>)`, or `DecoratorDefinition.forTypeAndName(Class<C>, String)` to target a specific named component, and completed with `.with(ComponentDecorator<C, D>)`.
+Reach for `DecoratorDefinition` directly whenever you need more than a plain decorator function, for example to set an explicit xref:decorator-order[order] or to attach startup or shutdown behavior (see xref:decorator-lifecycle[Decorator lifecycle] below):
+
+[source,java]
+----
+include::example$configuration/configurer/decorator/DecoratorDefinitionExample.java[tag=decorator-definition-example]
+----
+
+When running with the Spring Boot Starter, a decorator does not have to go through `registerDecorator` at all either: declare the `DecoratorDefinition` as a Spring bean, and Axon picks it up automatically.
+See xref:spring.adoc#customizing-axon-config-with-spring[Customizing Axon's configuration through Spring] for an example.
+
+[#decorator-order]
+=== Ordering decorators
+
+The `order` parameter controls the sequence in which decorators are applied when several of them target the same component type (or type-and-name combination).
+Decorators with a lower `order` value are applied first, making them the innermost wrapper, closer to the original component.
+Decorators with a higher `order` value are applied next, wrapping the result of the lower-order decorators and ending up closer to any caller.
+A decorator that depends on the behavior of another decorator must therefore have a strictly higher `order` value than the one it depends on.
+
+Consider decorating a `CommandBus` with both a metering and a tracing decorator:
+
+[source,java]
+----
+include::example$configuration/configurer/decorator/OrderedDecoratorsExample.java[tag=ordered-decorators-example]
+----
+
+Because `MeteringCommandBusDecorator` has the lower order (`0`), it is applied directly to the raw `CommandBus`, making it the innermost wrapper. `TracingCommandBusDecorator`, with the higher order (`10`), wraps the metering decorator next, making it the outermost wrapper.
+As a result, a dispatched command flows through
+`TracingCommandBusDecorator` -> `MeteringCommandBusDecorator` -> the original `CommandBus`.
+This ensures every dispatch, including the time spent inside the metering decorator, is captured within the span created by the tracing decorator.
+
+Axon Framework's own decorators, such as the ones adding xref:messaging-concepts:message-intercepting.adoc[intercepting]
+or xref:monitoring:tracing.adoc[tracing], each use a fixed `order` value defined as a constant either on the decorating class itself or on the `ConfigurationEnhancer` that registers it.
+To place your own decorator before or after one of these, look up that constant in the framework source and choose an `order` value lower or higher than it, depending on where your decorator needs to sit.
+These constants are typically exposed as `public static final int`
+fields, so where available, reference them directly instead of hardcoding the numeric value.
+Since Axon Framework may adjust these constants between releases as new decorators are introduced, treat the surrounding source as the source of truth rather than relying on a value you noted down previously.
+
+[#decorator-lifecycle]
+=== Decorator lifecycle
+
+A decorator function only wraps the delegate.
+It does not automatically join the application's startup and shutdown sequence the way a registered `Component` does.
+This matters whenever the wrapper you introduce owns resources of its own, for example a background thread that periodically flushes metrics, an open connection to an external system, or a cache that needs to be cleared.
+Without an explicit lifecycle hook, such resources are never released when the application shuts down, since the framework has no way of knowing about them.
+
+Similar to component registration, use `DecoratorDefinition` (instead of the `registerDecorator(Class<C>, int,
+ComponentDecorator<C, D>)` shortcut) when the decorator itself requires startup or shutdown logic, attaching
+`.onStart(int, ...)` and/or `.onShutdown(int, ...)` handlers directly to the registration.
+As with regular component lifecycle handlers, the phase passed to these handlers determines exactly when the decorator's own logic runs relative to all other components and decorators being started or stopped.
+The following example decorates a
+`CommandBus` with a metering decorator that starts a scheduled metrics-flushing task on construction, and relies on
+`onShutdown` to stop that task cleanly when the application shuts down:
+
+[source,java]
+----
+include::example$configuration/configurer/decorator/DecoratorLifecycleExample.java[tag=decorator-lifecycle-example]
+----
+
+[NOTE]
+.Where do components and decorators actually live?
+====
+Every operation described on this page, registering components, decorating them, or accessing a lower-level configurer, ultimately acts on one of two registries: the `ComponentRegistry` and the `LifecycleRegistry`.
+Head to xref:registries.adoc[Component registry and lifecycle registry] for their role and a complete overview of their operations.
+====
+
+[#component-identification]
+== Identifying components: class, name, or type-reference
+
+Every `Component` and `ComponentDecorator` is matched against an identifier made up of a declared type and an optional name.
+Depending on what you are registering, you reach for that identifier through a `Class`, a `Class` plus a `String` name, or, for a component with a generic declared type, a `TypeReference`.
+
+By **class** is the default: `ComponentDefinition.ofType(MyService.class)` or the `registerComponent(Class<C>, ComponentBuilder<C>)` shortcut identify a component purely by its raw type.
+This is sufficient whenever only a single instance of that type is expected in the xref:registries.adoc#component-registry[`ComponentRegistry`], which covers most infrastructure components such as the `CommandBus` or `QueryBus`.
+
+By **name** adds a `String` alongside the class, through `ComponentDefinition.ofTypeAndName(MyService.class, "myName")` or `registerComponent(Class<C>, String, ComponentBuilder<C>)`.
+Use this the moment several components of the same declared type need to coexist, as shown earlier for xref:components[multiple `EventStorageEngine` instances].
+The same class-plus-name pattern applies to xref:decorators[decorators], through `DecoratorDefinition.forTypeAndName(Class<C>, String)`, to target a single named component rather than every component of that type.
+
+By **`TypeReference`** replaces the `Class` argument whenever the declared type itself is generic, for example `Repository<MyId, MyEntity>`.
+A plain `Class<Repository>` object cannot carry the `<MyId, MyEntity>` type arguments, since generic type information is erased at runtime.
+`TypeReference` works around this erasure by capturing the full generic type through an anonymous subclass, so the `ComponentRegistry` and `Configuration` can distinguish a `Repository<OrderId, Order>` from a `Repository<InvoiceId, Invoice>` even though both erase to the same `Repository` class.
+`ComponentDefinition.ofType(TypeReference<C>)` and `ofTypeAndName(TypeReference<C>, String)` register a component this way, mirroring their `Class`-based counterparts; `Configuration#getComponent(TypeReference<C>)` and its overloads (covered in more detail under xref:configuration.adoc#retrieving-components[retrieving components]) retrieve it again with the same type safety.
+Decorators do not have a `TypeReference`-based overload: `DecoratorDefinition` always matches on the raw, erased `Class`, so a decorator registered for `Repository.class` applies to every `Repository`, regardless of its type arguments.
+
+The following example registers an `EntityCache<MyId, MyEntity>` component under its full generic type, and retrieves it again the same way:
+
+[source,java]
+----
+include::example$configuration/configurer/component/TypeReferenceComponentExample.java[tag=type-reference-component-example]
+----

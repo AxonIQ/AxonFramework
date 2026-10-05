@@ -705,7 +705,7 @@ class CoordinatorTest {
                                                               .fetchAvailableSegments(eq(PROCESSOR_NAME), any());
             doReturn(SEGMENT_ZERO).when(workPackage).segment();
             doReturn(false).when(workPackage).isAbortTriggered();
-            doReturn(true).when(workPackage).isProcessingEvents();
+            doReturn(true).when(workPackage).isWorkerScheduled();
             doReturn(CompletableFuture.failedFuture(new CompletionException(innerCause)))
                     .when(workPackage).extendClaimIfThresholdIsMet();
             doReturn(emptyCompletedFuture()).when(workPackage).abort(any());
@@ -744,7 +744,7 @@ class CoordinatorTest {
                                                               .fetchAvailableSegments(eq(PROCESSOR_NAME), any());
             doReturn(SEGMENT_ZERO).when(workPackage).segment();
             doReturn(false).when(workPackage).isAbortTriggered();
-            doReturn(true).when(workPackage).isProcessingEvents();
+            doReturn(true).when(workPackage).isWorkerScheduled();
             doReturn(CompletableFuture.failedFuture(new RuntimeException("extend claim failed")))
                     .when(workPackage).extendClaimIfThresholdIsMet();
             doReturn(emptyCompletedFuture()).when(workPackage).abort(any());

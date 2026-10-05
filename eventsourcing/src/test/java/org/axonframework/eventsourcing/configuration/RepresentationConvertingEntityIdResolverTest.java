@@ -23,7 +23,9 @@ import org.axonframework.messaging.commandhandling.GenericCommandMessage;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
+import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
 import org.axonframework.messaging.core.annotation.ClasspathParameterResolverFactory;
+import org.axonframework.messaging.core.annotation.HandlerDefinition;
 import org.axonframework.messaging.core.annotation.MultiParameterResolverFactory;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
 import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
@@ -40,7 +42,6 @@ import org.axonframework.modelling.annotation.TargetEntityId;
 import org.axonframework.modelling.entity.EntityMetamodel;
 import org.axonframework.modelling.entity.annotation.AnnotatedEntityMetamodel;
 import org.axonframework.eventsourcing.annotation.EventSourcedEntity;
-import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.*;
 
@@ -62,12 +63,13 @@ class RepresentationConvertingEntityIdResolverTest {
     private final ClassBasedMessageTypeResolver messageTypeResolver = new ClassBasedMessageTypeResolver();
     private final MessageConverter messageConverter = new DelegatingMessageConverter(new JacksonConverter());
     private final EventConverter eventConverter = new DelegatingEventConverter(new JacksonConverter());
+    private final HandlerDefinition handlerDefinition = ClasspathHandlerDefinition.forClass(AnnotatedCourse.class);
 
     @Test
     void resolvesIdFromSerializedPayloadUsingAnnotationScan() throws EntityIdResolutionException {
         // given
         AnnotatedEntityMetamodel<AnnotatedCourse> annotatedMetamodel = AnnotatedEntityMetamodel.forConcreteType(
-                AnnotatedCourse.class, parameterResolverFactory, messageTypeResolver,
+                AnnotatedCourse.class, parameterResolverFactory, handlerDefinition, messageTypeResolver,
                 messageConverter, eventConverter
         );
 
@@ -95,7 +97,7 @@ class RepresentationConvertingEntityIdResolverTest {
     void resolvesIdEvenWhenEntityMetamodelIsWrappedInPlainDecorator() throws EntityIdResolutionException {
         // given
         AnnotatedEntityMetamodel<AnnotatedCourse> annotatedMetamodel = AnnotatedEntityMetamodel.forConcreteType(
-                AnnotatedCourse.class, parameterResolverFactory, messageTypeResolver,
+                AnnotatedCourse.class, parameterResolverFactory, handlerDefinition, messageTypeResolver,
                 messageConverter, eventConverter
         );
 

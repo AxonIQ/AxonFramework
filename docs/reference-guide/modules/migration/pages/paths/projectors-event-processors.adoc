@@ -130,6 +130,68 @@ axon:
 In your code, you can customize these settings by providing `EventProcessorSettings` beans or using the `EventProcessorSettings.MapWrapper`.
 
 
+[#initial-token-replay-status]
+== Initial token no longer marks the first pass as a replay
+
+A streaming processor that starts without a stored token builds an xref:events:event-processors/streaming.adoc#initial_token[initial token].
+Both versions default to starting at the beginning of the event stream, so a fresh processor handles the entire history in both.
+What changed is the `ReplayStatus` under which that history is handled.
+
+Axon Framework 4 wrapped the initial token in a `ReplayToken` that concluded at the head of the stream, marking the whole catch-up as a replay:
+
+[source,java,role=axon4]
+----
+// AF4, PooledStreamingEventProcessor.Builder default
+initialToken = messageSource -> ReplayToken.createReplayToken(messageSource.createHeadToken());
+----
+
+Axon Framework 5 concludes that replay at the first position of the stream instead, which means it is already concluded by the first event handled:
+
+[source,java]
+----
+// AF5, PooledStreamingEventProcessorConfiguration default
+initialToken = eventSource -> eventSource.firstToken(null)
+                                         .thenApply(ReplayToken::createReplayToken);
+----
+
+[cols="1,1,1"]
+|===
+| | Axon Framework 4 | Axon Framework 5
+
+| Start position of a fresh processor
+| Beginning of the stream
+| Beginning of the stream
+
+| `ReplayStatus` while catching up
+| `REPLAY` until the head at initialization
+| `REGULAR` for every event
+
+| Handlers that opt out of replays
+| Skip the initial catch-up
+| Handle the initial catch-up
+
+| Replay-concluded notification
+| Published when the head at initialization is reached
+| Not published, as there is no replay to conclude
+|===
+
+This is the expected behavior for a brand-new processor, not an oversight.
+A processor starting for the first time has no previously built state to correct, so its first pass over the stream is a first pass, not a repetition of one.
+Replay semantics exist to signal "you are seeing these events again", which does not apply here.
+
+=== Restoring the Axon Framework 4 behavior
+
+Configure the initial token explicitly if your handlers rely on `ReplayStatus.REPLAY` to suppress side effects while a fresh deployment catches up on an existing event store.
+Passing the latest position as the token to conclude at reproduces the Axon Framework 4 default:
+
+[source,java]
+----
+include::example$migration/paths/projectorseventprocessors/initialtoken/ReplayingInitialTokenExample.java[tag=replaying-initial-token,indent=0]
+----
+
+Note that the position to conclude at is resolved once, when the processor initializes its tokens, and is stored inside the token itself.
+Events appended after that moment are handled as regular, live events.
+
 == `QueryUpdateEmitter` as a parameter
 
 In Axon Framework 4, the `QueryUpdateEmitter` was often injected as a class-level field in projectors.

@@ -407,6 +407,45 @@ abstract class ProcessingLifecycleTest<PL extends ProcessingLifecycle> {
         assertTrue(invoked.get());
     }
 
+    /**
+     * A handler cannot register for the phase it is running in, but the {@link ProcessingLifecycle.Phase} interface
+     * takes an arbitrary {@link ProcessingLifecycle.Phase#order()}, so the gaps between the
+     * {@link ProcessingLifecycle.DefaultPhases} are available to a handler that needs work done after its own phase
+     * without waiting for the next default one.
+     */
+    @Test
+    void handlersRegisteredDuringAPhaseForACustomLaterPhaseRunBetweenTheSurroundingDefaultPhases() {
+        PL testSubject = createTestSubject();
+        ProcessingLifecycle.Phase betweenPrepareCommitAndCommit = () -> PREPARE_COMMIT.order() + 1;
+        List<ProcessingLifecycle.Phase> order = new CopyOnWriteArrayList<>();
+
+        testSubject.runOnPrepareCommit(c -> {
+            order.add(PREPARE_COMMIT);
+            c.runOn(betweenPrepareCommitAndCommit, c1 -> order.add(betweenPrepareCommitAndCommit));
+        });
+        testSubject.runOnCommit(c -> order.add(COMMIT));
+
+        CompletableFuture<?> result = execute(testSubject);
+
+        assertTrue(result.isDone());
+        assertFalse(result.isCompletedExceptionally());
+        assertEquals(List.of(PREPARE_COMMIT, betweenPrepareCommitAndCommit, COMMIT), order);
+    }
+
+    @Test
+    void registeringHandlersInTheRunningPhaseCausesHandlerToFail() {
+        PL testSubject = createTestSubject();
+
+        testSubject.onPrepareCommit(ctx -> {
+            ctx.onPrepareCommit(c2 -> FutureUtils.emptyCompletedFuture());
+            return FutureUtils.emptyCompletedFuture();
+        });
+
+        CompletableFuture<?> actual = execute(testSubject);
+        ExecutionException actualException = assertThrows(ExecutionException.class, actual::get);
+        assertTrue(actualException.getMessage().contains("already in phase PREPARE_COMMIT"));
+    }
+
     @Test
     void registeringHandlersInPastPhasesCausesHandlerToFail() {
         PL testSubject = createTestSubject();

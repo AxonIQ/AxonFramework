@@ -1,0 +1,100 @@
+= Modules
+
+A `Module` groups a set of components under a private xref:registries.adoc#component-registry[`ComponentRegistry`] that has a parent.
+The parent can be the root registry of the application or the registry of another module.
+This hierarchy provides two guarantees:
+
+1. The module can read components from its parent.
+2. The parent cannot read components from the module.
+
+This one-way visibility enforces encapsulation: a module's internal components remain isolated from the rest of the application.
+Only components registered on the root configuration or a shared ancestor are accessible from multiple places.
+
+Without modules, every component is registered in the same flat namespace.
+This makes it easy for unrelated parts of the application to depend on each other's internals.
+Modules enforce the principle that message handlers should not be aware of, or make assumptions about, other components: they handle messages and emit results, nothing more.
+
+In other words, this moves the concept of https://en.wikipedia.org/wiki/Location_transparency[location transparency] to Axon's configuration API.
+
+Axon Framework uses this principle to wrap xref:commands:entities/index.adoc[entities] and any type of message handling component.
+A `CommandHandlingModule`, for example, can define its own internal `CommandBus` variant or `EventSink` without exposing these to the outside. Similarly, any xref:events:event-processors/index.adoc[Event Processor] you register is automatically its own `Module`.
+
+== Registering a module
+
+Modules are registered on the xref:registries.adoc#component-registry[`ComponentRegistry`]:
+
+[source,java]
+----
+include::example$configuration/module/RegisteringModuleExample.java[tag=register-module-example]
+----
+
+Higher-level configurers also provide convenience methods:
+
+[source,java]
+----
+include::example$configuration/module/HigherLevelConvenienceExample.java[tag=higher-level-convenience-example]
+----
+
+== Built-in modules
+
+Axon Framework provides several built-in `Module` types out of the box: `CommandHandlingModule`, `QueryHandlingModule`, and `EntityModule`.
+
+=== `CommandHandlingModule`
+
+Encapsulates a group of command handlers.
+All command handling components (handlers, interceptors, repositories) are private to the module.
+The module can still read shared infrastructure components like the `CommandBus` or
+`EventSink` from its parent.
+
+[source,java]
+----
+include::example$configuration/module/CommandHandlingModuleExample.java[tag=command-handling-module-example]
+----
+
+=== `QueryHandlingModule`
+
+Encapsulates a group of query handlers in the same way `CommandHandlingModule` encapsulates command handlers.
+
+[source,java]
+----
+include::example$configuration/module/QueryHandlingModuleExample.java[tag=query-handling-module-example]
+----
+
+=== `EntityModule`
+
+Registers an entity with the nearest parent `StateManager`, making it available for lookup by identifier.
+An `EntityModule` can be state-based (`StateBasedEntityModule`) or event-sourced (`EventSourcedEntityModule`); see xref:configurer.adoc#modelling-configurer[`ModellingConfigurer`] and xref:configurer.adoc#eventsourcing-configurer[`EventSourcingConfigurer`] for the full registration walkthrough of each:
+
+[source,java]
+----
+include::example$configuration/module/EntityModuleExample.java[tag=entity-module-example]
+----
+
+== Accessing module configurations
+
+After the application is built, `getModuleConfiguration(String)` and `getModuleConfigurations()` (see xref:configuration.adoc#retrieving-components[retrieving components]) give access to the `Configuration` instances produced by registered modules.
+This is useful when inspecting what was registered, for example in tests or monitoring code:
+
+[source,java]
+----
+include::example$configuration/module/AccessingModuleConfigurationsExample.java[tag=accessing-module-configurations-example]
+----
+
+Components inside the module are accessible through the module's own `Configuration`.
+Components from the root remain accessible through the root `Configuration`.
+
+[IMPORTANT]
+====
+Attempting to retrieve a module-private component from the root `Configuration` (or from a sibling module) will throw a `ComponentNotFoundException`.
+This is intentional: it enforces the encapsulation boundary that modules provide.
+====
+
+== Nested modules
+
+A `Module` can itself register nested modules.
+The same visibility rules apply: a nested module can see components from its parent module and from the root, but neither the parent module nor the root can see the nested module's private components.
+
+[source,java]
+----
+include::example$configuration/module/NestedModuleExample.java[tag=nested-module-example]
+----

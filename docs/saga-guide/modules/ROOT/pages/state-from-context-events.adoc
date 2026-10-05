@@ -1,0 +1,140 @@
+= State from Context Events
+:navtitle: State from context events
+:reftext: State from context events
+
+The process stores nothing. Everything it needs to know has already been recorded by one side or the other, so
+instead of keeping a copy it rebuilds the answer from those events each time a handler runs.
+
+This is the approach a Dynamic Consistency Boundary makes possible. The decision model is an ordinary event-sourced
+entity, except that its criteria span two *bounded* contexts instead of one.
+
+[NOTE]
+.Works across one event store context only
+====
+Both bounded contexts have to write their events to the same event store context. That is not a stylistic preference:
+an event-sourced entity is sourced from one context, and `EventCriteria` selects within one context; no criteria span
+two. An entity assembled from events in two contexts cannot be injected at all.
+
+Within one context there is no limit on how many bounded contexts the criteria may reach across. `rental` and
+`payment` share nothing but a partition of the event store, and the criteria in the example select across both.
+
+If the other side lives in a different Axon Server context, or in a system that is not an Axon event store,
+xref::state-from-process-events.adoc[state from process events] is the approach that replaces this one.
+====
+
+[TIP]
+====
+Where xref::workflows.adoc[[.advanced-framework]#Workflows#] are available to you they are the recommended answer, and
+they ask nothing of the events at all: no shared event store context, no tag to select on. This page is what to write
+when they are not.
+====
+
+== When to use it
+
+Three conditions have to hold:
+
+* Both sides write to the same event store context. This one is a deployment fact rather than a design choice, and
+  no amount of tagging works around it.
+* Their events carry a tag the process can select on.
+* The state the process needs is implied by events that already exist.
+
+== The decision model
+
+[source,java]
+----
+include::example$sagas/statecontextevents/RentalPaymentProcess.java[tag=state,indent=0]
+----
+<1> Rental events are selected by the rental tag.
+<2> Payment events are selected by the payment side's own reference tag, whose value happens to be the rental
+identifier.
+
+That pair of criteria is the only place in the application where the two bounded contexts meet. The rental side does
+not know payments exist; the payment side treats the reference as an opaque string. This class alone holds both
+pieces of knowledge. Both criteria select within the same event store context, because a single `EventCriteria`
+cannot do anything else.
+
+[TIP]
+====
+Keep the criteria as narrow as the decision allows. Every event type listed widens both the read and the conflict
+surface. Include an event type only if an evolve method actually reacts to it.
+====
+
+== The process
+
+[source,java]
+----
+include::example$sagas/statecontextevents/RentalPaymentProcess.java[tag=process,indent=0]
+----
+<1> The entity is nullable because a process that has not started yet has no events, and therefore no entity.
+<2> The bike and the renter are read back from `BikeRequested`: what another process would have to store is
+recovered from an event that already exists.
+
+[#one-effect]
+== One effect per handler
+
+Compare this to xref::state-in-a-repository.adoc[keeping state in a repository]. There, a row is written and a
+command dispatched. They agree only because a transaction spans them. Here only one thing happens: a command is
+dispatched.
+
+That difference removes an entire class of bug:
+
+* If the command fails, no event is appended and the handler fails, so handling the event again rebuilds an
+  identical decision model and tries again.
+* If the command succeeded but the commit did not, handling the event again re-dispatches and the receiver's
+  idempotency absorbs it.
+
+There is nothing to keep in step. Nothing is written to a second place.
+
+[#id-resolution]
+== Resolving which process an event belongs to
+
+The one piece of machinery this approach needs is a way to work out which process an incoming event concerns. Rental
+events carry `rentalId`; payment events carry `paymentReference`. Neither the `idProperty` shortcut nor the default
+`@TargetEntityId` lookup spans that difference, so the process resolves the identifier itself:
+
+[source,java]
+----
+include::example$sagas/statecontextevents/RentalPaymentIdResolver.java[tag=resolver,indent=0]
+----
+<1> Routing on the qualified name reads nothing from the payload, so an event this process does not handle costs
+nothing.
+<2> Each event is then converted exactly once, to its own concrete type.
+
+[WARNING]
+====
+Do not be tempted to convert to a shared supertype and read the correlation from that. It works in memory, where the
+payload is already an object and `payloadAs` short-circuits. It fails against a real event store, where the payload
+arrives as bytes that no converter can turn into an interface. A test built from plain objects will pass while
+production fails.
+====
+
+== Trade-offs
+
+|===
+| Good | Not so good
+
+a|
+* Nothing is stored, so nothing can drift.
+* One effect per handler, so there is no second write that could fall out of step with the progress record.
+* No life cycle to manage: being finished is a question asked of the events.
+* No schema, no migration, no cleanup.
+
+a|
+* Requires one event store context, a tag on the correlated events, and ownership of both sides.
+* Records only outcomes. A step that produces no event, such as sending an e-mail, leaves no trace and cannot be
+  tracked.
+* One event-store read per handled event.
+* Needs an identifier resolver when the two sides name their correlation differently.
+|===
+
+[#ending]
+== Ending the process
+
+There is nothing to end. Being finished is a predicate over events that already exist, `state.requestSettled` in the
+sample, rather than a fact anyone records. Nothing to delete and nothing to clean up.
+
+== Where next
+
+If the process must record steps that produce no domain event, or you need an audit trail of the process itself, move
+to xref::state-from-process-events.adoc[state from process events]. If the process turns out to be
+several unrelated reactions rather than one thing, see xref::vertical-slices.adoc[vertical slices].

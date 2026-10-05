@@ -17,8 +17,11 @@
 package org.axonframework.extension.springboot.autoconfig;
 
 import jakarta.persistence.EntityManagerFactory;
+import org.axonframework.common.AxonConfigurationException;
+import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.jdbc.PersistenceExceptionResolver;
 import org.axonframework.common.jpa.EntityManagerProvider;
+import org.axonframework.common.lifecycle.Phase;
 import org.axonframework.conversion.GeneralConverter;
 import org.axonframework.eventsourcing.eventstore.jpa.SQLErrorCodesResolver;
 import org.axonframework.extension.springboot.TokenStoreProperties;
@@ -28,11 +31,13 @@ import org.axonframework.messaging.core.unitofwork.transaction.jpa.JpaTransactio
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.jpa.JpaTokenStore;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.jpa.JpaTokenStoreConfiguration;
+import org.jspecify.annotations.Nullable;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.SmartLifecycle;
 import org.springframework.context.annotation.Bean;
 
 import java.sql.SQLException;
@@ -89,13 +94,72 @@ public class JpaAutoConfiguration {
     /**
      * Provides a persistence exception resolver for a data source.
      *
-     * @param dataSource A data source configured to resolve exception for.
-     * @return A working copy of Persistence Exception Resolver.
-     * @throws SQLException on any construction errors.
+     * Database-specific error codes are resolved when the application lifecycle starts, preventing database access
+     * while the application context is being created.
+     *
+     * @param dataSource a data source configured to resolve exceptions for
+     * @return a lifecycle-aware persistence exception resolver
      */
     @Bean
     @ConditionalOnMissingBean
-    public PersistenceExceptionResolver persistenceExceptionResolver(DataSource dataSource) throws SQLException {
-        return new SQLErrorCodesResolver(dataSource);
+    public PersistenceExceptionResolver persistenceExceptionResolver(DataSource dataSource) {
+        return new LifecycleAwareSQLErrorCodesResolver(dataSource);
+    }
+
+    /**
+     * Defers creation of the database-specific {@link SQLErrorCodesResolver} until Spring starts the application
+     * lifecycle. This implementation is internal because it is an auto-configuration detail and should be consumed as
+     * a {@link PersistenceExceptionResolver}.
+     *
+     * @author Christopher Friedrich
+     */
+    @Internal
+    private static final class LifecycleAwareSQLErrorCodesResolver
+            implements PersistenceExceptionResolver, SmartLifecycle {
+
+        private final DataSource dataSource;
+        private volatile @Nullable PersistenceExceptionResolver delegate;
+
+        /**
+         * Creates a lifecycle-aware resolver backed by the given {@code dataSource}.
+         *
+         * @param dataSource the data source used to resolve database-specific error codes
+         */
+        private LifecycleAwareSQLErrorCodesResolver(DataSource dataSource) {
+            this.dataSource = dataSource;
+        }
+
+        @Override
+        public synchronized void start() {
+            if (delegate != null) {
+                return;
+            }
+            try {
+                delegate = new SQLErrorCodesResolver(dataSource);
+            } catch (SQLException e) {
+                throw new AxonConfigurationException("Failed to initialize the persistence exception resolver.", e);
+            }
+        }
+
+        @Override
+        public synchronized void stop() {
+            delegate = null;
+        }
+
+        @Override
+        public boolean isRunning() {
+            return delegate != null;
+        }
+
+        @Override
+        public int getPhase() {
+            return Phase.EXTERNAL_CONNECTIONS;
+        }
+
+        @Override
+        public boolean isDuplicateKeyViolation(Exception exception) {
+            PersistenceExceptionResolver resolver = delegate;
+            return resolver != null && resolver.isDuplicateKeyViolation(exception);
+        }
     }
 }

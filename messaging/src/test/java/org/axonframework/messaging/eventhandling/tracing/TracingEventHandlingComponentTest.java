@@ -559,6 +559,22 @@ class TracingEventHandlingComponentTest {
         }
 
         @Test
+        void forwardsSupportsToTheDelegate() {
+            // given a delegate that lists no events upfront but supports every event
+            TracingEventHandlingComponent subject =
+                    new TracingEventHandlingComponent(new SupportsAnyEventHandlingComponent(), spanFactory);
+
+            // when / then
+            assertThat(subject.supports(new QualifiedName("AnyEvent"))).isTrue();
+        }
+
+        @Test
+        void unwrapsToTheDelegate() {
+            // when / then
+            assertThat(testSubject.unwrap(RecordingEventHandlingComponent.class)).containsSame(delegate);
+        }
+
+        @Test
         void describesItselfAsAWrapperOfTheDelegate() {
             // given
             RecordingComponentDescriptor descriptor = new RecordingComponentDescriptor();
@@ -587,6 +603,37 @@ class TracingEventHandlingComponentTest {
         @Override
         public Set<QualifiedName> supportedEvents() {
             return Set.of(new QualifiedName("MyEvent"));
+        }
+
+        @Override
+        public Object sequenceIdentifierFor(EventMessage event, ProcessingContext context) {
+            return event.identifier();
+        }
+
+        @Override
+        public void describeTo(ComponentDescriptor descriptor) {
+            // not relevant to these tests
+        }
+    }
+
+    /**
+     * {@link EventHandlingComponent} stub that lists no events upfront but supports every event.
+     */
+    private static final class SupportsAnyEventHandlingComponent implements EventHandlingComponent {
+
+        @Override
+        public MessageStream.Empty<Message> handle(EventMessage event, ProcessingContext context) {
+            return MessageStream.empty();
+        }
+
+        @Override
+        public Set<QualifiedName> supportedEvents() {
+            return Set.of();
+        }
+
+        @Override
+        public boolean supports(QualifiedName eventName) {
+            return true;
         }
 
         @Override

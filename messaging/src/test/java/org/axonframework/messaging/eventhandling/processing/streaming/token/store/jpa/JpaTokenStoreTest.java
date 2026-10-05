@@ -33,9 +33,11 @@ import org.axonframework.messaging.eventhandling.processing.streaming.token.Repl
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.ConfigToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.UnableToClaimTokenException;
+import org.hibernate.exception.ConstraintViolationException;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.*;
 
+import java.sql.SQLException;
 import java.time.Duration;
 import java.time.temporal.TemporalAmount;
 import java.util.Collections;
@@ -46,6 +48,7 @@ import static org.axonframework.common.FutureUtils.joinAndUnwrap;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.AdditionalAnswers.delegatesTo;
 import static org.mockito.Mockito.*;
 
 /**
@@ -167,6 +170,27 @@ class JpaTokenStoreTest {
                                                                                7,
                                                                                null,
                                                                                createProcessingContext())));
+    }
+
+    @Test
+    void initializeTokensFailsWithUnableToClaimTokenIfAnotherNodeInsertedTheSegmentsFirst() {
+        // given - the check for present segments passes, after which the insert hits the row another node just wrote
+        EntityManager collidingEntityManager = mock(EntityManager.class, delegatesTo(entityManager));
+        doThrow(new ConstraintViolationException(
+                "could not execute statement", new SQLException(), "token_entry_pkey"
+        )).when(collidingEntityManager).flush();
+        JpaTokenStore testSubject = new JpaTokenStore(
+                ctx -> new EntityManagerExecutor(new SimpleEntityManagerProvider(collidingEntityManager)),
+                TestConverter.JACKSON.getConverter(),
+                JpaTokenStoreConfiguration.DEFAULT
+        );
+
+        // when / then - the same contract the JdbcTokenStore presents, instead of the provider's own exception
+        assertThrows(UnableToClaimTokenException.class,
+                     () -> joinAndUnwrap(testSubject.initializeTokenSegments("test1",
+                                                                             7,
+                                                                             null,
+                                                                             createProcessingContext())));
     }
 
     @SuppressWarnings("Duplicates")

@@ -35,7 +35,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * <p>
  * When events are published within a {@link ProcessingContext}, recording is deferred until the context's
  * {@link ProcessingContext#runOnAfterCommit(java.util.function.Consumer) after-commit phase}. As a result, events
- * appended in a unit of work that is rolled back — for example because the command handler threw an exception — are
+ * appended in a unit of work that is rolled back, for example because the command handler threw an exception, are
  * never recorded, mirroring the fact that they are never persisted or published to event handlers. Events published
  * without a context are recorded immediately.
  * <p>

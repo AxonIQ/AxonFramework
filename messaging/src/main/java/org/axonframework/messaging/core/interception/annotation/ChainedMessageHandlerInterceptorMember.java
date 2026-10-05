@@ -21,6 +21,7 @@ import org.axonframework.messaging.core.MessageHandlerInterceptorChain;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.jspecify.annotations.Nullable;
 
 import java.util.Iterator;
 
@@ -56,7 +57,7 @@ public class ChainedMessageHandlerInterceptorMember<T> implements MessageHandler
     @Override
     public MessageStream<?> handle(Message message,
                                    ProcessingContext context,
-                                   T target,
+                                   @Nullable T target,
                                    MessageHandlingMember<? super T> handler) {
         MessageHandlerInterceptorChain<Message> chain =
                 (msg, ctx) -> next.handle(msg, ctx, target, handler);
@@ -67,7 +68,7 @@ public class ChainedMessageHandlerInterceptorMember<T> implements MessageHandler
 
     private MessageStream<?> doHandle(Message message,
                                       ProcessingContext context,
-                                      T target,
+                                      @Nullable T target,
                                       MessageHandlingMember<? super T> handler) {
         return delegate.canHandle(message, context)
                 ? delegate.handle(message, context, target)

@@ -19,12 +19,18 @@ package org.axonframework.extension.spring.config;
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.ConfigurationEnhancer;
 import org.junit.jupiter.api.*;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.support.BeanDefinitionBuilder;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.beans.factory.support.RootBeanDefinition;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+/**
+ * Test class validating the initialization of the {@link SpringComponentRegistry}.
+ *
+ * @author Mateusz Nowak
+ */
 class SpringComponentRegistryInitializationTest {
 
     @Test
@@ -52,6 +58,34 @@ class SpringComponentRegistryInitializationTest {
         assertThat(beanFactory.containsSingleton("testEnhancer")).isTrue();
     }
 
+    @Test
+    void shouldDeferInitializationForConfigurationPropertiesBindingQualifiedBeans() {
+        DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory();
+        SpringLifecycleRegistry lifecycleRegistry = new SpringLifecycleRegistry();
+        lifecycleRegistry.setBeanFactory(beanFactory);
+
+        // A ROLE_APPLICATION bean qualified like Spring Boot's ConfigurationPropertiesBinding converters
+        // (e.g. Flyway's stringOrNumberMigrationVersionConverter) must be deferred.
+        beanFactory.registerBeanDefinition(
+                "qualifiedBean",
+                BeanDefinitionBuilder.rootBeanDefinition(QualifiedConverterBean.class).getBeanDefinition()
+        );
+        beanFactory.registerBeanDefinition("applicationBean", new RootBeanDefinition(Object.class));
+        beanFactory.registerBeanDefinition(
+                "testEnhancer",
+                BeanDefinitionBuilder.rootBeanDefinition(TestEnhancer.class).getBeanDefinition()
+        );
+
+        SpringComponentRegistry testSubject = new SpringComponentRegistry(beanFactory, lifecycleRegistry);
+        testSubject.postProcessBeanFactory(beanFactory);
+
+        testSubject.postProcessAfterInitialization(new QualifiedConverterBean(), "qualifiedBean");
+        assertThat(beanFactory.containsSingleton("testEnhancer")).isFalse();
+
+        testSubject.postProcessAfterInitialization(new Object(), "applicationBean");
+        assertThat(beanFactory.containsSingleton("testEnhancer")).isTrue();
+    }
+
     @SuppressWarnings("unused")
     private static class TestEnhancer implements ConfigurationEnhancer {
 
@@ -59,5 +93,10 @@ class SpringComponentRegistryInitializationTest {
         public void enhance(ComponentRegistry registry) {
             // No-op
         }
+    }
+
+    @Qualifier("org.springframework.boot.context.properties.ConfigurationPropertiesBinding")
+    private static class QualifiedConverterBean {
+
     }
 }

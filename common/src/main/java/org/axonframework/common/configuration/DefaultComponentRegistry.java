@@ -524,6 +524,21 @@ public class DefaultComponentRegistry implements ComponentRegistry {
                              .or(() -> Optional.ofNullable(fromParent(type, name, () -> null)));
         }
 
+        // Checks for a component without resolving it, here or in the parent, so that probing for a component does
+        // not create it, or anything it depends on.
+        @Override
+        public boolean hasComponent(Class<?> type, @Nullable String name) {
+            if (components.get(new Identifier<>(type, name)).isPresent()) {
+                return true;
+            }
+            Optional<? extends Component<?>> factoryComponent = fromFactory(type, name);
+            if (factoryComponent.isPresent()) {
+                components.put(factoryComponent.get());
+                return true;
+            }
+            return parent != null && parent.hasComponent(type, name);
+        }
+
         @Override
         public <C> Optional<C> getOptionalComponent(TypeReference<C> typeReference,
                                                     @Nullable String name) {

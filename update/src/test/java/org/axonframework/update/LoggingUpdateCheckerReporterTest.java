@@ -42,6 +42,7 @@ class LoggingUpdateCheckerReporterTest {
 
     private final UpdateCheckRequest sampleRequest = new UpdateCheckRequest(
             "my-machine-id-1234",
+            "my-machine-user-name",
             "my-instance-id-5678",
             "Linux",
             "6",

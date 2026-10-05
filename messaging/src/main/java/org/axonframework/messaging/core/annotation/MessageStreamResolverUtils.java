@@ -18,6 +18,7 @@ package org.axonframework.messaging.core.annotation;
 
 import org.jspecify.annotations.Nullable;
 import org.axonframework.common.annotation.Internal;
+import org.axonframework.messaging.core.DelayedMessageStream;
 import org.axonframework.messaging.core.FluxUtils;
 import org.axonframework.messaging.core.GenericMessage;
 import org.axonframework.messaging.core.Message;
@@ -40,14 +41,19 @@ import java.util.stream.StreamSupport;
  * Utility class that can resolve the result of any {@link MessageHandler}
  * into the expected corresponding {@link MessageStream}.
  * <p>
- * This utility class currently has a major drawback, which is that it only takes the "top level" type into account.
- * Differently put, if we receive a {@code Mono<Message>} as the given {@code result} of
- * {@link #resolveToStream(Object, MessageTypeResolver)}, we will push that {@code Message} through the given
- * {@code typeResolver} and make it the {@link Message#payload()}. Similarly, if we receive a
- * {@code CompletableFuture<List<Object>>} (or {@code CompletableFuture<List<Message>>} for that matter), we will return
- * a {@link MessageStream.Single}, while we are actually dealing with a {@link MessageStream}.
+ * Whether a returned {@link Iterable} represents <em>several</em> results or <em>one</em> result that happens to be a
+ * collection cannot be derived from the value itself. Callers therefore choose the cardinality up front:
+ * {@link #resolveToStream(Object, MessageTypeResolver)} spreads an {@code Iterable} over as many
+ * {@link Message Messages} as it holds elements, while {@link #resolveToSingleStream(Object, MessageTypeResolver)}
+ * carries it as the {@link Message#payload()} of a single {@code Message}. Both unwrap asynchronous containers such as
+ * {@link CompletableFuture} first, so that {@code List<T>} and {@code CompletableFuture<List<T>>} yield the same
+ * cardinality.
  * <p>
- * These are known limitation that will be supported in due time.
+ * This utility class currently has a drawback, which is that it only takes the "top level" type into account.
+ * Differently put, if we receive a {@code Mono<Message>} as the given {@code result}, we will push that
+ * {@code Message} through the given {@code typeResolver} and make it the {@link Message#payload()}.
+ * <p>
+ * This is a known limitation that will be supported in due time.
  *
  * @author Simon Zambrovski
  * @author Steven van Beelen
@@ -57,21 +63,56 @@ import java.util.stream.StreamSupport;
 public class MessageStreamResolverUtils {
 
     /**
-     * Resolves the given {@code result} into a {@link MessageStream}, using the {@code typeResolver} when a
-     * {@link Message} is constructed to define the {@link MessageType}.
+     * Resolves the given {@code result} into a {@link MessageStream} that may carry several {@link Message Messages},
+     * using the {@code typeResolver} when a {@code Message} is constructed to define the {@link MessageType}.
      * <p>
      * Is able to switch between {@link Optional}, {@link CompletableFuture}, {@link Iterable}, {@link Stream},
-     * {@link Mono}, and {@link Flux}. If none of the above apply, or the given {@code result} is {@code null},
-     * {@link MessageStream#just(Message)} will be used.
+     * {@link Mono}, and {@link Flux}. An {@code Iterable} or {@code Stream} is spread over as many {@code Messages} as
+     * it holds elements, also when wrapped in a {@code CompletableFuture} or {@code Optional}. If none of the above
+     * apply, {@link MessageStream#just(Message)} will be used. If the given {@code result} is {@code null},
+     * {@link MessageStream#empty()} is returned.
+     * <p>
+     * Use {@link #resolveToSingleStream(Object, MessageTypeResolver)} for handlers that produce exactly one result, as
+     * those must carry a returned collection as a whole instead of spreading it.
      *
      * @param result       The result to map into a {@link MessageStream}.
      * @param typeResolver The {@code MessageTypeResolver} used to resolve the {@link MessageType} for
      *                     {@link Message Messages} that are held in the returned
      *                     {@link MessageStream}.
-     * @return A {@code MessageStream} based on the given {@code result}.
+    * @param result       the result to map into a {@link MessageStream}
+    * @param typeResolver the {@code MessageTypeResolver} used to resolve the {@link MessageType} for
+    *                     {@link Message Messages} that are held in the returned
+    *                     {@link MessageStream}
+    * @return a {@code MessageStream} based on the given {@code result}
      */
     public static MessageStream<?> resolveToStream(@Nullable Object result,
                                                    MessageTypeResolver typeResolver) {
+        return resolve(result, typeResolver, true);
+    }
+
+    /**
+     * Resolves the given {@code result} into a {@link MessageStream} carrying at most one {@link Message}, using the
+     * {@code typeResolver} when that {@code Message} is constructed to define the {@link MessageType}.
+     * <p>
+     * Behaves like {@link #resolveToStream(Object, MessageTypeResolver)}, except that a returned {@link Iterable}
+     * becomes the {@link Message#payload()} of a single {@code Message} rather than being spread over one {@code
+     * Message} per element. This suits handlers that produce exactly one result, such as
+     * {@link org.axonframework.messaging.commandhandling.CommandHandler command handlers}, for which spreading would
+     * mean silently discarding all but the first element.
+     *
+     * @param result       the result to map into a {@link MessageStream}
+     * @param typeResolver the {@code MessageTypeResolver} used to resolve the {@link MessageType} for the
+     *                     {@link Message} that is held in the returned {@link MessageStream}
+     * @return a {@code MessageStream} based on the given {@code result}
+     */
+    public static MessageStream<?> resolveToSingleStream(@Nullable Object result,
+                                                         MessageTypeResolver typeResolver) {
+        return resolve(result, typeResolver, false);
+    }
+
+    private static MessageStream<?> resolve(@Nullable Object result,
+                                            MessageTypeResolver typeResolver,
+                                            boolean spreadIterables) {
         Objects.requireNonNull(typeResolver, "The Message Type Resolver must not be null.");
         if (result == null) {
             return MessageStream.empty();
@@ -90,15 +131,14 @@ public class MessageStreamResolverUtils {
         // Handle standard types with pattern matching switch
         return switch (result) {
             case MessageStream<?> messageStream -> messageStream;
-            case CompletableFuture<?> future -> MessageStream.fromFuture(
-                    future.thenApply(r -> r == null ? null : new GenericMessage(typeResolver.resolveOrThrow(r), r))
+            case CompletableFuture<?> future -> DelayedMessageStream.create(
+                    future.thenApply(r -> asMessageStream(resolve(r, typeResolver, spreadIterables)))
             );
-            case Optional<?> optional when optional.isPresent() -> {
-                Object r = optional.get();
-                yield MessageStream.just(new GenericMessage(typeResolver.resolveOrThrow(r), r));
-            }
+            case Optional<?> optional when optional.isPresent() -> resolve(optional.get(),
+                                                                           typeResolver,
+                                                                           spreadIterables);
             case Optional<?> empty -> MessageStream.empty();
-            case Iterable<?> iterable -> MessageStream.fromStream(
+            case Iterable<?> iterable when spreadIterables -> MessageStream.fromStream(
                     StreamSupport.stream(iterable.spliterator(), false)
                                  .map(r -> new GenericMessage(typeResolver.resolveOrThrow(r), r))
             );
@@ -107,6 +147,11 @@ public class MessageStreamResolverUtils {
             );
             default -> MessageStream.just(new GenericMessage(typeResolver.resolveOrThrow(result), result));
         };
+    }
+
+    @SuppressWarnings("unchecked")
+    private static MessageStream<Message> asMessageStream(MessageStream<?> stream) {
+        return (MessageStream<Message>) stream;
     }
 
     private MessageStreamResolverUtils() {

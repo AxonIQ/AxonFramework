@@ -1,0 +1,97 @@
+= Configuration
+
+Axon Framework's configuration API is modular by design.
+
+The `ApplicationConfigurers` build upon one another to provide additional functionality depending on the module they reside in.
+In doing so, you get to pick the layer of functionality you require, including reasonable defaults for Axon's infrastructure, without spinning up unnecessary components.
+
+Furthermore, every time you draft a xref:commands:command-handlers.adoc[Command Handling Component] or an xref:events:event-processors/index.adoc[Event Processor], a dedicated `Module` is created to encapsulate the registered components.
+It's this encapsulation which further drives the modularization of your application, thus ensuring there is no direct interaction between your command handlers and projectors, for example.
+
+Regardless of the modular design, you are free to register xref:configurer.adoc#components[components], xref:configurer.adoc#decorators[decorators], or a broader xref:configuration-enhancer.adoc[configuration enhancer] to include or replace whatever you need.
+Any of these components can be registered globally with the `ApplicationConfigurer`, or specifically for a `Module`.
+
+Although Axon Framework sports its own configuration API, those who prefer automated dependency injection tooling should be happy to know there's full integration with tools like xref:spring.adoc[Spring], with other options present on the roadmap.
+
+[IMPORTANT]
+.Doesn't Spring take care of the configuration for me?
+Yes, it does.
+Hence, if you combine Axon Framework with xref:spring.adoc[Spring], the majority of what's explained in this chapter is completely redundant for you.
+Hence, only read the other sections if you require more customization or simply are curious how this works.
+
+Getting started comes down to picking the xref:configurer.adoc#configurers[`ApplicationConfigurer`] that matches your application:
+
+[tabs]
+====
+Messaging only::
++
+--
+[source,java]
+----
+include::example$configuration/index/messaging/Application.java[tag=quickstart-messaging]
+----
+--
+
+With event sourcing::
++
+--
+[source,java]
+----
+include::example$configuration/index/eventsourcing/Application.java[tag=quickstart-eventsourcing]
+----
+--
+====
+
+[NOTE]
+.Do I need to know all this?
+In all, there's a lot to share about the configuration API of Axon Framework.
+Explaining all the facets is the goal of this chapter.
+However, it does so generically.
+Every chapter of the documentation covers the configuration of that specific section.
+Hence, you should be able to proceed with Axon just fine without dealing with the details as covered here.
+
+[#core-concepts]
+== Core concepts
+
+The list below quickly mentions the core concepts that come into play when configuring an application.
+For more detail, be sure to read the other sections within this chapter.
+
+xref:configurer.adoc#configurers[**Configurer**]:: The entry point for building an application is the `ApplicationConfigurer`.
+It's here where everything's registered before start, and what provides the start hook to produce the final `Configuration`.
+
+xref:configurer.adoc#components[**Components**]:: Every piece of infrastructure becomes a `Component` in Axon's configuration.
+This holds for the `CommandBus`, as well as the Message Handling Components you register.
+
+xref:configurer.adoc#decorators[**Decorators**]:: Every `Component` can be decorated to add behavior.
+Axon uses this heavily to expand upon basic infra components to introduce higher-level functionality.
+
+xref:registries.adoc[**Component registry and lifecycle registry**]:: The two registries, `ComponentRegistry` and `LifecycleRegistry`, that every other configuration concept above is built upon.
+
+xref:configuration-enhancer.adoc[**Configuration enhancer**]:: A hook for conditionally extending configuration at build time, based on which components are already registered.
+
+xref:module.adoc[**Module**]:: A grouping mechanism for encapsulating a set of components with explicit boundaries, registered as a unit with the configurer.
+
+xref:configuration.adoc[**Configuration**]:: The immutable result of building a configurer, used to retrieve components at runtime.
+
+xref:component-factory.adoc[**Component factory**]:: A mechanism for constructing named components on demand, rather than eagerly at startup.
+
+xref:spring.adoc[**Spring Boot integration**]:: How the Spring Boot extension maps the configuration API onto the Spring Application Context.
+
+== Configuration overview
+
+This section covers the complete configuration API:
+
+[cols="<,<"]
+|===
+|Sub-section |Purpose
+
+|xref:configurer.adoc#configurers[Configurers] |Section explaining the starting point of an Axon application with the `ApplicationConfigurer`
+|xref:configurer.adoc#components[Components] |The infrastructure objects registered with the configuration are wrapped in a configuration `Component`
+|xref:configurer.adoc#decorators[Decorating components] |Dedicated section showing how any component can be decorated to add functionality
+|xref:registries.adoc[Component registry and lifecycle registry] |The low-level `ComponentRegistry` and `LifecycleRegistry` that every configurer, component, decorator, module, enhancer, and factory is built upon
+|xref:configuration-enhancer.adoc[Configuration enhancers] |Conditionally extending configuration at build time
+|xref:module.adoc[Modules] |Grouping and encapsulating components with explicit boundaries
+|xref:configuration.adoc[Configuration] |Section describing the outcome of building and starting a configurer, resulting in the `Configuration` for runtime purposes
+|xref:component-factory.adoc[Component factories] |Constructing named components on demand
+|xref:spring.adoc[Spring Boot integration] |How the Spring Boot extension maps the configuration API to the Spring Application Context
+|===

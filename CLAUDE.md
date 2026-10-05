@@ -120,9 +120,11 @@ Additional modules:
 - `extensions/spring/` — Spring Boot auto-configuration and starter
 - `extensions/metrics/` — Dropwizard and Micrometer metrics
 - `extensions/tracing/` — OpenTelemetry tracing is provided by Axoniq Framework, not this OSS repository
-- `stash/legacy*/` — Backward compatibility layers for older Axon versions
-- `stash/migration/` — OpenRewrite migration recipes
-- `stash/todo/` — Axon Framework 4 parts to be ported to Axon Framework 5
+- `legacy/` - `axon-legacy`: backward compatibility layers for Axon Framework 4 APIs (sagas, deadlines). Part of the build.
+- `stash/` - Not part of the build. Nothing under `stash/` is listed in the root pom's `<modules>`, so it is never
+  compiled, tested, or published by CI. It holds Axon Framework 4 code kept as a reference until it is ported into a
+  real module.
+- `stash/legacy/` - `stash-axon-legacy`: the Axon Framework 4 saga and deadline sources awaiting a port into `legacy/`
 - `integrationtests/` — Cross-module integration test suite
 - `build/parent/` — Parent POM with dependency management\
 - `examples/` — Example applications for smoke testing and demonstration (build with `-Pexamples`)

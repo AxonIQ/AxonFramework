@@ -39,9 +39,12 @@ class FluentOptionalAccessorEntityMemberTest
 
     @Override
     protected AnnotatedEntityMetamodel<FluentOwner> getMetamodel() {
-        return AnnotatedEntityMetamodel.forConcreteType(
-                FluentOwner.class, parameterResolverFactory, messageTypeResolver, messageConverter, eventConverter
-        );
+        return AnnotatedEntityMetamodel.forConcreteType(FluentOwner.class,
+                                                        parameterResolverFactory,
+                                                        handlerDefinition,
+                                                        messageTypeResolver,
+                                                        messageConverter,
+                                                        eventConverter);
     }
 
     @Test

@@ -88,6 +88,8 @@ class EventProcessorPropertiesIT {
                     "axon.eventhandling.processors.foo.thread-count=3",
                     "axon.eventhandling.processors.foo.token-claim-interval=4",
                     "axon.eventhandling.processors.foo.token-claim-interval-time-unit=SECONDS",
+                    "axon.eventhandling.processors.foo.claim-extension-threshold=1234",
+                    "axon.eventhandling.processors.foo.coordinator-claim-extension=true",
                     "axon.eventhandling.processors.bar.initial-segment-count=77",
             }
     )
@@ -114,6 +116,8 @@ class EventProcessorPropertiesIT {
             assertThat(castedFooSettings.threadCount()).isEqualTo(3);
             assertThat(castedFooSettings.getTokenClaimInterval()).isEqualTo(4);
             assertThat(castedFooSettings.getTokenClaimIntervalTimeUnit()).isEqualTo(TimeUnit.SECONDS);
+            assertThat(castedFooSettings.claimExtensionThresholdInMillis()).isEqualTo(1234);
+            assertThat(castedFooSettings.coordinatorClaimExtension()).isTrue();
 
             EventProcessorProperties.ProcessorSettings defaultSettings = new EventProcessorProperties.ProcessorSettings();
             EventProcessorSettings barSettings = eventProcessorProperties.settings().get("bar");
@@ -129,6 +133,10 @@ class EventProcessorPropertiesIT {
             assertThat(castedBarSettings.threadCount()).isEqualTo(defaultSettings.threadCount());
             assertThat(castedBarSettings.getTokenClaimInterval()).isEqualTo(defaultSettings.getTokenClaimInterval());
             assertThat(castedBarSettings.getTokenClaimIntervalTimeUnit()).isEqualTo(defaultSettings.getTokenClaimIntervalTimeUnit());
+            assertThat(castedBarSettings.claimExtensionThresholdInMillis())
+                    .isEqualTo(defaultSettings.claimExtensionThresholdInMillis());
+            assertThat(castedBarSettings.coordinatorClaimExtension())
+                    .isEqualTo(defaultSettings.coordinatorClaimExtension());
         }
     }
 

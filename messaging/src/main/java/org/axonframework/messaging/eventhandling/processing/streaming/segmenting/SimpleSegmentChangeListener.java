@@ -16,8 +16,12 @@
 
 package org.axonframework.messaging.eventhandling.processing.streaming.segmenting;
 
+import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
+import org.jspecify.annotations.Nullable;
+
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 
 /**
@@ -28,17 +32,17 @@ import java.util.function.Function;
  */
 public class SimpleSegmentChangeListener implements SegmentChangeListener {
 
-    private final Function<Segment, CompletableFuture<Void>> onClaim;
+    private final BiFunction<Segment, TrackingToken, CompletableFuture<Void>> onClaim;
     private final Function<Segment, CompletableFuture<Void>> onRelease;
 
     /**
      * Creates a listener with explicit claim and release handlers.
      *
-     * @param onClaim   The claim handler.
+     * @param onClaim   The claim handler, receiving the claimed segment and the position it resumes from.
      * @param onRelease The release handler.
      */
     public SimpleSegmentChangeListener(
-            Function<Segment, CompletableFuture<Void>> onClaim,
+            BiFunction<Segment, TrackingToken, CompletableFuture<Void>> onClaim,
             Function<Segment, CompletableFuture<Void>> onRelease
     ) {
         Objects.requireNonNull(onClaim, "Claim listener may not be null");
@@ -48,8 +52,8 @@ public class SimpleSegmentChangeListener implements SegmentChangeListener {
     }
 
     @Override
-    public CompletableFuture<Void> onSegmentClaimed(Segment segment) {
-        return onClaim.apply(segment);
+    public CompletableFuture<Void> onSegmentClaimed(Segment segment, @Nullable TrackingToken from) {
+        return onClaim.apply(segment, from);
     }
 
     @Override

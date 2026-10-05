@@ -15,9 +15,11 @@
  */
 package migration.paths.messages;
 
+import org.axonframework.messaging.commandhandling.annotation.Command;
 import org.axonframework.modelling.annotation.TargetEntityId;
 
 // tag::target-entity-id[]
+@Command(routingKey = "orderId")
 public class MarkOrderAsShippedCommand {
     @TargetEntityId
     private String orderId;

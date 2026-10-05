@@ -1,0 +1,33 @@
+spring:
+  autoconfigure:
+    # This example needs a Dynamic Consistency Boundary event store. The request-bike slice tags events with
+    # bikeId, rentalId and renter at once, and the saga recipes correlate rental and payment events by tag.
+    # The aggregate-based JPA engine rejects multiple tags per event outright, and it is ordered ahead of the
+    # in-memory engine, so leaving it enabled makes every multi-tag append fail with
+    # TooManyTagsOnEventMessageException. JPA itself is still used, for the tracking token store and for the
+    # process state of the repository recipe.
+    exclude: org.axonframework.extension.springboot.autoconfig.JpaEventStoreAutoConfiguration
+  docker:
+    compose:
+      file: file:examples/docker-compose.yaml
+      lifecycle-management: start_only
+axon:
+  converter:
+    general: jackson
+  axonserver:
+    # This example depends on a Dynamic Consistency Boundary event store: the request-bike slice sources
+    # across two tags at once, and the saga recipes correlate rental and payment events by tag. Axon Server
+    # provides such a store; without it the application falls back to the in-memory engine, which is also
+    # DCB-capable but obviously not durable.
+    enabled: true
+saga:
+  # Which implementation of the rental payment process is active. Exactly one may run at a time,
+  # otherwise every recipe would dispatch the same commands.
+  # One of: repository | injectentity | eventsourced | eventsourced-append | verticalslices
+  recipe: injectentity
+  deadline:
+    # How long a prepared payment may stay unconfirmed before it is cancelled. Replaces the
+    # Axon Framework 4 "cancelPayment" deadline.
+    payment-timeout: PT30S
+    # How often the pending-payment to-do list is swept for overdue entries.
+    sweep-interval: PT5S

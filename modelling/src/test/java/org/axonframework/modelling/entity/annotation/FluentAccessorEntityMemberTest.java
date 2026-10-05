@@ -40,6 +40,7 @@ class FluentAccessorEntityMemberTest
     protected AnnotatedEntityMetamodel<FluentOwner> getMetamodel() {
         return AnnotatedEntityMetamodel.forConcreteType(FluentOwner.class,
                                                         parameterResolverFactory,
+                                                        handlerDefinition,
                                                         messageTypeResolver,
                                                         messageConverter,
                                                         eventConverter);

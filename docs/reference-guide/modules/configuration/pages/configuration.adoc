@@ -1,0 +1,101 @@
+= Configuration
+
+Once `ApplicationConfigurer#build()` is called, it produces an `AxonConfiguration`.
+This interface extends `Configuration`, which provides read-only access to all components that were registered during configuration, whether registered directly as a xref:configurer.adoc#components[Component], wrapped by a xref:configurer.adoc#decorators[ComponentDecorator], contributed by a xref:configuration-enhancer.adoc[ConfigurationEnhancer] or xref:module.adoc[Module], or produced on demand by a xref:component-factory.adoc[ComponentFactory].
+
+[#retrieving-components]
+== Retrieving components
+
+The primary method to retrieve a component is `getComponent(Class<C> type)`:
+
+[source,java]
+----
+include::example$configuration/configurer/retrieval/ComponentRetrievalExample.java[tag=get-component-example]
+----
+
+When a component is registered under a generic type (for example `Repository<MyId, MyEntity>`), use the
+`TypeReference`-based overload instead of `Class` so the full generic type information is preserved:
+
+[source,java]
+----
+include::example$configuration/configurer/retrieval/TypeReferenceRetrievalExample.java[tag=type-reference-retrieval-example]
+----
+
+Every `Class`-based retrieval method below has a matching `TypeReference`-based overload that behaves the same way.
+
+Additional retrieval methods let you handle optional components and named components:
+
+`getOptionalComponent(Class<C>)` / `getOptionalComponent(TypeReference<C>)`::
+Returns an `Optional`, useful when a component may not have been registered.
+
+`getComponent(Class<C>, String name)` / `getComponent(TypeReference<C>, String name)`::
+Returns the component registered under the given type and name.
+Used when multiple components of the same type exist (for example, multiple `EventProcessor` instances).
+
+`getOptionalComponent(Class<C>, String name)` / `getOptionalComponent(TypeReference<C>, String name)`::
+Returns an `Optional` for the component registered under the given type and name.
+
+`getComponent(Class<C>, Supplier<C> defaultImpl)`::
+Returns the component registered under the given type, falling back to `defaultImpl` when none is registered.
+The default is then registered as the component for that type, so later calls return the same instance.
+
+`getComponent(Class<C>, String name, Supplier<C> defaultImpl)`::
+Same as `getComponent(Class<C>, Supplier<C>)`, scoped to a specific component name.
+
+`hasComponent(Class<?>)` / `hasComponent(TypeReference<?>)`::
+Returns `true` when a component is present.
+Useful in `ConfigurationEnhancer` implementations to apply decorators conditionally.
+
+`hasComponent(Class<?>, String name)` / `hasComponent(TypeReference<?>, String name)`::
+Returns `true` when a component is present under the given type and name.
+
+`getComponents(Class<C>)`::
+Returns a `Map<String, C>` of all registered components of a given type.
+The map may contain a `null` key for the unnamed component and `String` keys for named components.
+
+`getModuleConfiguration(String name)` and `getModuleConfigurations()`::
+Return the `Configuration` instances produced by registered `Modules`.
+These give access to components that are otherwise encapsulated within a module.
+
+`getParent()`::
+Returns the parent `Configuration`, or `null` if none exists.
+Components can use this to build hierarchical lookups that prefer a component from a child configuration over one from a parent configuration.
+
+When running with the Spring Boot Starter, you typically never call these retrieval methods yourself: Axon components are exposed as Spring beans and can be injected with `@Autowired` or constructor injection like any other bean.
+This works because the `SpringComponentRegistry` also acts as a `BeanFactoryPostProcessor`, bridging bean lookups back to the underlying `Configuration`.
+See xref:spring.adoc#spring-and-axon-impl-details[Implementation details] for how this bridge works in both directions.
+
+[NOTE]
+====
+`getComponents(Class<C>)` only returns components that are already instantiated.
+Components that would be created on demand by a xref:component-factory.adoc[`ComponentFactory`] but have not yet been requested are not included.
+Use `getComponent(Class<C>, String)` or `getOptionalComponent(Class<C>, String)` to trigger factory-based creation.
+See xref:component-factory.adoc[Component factories] for more on how factory-created components interact with retrieval.
+====
+
+== Starting and stopping
+
+`AxonConfiguration` is the specialized form of `Configuration` returned by `ApplicationConfigurer#build()`.
+Next to the read-only component access `Configuration` provides, it adds two lifecycle operations that activate (and later deactivate) everything that was configured:
+
+`start()`::
+Invokes all registered startup handlers, in the phase order described under xref:configurer.adoc#component-lifecycle[component lifecycle].
+After this call, all messaging infrastructure is active.
+
+`shutdown()`::
+Invokes all registered shutdown handlers, in reverse phase order.
+Call this when your application exits.
+
+[source,java]
+----
+include::example$configuration/configurer/lifecycle/StartStopExample.java[tag=start-stop-example]
+----
+
+The xref:configurer.adoc#configurers[`ApplicationConfigurer#start()`] convenience method combines `build()` and `start()`.
+
+When you configure your application fully declaratively, through `MessagingConfigurer`, `ModellingConfigurer`, or `EventSourcingConfigurer`, invoking `start()` is mandatory.
+Without it, none of the registered startup handlers run and your messaging infrastructure never becomes active.
+Likewise, call `shutdown()` when your application exits so components can release resources and stop gracefully.
+
+This is not something you need to worry about when a dependency injection framework manages the `AxonConfiguration` for you.
+Axon's xref:spring.adoc[Spring] integration, for example, ties `start()` and `shutdown()` into the Spring application context lifecycle, so you never have to invoke them yourself.

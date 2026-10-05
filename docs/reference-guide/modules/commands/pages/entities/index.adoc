@@ -42,5 +42,9 @@ This is the recommended approach for Vertical Slice Architecture.
 
 |xref:commands:entities/entity-polymorphism.adoc[Polymorphic entities]
 |How to model multiple concrete entity types sharing a common abstract parent, with type selection at creation time.
+
+|xref:messaging-concepts:component-message-intercepting.adoc#entity-command-handler-interceptors[Entity-specific command handler interceptors]
+|How to derive an interceptor that interceptors a command before it enters a specific entity, supporting interceptor tasks using that entity.
+
 |===
 

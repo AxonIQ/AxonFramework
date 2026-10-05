@@ -18,6 +18,7 @@ package org.axonframework.extension.springboot.autoconfig;
 
 import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.message.SchemaStore;
+import org.apache.avro.util.ClassSecurityValidator;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.conversion.ConversionException;
 import org.axonframework.conversion.Converter;
@@ -55,6 +56,27 @@ import static org.junit.jupiter.api.Assertions.*;
 class AvroSchemaStoreAutoConfigurationTest {
 
     private ApplicationContextRunner testApplicationContext;
+
+    private static ClassSecurityValidator.ClassSecurityPredicate originalGlobalValidator;
+
+    @BeforeAll
+    static void trustComplexObjectSchemas() {
+        originalGlobalValidator = ClassSecurityValidator.getGlobal();
+        ClassSecurityValidator.setGlobal(
+                ClassSecurityValidator.composite(
+                        originalGlobalValidator,
+                        ClassSecurityValidator.builder()
+                                              .add(ComplexObject.class)
+                                              .add(org.axonframework.extension.springboot.fixture.avro.test2.ComplexObject.class)
+                                              .build()
+                )
+        );
+    }
+
+    @AfterAll
+    static void restoreGlobalValidator() {
+        ClassSecurityValidator.setGlobal(originalGlobalValidator);
+    }
 
     @BeforeEach
     void setUp() {

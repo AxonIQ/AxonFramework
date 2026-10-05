@@ -15,6 +15,7 @@
  */
 package org.axonframework.messaging.queryhandling;
 
+import org.axonframework.common.FutureUtils;
 import org.axonframework.common.infra.MockComponentDescriptor;
 import org.axonframework.common.util.MockException;
 import org.axonframework.messaging.core.FluxUtils;
@@ -53,6 +54,7 @@ import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
@@ -746,6 +748,55 @@ class SimpleQueryBusTest {
                                                 .orElseThrow();
             // then only the subscription with buffer room actually received the update...
             assertThat(deliveredCount).isEqualTo(1);
+        }
+
+        @Test
+        void emitUpdateWithThrowingUpdateSupplierAndNoProcessingContextCompletesFutureExceptionallyInsteadOfThrowing() {
+            // given...
+            QueryMessage testQuery = new GenericQueryMessage(QUERY_TYPE, QUERY_PAYLOAD);
+            testSubject.subscriptionQuery(testQuery, null, Queues.SMALL_BUFFER_SIZE);
+            MockException expected = new MockException("Mock");
+            Supplier<SubscriptionQueryUpdateMessage> throwingSupplier = () -> {
+                throw expected;
+            };
+            // when - the call itself must not throw, the failure must surface through the returned future...
+            CompletableFuture<Void> result = testSubject.emitUpdate(query -> true, throwingSupplier, null);
+            // then...
+            assertThat(result).isCompletedExceptionally();
+            assertThatThrownBy(() -> FutureUtils.joinAndUnwrap(result, Duration.ofSeconds(1)))
+                    .isSameAs(expected);
+        }
+
+        @Test
+        void emitUpdateWithThrowingUpdateSupplierDeferredToAfterCommitDoesNotBlockOtherDeferredUpdates() {
+            // given...
+            QueryMessage failingQuery = new GenericQueryMessage(QUERY_TYPE, QUERY_PAYLOAD);
+            QueryMessage succeedingQuery = new GenericQueryMessage(QUERY_TYPE, QUERY_PAYLOAD);
+            testSubject.subscribe(QUERY_NAME, (query, context) -> MessageStream.empty().cast());
+            MessageStream<QueryResponseMessage> succeedingResponses =
+                    testSubject.subscriptionQuery(succeedingQuery, null, Queues.SMALL_BUFFER_SIZE);
+            testSubject.subscriptionQuery(failingQuery, null, Queues.SMALL_BUFFER_SIZE);
+            SubscriptionQueryUpdateMessage updateMessage =
+                    new GenericSubscriptionQueryUpdateMessage(UPDATE_PAYLOAD_TYPE, UPDATE_PAYLOAD);
+            Supplier<SubscriptionQueryUpdateMessage> throwingSupplier = () -> {
+                throw new MockException("Mock");
+            };
+            UnitOfWork uow = UnitOfWorkTestUtils.aUnitOfWork();
+            // when both updates are staged for after-commit, the first one bound to throw on delivery...
+            uow.onInvocation(context -> {
+                testSubject.emitUpdate(query -> query.identifier().equals(failingQuery.identifier()),
+                                       throwingSupplier,
+                                       context);
+                return testSubject.emitUpdate(query -> query.identifier().equals(succeedingQuery.identifier()),
+                                              () -> updateMessage,
+                                              context);
+            });
+            // then the UnitOfWork still commits normally, despite the deferred task throwing...
+            assertThatCode(() -> uow.execute().join()).doesNotThrowAnyException();
+            // and the unrelated, second deferred update was still delivered...
+            StepVerifier.create(FluxUtils.of(succeedingResponses).map(MessageStream.Entry::message))
+                        .expectNextMatches(response -> Objects.equals(response.payload(), UPDATE_PAYLOAD))
+                        .verifyTimeout(Duration.ofMillis(100));
         }
     }
 

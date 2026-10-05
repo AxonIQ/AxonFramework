@@ -24,22 +24,37 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.ListableBeanFactory;
+import org.springframework.beans.factory.annotation.AnnotatedBeanDefinition;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.beans.factory.support.BeanDefinitionBuilder;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProcessor;
+import org.springframework.context.annotation.ClassPathScanningCandidateComponentProvider;
+import org.springframework.core.type.filter.AnnotationTypeFilter;
+import org.springframework.util.ClassUtils;
 
+import java.lang.reflect.Modifier;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 import static java.lang.String.format;
 import static org.axonframework.common.StringUtils.lowerCaseFirstCharacterOf;
 
 /**
- * A {@link BeanDefinitionRegistryPostProcessor} implementation that scans for Aggregate types and registers a
- * {@link SpringEventSourcedEntityConfigurer configurer} for each Aggregate found.
+ * A {@link BeanDefinitionRegistryPostProcessor} implementation that scans for Entity types and registers a
+ * {@link SpringEventSourcedEntityConfigurer configurer} for each Entity found.
+ * <p>
+ * Polymorphic entity hierarchies whose abstract parent lists its subtypes through {@link EventSourced#concreteTypes()}
+ * are never registered as a {@link BeanDefinition} by Spring's own component scan (abstract classes are not candidate
+ * components), so they cannot be found through {@link ListableBeanFactory#getBeanNamesForAnnotation(Class)}. To support
+ * that documented pattern, this class additionally runs its own classpath scan (see {@code #findAbstractEntityRoots()})
+ * across the given {@code basePackages}, independent of Spring's bean registry, to locate those abstract roots
+ * directly.
  *
  * @author Allard Buijze
  * @author Simon Zambrovski
@@ -51,6 +66,27 @@ public class SpringEventSourcedEntityLookup implements BeanDefinitionRegistryPos
     private static final Logger logger = LoggerFactory.getLogger(SpringEventSourcedEntityLookup.class);
 
     private static final String ID_TYPE_CLASS = "idType";
+    private static final String REGISTRAR_BEAN_NAME_SUFFIX = "$$Registrar";
+
+    private final List<String> basePackages;
+
+    /**
+     * Constructs a {@code SpringEventSourcedEntityLookup} discovering entities through Spring's bean registry.
+     */
+    public SpringEventSourcedEntityLookup() {
+        this(List.of());
+    }
+
+    /**
+     * Constructs a {@code SpringEventSourcedEntityLookup} that, in addition to the regular bean-registry-based
+     * discovery, scans the given {@code basePackages} for abstract polymorphic entity roots (see
+     * {@code #findAbstractEntityRoots()}).
+     *
+     * @param basePackages the packages to scan for abstract classes annotated with {@link EventSourced}
+     */
+    public SpringEventSourcedEntityLookup(List<String> basePackages) {
+        this.basePackages = Objects.requireNonNull(basePackages, "The basePackages must not be null.");
+    }
 
     /**
      * Builds a hierarchy model from the given {@code entityPrototypes} found in the given {@code beanFactory}.
@@ -70,7 +106,7 @@ public class SpringEventSourcedEntityLookup implements BeanDefinitionRegistryPos
             Class<E> entityType = (Class<E>) beanFactory.getType(prototype);
             if (entityType == null) {
                 logger.info("Cannot find Entity class for type [{}], hence ignoring.", prototype);
-                break;
+                continue;
             }
 
             SpringEntity<E> springEntity = new SpringEntity<>(prototype, entityType);
@@ -131,16 +167,17 @@ public class SpringEventSourcedEntityLookup implements BeanDefinitionRegistryPos
         Map<SpringEntity<? super Object>, Map<Class<?>, String>> hierarchy =
                 buildEntityHierarchy(beanFactory, entitiesBeans);
 
-        //noinspection TypeParameterExplicitlyExtendsObject
+        Set<Class<?>> registeredEntityTypes = new HashSet<>();
+
         for (Map.Entry<SpringEntity<? super Object>, Map<Class<? extends Object>, String>> entity : hierarchy.entrySet()) {
             Class<?> entityType = entity.getKey().getClassType();
             Map<Class<?>, String> entitySubtypes = entity.getValue();
             String entityPrototype = entity.getKey().getBeanName();
 
-            String registrarBeanName = entityPrototype + "$$Registrar";
+            String registrarBeanName = entityPrototype + REGISTRAR_BEAN_NAME_SUFFIX;
             if (beanFactory.containsBeanDefinition(registrarBeanName)) {
-                logger.info("Registrar for {} already available. Skipping configuration", entityPrototype);
-                break;
+                logger.info("Registrar bean [{}] already available. Skipping configuration", registrarBeanName);
+                continue;
             }
 
             if (hasSubtypesOrIsPrototype(entitySubtypes, beanFactory, entityPrototype) && entityType != null) {
@@ -151,11 +188,85 @@ public class SpringEventSourcedEntityLookup implements BeanDefinitionRegistryPos
                                                                          "Id type must be provided for "
                                                                                  + entityPrototype)
                                ))
-                               .ifPresent(registrarBeanDefinition -> bdRegistry.registerBeanDefinition(
-                                       registrarBeanName, registrarBeanDefinition
-                               ));
+                               .ifPresent(registrarBeanDefinition -> {
+                                   bdRegistry.registerBeanDefinition(registrarBeanName, registrarBeanDefinition);
+                                   registeredEntityTypes.add(entityType);
+                               });
             }
         }
+
+        for (Class<?> abstractRoot : findAbstractEntityRoots(beanFactory.getBeanClassLoader())) {
+            if (registeredEntityTypes.contains(abstractRoot)) {
+                continue;
+            }
+            String registrarBeanName =
+                    lowerCaseFirstCharacterOf(abstractRoot.getSimpleName()) + REGISTRAR_BEAN_NAME_SUFFIX;
+            if (beanFactory.containsBeanDefinition(registrarBeanName)) {
+                logger.info("Registrar bean [{}] already available. Skipping configuration", registrarBeanName);
+                continue;
+            }
+            AnnotationUtils.findAnnotationAttributes(abstractRoot, EventSourced.class)
+                           .map(props -> buildEntityBeanDefinition(
+                                   abstractRoot,
+                                   (Class<?>) Objects.requireNonNull(props.get(ID_TYPE_CLASS),
+                                                                     "Id type must be provided for "
+                                                                             + abstractRoot.getName())
+                           ))
+                           .ifPresent(registrarBeanDefinition -> bdRegistry.registerBeanDefinition(
+                                   registrarBeanName, registrarBeanDefinition
+                           ));
+        }
+    }
+
+    /**
+     * Scans {@link #basePackages} for abstract classes annotated with {@link EventSourced}.
+     * <p>
+     * Spring's own component scan never registers a {@link BeanDefinition} for an abstract type, so a polymorphic
+     * entity hierarchy whose parent lists its subtypes through {@link EventSourced#concreteTypes()} (rather than having
+     * every subtype individually annotated) is otherwise invisible to
+     * {@link ListableBeanFactory#getBeanNamesForAnnotation(Class)}. This scan is independent of the bean registry, so
+     * it finds those roots regardless. Concrete classes are deliberately excluded here, since those are already
+     * discoverable as beans and handled by the {@link #buildEntityHierarchy(ListableBeanFactory, String[])} path.
+     * <p>
+     * The resulting registrar bean name is derived from the root's simple class name, so two abstract roots sharing a
+     * simple name in different packages would collide on a single registrar. This is a known limitation of this
+     * scan-based path, unlike the bean-registry-based path where Spring's own bean naming already guards against it.
+     *
+     * @param classLoader the class loader to resolve scanned candidate class names with
+     * @return the abstract types annotated with {@link EventSourced}, found in {@link #basePackages}
+     */
+    private Set<Class<?>> findAbstractEntityRoots(ClassLoader classLoader) {
+        if (basePackages.isEmpty()) {
+            return Set.of();
+        }
+
+        ClassPathScanningCandidateComponentProvider scanner = new ClassPathScanningCandidateComponentProvider(false) {
+            @Override
+            protected boolean isCandidateComponent(AnnotatedBeanDefinition beanDefinition) {
+                return beanDefinition.getMetadata().isIndependent();
+            }
+        };
+        scanner.addIncludeFilter(new AnnotationTypeFilter(EventSourced.class, true, false));
+
+        Set<Class<?>> abstractRoots = new HashSet<>();
+        for (String basePackage : basePackages) {
+            for (BeanDefinition candidate : scanner.findCandidateComponents(basePackage)) {
+                String beanClassName = candidate.getBeanClassName();
+                if (beanClassName == null) {
+                    logger.warn("Cannot determine bean class name for candidate [{}], hence ignoring.", candidate);
+                    continue;
+                }
+                try {
+                    Class<?> candidateType = ClassUtils.forName(beanClassName, classLoader);
+                    if (Modifier.isAbstract(candidateType.getModifiers())) {
+                        abstractRoots.add(candidateType);
+                    }
+                } catch (ClassNotFoundException | LinkageError e) {
+                    logger.warn("Cannot load candidate Entity class [{}], hence ignoring.", beanClassName, e);
+                }
+            }
+        }
+        return abstractRoots;
     }
 
     /**

@@ -22,6 +22,8 @@ import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.annotation.AnnotatedHandlerInspector;
 import org.axonframework.messaging.core.annotation.AnnotatedMessageHandlingMemberDefinition;
+import org.axonframework.messaging.core.annotation.AnnotationMessageTypeResolver;
+import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
 import org.axonframework.messaging.core.annotation.ClasspathParameterResolverFactory;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
@@ -255,7 +257,12 @@ class MethodSequencingPolicyEventHandlerDefinitionTest {
         @Test
         void inspectionOfClassWithPropertyPolicyAndExceptionHandlerSucceeds() {
             // Reproduces issue #4705: inspection failed with "Failed to create SequencingPolicy instance: null"
-            assertDoesNotThrow(() -> AnnotatedHandlerInspector.inspectType(EventHandlerWithExceptionHandler.class));
+            assertDoesNotThrow(() -> AnnotatedHandlerInspector.inspectType(
+                    EventHandlerWithExceptionHandler.class,
+                    new AnnotationMessageTypeResolver(),
+                    ClasspathParameterResolverFactory.forClass(EventHandlerWithExceptionHandler.class),
+                    ClasspathHandlerDefinition.forClass(EventHandlerWithExceptionHandler.class)
+            ));
         }
     }
 

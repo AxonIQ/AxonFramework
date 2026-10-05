@@ -20,6 +20,7 @@ import org.axonframework.eventsourcing.EventSourcedEntityFactory;
 import org.axonframework.eventsourcing.configuration.EventSourcedEntityModule;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
 import org.axonframework.messaging.core.MessageTypeResolver;
+import org.axonframework.messaging.core.annotation.HandlerDefinition;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
 import org.axonframework.messaging.core.conversion.MessageConverter;
 import org.axonframework.messaging.eventhandling.conversion.EventConverter;
@@ -37,6 +38,7 @@ public class AxonConfig {
                                 .addConcreteType(AnnotatedEntityMetamodel.forConcreteType(
                                         OpenLoopGiftCard.class,
                                         configuration.getComponent(ParameterResolverFactory.class),
+                                        configuration.getComponent(HandlerDefinition.class),
                                         configuration.getComponent(MessageTypeResolver.class),
                                         configuration.getComponent(MessageConverter.class),
                                         configuration.getComponent(EventConverter.class)
@@ -44,6 +46,7 @@ public class AxonConfig {
                                 .addConcreteType(AnnotatedEntityMetamodel.forConcreteType(
                                         RechargeableGiftCard.class,
                                         configuration.getComponent(ParameterResolverFactory.class),
+                                        configuration.getComponent(HandlerDefinition.class),
                                         configuration.getComponent(MessageTypeResolver.class),
                                         configuration.getComponent(MessageConverter.class),
                                         configuration.getComponent(EventConverter.class)

@@ -22,7 +22,9 @@ import org.axonframework.messaging.commandhandling.CommandHandler;
 import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.commandhandling.CommandResultMessage;
 import org.axonframework.messaging.commandhandling.DuplicateCommandHandlerSubscriptionException;
+import org.axonframework.messaging.commandhandling.GenericCommandResultMessage;
 import org.axonframework.messaging.commandhandling.NoHandlerForCommandException;
+import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
@@ -62,15 +64,20 @@ public class ConcreteEntityMetamodel<E> implements DescribableComponent, EntityM
     private final List<EntityChildMetamodel<?, E>> children = new LinkedList<>();
     private final Map<QualifiedName, EntityCommandHandler<E>> instanceCommandHandlers = new HashMap<>();
     private final Map<QualifiedName, CommandHandler> creationalCommandHandlers = new HashMap<>();
+    private final List<EntityCommandHandlerInterceptor<E>> commandHandlerInterceptors;
+    private final EntityCommandHandlerInterceptorChain<E> creationalHandlerChain;
+    private final EntityCommandHandlerInterceptorChain<E> instanceHandlerChain;
     private final @Nullable EntityEvolver<E> entityEvolver;
     private final Set<QualifiedName> supportedCommandNames = new HashSet<>();
     private final Set<QualifiedName> supportedInstanceCommandNames = new HashSet<>();
     private final Set<QualifiedName> supportedCreationalCommandNames = new HashSet<>();
 
+    @SuppressWarnings("DataFlowIssue") // Suppresses non-null doHandleInstance, which always needs a non-null entity.
     private ConcreteEntityMetamodel(Class<E> entityType,
                                     Map<QualifiedName, EntityCommandHandler<E>> instanceCommandHandlers,
                                     Map<QualifiedName, CommandHandler> creationalCommandHandlers,
                                     List<EntityChildMetamodel<?, E>> children,
+                                    List<EntityCommandHandlerInterceptor<E>> commandHandlerInterceptors,
                                     @Nullable EntityEvolver<E> entityEvolver) {
         this.entityType = requireNonNull(entityType, "The entityType may not be null.");
         this.entityEvolver = entityEvolver;
@@ -78,6 +85,13 @@ public class ConcreteEntityMetamodel<E> implements DescribableComponent, EntityM
                                                            "The instanceCommandHandlers may not be null."));
         this.creationalCommandHandlers.putAll(requireNonNull(creationalCommandHandlers,
                                                              "The creationalCommandHandlers may not be null."));
+        this.commandHandlerInterceptors = List.copyOf(
+                requireNonNull(commandHandlerInterceptors, "The commandHandlerInterceptors may not be null.")
+        );
+        this.creationalHandlerChain = composeInterceptorChain(
+                (command, entity, context) -> doHandleCreate(command, context)
+        );
+        this.instanceHandlerChain = composeInterceptorChain(this::doHandleInstance);
 
         this.children.addAll(requireNonNull(children, "The children may not be null."));
 
@@ -88,6 +102,7 @@ public class ConcreteEntityMetamodel<E> implements DescribableComponent, EntityM
 
         supportedCommandNames.addAll(supportedCreationalCommandNames);
         supportedCommandNames.addAll(supportedInstanceCommandNames);
+
     }
 
     /**
@@ -122,6 +137,17 @@ public class ConcreteEntityMetamodel<E> implements DescribableComponent, EntityM
     @Override
     public MessageStream.Single<CommandResultMessage> handleCreate(CommandMessage message,
                                                                    ProcessingContext context) {
+        try {
+            return creationalHandlerChain.proceed(message, null, context)
+                                         .mapMessage(this::asCommandResultMessage)
+                                         .first()
+                                         .cast();
+        } catch (Exception e) {
+            return MessageStream.failed(e);
+        }
+    }
+
+    private MessageStream<?> doHandleCreate(CommandMessage message, ProcessingContext context) {
         if (isInstanceCommand(message) && !isCreationalCommand(message)) {
             return MessageStream.failed(new EntityMissingForInstanceCommandHandlerException(message));
         }
@@ -143,6 +169,17 @@ public class ConcreteEntityMetamodel<E> implements DescribableComponent, EntityM
             E entity,
             ProcessingContext context
     ) {
+        try {
+            return instanceHandlerChain.proceed(message, entity, context)
+                                       .mapMessage(this::asCommandResultMessage)
+                                       .first()
+                                       .cast();
+        } catch (Exception e) {
+            return MessageStream.failed(e);
+        }
+    }
+
+    private MessageStream<?> doHandleInstance(CommandMessage message, E entity, ProcessingContext context) {
         if (isCreationalCommand(message) && !isInstanceCommand(message)) {
             return MessageStream.failed(new EntityAlreadyExistsForCreationalCommandHandlerException(message, entity));
         }
@@ -165,6 +202,31 @@ public class ConcreteEntityMetamodel<E> implements DescribableComponent, EntityM
         }
 
         return MessageStream.failed(new NoHandlerForCommandException(message, entityType));
+    }
+
+    /**
+     * Composes the {@link #commandHandlerInterceptors} registered on this metamodel around the given
+     * {@code terminal}, in registration order (first registered is outermost). Since the interceptor list is fixed
+     * once this metamodel is built, the composed chain is built once and reused for every dispatch; only the entity
+     * passed to {@link EntityCommandHandlerInterceptorChain#proceed(CommandMessage, Object, ProcessingContext)}
+     * varies per invocation.
+     */
+    private EntityCommandHandlerInterceptorChain<E> composeInterceptorChain(
+            EntityCommandHandlerInterceptorChain<E> terminal
+    ) {
+        EntityCommandHandlerInterceptorChain<E> chain = terminal;
+        for (int i = commandHandlerInterceptors.size() - 1; i >= 0; i--) {
+            EntityCommandHandlerInterceptorChain<E> next = chain;
+            EntityCommandHandlerInterceptor<E> interceptor = commandHandlerInterceptors.get(i);
+            chain = (command, entity, context) -> interceptor.interceptOnHandle(command, entity, context, next);
+        }
+        return chain;
+    }
+
+    private CommandResultMessage asCommandResultMessage(Message result) {
+        return result instanceof CommandResultMessage commandResultMessage
+                ? commandResultMessage
+                : new GenericCommandResultMessage(result);
     }
 
     @Nullable
@@ -236,6 +298,7 @@ public class ConcreteEntityMetamodel<E> implements DescribableComponent, EntityM
         descriptor.describeProperty("supportedCreationalCommandNames", supportedCreationalCommandNames);
         descriptor.describeProperty("entityEvolver", entityEvolver);
         descriptor.describeProperty("children", children);
+        descriptor.describeProperty("commandHandlerInterceptors", commandHandlerInterceptors);
     }
 
     @Override
@@ -255,6 +318,7 @@ public class ConcreteEntityMetamodel<E> implements DescribableComponent, EntityM
         private final Map<QualifiedName, EntityCommandHandler<E>> commandHandlers = new HashMap<>();
         private final Map<QualifiedName, CommandHandler> creationalCommandHandlers = new HashMap<>();
         private final List<EntityChildMetamodel<?, E>> children = new ArrayList<>();
+        private final List<EntityCommandHandlerInterceptor<E>> commandHandlerInterceptors = new ArrayList<>();
         private @Nullable EntityEvolver<E> entityEvolver;
 
         private Builder(Class<E> entityType) {
@@ -308,6 +372,13 @@ public class ConcreteEntityMetamodel<E> implements DescribableComponent, EntityM
         }
 
         @Override
+        public Builder<E> commandHandlerInterceptor(EntityCommandHandlerInterceptor<E> interceptor) {
+            requireNonNull(interceptor, "The interceptor may not be null.");
+            commandHandlerInterceptors.add(interceptor);
+            return this;
+        }
+
+        @Override
         public EntityMetamodelBuilder<E> entityEvolver(@Nullable EntityEvolver<E> entityEvolver) {
             this.entityEvolver = entityEvolver;
             return this;
@@ -318,6 +389,7 @@ public class ConcreteEntityMetamodel<E> implements DescribableComponent, EntityM
                                                  commandHandlers,
                                                  creationalCommandHandlers,
                                                  children,
+                                                 commandHandlerInterceptors,
                                                  entityEvolver);
         }
     }

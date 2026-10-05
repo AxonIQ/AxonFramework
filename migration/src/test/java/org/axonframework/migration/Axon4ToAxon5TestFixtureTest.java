@@ -450,32 +450,17 @@ class Axon4ToAxon5TestFixtureTest implements RewriteTest {
     }
 
     @Test
-    void leavesSagaTestFixtureSetupAlone() {
-        // The new setup recipe matches the AF4 AggregateTestFixture FQN only,
-        // so SagaTestFixture constructors are left untouched (only the type
-        // rename runs against them).
+    void leavesSagaTestFixtureAlone() {
+        // SagaTestFixture is ported by axon-legacy-test for sagas that keep running on axon-legacy.
+        // Neither the type nor the setup changes. Axon4ToAxon5Legacy adds the dependency and the tear-down.
         rewriteRun(
                 java(
                         """
-                        package com.example;
                         import org.axonframework.test.saga.SagaTestFixture;
                         class FooSagaTest {
                             SagaTestFixture<FooSaga> fixture;
                             void setUp() {
                                 fixture = new SagaTestFixture<>(FooSaga.class);
-                            }
-                        }
-                        class FooSaga {}
-                        """,
-                        """
-                        package com.example;
-
-                        import org.axonframework.test.fixture.AxonTestFixture;
-
-                        class FooSagaTest {
-                            AxonTestFixture fixture;
-                            void setUp() {
-                                fixture = new AxonTestFixture(FooSaga.class);
                             }
                         }
                         class FooSaga {}

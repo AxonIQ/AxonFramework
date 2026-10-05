@@ -50,7 +50,7 @@ import org.springframework.context.annotation.Bean;
  * @since 4.6.0
  */
 @AutoConfiguration
-@ConditionalOnClass(SpanFactory.class)
+@ConditionalOnClass(name = "io.micrometer.tracing.Tracer")
 @ConditionalOnProperty(prefix = "axon.tracing", name = "enabled", havingValue = "true", matchIfMissing = true)
 @EnableConfigurationProperties(TracingProperties.class)
 public class TracingAutoConfiguration {

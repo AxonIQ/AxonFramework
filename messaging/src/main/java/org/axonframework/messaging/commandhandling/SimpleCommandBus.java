@@ -17,6 +17,8 @@
 package org.axonframework.messaging.commandhandling;
 
 import org.axonframework.common.infra.ComponentDescriptor;
+import org.axonframework.messaging.core.MessageStream.Entry;
+import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.UnitOfWork;
@@ -104,24 +106,28 @@ public class SimpleCommandBus implements CommandBus {
         if (logger.isDebugEnabled()) {
             logger.debug("Handling command [{} ({})]", command.identifier(), command.type());
         }
-        UnitOfWork unitOfWork = unitOfWorkFactory.create(command.identifier());
 
-        var result = unitOfWork.executeWithResult(c -> handler.handle(command, c).first().asCompletableFuture());
+        UnitOfWork unitOfWork = unitOfWorkFactory.create(command.identifier());
+        CompletableFuture<@Nullable Entry<CommandResultMessage>> result = unitOfWork.executeWithResult(
+                context -> handler.handle(command, context)
+                                  .first()
+                                  .asCompletableFuture()
+        );
+
         if (logger.isDebugEnabled()) {
             result = result.whenComplete((r, e) -> {
                 if (e == null) {
-                    logger.debug("Command [{} ({})] completed successfully",
-                                 command.identifier(),
-                                 command.type());
+                    logger.debug("Command [{} ({})] completed successfully", command.identifier(), command.type());
                 } else {
-                    logger.debug("Command [{} ({})] completed exceptionally",
-                                 command.identifier(),
-                                 command.type(),
-                                 e);
+                    logger.debug("Command [{} ({})] completed exceptionally", command.identifier(), command.type(), e);
                 }
             });
         }
-        return result.thenApply(e -> e == null ? null : e.message());
+
+        return result.thenApply(e -> e != null
+                ? e.message()
+                : new GenericCommandResultMessage(new MessageType(Void.class), (Object) null)
+        );
     }
 
     @Override

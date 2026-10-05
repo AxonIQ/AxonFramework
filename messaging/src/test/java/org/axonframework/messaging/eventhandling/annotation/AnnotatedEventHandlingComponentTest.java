@@ -1175,7 +1175,12 @@ class AnnotatedEventHandlingComponentTest {
         void beforeInterceptorInvokedWithoutInterceptorChainInContextReturnsFailedStream() {
             // given - access the interceptor member directly, bypassing ChainedMessageHandlerInterceptorMember
             // which normally injects the chain; this simulates invocation outside the proper call chain
-            var inspector = AnnotatedHandlerInspector.inspectType(BeforeInterceptorHandlerFixture.class);
+            var inspector = AnnotatedHandlerInspector.inspectType(
+                    BeforeInterceptorHandlerFixture.class,
+                    new AnnotationMessageTypeResolver(),
+                    ClasspathParameterResolverFactory.forClass(BeforeInterceptorHandlerFixture.class),
+                    ClasspathHandlerDefinition.forClass(BeforeInterceptorHandlerFixture.class)
+            );
             var interceptorMember = inspector.getAllInterceptors()
                                              .get(BeforeInterceptorHandlerFixture.class)
                                              .first();

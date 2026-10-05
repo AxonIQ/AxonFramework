@@ -18,23 +18,30 @@ package org.axonframework.extension.springboot;
 
 import jakarta.persistence.EntityManagerFactory;
 import org.axonframework.common.ReflectionUtils;
+import org.axonframework.common.jdbc.PersistenceExceptionResolver;
 import org.axonframework.common.jpa.EntityManagerProvider;
+import org.axonframework.common.lifecycle.Phase;
+import org.axonframework.extension.springboot.autoconfig.JpaAutoConfiguration;
+import org.axonframework.extension.springboot.util.jpa.ContainerManagedEntityManagerProvider;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.jpa.JpaTokenStore;
-import org.axonframework.eventsourcing.eventstore.jpa.SQLErrorCodesResolver;
-import org.axonframework.extension.springboot.util.jpa.ContainerManagedEntityManagerProvider;
+import org.hsqldb.jdbc.JDBCDataSource;
 import org.junit.jupiter.api.*;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.context.SmartLifecycle;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.EnableMBeanExport;
 import org.springframework.jmx.support.RegistrationPolicy;
 import org.springframework.test.context.ContextConfiguration;
 
+import java.sql.SQLException;
 import java.time.Duration;
 import java.time.temporal.TemporalAmount;
 import java.util.Map;
+import javax.sql.DataSource;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -80,12 +87,43 @@ class JpaAutoConfigurationTest {
             assertEquals(JpaSagaStore.class,
                          sagaStores.get("sagaStore").getClass());
              */
-            Map<String, SQLErrorCodesResolver> persistenceExceptionResolvers =
-                    context.getBeansOfType(SQLErrorCodesResolver.class);
-            assertTrue(persistenceExceptionResolvers.containsKey("persistenceExceptionResolver"));
-            assertEquals(SQLErrorCodesResolver.class,
-                         persistenceExceptionResolvers.get("persistenceExceptionResolver").getClass());
+            PersistenceExceptionResolver persistenceExceptionResolver =
+                    context.getBean("persistenceExceptionResolver", PersistenceExceptionResolver.class);
+            assertThat(persistenceExceptionResolver).isInstanceOf(SmartLifecycle.class);
+            assertThat(((SmartLifecycle) persistenceExceptionResolver).isRunning()).isTrue();
         });
+    }
+
+    @Nested
+    class PersistenceExceptionResolverConfiguration {
+
+        @Test
+        void accessesDataSourceOnlyWhenLifecycleStarts() throws SQLException {
+            // given
+            JDBCDataSource actualDataSource = new JDBCDataSource();
+            actualDataSource.setUrl("jdbc:hsqldb:mem:lifecycle-aware-resolver");
+            actualDataSource.setUser("sa");
+            actualDataSource.setPassword("");
+            DataSource dataSource = spy(actualDataSource);
+
+            // when
+            PersistenceExceptionResolver resolver =
+                    new JpaAutoConfiguration().persistenceExceptionResolver(dataSource);
+
+            // then
+            verify(dataSource, never()).getConnection();
+            assertThat(resolver.isDuplicateKeyViolation(new SQLException("duplicate", "", -104))).isFalse();
+
+            // when
+            SmartLifecycle lifecycle = (SmartLifecycle) resolver;
+            lifecycle.start();
+
+            // then
+            verify(dataSource).getConnection();
+            assertThat(lifecycle.isRunning()).isTrue();
+            assertThat(lifecycle.getPhase()).isEqualTo(Phase.EXTERNAL_CONNECTIONS);
+            assertThat(resolver.isDuplicateKeyViolation(new SQLException("duplicate", "", -104))).isTrue();
+        }
     }
 
     @Test

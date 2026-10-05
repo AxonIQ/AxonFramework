@@ -31,7 +31,7 @@ import java.util.Objects;
  * {@link RecordingCommandBus}. The recorded messages can then be used to assert expectations with test cases.
  * <p>
  * Recording decorators are registered as the <b>innermost</b> decorators ({@code DECORATION_ORDER = Integer.MIN_VALUE})
- * so that they capture messages <em>after</em> dispatch interceptors have enriched them (e.g., with correlation
+ * so that they capture messages after dispatch interceptors have enriched them (e.g., with correlation
  * metadata).
  * <p>
  * The recording instances are stored in a {@link RecordingComponentsRegistry} that is registered as a regular
@@ -45,7 +45,7 @@ import java.util.Objects;
 public class MessagesRecordingConfigurationEnhancer implements ConfigurationEnhancer {
 
     /**
-     * Innermost position — recording sees the message after all other decorators (interceptors) have processed it.
+     * Innermost position: recording sees the message after all other decorators (interceptors) have processed it.
      */
     private static final int EVENTS_RECORDER_DECORATION_ORDER = Integer.MIN_VALUE;
 

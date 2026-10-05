@@ -1,0 +1,144 @@
+= Configuration Enhancers
+
+A `ConfigurationEnhancer` is a hook that runs once during `ApplicationConfigurer#build()`, after all explicit registrations have been collected but before the `AxonConfiguration` is built.
+Enhancers provide a structured way to add or conditionally adjust configuration without polluting the main application setup code.
+
+The framework uses the `ConfigurationEnhancer` extensively.
+It is **the** mechanism that attaches default infrastructure components, for example the `MessagingConfigurationDefaults` that is attached when a `MessagingConfigurer` is built, or the `EventSourcingConfigurationDefaults` that include the `EventStore` and `EventStorageEngine` when the `EventSourcingConfigurer` is utilized.
+Furthermore, it is used to add cross-cutting concerns to the framework, like multi-tenancy and distributed tracing support, which both have their own `ConfigurationEnhancer` extending the behavior.
+
+Writing your own `ConfigurationEnhancer` is a mechanism you can use to expand your application in the same way, whenever the need arises.
+
+[#how-enhancers-work]
+== How enhancers work
+
+Enhancers implement a single method, shown here via a minimal implementation:
+
+[source,java]
+----
+include::example$configuration/configuration-enhancer/MinimalConfigurationEnhancer.java[tag=enhancer-interface-example]
+----
+
+When `ApplicationConfigurer#build()` is called, all registered enhancers are sorted by their `order()` and invoked in that order.
+Each enhancer receives the fully populated xref:registries.adoc#component-registry[`ComponentRegistry`], on which it can:
+
+* Register new xref:configurer.adoc#components[components] with `registerComponent`
+* Register xref:configurer.adoc#decorators[decorators] with `registerDecorator`
+* Register nested xref:module.adoc[modules] with `registerModule`
+* Disable other enhancers with `disableEnhancer`
+
+Because enhancers are invoked after all application-level registrations, they can inspect what was registered and react accordingly.
+An enhancer that provides a sensible default should use `registerIfNotPresent` so that an explicitly registered component is never overridden.
+
+[#enhancers-ordering]
+=== Enhancer ordering
+
+The `order()` method controls the sequence in which enhancers run.
+Lower values execute first.
+The default is `0`.
+
+This order is extremely important, since each enhancer runs against whatever the ones before it have already left in the `ComponentRegistry`.
+A preceding enhancer therefore directly impacts what a subsequent enhancer sees, and consequently how it behaves, including whether an xref:#conditional-enhancement[inspect-then-register check] finds the component it is looking for.
+Getting the order wrong can silently change that outcome.
+
+For a rough ballpark on which order to use, consult the following table:
+
+[cols="1,3"]
+|===
+|Value range |Intended use
+
+|Negative
+|Enhancers that provide sensible defaults, which should be applied before any user-defined enhancement
+
+|`0` (default)
+|Standard user enhancements
+
+|Positive
+|Enhancers that should override or complement earlier ones, for example a tracing enhancer that depends on
+an interceptor registered by another enhancer
+|===
+
+With this input on enhancer ordering under our belt, we can take a look at an example `ConfigurationEnhancer` that provides the **default** `CommandBus` to an application:
+
+[source,java]
+----
+include::example$configuration/configuration-enhancer/DefaultCommandBusEnhancer.java[tag=enhancer-order-example]
+----
+
+== Registering an enhancer
+
+Enhancers are registered on the `ComponentRegistry`:
+
+[source,java]
+----
+include::example$configuration/configuration-enhancer/RegisterEnhancerExample.java[tag=register-enhancer-example]
+----
+
+Or using a lambda when the enhancer needs no state:
+
+[source,java]
+----
+include::example$configuration/configuration-enhancer/LambdaEnhancerExample.java[tag=lambda-enhancer-example]
+----
+
+When running with the Spring Boot Starter, an enhancer does not have to go through `registerEnhancer` at all: simply declare it as a Spring bean, and Axon picks it up automatically.
+See xref:spring.adoc#customizing-axon-config-with-spring[Customizing Axon's configuration through Spring] for how the `SpringComponentRegistry` discovers `ConfigurationEnhancer` beans in the Application Context.
+
+[#conditional-enhancement]
+== Conditional enhancement
+
+The key benefit of enhancers over direct registration is the ability to inspect the registry before making changes.
+Use `ComponentRegistry#hasComponent(Class<?>)` to make registration conditional:
+
+[source,java]
+----
+include::example$configuration/configuration-enhancer/TracingEnhancer.java[tag=conditional-enhancement-example]
+----
+
+This pattern is used throughout Axon Framework to apply cross-cutting concerns such as tracing and monitoring only when the relevant infrastructure is present.
+
+Because such a conditional check only sees what has been registered so far, its outcome depends on the xref:#how-enhancers-work[order] in which enhancers run: the same conditional enhancer can find (or fail to find) the component it checks for depending on whether it runs before or after the enhancer that registers it.
+Give a conditional enhancer an explicit `order()` value whenever it needs to run after the enhancer it depends on.
+
+== Automatic discovery via `ServiceLoader`
+
+Axon Framework discovers `ConfigurationEnhancer` implementations automatically through the Java `ServiceLoader` mechanism.
+If you add an entry to `META-INF/services/org.axonframework.common.configuration.ConfigurationEnhancer` in your JAR, your enhancer is registered without any explicit call to `registerEnhancer`.
+This is how Axon's own modules register their defaults.
+
+To list your enhancer for automatic discovery:
+
+[source]
+----
+# META-INF/services/org.axonframework.common.configuration.ConfigurationEnhancer
+com.example.myapp.TracingEnhancer
+----
+
+== Disabling enhancers
+
+When a specific enhancer's behavior is **not** desired, you can disable it from within another enhancer or during application setup:
+
+[source,java]
+----
+include::example$configuration/configuration-enhancer/DisableEnhancerByClassExample.java[tag=disable-enhancer-class-example]
+----
+
+To disable an enhancer from another module that you cannot reference directly (for example, when the class is internal), use the fully qualified class name:
+
+[source,java]
+----
+include::example$configuration/configuration-enhancer/DisableEnhancerByNameExample.java[tag=disable-enhancer-name-example]
+----
+
+To disable all `ServiceLoader`-discovered enhancers at once, which may be desired for ahead-of-time (AOT) compilation support, you can do the following:
+
+[source,java]
+----
+include::example$configuration/configuration-enhancer/DisableEnhancerScanningExample.java[tag=disable-enhancer-scanning-example]
+----
+
+[WARNING]
+====
+Disabling enhancer scanning removes framework defaults that are required for correct operation.
+Prefer `disableEnhancer(Class)` to target only the specific enhancer you want to remove.
+====

@@ -144,7 +144,10 @@ class AnnotatedHandlerInspectorTest {
     @Test
     void doesNotRegisterAbstractHandlersTwice() {
         AnnotatedHandlerInspector<AB> aaInspector = AnnotatedHandlerInspector.inspectType(
-                AB.class, new AnnotationMessageTypeResolver(), parameterResolverFactory
+                AB.class,
+                new AnnotationMessageTypeResolver(),
+                parameterResolverFactory,
+                ClasspathHandlerDefinition.forClass(AB.class)
         );
 
         assertEquals(1, aaInspector.getAllHandlers().size());

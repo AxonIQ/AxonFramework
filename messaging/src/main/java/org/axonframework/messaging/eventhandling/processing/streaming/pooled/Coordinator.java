@@ -162,7 +162,7 @@ class Coordinator {
             return ProcessUtils.executeUntilTrue(this::initializeTokenStore, tokenStoreInitRetryInterval, tokenStoreInitMaxRetries, executorService)
                     .thenRun(() -> {
                         CoordinationTask task = new CoordinationTask();
-                        executorService.submit(task);
+                        executorService.submit(safeguard(task));
                         this.coordinationTask.set(task);
                     })
                     .exceptionally(e -> {
@@ -738,7 +738,8 @@ class Coordinator {
      * sense means:
      * <ol>
      *     <li>Abort {@link WorkPackage WorkPackages} for which {@link #releaseUntil(int, Instant)} has been invoked.</li>
-     *     <li>{@link WorkPackage#extendClaimIfThresholdIsMet() Extend the claims} of all {@code WorkPackages} to relieve them of this effort.
+     *     <li>{@link WorkPackage#extendClaimIfThresholdIsMet() Extend the claims} of all {@code WorkPackages} with an
+     *     outstanding worker, to relieve them of this effort.
      *     This is an optimization activated through {@link Builder#coordinatorClaimExtension(boolean)}.</li>
      *     <li>Validating if there are {@link CoordinatorTask CoordinatorTasks} to run, and run a single one if there are any.</li>
      *     <li>Periodically checking for unclaimed segments, claim these and start a {@code WorkPackage} per claim.</li>
@@ -804,15 +805,16 @@ class Coordinator {
 
             if (coordinatorExtendsClaims) {
                 logger.debug(
-                        "Processor [{}] (Coordination Task [{}]) will extend the claim of work packages that are busy processing events and have met the claim threshold.",
+                        "Processor [{}] (Coordination Task [{}]) will extend the claim of work packages with an outstanding worker that have met the claim threshold.",
                         name,
                         generation);
-                // Extend the claims of each work package busy processing events.
-                // Doing so relieves this effort from the work package as an optimization.
+                // A work package only refreshes its own claim from its worker. As long as a worker is outstanding it
+                // cannot do so, whether it is handling a lengthy batch or still waiting for a thread of a worker
+                // executor that lengthy batches on other segments occupy. Extending on its behalf covers both.
                 workPackages.values()
                             .stream()
                             .filter(workPackage -> !workPackage.isAbortTriggered())
-                            .filter(WorkPackage::isProcessingEvents)
+                            .filter(WorkPackage::isWorkerScheduled)
                             .forEach(workPackage -> workPackage.extendClaimIfThresholdIsMet()
                                                                .whenComplete((ignored, e) -> {
                                                                    if (e == null) {
@@ -1003,7 +1005,7 @@ class Coordinator {
                             generation);
                     scheduleCoordinationTask(100);
                 }
-            } catch (Exception e) {
+            } catch (Throwable e) {
                 logger.warn(
                         "Processor [{}] (Coordination Task [{}]). Exception occurred while coordinating the work packages.",
                         name,
@@ -1049,7 +1051,7 @@ class Coordinator {
                 // A participant rejected the claim; release it so the token store claim is not leaked.
                 return abortWorkPackage(workPackage, e).thenCompose(ignored -> CompletableFuture.failedFuture(e));
             }
-            return segmentChangeListener.onSegmentClaimed(segment)
+            return segmentChangeListener.onSegmentClaimed(segment, token)
                                         .handle((ignored, e) -> {
                                             if (e != null) {
                                                 logger.info(
@@ -1428,10 +1430,10 @@ class Coordinator {
                         name,
                         generation,
                         delay);
-                executorService.schedule(() -> {
+                executorService.schedule(safeguard(() -> {
                     scheduledGate.set(false);
                     this.run();
-                }, delay, TimeUnit.MILLISECONDS);
+                }), delay, TimeUnit.MILLISECONDS);
             } else {
                 logger.trace(
                         "Processor [{}] (Coordination Task [{}]). Skipped scheduling coordination task (delay={}ms). "
@@ -1451,10 +1453,10 @@ class Coordinator {
                         name,
                         generation,
                         delay);
-                executorService.schedule(() -> {
+                executorService.schedule(safeguard(() -> {
                     interruptibleScheduledGate.set(false);
                     this.run();
-                }, delay, TimeUnit.MILLISECONDS);
+                }), delay, TimeUnit.MILLISECONDS);
             } else {
                 logger.trace(
                         "Processor [{}] (Coordination Task [{}]). Skipped scheduling delayed coordination task (delay={}ms). "
@@ -1496,7 +1498,7 @@ class Coordinator {
                                 errorWaitBackOff);
                         // Construct a new CoordinationTask, thus abandoning the old task and it's progress entirely.
                         CoordinationTask task = new CoordinationTask();
-                        executorService.schedule(task, errorWaitBackOff, TimeUnit.MILLISECONDS);
+                        executorService.schedule(safeguard(task), errorWaitBackOff, TimeUnit.MILLISECONDS);
                         coordinationTask.set(task);
                         processingGate.set(false);
                     }
@@ -1596,5 +1598,23 @@ class Coordinator {
                     }
             );
         }
+    }
+
+    /**
+     * Wraps the given {@code task} so that any {@link Throwable} escaping it is logged rather than silently lost.
+     * Tasks submitted or scheduled on {@link #executorService} have their {@code Future} discarded, since nothing
+     * polls it for a result; without this safety net, a {@code Throwable} that escapes all the way out of a task
+     * (bypassing every catch inside {@link CoordinationTask#run()}) would otherwise vanish without a trace, leaving
+     * this {@code Coordinator}'s internal gating flags permanently stuck and this processor silently dead.
+     *
+     * @param task the task to guard against an escaping {@link Throwable}
+     * @return a {@link Runnable} that never throws
+     */
+    private Runnable safeguard(Runnable task) {
+        return ProcessUtils.safeguard(
+                task,
+                "Processor [" + name + "]. Unexpected error escaped a coordination task. "
+                        + "This processor may no longer make progress."
+        );
     }
 }

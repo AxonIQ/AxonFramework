@@ -15,6 +15,7 @@
  */
 package migration.paths.snapshotting.declarativeconfiguration;
 
+import org.axonframework.conversion.Converter;
 import org.axonframework.eventsourcing.EventSourcedEntityFactory;
 import org.axonframework.eventsourcing.configuration.EventSourcedEntityModule;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
@@ -48,7 +49,10 @@ class DeclarativeSnapshotConfiguration {
                                         .build();
 
         EventSourcingConfigurer.create()
-                .componentRegistry(cr -> cr.registerComponent(SnapshotStore.class, c -> new InMemorySnapshotStore()))
+                .componentRegistry(cr -> cr.registerComponent(
+                        SnapshotStore.class,
+                        c -> new InMemorySnapshotStore(c.getComponent(Converter.class))
+                ))
                 .componentRegistry(cr -> cr.registerModule(accountModule))
                 .start();
         // end::snapshot-declarative-configuration[]

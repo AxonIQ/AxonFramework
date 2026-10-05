@@ -20,6 +20,7 @@ import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Interface to interact with a MessageHandlingMember instance through a chain of interceptors, which were used to build
@@ -32,8 +33,19 @@ import org.axonframework.messaging.core.unitofwork.ProcessingContext;
  */
 public interface MessageHandlerInterceptorMemberChain<T> {
 
+    /**
+     * Invokes the interceptors in this chain for the given {@code message}, ultimately invoking the given
+     * {@code handler} unless an interceptor short-circuits the chain.
+     *
+     * @param message the message to intercept and, ultimately, handle
+     * @param context the context under which the {@code message} is processed
+     * @param target  the instance declaring the interceptors and the {@code handler}, or {@code null} when there is no
+     *                instance to invoke them on, in which case this chain must only contain {@code static} members
+     * @param handler the handler to invoke once every interceptor has proceeded the chain
+     * @return a stream containing the result of handling the {@code message}
+     */
     MessageStream<?> handle(Message message,
                             ProcessingContext context,
-                            T target,
+                            @Nullable T target,
                             MessageHandlingMember<? super T> handler);
 }

@@ -28,7 +28,9 @@ import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.Metadata;
 import org.axonframework.messaging.core.QualifiedName;
+import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
 import org.axonframework.messaging.core.annotation.ClasspathParameterResolverFactory;
+import org.axonframework.messaging.core.annotation.HandlerDefinition;
 import org.axonframework.messaging.core.annotation.MultiParameterResolverFactory;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
 import org.axonframework.messaging.core.annotation.SimpleResourceParameterResolverFactory;
@@ -60,6 +62,7 @@ import java.util.concurrent.CompletionException;
 public abstract class AbstractAnnotatedEntityMetamodelTest<E> {
 
     protected final ParameterResolverFactory parameterResolverFactory = createParameterResolverFactory();
+    protected final HandlerDefinition handlerDefinition = ClasspathHandlerDefinition.forClass(getClass());
     protected final MessageTypeResolver messageTypeResolver = new ClassBasedMessageTypeResolver();
     protected final MessageConverter messageConverter = new DelegatingMessageConverter(new JacksonConverter());
     protected final EventConverter eventConverter = new DelegatingEventConverter(new JacksonConverter());

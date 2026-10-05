@@ -4,8 +4,7 @@ Component-level interceptors apply cross-cutting behavior within a single handli
 They complement bus-level interceptors, which apply globally to all messages on a bus, by targeting only the handlers within a specific component.
 Axon Framework supports two approaches: annotated interceptor methods placed directly on the component class, and declarative interceptors registered during module configuration.
 
-[[command-handler-interceptor-annotation]]
-== `@CommandHandlerInterceptor` annotation
+== Annotated handler interceptors
 
 Annotated interceptors are methods placed on a handling component class and marked with one of the interceptor annotations.
 The framework invokes these methods around the regular handler methods on the same component instance.
@@ -19,6 +18,7 @@ If the interceptor throws, the handler is not invoked.
 The method controls whether and when to call `chain.proceed(message, context)`.
 It can short-circuit processing entirely by returning without calling proceed, or by returning `MessageStream.failed(...)`.
 
+[[command-handler-interceptor-annotation]]
 === `@CommandHandlerInterceptor`
 
 The `@CommandHandlerInterceptor` annotation marks a method as an interceptor for command handlers on the same component.
@@ -161,7 +161,8 @@ This makes it suitable for cross-cutting exception handling concerns such as log
 
 You can wire the exception and the full message (for example, `CommandMessage` or `EventMessage`) as parameters.
 The framework matches an exception handler based on which parameters it declares: the exception type must be assignable from the thrown exception, and the message type must be assignable from the message being handled.
-Omitting a parameter means it is not used for matching. Any value is accepted.
+Omitting a parameter means it is not used for matching.
+Any value is accepted.
 
 You can introduce `@ExceptionHandler` annotated methods in any message handling component.
 
@@ -187,3 +188,38 @@ If you need to handle exceptions from a static creation handler, handle them dir
 ----
 include::example$messagingconcepts/componentmessageintercepting/exceptionprojection/CardSummaryProjection.java[tag=exception-projection,indent=0]
 ----
+
+[[entity-command-handler-interceptors]]
+== Entity command handler interceptors
+
+An xref:commands:entities/index.adoc[entity's] own `@CommandHandler` methods can be intercepted the same way as any other component, both by an annotated method on the entity class and by a declarative interceptor registered on its `EntityMetamodelBuilder`.
+An interceptor registered on a parent entity runs before an interceptor registered on a child entity added through `@EntityMember` or `EntityMetamodelBuilder.addChild(...)`, and before the parent's own command handlers.
+
+For a xref:commands:entities/entity-polymorphism.adoc[polymorphic entity], a concrete type's own interceptor runs before an interceptor declared on the super type, for every command reaching that concrete type's instance, whether the command is declared on the concrete type or on the super type itself.
+This is the opposite order from the `@EntityMember`/`addChild(...)` parent-before-child rule above; the two are unrelated mechanisms.
+
+Only command handling is covered: there is no interceptor support for `@EventSourcingHandler` methods.
+
+*Annotated `@CommandHandlerInterceptor` on the entity:*
+
+[source,java]
+----
+include::example$messagingconcepts/componentmessageintercepting/entityannotated/GiftCard.java[tag=entity-command-interceptor,indent=0]
+----
+
+*Declarative interceptor on the entity's `EntityMetamodelBuilder`:*
+
+[source,java]
+----
+include::example$messagingconcepts/componentmessageintercepting/entitydeclarative/GiftCardEntityConfiguration.java[tag=entity-declarative-interceptor,indent=0]
+----
+
+Unlike the generic `MessageHandlerInterceptor`, an entity command handler interceptor receives the targeted entity instance (or `null` for a creational command), so it can base its decision on the entity's current state.
+
+[NOTE]
+.Interceptors for creational commands
+====
+A creational command is handled before any entity instance exists, which shapes which interceptors take part in it.
+A declarative interceptor always runs, and receives `null` as the entity.
+An annotated interceptor declared as an instance method has no instance to be invoked on, so it is left out of creational dispatch entirely; declare the interceptor method `static` when it must guard creational commands too.
+====

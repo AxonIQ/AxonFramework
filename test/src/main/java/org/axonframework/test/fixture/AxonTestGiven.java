@@ -194,6 +194,7 @@ class AxonTestGiven implements AxonTestPhase.Given {
                 configuration,
                 customization,
                 recordings,
+                message -> true,
                 null
         );
     }

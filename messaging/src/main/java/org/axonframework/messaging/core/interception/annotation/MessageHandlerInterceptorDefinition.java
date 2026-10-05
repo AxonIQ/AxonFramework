@@ -51,6 +51,14 @@ public class MessageHandlerInterceptorDefinition implements HandlerEnhancerDefin
     @Override
     public <T> MessageHandlingMember<T> wrapHandler(MessageHandlingMember<T> original) {
         if (original.attribute(HandlerAttributes.INTERCEPTOR_MESSAGE_TYPE).isPresent()) {
+            // Idempotency guard: this enhancer can be applied to the same interceptor member more than once, because
+            // the flattened handler-enhancer list is not de-duplicated and may contain this definition several times
+            // when enhancer definitions are composed more than once. Wrapping an already-wrapped member would nest
+            // MessageInterceptingMembers, and each before-style layer independently proceeds the chain -- invoking the
+            // actual handler once per redundant wrapping. Returning the existing wrapper keeps a single proceed.
+            if (original.unwrap(MessageInterceptingMember.class).isPresent()) {
+                return original;
+            }
             Optional<Class<?>> resultType = original.attribute(HandlerAttributes.RESULT_TYPE);
             return resultType.isPresent()
                     ? new ResultHandlingInterceptorMember<>(original, resultType.get())

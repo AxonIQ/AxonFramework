@@ -42,16 +42,26 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 @Internal
 public class JpaPollingEventCoordinator implements EventCoordinator {
-    private static final Logger LOGGER = LoggerFactory.getLogger(JpaPollingEventCoordinator.class);
-    private static final ThreadFactory THREAD_FACTORY = Thread.ofPlatform()
-        .daemon()
-        .name(JpaPollingEventCoordinator.class.getSimpleName(), 1)
-        .factory();
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(JpaPollingEventCoordinator.class);
+
+    private static final ThreadFactory THREAD_FACTORY = Thread.ofPlatform()
+                                                              .daemon()
+                                                              .name(JpaPollingEventCoordinator.class.getSimpleName(), 1)
+                                                              .factory();
     private static final String COUNT_EVENTS =
         """
         SELECT COUNT(*) FROM AggregateEventEntry
         """;
+
+    /**
+     * Safety-net timeout for {@link Handle#terminate()} to wait for the polling thread to stop.
+     * <p>
+     * The polling thread is a daemon thread, so a timeout here does not leak the JVM; it only guards the caller against
+     * blocking indefinitely if the polling thread misses its interrupt, e.g. because it is in the middle of a slow,
+     * uninterruptible {@link #countEvents()} call.
+     */
+    private static final Duration TERMINATION_TIMEOUT = Duration.ofSeconds(30);
 
     private final EntityManagerProvider entityManagerProvider;
     private final Duration pollingInterval;
@@ -97,6 +107,10 @@ public class JpaPollingEventCoordinator implements EventCoordinator {
             long lastTotalEvents = 0;
 
             for (;;) {
+                if (terminated.get()) {
+                    break;
+                }
+
                 try {
                     Thread.sleep(pollingInterval);
 
@@ -141,7 +155,14 @@ public class JpaPollingEventCoordinator implements EventCoordinator {
                 pollingThread.interrupt();
 
                 try {
-                    pollingThread.join();
+                    pollingThread.join(TERMINATION_TIMEOUT.toMillis());
+                    if (pollingThread.isAlive()) {
+                        LOGGER.warn(
+                            "Polling thread {} did not stop within {}; it will keep running as a daemon "
+                                + "thread and terminate on its own once it notices the interrupt.",
+                            pollingThread.getName(), TERMINATION_TIMEOUT
+                        );
+                    }
                 } catch (InterruptedException e) {
                     // Best effort, tried waiting, but got interrupted, restore flag and ignore:
                     Thread.currentThread().interrupt();

@@ -75,13 +75,15 @@ class SimpleCommandBusTest {
     }
 
     @Test
-    void dispatchCommandHandlerSubscribedAndReturnEmpty() throws Exception {
+    void dispatchCommandHandlerSubscribedAndReturnEmptyResultsInMessageWithNullPayload() throws Exception {
         testSubject.subscribe(COMMAND_NAME, (m, c) -> MessageStream.empty().cast());
 
         CompletableFuture<? extends Message> actual =
                 testSubject.dispatch(TEST_COMMAND, StubProcessingContext.forMessage(TEST_COMMAND));
 
-        assertNull(actual.get());
+        Message actualMessage = actual.get();
+        assertNotNull(actualMessage);
+        assertNull(actualMessage.payload());
     }
 
     @Test

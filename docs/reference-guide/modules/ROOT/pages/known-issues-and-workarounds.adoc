@@ -19,12 +19,13 @@ You can make an enhancement request by clicking link:https://github.com/AxonFram
 When looking to provide a pull request, be sure to adjust link:https://github.com/AxonFramework/AxonFramework/blob/master/docs/old-reference-guide/modules/ROOT/pages/serialization.adochttps://github.com/AxonFramework/AxonFramework/blob/master/docs/old-reference-guide/modules/ROOT/pages/known-issues-and-workarounds.adoc[this file].
 ====
 
+[#postgresql_and_large_object_storage]
 == PostgreSQL and large object storage
 
 [TIP]
 .PostgreSQL Extension
 ====
-You can use Axoniq's PostgreSQL Extension instead of setting up PostgreSQL yourself as a event storage solution. For more information, please check the repository link:https://github.com/AxonIQ/extension-postgresql[here.]
+You can use Axoniq's PostgreSQL Extension instead of setting up PostgreSQL yourself as an event storage solution. For more information, please check the repository link:https://github.com/AxonIQ/extension-postgresql[here.]
 ====
 
 When storing the serialized formats of, for example, xref:events:event-processors/streaming.adoc#tracking_tokens[tokens], or xref:events:infrastructure.adoc[events], it is good to know Axon uses JPAs `@Lob` annotation for these columns.

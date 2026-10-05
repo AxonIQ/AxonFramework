@@ -1,0 +1,29 @@
+= Testing
+:navtitle: Testing
+:reftext: Testing
+
+`AxonTestFixture` tests a process without any special support. Publish the events that lead up to the moment you care
+about, then assert on the command the process sends:
+
+[source,java]
+----
+include::example$sagas/testing/RentalPaymentProcessTest.java[tag=event-driven,indent=0]
+----
+<1> `await` is required where the processor handles events on its own threads, as a streaming processor does: the
+command has not been sent yet when the given phase returns.
+
+Testing the timeout path needs one extra thing: `AxonTestFixture` cannot move the clock. Write the component that
+notices overdue work so that "now" is a parameter, and the test calls it directly instead of waiting.
+xref::deadlines.adoc[The deadlines page] shows the shape.
+
+== One specification, every approach
+
+The approaches in this guide are only interchangeable if they pass the same scenarios, so the example proves that
+rather than asserting it. One abstract
+link:https://github.com/AxonFramework/AxonFramework/blob/main/examples/saga-recipes/src/test/java/org/axonframework/examples/sagarecipes/saga/SagaRecipeContractTest.java[contract test,role=external,window=_blank]
+holds the behaviour, and each approach is a subclass that inherits it. A subclass that cannot satisfy a scenario is a
+finding about the approach, not a reason to soften the test.
+
+The discipline that makes the scenarios shareable is that they assert only on commands and events crossing the rental
+and payment boundary, never on repositories, entities or process events, because those are exactly what the approaches
+disagree about. Anything specific to one approach goes in its own subclass.

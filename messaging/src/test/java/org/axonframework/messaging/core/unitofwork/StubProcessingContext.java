@@ -49,6 +49,14 @@ import java.util.function.UnaryOperator;
  * <p>
  * The {@code putResource}/{@code updateResource}/{@code removeResource} operations mutate this instance, while
  * {@link #withResource(ResourceKey, Object)} branches: it returns a new context and leaves this one untouched.
+ * <p>
+ * {@link #moveToPhase(Phase)} mirrors {@link UnitOfWork} in entering a phase before running that phase's actions, and
+ * {@link #on(Phase, Function)} rejects the same registrations with the same exception, so that a test using this stub
+ * sees the phase rules production applies. In particular, an action running in a phase cannot register another action
+ * for that same phase, exactly as it cannot in a real {@code UnitOfWork}.
+ * <p>
+ * It remains a stub: actions of one phase are chained rather than run in parallel, and an action registered for a
+ * later phase that this call is already past building is not picked up.
  *
  * @author Allard Buijze
  */
@@ -110,15 +118,21 @@ public class StubProcessingContext implements ProcessingContext {
             return CompletableFuture.completedFuture(null);
         }
         ProcessingLifecycle.Phase initialPhase = currentPhase;
-        CompletableFuture<Object> result = phaseActions.keySet().stream()
-                                                       .filter(p -> p.isAfter(initialPhase)
-                                                               && p.order() <= phase.order())
-                                                       .sorted(Comparator.comparing(ProcessingLifecycle.Phase::order))
-                                                       .flatMap(p -> phaseActions.get(p).stream())
-                                                       .reduce(CompletableFuture.completedFuture(null),
-                                                               (cf, action) -> cf.thenCompose(v -> (CompletableFuture<Object>) action.apply(
-                                                                       this)),
-                                                               (cf1, cf2) -> cf2);
+        List<ProcessingLifecycle.Phase> phasesToRun =
+                phaseActions.keySet().stream()
+                            .filter(p -> p.isAfter(initialPhase) && p.order() <= phase.order())
+                            .sorted(Comparator.comparing(ProcessingLifecycle.Phase::order))
+                            .toList();
+
+        CompletableFuture<Object> result = CompletableFuture.completedFuture(null);
+        for (ProcessingLifecycle.Phase phaseToRun : phasesToRun) {
+            // Enter the phase before running its actions, as UnitOfWork does, so that an action asking to register
+            // another one is judged against the phase it is actually running in.
+            currentPhase = phaseToRun;
+            for (Function<ProcessingContext, CompletableFuture<?>> action : phaseActions.get(phaseToRun)) {
+                result = result.thenCompose(v -> (CompletableFuture<Object>) action.apply(this));
+            }
+        }
         currentPhase = phase;
         return result;
     }
@@ -127,7 +141,11 @@ public class StubProcessingContext implements ProcessingContext {
     public @NonNull ProcessingLifecycle on(@NonNull Phase phase,
                                   @NonNull Function<ProcessingContext, CompletableFuture<?>> action) {
         if (phase.order() <= currentPhase.order()) {
-            throw new IllegalArgumentException("Cannot register an action for a phase that has already passed");
+            throw new IllegalStateException(
+                    "Failed to register handler in phase " + phase + " (" + phase.order() + "). "
+                            + "ProcessingContext is already in phase " + currentPhase + " (" + currentPhase.order()
+                            + ")."
+            );
         }
         phaseActions.computeIfAbsent(phase, p -> new CopyOnWriteArrayList<>()).add(action);
         return this;
