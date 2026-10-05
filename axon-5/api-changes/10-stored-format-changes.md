@@ -84,7 +84,7 @@ consuming events through the `EventStorageEngine#stream(StreamingCondition)` met
 
 ## Sagas
 
-The saga tables are unchanged, so an Axon Framework 4 saga table can be read and written by `axon-legacy` without
+The saga tables are unchanged, so an Axon Framework 4 saga table can be read and written by `axoniq-legacy` without
 migration in the default configuration. Two columns need a closer look: `sagaType`, which is a condition on that
 statement, and `revision`, whose contents changed.
 
@@ -92,12 +92,12 @@ statement, and `revision`, whose contents changed.
 
 Axon Framework 4 derived this column, and the value it matched against when finding a saga, through the `Serializer`:
 `serializer.serialize(saga).getType().getName()` on write and `serializer.typeForClass(sagaType).getName()` on read.
-`axon-legacy` uses the class name directly on both sides.
+`axoniq-legacy` uses the class name directly on both sides.
 
 For the default configuration those are the same string, so nothing changes: the Jackson serializer returned the class
 name, and so did XStream for a class without an alias. An application that mapped its saga classes to some other type
 name, an XStream alias being the usual way to get one, has rows whose `sagaType` column holds that alias. Those rows are
-not reachable through `axon-legacy`, because `findSagas`, and the association queries behind loading and deleting, match
+not reachable through `axoniq-legacy`, because `findSagas`, and the association queries behind loading and deleting, match
 the column literally against the class name. The saga row itself still loads by identifier, but without its
 associations, so it can never be routed an event.
 
@@ -110,7 +110,7 @@ UPDATE AssociationValueEntry SET sagaType = 'com.example.OrderSaga' WHERE sagaTy
 ```
 
 Reading a saga back changed with it. Axon Framework 4 resolved the class from the stored `sagaType`, so
-`serializer.deserialize` returned whatever the row said. `axon-legacy` converts into the class the caller asked for and
+`serializer.deserialize` returned whatever the row said. `axoniq-legacy` converts into the class the caller asked for and
 ignores the stored name. In the saga flow those are the same class, since a saga is found by an association query that
 already filtered on it, so this is not separately observable; it only means the stored name is no longer what selects
 the type.
