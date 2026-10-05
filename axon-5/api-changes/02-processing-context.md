@@ -114,9 +114,10 @@ need this small adjustment. `SagaLifecycle` no longer extends `Scope`; the `Scop
 
 ### Scope
 
-`Scope` (`describeCurrentScope()`, `getCurrentScope()`) is kept in `axoniq-legacy`, unchanged, in package
-`org.axonframework.messaging.core` instead of `org.axonframework.messaging`. It remains `ThreadLocal`-based: an
-annotated Saga is the current scope while one of its handler methods runs, exactly as in Axon Framework 4. This is what
+`Scope` (`describeCurrentScope()`, `getCurrentScope()`) is kept in `axoniq-legacy`, unchanged, in its Axon Framework 4
+package `org.axonframework.messaging`, as are `ScopeAware`, `ScopeDescriptor`, `ScopeAwareProvider` and
+`NoScopeDescriptor`. It remains `ThreadLocal`-based: an annotated Saga is the current scope while one of its handler
+methods runs, exactly as in Axon Framework 4. This is what
 keeps an Axon Framework 4 Saga that schedules or cancels deadlines working without changes, whether it receives the
 `DeadlineManager` as a handler parameter, holds it in a field, or delegates to a collaborator that does:
 
