@@ -19,30 +19,30 @@ type: specs.openrewrite.org/v1beta/recipe
 name: org.axonframework.migration.Axon4ToAxon5Legacy
 displayName: Migrate Axon Framework 4 legacy APIs
 description: >-
-  Adds the Axon Framework 5 legacy module when Saga APIs are used, keeps saga
-  tests on the SagaTestFixture ported by axon-legacy-test, and adapts Saga
-  lifecycle and command dispatch access to ProcessingContext-scoped handler
-  parameters.
+  Adds the Axoniq Framework legacy module (io.axoniq.framework:axoniq-legacy)
+  when Saga APIs are used, keeps saga tests on the SagaTestFixture ported by
+  axoniq-legacy-test, and adapts Saga lifecycle and command dispatch access to
+  ProcessingContext-scoped handler parameters.
 recipeList:
   # `onlyIfUsing` evaluates the AF4-typed source model before source rewrites run.
   - org.openrewrite.java.dependencies.AddDependency:
-      groupId: org.axonframework
-      artifactId: axon-legacy
-      version: ${project.version}
+      groupId: io.axoniq.framework
+      artifactId: axoniq-legacy
+      version: ${axoniq.version}
       onlyIfUsing: org.axonframework.modelling.saga..*
   # A class may use only the Spring @Saga stereotype in a partially migrated source tree.
   - org.openrewrite.java.dependencies.AddDependency:
-      groupId: org.axonframework
-      artifactId: axon-legacy
-      version: ${project.version}
+      groupId: io.axoniq.framework
+      artifactId: axoniq-legacy
+      version: ${axoniq.version}
       onlyIfUsing: org.axonframework.spring.stereotype.Saga
 
-  # Saga tests keep their SagaTestFixture, which axon-legacy-test ports. The ported
+  # Saga tests keep their SagaTestFixture, which axoniq-legacy-test ports. The ported
   # fixture runs a live configuration and must be stopped after each test.
   - org.openrewrite.java.dependencies.AddDependency:
-      groupId: org.axonframework
-      artifactId: axon-legacy-test
-      version: ${project.version}
+      groupId: io.axoniq.framework
+      artifactId: axoniq-legacy-test
+      version: ${axoniq.version}
       scope: test
       onlyIfUsing: org.axonframework.test.saga.SagaTestFixture
   - org.axonframework.migration.AddAxonTestFixtureTearDown:
