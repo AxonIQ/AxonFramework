@@ -179,16 +179,6 @@ When deciding which converter to use for your application, consider:
 * You must maintain XML format for legacy reasons
 * External systems require XML
 
-**Use XStreamConverter when:**
-
-* You are migrating an Axon Framework 4 application and need to read saga state, deadlines, or scheduled events that
-  an Axon Framework 4 node serialized with XStream
-
-A Jackson `XmlMapper` producing XML is not the same as reading XStream's XML: XStream's object references, aliases,
-and `class` attributes have no Jackson equivalent, so a `JacksonConverter` cannot read what an Axon Framework 4
-`XStreamSerializer` wrote, nor can `XStreamSerializer` read what `JacksonConverter` writes. See
-<<xstream_converter,XStreamConverter>> below.
-
 **For most new applications, the default JacksonConverter with JSON format is the recommended choice.**
 It provides the best balance of features, performance, and maintainability.
 
