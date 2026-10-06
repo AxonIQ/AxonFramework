@@ -22,7 +22,7 @@ name: org.axonframework.migration.Axon4ToAxon5Test
 displayName: Apply Axon Framework 5 test module renames
 description: >-
   Renames `AggregateTestFixture` to the unified `AxonTestFixture` introduced
-  in Axon Framework 5 (`SagaTestFixture` stays, ported by `axon-legacy-test`),
+  in Axon Framework 5 (`SagaTestFixture` stays, ported by `axoniq-legacy-test`),
   and rewrites AF4-style
   flat fixture call chains (`fixture.given(...).when(...).expectEvents(...)`)
   to the AF5 fluent given/when/then API
@@ -45,8 +45,8 @@ recipeList:
   - org.openrewrite.java.ChangeType:
       oldFullyQualifiedTypeName: org.axonframework.test.aggregate.AggregateTestFixture
       newFullyQualifiedTypeName: org.axonframework.test.fixture.AxonTestFixture
-  # `SagaTestFixture` is NOT renamed: `axon-legacy-test` ports it for sagas that
-  # keep running on `axon-legacy`. `Axon4ToAxon5Legacy` adds that dependency and
+  # `SagaTestFixture` is NOT renamed: `axoniq-legacy-test` ports it for sagas that
+  # keep running on `axoniq-legacy`. `Axon4ToAxon5Legacy` adds that dependency and
   # the `@AfterEach` tear-down the ported fixture needs.
   # FixtureConfiguration<T> is the interface type used as variable declarations
   # in many AF4 tests (e.g. `FixtureConfiguration<Dwelling> fixture`).
