@@ -11,7 +11,7 @@ This path covers the migration from Serializers to Converters in Axon Framework 
 ====
 The framework internal refactoring of converters will probably only affect your configuration, as it is unlikely you are using a custom serializer that needs to be rewritten.
 
-Special attention should be given to users of the `XStreamSerializer`, as it has been removed and there is no direct replacement. See the section on its removal below for more details.
+Special attention should be given to users of the `XStreamSerializer`, as it has been removed and there is no direct replacement for general or event conversion. See the section on its removal below for more details. Saga stores and scheduled deadlines/events are a narrow exception, as explained in the xref:ROOT:conversion.adoc[Conversion chapter].
 ====
 
 == Adjustment of `Serializer` to `Converter`
@@ -44,6 +44,15 @@ Using the `XmlMapper` as stated above provides a valid solution for `XML` as ser
 If you have used the `XStreamSerializer` in for serialization of your events, you should expect to have to reprocess your event store with the new converter, as the format will likely be different.
 
 xref:paths/index.adoc#missing-a-migration-path[Contact the Axon Framework team] for assistance with this migration step.
+====
+
+[NOTE]
+.Saga state, deadlines, and scheduled events
+====
+The above applies to general and event conversion; it does not apply to data an Axon Framework 4 node serialized with
+XStream for sagas, deadlines, or scheduled events. For that narrow case, the `axoniq-legacy` module ships a
+deprecated, opt-in `XStreamConverter` that wraps your own `XStream` instance to read (and, for sagas, keep writing)
+that data unchanged. See xref:paths/sagas.adoc[Saga Migration] and xref:ROOT:conversion.adoc#xstream_converter[XStreamConverter].
 ====
 
 == Message and event converter types
