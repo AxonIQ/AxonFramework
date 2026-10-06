@@ -73,23 +73,25 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
             // given
             AxonConfiguration interceptingConfig = createMessagingConfigurer()
                     .build();
-            QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
+            try {
+                QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
 
-            RecordingQueryHandler handler = new RecordingQueryHandler();
-            interceptingQueryBus.subscribe(QUERY_NAME, handler);
+                RecordingQueryHandler handler = new RecordingQueryHandler();
+                interceptingQueryBus.subscribe(QUERY_NAME, handler);
 
-            QueryMessage testQuery = new GenericQueryMessage(TEST_QUERY_TYPE, "test");
+                QueryMessage testQuery = new GenericQueryMessage(TEST_QUERY_TYPE, "test");
 
-            // when
-            StepVerifier.create(FluxUtils.of(interceptingQueryBus.query(testQuery,
-                                                                        StubProcessingContext.forMessage(testQuery))))
-                        .expectNextCount(1)
-                        .verifyComplete();
+                // when
+                StepVerifier.create(FluxUtils.of(interceptingQueryBus.query(testQuery,
+                                                                            StubProcessingContext.forMessage(testQuery))))
+                            .expectNextCount(1)
+                            .verifyComplete();
 
-            // then - Verify REQUEST interceptor: interception added metadata to the query BEFORE handler saw it
-            assertThat(handler.getRecordedQueries()).hasSize(1);
-
-            interceptingConfig.shutdown();
+                // then - Verify REQUEST interceptor: interception added metadata to the query BEFORE handler saw it
+                assertThat(handler.getRecordedQueries()).hasSize(1);
+            } finally {
+                interceptingConfig.shutdown();
+            }
         }
 
         @Test
@@ -104,28 +106,30 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
                     .registerQueryDispatchInterceptor(config -> dispatchInterceptor1)
                     .registerQueryDispatchInterceptor(config -> dispatchInterceptor2)
                     .build();
-            QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
+            try {
+                QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
 
-            RecordingQueryHandler handler = new RecordingQueryHandler();
-            interceptingQueryBus.subscribe(QUERY_NAME, handler);
+                RecordingQueryHandler handler = new RecordingQueryHandler();
+                interceptingQueryBus.subscribe(QUERY_NAME, handler);
 
-            QueryMessage testQuery = new GenericQueryMessage(TEST_QUERY_TYPE, "test");
+                QueryMessage testQuery = new GenericQueryMessage(TEST_QUERY_TYPE, "test");
 
-            // when
-            StepVerifier.create(FluxUtils.of(interceptingQueryBus.query(testQuery,
-                                                                        StubProcessingContext.forMessage(testQuery))))
-                        .expectNextCount(1)
-                        .verifyComplete();
+                // when
+                StepVerifier.create(FluxUtils.of(interceptingQueryBus.query(testQuery,
+                                                                            StubProcessingContext.forMessage(testQuery))))
+                            .expectNextCount(1)
+                            .verifyComplete();
 
-            // then - Verify REQUEST interception: interception added metadata to the query BEFORE handler saw it
-            assertThat(handler.getRecordedQueries()).hasSize(1);
-            QueryMessage recordedQuery = handler.getRecordedQueries().getFirst();
-            assertTrue(recordedQuery.metadata().containsKey("dispatch1"),
-                       "Expected dispatch1 interceptor to add metadata to REQUEST");
-            assertTrue(recordedQuery.metadata().containsKey("dispatch2"),
-                       "Expected dispatch2 interceptor to add metadata to REQUEST");
-
-            interceptingConfig.shutdown();
+                // then - Verify REQUEST interception: interception added metadata to the query BEFORE handler saw it
+                assertThat(handler.getRecordedQueries()).hasSize(1);
+                QueryMessage recordedQuery = handler.getRecordedQueries().getFirst();
+                assertTrue(recordedQuery.metadata().containsKey("dispatch1"),
+                           "Expected dispatch1 interceptor to add metadata to REQUEST");
+                assertTrue(recordedQuery.metadata().containsKey("dispatch2"),
+                           "Expected dispatch2 interceptor to add metadata to REQUEST");
+            } finally {
+                interceptingConfig.shutdown();
+            }
         }
 
         @Test
@@ -140,26 +144,28 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
                     .registerQueryDispatchInterceptor(config -> dispatchInterceptor1)
                     .registerQueryDispatchInterceptor(config -> dispatchInterceptor2)
                     .build();
-            QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
+            try {
+                QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
 
-            RecordingQueryHandler handler = new RecordingQueryHandler();
-            interceptingQueryBus.subscribe(QUERY_NAME, handler);
+                RecordingQueryHandler handler = new RecordingQueryHandler();
+                interceptingQueryBus.subscribe(QUERY_NAME, handler);
 
-            QueryMessage testQuery = new GenericQueryMessage(TEST_QUERY_TYPE, "test");
+                QueryMessage testQuery = new GenericQueryMessage(TEST_QUERY_TYPE, "test");
 
-            // when
-            MessageStream<QueryResponseMessage> result = interceptingQueryBus.query(testQuery,
-                                                                                    StubProcessingContext.forMessage(
-                                                                                            testQuery));
+                // when
+                MessageStream<QueryResponseMessage> result = interceptingQueryBus.query(testQuery,
+                                                                                        StubProcessingContext.forMessage(
+                                                                                                testQuery));
 
-            // then - Verify RESPONSE interceptor: interception added metadata to the response AFTER handler executed
-            QueryResponseMessage response = result.first().asCompletableFuture().orTimeout(10, TimeUnit.SECONDS).join().message();
-            assertTrue(response.metadata().containsKey("dispatch1"),
-                       "Expected dispatch1 interceptor to add metadata to RESPONSE");
-            assertTrue(response.metadata().containsKey("dispatch2"),
-                       "Expected dispatch2 interceptor to add metadata to RESPONSE");
-
-            interceptingConfig.shutdown();
+                // then - Verify RESPONSE interceptor: interception added metadata to the response AFTER handler executed
+                QueryResponseMessage response = result.first().asCompletableFuture().orTimeout(10, TimeUnit.SECONDS).join().message();
+                assertTrue(response.metadata().containsKey("dispatch1"),
+                           "Expected dispatch1 interceptor to add metadata to RESPONSE");
+                assertTrue(response.metadata().containsKey("dispatch2"),
+                           "Expected dispatch2 interceptor to add metadata to RESPONSE");
+            } finally {
+                interceptingConfig.shutdown();
+            }
         }
 
         @Test
@@ -174,24 +180,26 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
             AxonConfiguration interceptingConfig = createMessagingConfigurer()
                     .registerQueryDispatchInterceptor(config -> countingInterceptor)
                     .build();
-            QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
+            try {
+                QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
 
-            QueryHandler handler = (query, context) -> MessageStream.just(new GenericQueryResponseMessage(
-                    TEST_RESPONSE_TYPE,
-                    "ok"));
-            interceptingQueryBus.subscribe(QUERY_NAME, handler);
+                QueryHandler handler = (query, context) -> MessageStream.just(new GenericQueryResponseMessage(
+                        TEST_RESPONSE_TYPE,
+                        "ok"));
+                interceptingQueryBus.subscribe(QUERY_NAME, handler);
 
-            QueryMessage firstQuery = new GenericQueryMessage(TEST_QUERY_TYPE, "first");
-            QueryMessage secondQuery = new GenericQueryMessage(TEST_QUERY_TYPE, "second");
+                QueryMessage firstQuery = new GenericQueryMessage(TEST_QUERY_TYPE, "first");
+                QueryMessage secondQuery = new GenericQueryMessage(TEST_QUERY_TYPE, "second");
 
-            // when
-            interceptingQueryBus.query(firstQuery, StubProcessingContext.forMessage(firstQuery));
-            interceptingQueryBus.query(secondQuery, StubProcessingContext.forMessage(secondQuery));
+                // when
+                interceptingQueryBus.query(firstQuery, StubProcessingContext.forMessage(firstQuery));
+                interceptingQueryBus.query(secondQuery, StubProcessingContext.forMessage(secondQuery));
 
-            // then
-            assertThat(counter.get()).isEqualTo(2);
-
-            interceptingConfig.shutdown();
+                // then
+                assertThat(counter.get()).isEqualTo(2);
+            } finally {
+                interceptingConfig.shutdown();
+            }
         }
 
         @Test
@@ -204,24 +212,26 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
             AxonConfiguration interceptingConfig = createMessagingConfigurer()
                     .registerQueryDispatchInterceptor(config -> throwingInterceptor)
                     .build();
-            QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
+            try {
+                QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
 
-            RecordingQueryHandler handler = new RecordingQueryHandler();
-            interceptingQueryBus.subscribe(QUERY_NAME, handler);
+                RecordingQueryHandler handler = new RecordingQueryHandler();
+                interceptingQueryBus.subscribe(QUERY_NAME, handler);
 
-            QueryMessage testQuery = new GenericQueryMessage(TEST_QUERY_TYPE, "test");
+                QueryMessage testQuery = new GenericQueryMessage(TEST_QUERY_TYPE, "test");
 
-            // when
-            MessageStream<QueryResponseMessage> result = interceptingQueryBus.query(testQuery,
-                                                                                    StubProcessingContext.forMessage(
-                                                                                            testQuery));
+                // when
+                MessageStream<QueryResponseMessage> result = interceptingQueryBus.query(testQuery,
+                                                                                        StubProcessingContext.forMessage(
+                                                                                                testQuery));
 
-            // then
-            assertTrue(result.first().asCompletableFuture().isCompletedExceptionally());
-            assertInstanceOf(MockException.class, result.first().asCompletableFuture().exceptionNow());
-            assertThat(handler.getRecordedQueries()).isEmpty(); // Handler should not be invoked when interceptor throws
-
-            interceptingConfig.shutdown();
+                // then
+                assertTrue(result.first().asCompletableFuture().isCompletedExceptionally());
+                assertInstanceOf(MockException.class, result.first().asCompletableFuture().exceptionNow());
+                assertThat(handler.getRecordedQueries()).isEmpty(); // Handler should not be invoked when interceptor throws
+            } finally {
+                interceptingConfig.shutdown();
+            }
         }
 
         @Test
@@ -233,24 +243,26 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
             AxonConfiguration interceptingConfig = createMessagingConfigurer()
                     .registerQueryDispatchInterceptor(config -> failingInterceptor)
                     .build();
-            QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
+            try {
+                QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
 
-            RecordingQueryHandler handler = new RecordingQueryHandler();
-            interceptingQueryBus.subscribe(QUERY_NAME, handler);
+                RecordingQueryHandler handler = new RecordingQueryHandler();
+                interceptingQueryBus.subscribe(QUERY_NAME, handler);
 
-            QueryMessage testQuery = new GenericQueryMessage(TEST_QUERY_TYPE, "test");
+                QueryMessage testQuery = new GenericQueryMessage(TEST_QUERY_TYPE, "test");
 
-            // when
-            MessageStream<QueryResponseMessage> result = interceptingQueryBus.query(testQuery,
-                                                                                    StubProcessingContext.forMessage(
-                                                                                            testQuery));
+                // when
+                MessageStream<QueryResponseMessage> result = interceptingQueryBus.query(testQuery,
+                                                                                        StubProcessingContext.forMessage(
+                                                                                                testQuery));
 
-            // then
-            assertTrue(result.first().asCompletableFuture().isCompletedExceptionally());
-            assertInstanceOf(MockException.class, result.first().asCompletableFuture().exceptionNow());
-            assertThat(handler.getRecordedQueries()).isEmpty(); // Handler should not be invoked when interceptor returns failed stream
-
-            interceptingConfig.shutdown();
+                // then
+                assertTrue(result.first().asCompletableFuture().isCompletedExceptionally());
+                assertInstanceOf(MockException.class, result.first().asCompletableFuture().exceptionNow());
+                assertThat(handler.getRecordedQueries()).isEmpty(); // Handler should not be invoked when interceptor returns failed stream
+            } finally {
+                interceptingConfig.shutdown();
+            }
         }
     }
 
@@ -270,26 +282,28 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
                     .registerQueryHandlerInterceptor(config -> handlerInterceptor1)
                     .registerQueryHandlerInterceptor(config -> handlerInterceptor2)
                     .build();
-            QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
+            try {
+                QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
 
-            RecordingQueryHandler handler = new RecordingQueryHandler();
-            interceptingQueryBus.subscribe(QUERY_NAME, handler);
+                RecordingQueryHandler handler = new RecordingQueryHandler();
+                interceptingQueryBus.subscribe(QUERY_NAME, handler);
 
-            QueryMessage testQuery = new GenericQueryMessage(TEST_QUERY_TYPE, "test");
-            ProcessingContext context = StubProcessingContext.forMessage(testQuery);
+                QueryMessage testQuery = new GenericQueryMessage(TEST_QUERY_TYPE, "test");
+                ProcessingContext context = StubProcessingContext.forMessage(testQuery);
 
-            // when
-            interceptingQueryBus.query(testQuery, context).first().asCompletableFuture().orTimeout(10, TimeUnit.SECONDS).join();
+                // when
+                interceptingQueryBus.query(testQuery, context).first().asCompletableFuture().orTimeout(10, TimeUnit.SECONDS).join();
 
-            // then - Verify REQUEST interceptor: handler interception added metadata to the query BEFORE handler saw it
-            assertThat(handler.getRecordedQueries()).hasSize(1);
-            QueryMessage recordedQuery = handler.getRecordedQueries().getFirst();
-            assertTrue(recordedQuery.metadata().containsKey("handler1"),
-                       "Expected handler1 interceptor to add metadata to REQUEST");
-            assertTrue(recordedQuery.metadata().containsKey("handler2"),
-                       "Expected handler2 interceptor to add metadata to REQUEST");
-
-            interceptingConfig.shutdown();
+                // then - Verify REQUEST interceptor: handler interception added metadata to the query BEFORE handler saw it
+                assertThat(handler.getRecordedQueries()).hasSize(1);
+                QueryMessage recordedQuery = handler.getRecordedQueries().getFirst();
+                assertTrue(recordedQuery.metadata().containsKey("handler1"),
+                           "Expected handler1 interceptor to add metadata to REQUEST");
+                assertTrue(recordedQuery.metadata().containsKey("handler2"),
+                           "Expected handler2 interceptor to add metadata to REQUEST");
+            } finally {
+                interceptingConfig.shutdown();
+            }
         }
 
         @Test
@@ -304,25 +318,27 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
                     .registerQueryHandlerInterceptor(config -> handlerInterceptor1)
                     .registerQueryHandlerInterceptor(config -> handlerInterceptor2)
                     .build();
-            QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
+            try {
+                QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
 
-            RecordingQueryHandler handler = new RecordingQueryHandler();
-            interceptingQueryBus.subscribe(QUERY_NAME, handler);
+                RecordingQueryHandler handler = new RecordingQueryHandler();
+                interceptingQueryBus.subscribe(QUERY_NAME, handler);
 
-            QueryMessage testQuery = new GenericQueryMessage(TEST_QUERY_TYPE, "test");
-            ProcessingContext context = StubProcessingContext.forMessage(testQuery);
+                QueryMessage testQuery = new GenericQueryMessage(TEST_QUERY_TYPE, "test");
+                ProcessingContext context = StubProcessingContext.forMessage(testQuery);
 
-            // when
-            MessageStream<QueryResponseMessage> result = interceptingQueryBus.query(testQuery, context);
+                // when
+                MessageStream<QueryResponseMessage> result = interceptingQueryBus.query(testQuery, context);
 
-            // then - Verify RESPONSE interception: handler interception added metadata to the response AFTER handler executed
-            QueryResponseMessage response = result.first().asCompletableFuture().orTimeout(10, TimeUnit.SECONDS).join().message();
-            assertTrue(response.metadata().containsKey("handler1"),
-                       "Expected handler1 interceptor to add metadata to RESPONSE");
-            assertTrue(response.metadata().containsKey("handler2"),
-                       "Expected handler2 interceptor to add metadata to RESPONSE");
-
-            interceptingConfig.shutdown();
+                // then - Verify RESPONSE interception: handler interception added metadata to the response AFTER handler executed
+                QueryResponseMessage response = result.first().asCompletableFuture().orTimeout(10, TimeUnit.SECONDS).join().message();
+                assertTrue(response.metadata().containsKey("handler1"),
+                           "Expected handler1 interceptor to add metadata to RESPONSE");
+                assertTrue(response.metadata().containsKey("handler2"),
+                           "Expected handler2 interceptor to add metadata to RESPONSE");
+            } finally {
+                interceptingConfig.shutdown();
+            }
         }
 
         @Test
@@ -337,26 +353,28 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
             AxonConfiguration interceptingConfig = createMessagingConfigurer()
                     .registerQueryHandlerInterceptor(config -> countingInterceptor)
                     .build();
-            QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
+            try {
+                QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
 
-            QueryHandler handler = (query, context) -> MessageStream.just(new GenericQueryResponseMessage(
-                    TEST_RESPONSE_TYPE,
-                    "ok"));
-            interceptingQueryBus.subscribe(QUERY_NAME, handler);
+                QueryHandler handler = (query, context) -> MessageStream.just(new GenericQueryResponseMessage(
+                        TEST_RESPONSE_TYPE,
+                        "ok"));
+                interceptingQueryBus.subscribe(QUERY_NAME, handler);
 
-            QueryMessage firstQuery = new GenericQueryMessage(TEST_QUERY_TYPE, "first");
-            QueryMessage secondQuery = new GenericQueryMessage(TEST_QUERY_TYPE, "second");
+                QueryMessage firstQuery = new GenericQueryMessage(TEST_QUERY_TYPE, "first");
+                QueryMessage secondQuery = new GenericQueryMessage(TEST_QUERY_TYPE, "second");
 
-            // when
-            interceptingQueryBus.query(firstQuery, StubProcessingContext.forMessage(firstQuery)).first()
-                                .asCompletableFuture().orTimeout(10, TimeUnit.SECONDS).join();
-            interceptingQueryBus.query(secondQuery, StubProcessingContext.forMessage(secondQuery)).first()
-                                .asCompletableFuture().orTimeout(10, TimeUnit.SECONDS).join();
+                // when
+                interceptingQueryBus.query(firstQuery, StubProcessingContext.forMessage(firstQuery)).first()
+                                    .asCompletableFuture().orTimeout(10, TimeUnit.SECONDS).join();
+                interceptingQueryBus.query(secondQuery, StubProcessingContext.forMessage(secondQuery)).first()
+                                    .asCompletableFuture().orTimeout(10, TimeUnit.SECONDS).join();
 
-            // then
-            assertThat(counter.get()).isEqualTo(2);
-
-            interceptingConfig.shutdown();
+                // then
+                assertThat(counter.get()).isEqualTo(2);
+            } finally {
+                interceptingConfig.shutdown();
+            }
         }
 
         @Test
@@ -365,25 +383,27 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
 
             AxonConfiguration interceptingConfig = createMessagingConfigurer()
                     .build();
-            QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
+            try {
+                QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
 
-            QueryHandler handler = (query, context) -> MessageStream.failed(new MockException(
-                    "Simulating failure in interceptor"));
-            interceptingQueryBus.subscribe(QUERY_NAME, handler);
+                QueryHandler handler = (query, context) -> MessageStream.failed(new MockException(
+                        "Simulating failure in interceptor"));
+                interceptingQueryBus.subscribe(QUERY_NAME, handler);
 
-            QueryMessage testQuery = new GenericQueryMessage(TEST_QUERY_TYPE, "Request");
-            ProcessingContext context = StubProcessingContext.forMessage(testQuery);
+                QueryMessage testQuery = new GenericQueryMessage(TEST_QUERY_TYPE, "Request");
+                ProcessingContext context = StubProcessingContext.forMessage(testQuery);
 
-            // when
-            var result = interceptingQueryBus.query(testQuery, context);
+                // when
+                var result = interceptingQueryBus.query(testQuery, context);
 
-            // then
-            Awaitility.await().untilAsserted(() -> {
-                assertTrue(result.isCompleted());
-                assertTrue(result.error().isPresent());
-            });
-
-            interceptingConfig.shutdown();
+                // then
+                Awaitility.await().untilAsserted(() -> {
+                    assertTrue(result.isCompleted());
+                    assertTrue(result.error().isPresent());
+                });
+            } finally {
+                interceptingConfig.shutdown();
+            }
         }
 
         @Test
@@ -395,26 +415,28 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
             AxonConfiguration interceptingConfig = createMessagingConfigurer()
                     .registerQueryHandlerInterceptor(config -> failingInterceptor)
                     .build();
-            QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
+            try {
+                QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
 
-            QueryHandler handler = (query, context) -> MessageStream.just(new GenericQueryResponseMessage(
-                    TEST_RESPONSE_TYPE,
-                    "ok"));
-            interceptingQueryBus.subscribe(QUERY_NAME, handler);
+                QueryHandler handler = (query, context) -> MessageStream.just(new GenericQueryResponseMessage(
+                        TEST_RESPONSE_TYPE,
+                        "ok"));
+                interceptingQueryBus.subscribe(QUERY_NAME, handler);
 
-            QueryMessage testQuery = new GenericQueryMessage(TEST_QUERY_TYPE, "Request");
-            ProcessingContext context = StubProcessingContext.forMessage(testQuery);
+                QueryMessage testQuery = new GenericQueryMessage(TEST_QUERY_TYPE, "Request");
+                ProcessingContext context = StubProcessingContext.forMessage(testQuery);
 
-            // when
-            var result = interceptingQueryBus.query(testQuery, context);
+                // when
+                var result = interceptingQueryBus.query(testQuery, context);
 
-            // then
-            Awaitility.await().untilAsserted(() -> {
-                assertTrue(result.isCompleted());
-                assertTrue(result.error().isPresent());
-            });
-
-            interceptingConfig.shutdown();
+                // then
+                Awaitility.await().untilAsserted(() -> {
+                    assertTrue(result.isCompleted());
+                    assertTrue(result.error().isPresent());
+                });
+            } finally {
+                interceptingConfig.shutdown();
+            }
         }
 
         @Test
@@ -427,24 +449,26 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
             AxonConfiguration interceptingConfig = createMessagingConfigurer()
                     .registerDispatchInterceptor(config -> failingInterceptor)
                     .build();
-            QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
+            try {
+                QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
 
-            QueryHandler handler = (query, context) -> MessageStream.just(new GenericQueryResponseMessage(
-                    TEST_RESPONSE_TYPE,
-                    "ok"));
-            interceptingQueryBus.subscribe(QUERY_NAME, handler);
+                QueryHandler handler = (query, context) -> MessageStream.just(new GenericQueryResponseMessage(
+                        TEST_RESPONSE_TYPE,
+                        "ok"));
+                interceptingQueryBus.subscribe(QUERY_NAME, handler);
 
-            QueryMessage testQuery = new GenericQueryMessage(TEST_QUERY_TYPE, "Request");
-            ProcessingContext context = StubProcessingContext.forMessage(testQuery);
+                QueryMessage testQuery = new GenericQueryMessage(TEST_QUERY_TYPE, "Request");
+                ProcessingContext context = StubProcessingContext.forMessage(testQuery);
 
-            // when
-            var result = interceptingQueryBus.query(testQuery, context);
+                // when
+                var result = interceptingQueryBus.query(testQuery, context);
 
-            // then
-            assertTrue(result.error().isPresent());
-            assertInstanceOf(MockException.class, result.error().get());
-
-            interceptingConfig.shutdown();
+                // then
+                assertTrue(result.error().isPresent());
+                assertInstanceOf(MockException.class, result.error().get());
+            } finally {
+                interceptingConfig.shutdown();
+            }
         }
     }
 
@@ -487,33 +511,35 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
                     .registerQueryHandlerInterceptor(config -> handlerInterceptor1)
                     .registerQueryHandlerInterceptor(config -> handlerInterceptor2)
                     .build();
-            QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
+            try {
+                QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
 
-            RecordingQueryHandler handler = new RecordingQueryHandler();
-            interceptingQueryBus.subscribe(QUERY_NAME, handler);
+                RecordingQueryHandler handler = new RecordingQueryHandler();
+                interceptingQueryBus.subscribe(QUERY_NAME, handler);
 
-            QueryMessage testQuery = new GenericQueryMessage(TEST_QUERY_TYPE, "test");
-            ProcessingContext context = StubProcessingContext.forMessage(testQuery);
+                QueryMessage testQuery = new GenericQueryMessage(TEST_QUERY_TYPE, "test");
+                ProcessingContext context = StubProcessingContext.forMessage(testQuery);
 
-            // when
-            MessageStream<QueryResponseMessage> result = interceptingQueryBus.subscriptionQuery(testQuery, context, 10);
+                // when
+                MessageStream<QueryResponseMessage> result = interceptingQueryBus.subscriptionQuery(testQuery, context, 10);
 
-            // then
-            QueryResponseMessage response = result.first().asCompletableFuture().orTimeout(10, TimeUnit.SECONDS).join().message();
-            assertTrue(response.metadata().containsKey("handler1"),
-                       "Expected handler1 interceptor to be applied to response");
-            assertTrue(response.metadata().containsKey("handler2"),
-                       "Expected handler2 interceptor to be applied to response");
+                // then
+                QueryResponseMessage response = result.first().asCompletableFuture().orTimeout(10, TimeUnit.SECONDS).join().message();
+                assertTrue(response.metadata().containsKey("handler1"),
+                           "Expected handler1 interceptor to be applied to response");
+                assertTrue(response.metadata().containsKey("handler2"),
+                           "Expected handler2 interceptor to be applied to response");
 
-            // Verify handler interception added metadata to the query received by handler
-            assertThat(handler.getRecordedQueries()).hasSize(1);
-            QueryMessage recordedQuery = handler.getRecordedQueries().get(0);
-            assertTrue(recordedQuery.metadata().containsKey("handler1"),
-                       "Expected handler1 interceptor to add metadata to query");
-            assertTrue(recordedQuery.metadata().containsKey("handler2"),
-                       "Expected handler2 interceptor to add metadata to query");
-
-            interceptingConfig.shutdown();
+                // Verify handler interception added metadata to the query received by handler
+                assertThat(handler.getRecordedQueries()).hasSize(1);
+                QueryMessage recordedQuery = handler.getRecordedQueries().get(0);
+                assertTrue(recordedQuery.metadata().containsKey("handler1"),
+                           "Expected handler1 interceptor to add metadata to query");
+                assertTrue(recordedQuery.metadata().containsKey("handler2"),
+                           "Expected handler2 interceptor to add metadata to query");
+            } finally {
+                interceptingConfig.shutdown();
+            }
         }
 
         @Test
@@ -528,35 +554,37 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
                     .registerQueryDispatchInterceptor(config -> dispatchInterceptor1)
                     .registerQueryDispatchInterceptor(config -> dispatchInterceptor2)
                     .build();
-            QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
+            try {
+                QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
 
-            RecordingQueryHandler handler = new RecordingQueryHandler();
-            interceptingQueryBus.subscribe(QUERY_NAME, handler);
+                RecordingQueryHandler handler = new RecordingQueryHandler();
+                interceptingQueryBus.subscribe(QUERY_NAME, handler);
 
-            QueryMessage testQuery = new GenericQueryMessage(
-                    TEST_QUERY_TYPE, "test"
-            );
-            ProcessingContext context = StubProcessingContext.forMessage(testQuery);
+                QueryMessage testQuery = new GenericQueryMessage(
+                        TEST_QUERY_TYPE, "test"
+                );
+                ProcessingContext context = StubProcessingContext.forMessage(testQuery);
 
-            // when
-            MessageStream<QueryResponseMessage> result = interceptingQueryBus.subscriptionQuery(testQuery, context, 10);
+                // when
+                MessageStream<QueryResponseMessage> result = interceptingQueryBus.subscriptionQuery(testQuery, context, 10);
 
-            // then
-            QueryResponseMessage response = result.first().asCompletableFuture().orTimeout(10, TimeUnit.SECONDS).join().message();
-            assertTrue(response.metadata().containsKey("dispatch1"),
-                       "Expected dispatch1 interceptor to be applied to response");
-            assertTrue(response.metadata().containsKey("dispatch2"),
-                       "Expected dispatch2 interceptor to be applied to response");
+                // then
+                QueryResponseMessage response = result.first().asCompletableFuture().orTimeout(10, TimeUnit.SECONDS).join().message();
+                assertTrue(response.metadata().containsKey("dispatch1"),
+                           "Expected dispatch1 interceptor to be applied to response");
+                assertTrue(response.metadata().containsKey("dispatch2"),
+                           "Expected dispatch2 interceptor to be applied to response");
 
-            // Verify dispatch interception added metadata to the query received by handler
-            assertThat(handler.getRecordedQueries()).hasSize(1);
-            QueryMessage recordedQuery = handler.getRecordedQueries().getFirst();
-            assertTrue(recordedQuery.metadata().containsKey("dispatch1"),
-                       "Expected dispatch1 interceptor to add metadata to query");
-            assertTrue(recordedQuery.metadata().containsKey("dispatch2"),
-                       "Expected dispatch2 interceptor to add metadata to query");
-
-            interceptingConfig.shutdown();
+                // Verify dispatch interception added metadata to the query received by handler
+                assertThat(handler.getRecordedQueries()).hasSize(1);
+                QueryMessage recordedQuery = handler.getRecordedQueries().getFirst();
+                assertTrue(recordedQuery.metadata().containsKey("dispatch1"),
+                           "Expected dispatch1 interceptor to add metadata to query");
+                assertTrue(recordedQuery.metadata().containsKey("dispatch2"),
+                           "Expected dispatch2 interceptor to add metadata to query");
+            } finally {
+                interceptingConfig.shutdown();
+            }
         }
 
         @Test
@@ -578,24 +606,26 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
                     .registerQueryDispatchInterceptor(config -> dispatchInterceptor1)
                     .registerQueryDispatchInterceptor(config -> dispatchInterceptor2)
                     .build();
-            QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
+            try {
+                QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
 
-            QueryMessage testQuery = new GenericQueryMessage(
-                    TEST_QUERY_TYPE, "test"
-            );
+                QueryMessage testQuery = new GenericQueryMessage(
+                        TEST_QUERY_TYPE, "test"
+                );
 
-            // when
-            MessageStream<SubscriptionQueryUpdateMessage> updateStream =
-                    interceptingQueryBus.subscribeToUpdates(testQuery, 10);
+                // when
+                MessageStream<SubscriptionQueryUpdateMessage> updateStream =
+                        interceptingQueryBus.subscribeToUpdates(testQuery, 10);
 
-            // then - Verify dispatch interception were invoked
-            assertThat(interceptor1Invocations.get()).isEqualTo(1);
-            assertThat(interceptor2Invocations.get()).isEqualTo(1);
+                // then - Verify dispatch interception were invoked
+                assertThat(interceptor1Invocations.get()).isEqualTo(1);
+                assertThat(interceptor2Invocations.get()).isEqualTo(1);
 
-            // Verify that the update stream was created successfully
-            assertNotNull(updateStream, "Expected subscribeToUpdates to return a non-null stream");
-
-            interceptingConfig.shutdown();
+                // Verify that the update stream was created successfully
+                assertNotNull(updateStream, "Expected subscribeToUpdates to return a non-null stream");
+            } finally {
+                interceptingConfig.shutdown();
+            }
         }
     }
 
@@ -631,26 +661,28 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
                     .registerDispatchInterceptor(config -> genericInterceptor1)
                     .registerDispatchInterceptor(config -> genericInterceptor2)
                     .build();
-            QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
+            try {
+                QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
 
-            GenericSubscriptionQueryUpdateMessage updateMessage =
-                    new GenericSubscriptionQueryUpdateMessage(TEST_RESPONSE_TYPE, "update");
+                GenericSubscriptionQueryUpdateMessage updateMessage =
+                        new GenericSubscriptionQueryUpdateMessage(TEST_RESPONSE_TYPE, "update");
 
-            Predicate<QueryMessage> matchAll = query -> true;
+                Predicate<QueryMessage> matchAll = query -> true;
 
-            // when
-            CompletableFuture<Void> result = interceptingQueryBus.emitUpdate(
-                    matchAll,
-                    () -> updateMessage,
-                    null
-            );
+                // when
+                CompletableFuture<Void> result = interceptingQueryBus.emitUpdate(
+                        matchAll,
+                        () -> updateMessage,
+                        null
+                );
 
-            // then
-            assertDoesNotThrow(result::join);
-            assertThat(interceptor1Invocations.get()).isEqualTo(1);
-            assertThat(interceptor2Invocations.get()).isEqualTo(1);
-
-            interceptingConfig.shutdown();
+                // then
+                assertDoesNotThrow(result::join);
+                assertThat(interceptor1Invocations.get()).isEqualTo(1);
+                assertThat(interceptor2Invocations.get()).isEqualTo(1);
+            } finally {
+                interceptingConfig.shutdown();
+            }
         }
 
         @Test
@@ -690,27 +722,29 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
             AxonConfiguration interceptingConfig = createMessagingConfigurer()
                     .registerDispatchInterceptor(config -> genericFailingInterceptor)
                     .build();
-            QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
+            try {
+                QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
 
-            QueryMessage testQuery = new GenericQueryMessage(
-                    TEST_QUERY_TYPE, "test"
-            );
-            GenericSubscriptionQueryUpdateMessage updateMessage =
-                    new GenericSubscriptionQueryUpdateMessage(TEST_RESPONSE_TYPE, "update");
+                QueryMessage testQuery = new GenericQueryMessage(
+                        TEST_QUERY_TYPE, "test"
+                );
+                GenericSubscriptionQueryUpdateMessage updateMessage =
+                        new GenericSubscriptionQueryUpdateMessage(TEST_RESPONSE_TYPE, "update");
 
-            // when
-            CompletableFuture<Void> result = interceptingQueryBus.emitUpdate(
-                    query -> query.equals(testQuery),
-                    () -> updateMessage,
-                    null
-            );
+                // when
+                CompletableFuture<Void> result = interceptingQueryBus.emitUpdate(
+                        query -> query.equals(testQuery),
+                        () -> updateMessage,
+                        null
+                );
 
-            // then
-            assertTrue(result.isCompletedExceptionally(),
-                       "Expected result to be completed exceptionally");
-            assertInstanceOf(MockException.class, result.exceptionNow());
-
-            interceptingConfig.shutdown();
+                // then
+                assertTrue(result.isCompletedExceptionally(),
+                           "Expected result to be completed exceptionally");
+                assertInstanceOf(MockException.class, result.exceptionNow());
+            } finally {
+                interceptingConfig.shutdown();
+            }
         }
     }
 
