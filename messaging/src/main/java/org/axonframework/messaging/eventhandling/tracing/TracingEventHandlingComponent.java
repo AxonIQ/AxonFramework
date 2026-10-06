@@ -24,18 +24,15 @@ import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.messaging.core.Context;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
-import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.eventhandling.DelegatingEventHandlingComponent;
 import org.axonframework.messaging.eventhandling.EventHandlingComponent;
 import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.replay.ReplayStatusChanged;
-import org.axonframework.messaging.eventhandling.replay.ResetContext;
 import org.jspecify.annotations.Nullable;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
-import java.util.Set;
 
 /**
  * Delegating {@link EventHandlingComponent} decorator that opens a per-event handler span around each event handled,
@@ -74,7 +71,7 @@ import java.util.Set;
  * @since 5.3.0
  */
 @Internal
-public final class TracingEventHandlingComponent implements EventHandlingComponent {
+public final class TracingEventHandlingComponent extends DelegatingEventHandlingComponent {
 
     /** Prefix for the per-event handler span ({@code "EventProcessor.process <name>"}). */
     private static final String PROCESS_SPAN = "EventProcessor.process";
@@ -93,7 +90,6 @@ public final class TracingEventHandlingComponent implements EventHandlingCompone
     private static final Context.ResourceKey<BatchSpanInitializer> BATCH_SPAN_INITIALIZER_KEY =
             Context.ResourceKey.withLabel("org.axonframework.messaging.tracing.batchSpanInitializer");
 
-    private final EventHandlingComponent delegate;
     private final SpanFactory spanFactory;
     private final @Nullable String processorName;
     private final boolean streaming;
@@ -143,7 +139,7 @@ public final class TracingEventHandlingComponent implements EventHandlingCompone
                                          boolean batchTraceEnabled,
                                          boolean distributedInSameTrace,
                                          Duration distributedInSameTraceTimeLimit) {
-        this.delegate = Objects.requireNonNull(delegate, "delegate may not be null");
+        super(delegate);
         this.spanFactory = Objects.requireNonNull(spanFactory, "spanFactory may not be null");
         this.processorName = processorName;
         this.streaming = streaming;
@@ -226,31 +222,6 @@ public final class TracingEventHandlingComponent implements EventHandlingCompone
                 initialized = true;
             }
         }
-    }
-
-    @Override
-    public Set<QualifiedName> supportedEvents() {
-        return delegate.supportedEvents();
-    }
-
-    @Override
-    public Object sequenceIdentifierFor(EventMessage event, ProcessingContext context) {
-        return delegate.sequenceIdentifierFor(event, context);
-    }
-
-    @Override
-    public boolean supportsReset() {
-        return delegate.supportsReset();
-    }
-
-    @Override
-    public MessageStream.Empty<Message> handle(ResetContext resetContext, ProcessingContext context) {
-        return delegate.handle(resetContext, context);
-    }
-
-    @Override
-    public MessageStream.Empty<Message> handle(ReplayStatusChanged statusChange, ProcessingContext context) {
-        return delegate.handle(statusChange, context);
     }
 
     @Override

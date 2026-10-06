@@ -40,7 +40,7 @@
         -->
         <spring.boot.version>4.1.1</spring.boot.version>
         <jackson.version>3.2.3</jackson.version>
-        <archunit.version>1.5.0</archunit.version>
+        <archunit.version>1.5.1</archunit.version>
     </properties>
 
     <dependencyManagement>
@@ -106,8 +106,8 @@
         </dependency>
         <!-- Carries the Axon Framework 4 Saga, for the "legacy" recipe. -->
         <dependency>
-            <groupId>org.axonframework</groupId>
-            <artifactId>axon-legacy</artifactId>
+            <groupId>io.axoniq.framework</groupId>
+            <artifactId>axoniq-legacy</artifactId>
         </dependency>
 
         <!-- Database -->
@@ -124,8 +124,8 @@
         </dependency>
         <!-- Carries the Axon Framework 4 SagaTestFixture, on which the "legacy" recipe keeps its original test. -->
         <dependency>
-            <groupId>org.axonframework</groupId>
-            <artifactId>axon-legacy-test</artifactId>
+            <groupId>io.axoniq.framework</groupId>
+            <artifactId>axoniq-legacy-test</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>

@@ -90,7 +90,7 @@ public class MigrateAxonTestFixtureFluentApi extends Recipe {
             @Override
             public J.MethodInvocation visitMethodInvocation(J.MethodInvocation method, ExecutionContext ctx) {
                 if (usesSagaTestFixture()) {
-                    // SagaTestFixture keeps its Axon Framework 4 fluent API in axon-legacy-test. Rewriting its
+                    // SagaTestFixture keeps its Axon Framework 4 fluent API in axoniq-legacy-test. Rewriting its
                     // chain into the AxonTestFixture phases does not compile there.
                     return method;
                 }

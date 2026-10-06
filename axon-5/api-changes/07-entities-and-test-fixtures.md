@@ -409,7 +409,7 @@ on their own pass.
 
 ### Migrating `SagaTestFixture`
 
-The legacy `SagaTestFixture` is available from the `axon-legacy-test` module. It retains the Axon Framework 4
+The legacy `SagaTestFixture` is available from the `axoniq-legacy-test` module. It retains the Axon Framework 4
 given-when-then API where possible, but delegates execution to an Axon Framework 5 `AxonTestFixture` and application
 configuration. This introduces the following observable differences and lifecycle requirements:
 
@@ -437,7 +437,7 @@ an unhandled exception now fails `expectSuccessfulHandlerExecution()` and rolls 
 suppresses the exception, while rethrowing propagates it. See [Processing context](02-processing-context.md#sagamanager)
 for the complete SagaManager failure and transaction behavior.
 
-Deadlines, scheduled events, and time advancement have not been ported to `axon-legacy-test`. Their API remains
+Deadlines, scheduled events, and time advancement have not been ported to `axoniq-legacy-test`. Their API remains
 present so existing tests compile, but every related operation and assertion, including negative assertions, throws
 `UnsupportedOperationException`. This fails explicitly instead of allowing a test to pass without checking anything.
 

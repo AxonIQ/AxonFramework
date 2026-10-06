@@ -45,15 +45,6 @@
             <optional>true</optional>
         </dependency>
 
-        <!-- Test scope only: the legacy Saga autoconfiguration classes now live in axon-legacy; these tests exercise
-             them together with this module's Spring Boot autoconfiguration stack (persistence.xml, event store). -->
-        <dependency>
-            <groupId>org.axonframework</groupId>
-            <artifactId>axon-legacy</artifactId>
-            <version>${project.version}</version>
-            <scope>test</scope>
-        </dependency>
-
         <dependency>
             <groupId>org.jobrunr</groupId>
             <artifactId>jobrunr</artifactId>
@@ -209,7 +200,7 @@
         <dependency>
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-lang3</artifactId>
-            <version>3.20.0</version>
+            <version>3.21.0</version>
             <optional>true</optional>
         </dependency>
 

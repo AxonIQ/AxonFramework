@@ -54,13 +54,6 @@
             <artifactId>axon-eventsourcing</artifactId>
             <version>${project.version}</version>
         </dependency>
-        <!-- Carries the Axon Framework 4 Saga APIs the migration path samples document. Optional in axon-spring, so
-             it has to be requested explicitly here, exactly as a migrating application requests it. -->
-        <dependency>
-            <groupId>org.axonframework</groupId>
-            <artifactId>axon-legacy</artifactId>
-            <version>${project.version}</version>
-        </dependency>
         <dependency>
             <groupId>org.axonframework</groupId>
             <artifactId>axon-test</artifactId>
@@ -152,7 +145,7 @@
         <dependency>
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-core</artifactId>
-            <version>13.7.0</version>
+            <version>13.8.1</version>
         </dependency>
     </dependencies>
 

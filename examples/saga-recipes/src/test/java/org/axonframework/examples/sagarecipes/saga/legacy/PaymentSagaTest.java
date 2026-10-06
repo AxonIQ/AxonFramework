@@ -108,7 +108,7 @@ class PaymentSagaTest {
     }
 
     @Disabled("#3065: SagaTestFixture.whenTimeElapses(..) throws UnsupportedOperationException until deadlines "
-                      + "are ported into axon-legacy")
+                      + "are ported into axoniq-legacy")
     @Test
     void shouldRejectPaymentWhenNotConfirmedIn30Seconds() {
         // given

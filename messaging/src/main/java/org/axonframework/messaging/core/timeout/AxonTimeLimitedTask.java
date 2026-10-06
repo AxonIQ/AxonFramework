@@ -23,6 +23,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
@@ -70,73 +71,17 @@ class AxonTimeLimitedTask {
     @Nullable
     private volatile Future<?> currentScheduledFuture = null;
 
-
-    /**
-     * Creates a new {@code AxonTimeLimitedTask} for the given {@code task} with the given {@code timeout},
-     * {@code warningThreshold} and {@code warningInterval}. Runs the provided task on the current thread after
-     * scheduling a timeout and warnings on another thread.
-     * <p>
-     * If you wish to provide a logger of your own, or your own {@code scheduledExecutorService}, use
-     * {@link #AxonTimeLimitedTask(String, int, int, int, ScheduledExecutorService, Logger)}.
-     *
-     * @param taskName         the task's name to be included in the logging
-     * @param timeout          the timeout in milliseconds
-     * @param warningThreshold the threshold in milliseconds after which a warning is logged. Setting this to a value
-     *                         equal or higher than {@code timeout} will disable warnings
-     * @param warningInterval  the interval in milliseconds between warnings
-     */
-    public AxonTimeLimitedTask(String taskName,
-                               int timeout,
-                               int warningThreshold,
-                               int warningInterval) {
-        this(taskName,
-             timeout,
-             warningThreshold,
-             warningInterval,
-             AxonTaskJanitor.INSTANCE,
-             AxonTaskJanitor.LOGGER,
-             null);
-    }
-
-    /**
-     * Creates a new {@code AxonTimeLimitedTask} for the given {@code task} with the given {@code timeout},
-     * {@code warningThreshold} and {@code warningInterval}. Runs the provided task on the current thread after
-     * scheduling a timeout and warnings on another thread.
-     * <p>
-     * The {@code callerClass} is used to trim the stack trace in timeout/warning logs, cutting off framework internals
-     * below the caller. If you do not need trimming, use {@link #AxonTimeLimitedTask(String, int, int, int)}.
-     *
-     * @param taskName         the task's name to be included in the logging
-     * @param timeout          the timeout in milliseconds
-     * @param warningThreshold the threshold in milliseconds after which a warning is logged. Setting this to a value
-     *                         equal or higher than {@code timeout} will disable warnings
-     * @param warningInterval  the interval in milliseconds between warnings
-     * @param callerClass      the class of the direct caller, used to trim the stack trace in timeout/warning logs
-     */
-    public AxonTimeLimitedTask(String taskName,
-                               int timeout,
-                               int warningThreshold,
-                               int warningInterval,
-                               Class<?> callerClass) {
-        this(taskName,
-             timeout,
-             warningThreshold,
-             warningInterval,
-             AxonTaskJanitor.INSTANCE,
-             AxonTaskJanitor.LOGGER,
-             callerClass);
-    }
-
     /**
      * Creates a new {@code AxonTimeLimitedTask} for the given {@code task} with the given {@code timeout},
      * {@code warningThreshold} and {@code warningInterval}. For scheduling, the provided
      * {@code scheduledExecutorService} will be used. To log warnings and errors, the provided {@code logger} will be
-     * used. Runs the provided task on the current thread after scheduling a timeout and warnings on the provided
-     * {@code scheduledExecutorService}.
+     * used.
      * <p>
-     * If you do not wish to provide a logger of your own {@code scheduledExecutorService}, use
-     * {@link #AxonTimeLimitedTask(String, int, int, int)}.
-     * <p>
+     * Runs the provided task on the current thread after scheduling a timeout and warnings on the provided
+     * {@code scheduledExecutorService}. It is <b>strongly</b> recommended that this {@code scheduledExecutorService} is
+     * the instance registered in the current {@code Configuration} based on {@link AxonTaskJanitor#executorComponent()}
+     * at all times and for each task, to ensure a single executor that is tied to the lifecycle of that
+     * {@code Configuration} is used throughout.
      *
      * @param taskName                 the task's name to be included in the logging
      * @param timeout                  the timeout in milliseconds
@@ -375,19 +320,28 @@ class AxonTimeLimitedTask {
      * Schedule a subsequent warning for the task after the configured {@code timeout}. Once the warning time is
      * reached, it will log a warning (if the task is not completed yet) and schedule the next warning or the timeout
      * interrupt.
+     * <p>
+     * If the underlying {@code scheduledExecutorService} rejects the scheduling attempt (for example, because it has
+     * been shut down), this task's timeout is not enforced: a warning is logged and the exception is not propagated, so
+     * a dead executor never breaks message handling.
      *
      * @param timeout The time in milliseconds before the warning should be scheduled
      */
     private void scheduleWarning(long timeout) {
-        currentScheduledFuture = scheduledExecutorService.schedule(
-                () -> {
-                    if (!completed) {
-                        scheduleWarningOrInterrupt();
-                    }
-                },
-                timeout,
-                TimeUnit.MILLISECONDS
-        );
+        try {
+            currentScheduledFuture = scheduledExecutorService.schedule(
+                    () -> {
+                        if (!completed) {
+                            scheduleWarningOrInterrupt();
+                        }
+                    },
+                    timeout,
+                    TimeUnit.MILLISECONDS
+            );
+        } catch (RejectedExecutionException e) {
+            logger.warn("{} could not schedule a warning because its executor is no longer accepting tasks. "
+                                + "The timeout for this task will not be enforced.", taskName, e);
+        }
     }
 
     /**
@@ -411,20 +365,29 @@ class AxonTimeLimitedTask {
 
     /**
      * Schedules an interrupt to the thread handling the message.
+     * <p>
+     * If the underlying {@code scheduledExecutorService} rejects the scheduling attempt (for example, because it has
+     * been shut down), this task's timeout is not enforced: a warning is logged and the exception is not propagated, so
+     * a dead executor never breaks message handling.
      *
      * @param remainingTimeout the time in milliseconds before the interrupt should be scheduled
      */
     private void scheduleInterrupt(long remainingTimeout) {
-        currentScheduledFuture = scheduledExecutorService.schedule(() -> {
-            synchronized (lock) {
-                if (!completed && !interrupted) {
-                    logger.error("{} has exceeded its timeout of [{}ms]. Interrupting thread(s).\n{}",
-                                 taskName, timeout, describeActiveThreads());
-                    interrupted = true;
-                    activeThreads.forEach(Thread::interrupt);
+        try {
+            currentScheduledFuture = scheduledExecutorService.schedule(() -> {
+                synchronized (lock) {
+                    if (!completed && !interrupted) {
+                        logger.error("{} has exceeded its timeout of [{}ms]. Interrupting thread(s).\n{}",
+                                     taskName, timeout, describeActiveThreads());
+                        interrupted = true;
+                        activeThreads.forEach(Thread::interrupt);
+                    }
                 }
-            }
-        }, remainingTimeout, TimeUnit.MILLISECONDS);
+            }, remainingTimeout, TimeUnit.MILLISECONDS);
+        } catch (RejectedExecutionException e) {
+            logger.warn("{} could not schedule an interrupt because its executor is no longer accepting tasks. "
+                                + "The timeout for this task will not be enforced.", taskName, e);
+        }
     }
 
     private String describeActiveThreads() {
