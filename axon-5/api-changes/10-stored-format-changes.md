@@ -85,8 +85,18 @@ consuming events through the `EventStorageEngine#stream(StreamingCondition)` met
 ## Sagas
 
 The saga tables are unchanged, so an Axon Framework 4 saga table can be read and written by `axoniq-legacy` without
-migration in the default configuration. Two columns need a closer look: `sagaType`, which is a condition on that
-statement, and `revision`, whose contents changed.
+migration, provided the `serializedSaga` column holds JSON. That requires the Axon Framework 4 node's `Serializer` to
+have been Jackson, whether configured explicitly or defaulted by Spring Boot auto-configuration. Two further columns
+need a closer look: `sagaType`, which is a condition on that statement, and `revision`, whose contents changed.
+
+### The `serializedSaga` column (XStream)
+
+Many applications never configured a `Serializer` for the legacy saga stores built without Spring Boot
+auto-configuration, which then defaulted to XStream, so in that configuration the `serializedSaga` column is XStream
+XML rather than JSON. No `axoniq-legacy` `Converter` reads XStream XML unless it is an
+`org.axonframework.conversion.xstream.XStreamConverter`, configured with the application's own `XStream` instance; see
+the reference guide's Conversion page, XStreamConverter section, for how to configure one. Without it, loading such a
+saga fails with a `ConversionException` naming the saga type, rather than returning a saga with default field values.
 
 ### The `sagaType` column
 
