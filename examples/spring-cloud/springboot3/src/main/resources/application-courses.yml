@@ -7,5 +7,5 @@ university:
 axon:
   eventhandling:
     processors:
-      "[io.axoniq.framework.examples.springcloud]":
+      "[org.axonframework.examples.springcloud]":
         mode: subscribing

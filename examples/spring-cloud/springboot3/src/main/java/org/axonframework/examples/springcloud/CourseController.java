@@ -1,30 +1,28 @@
 /*
- * Copyright (c) 2010-2026. AxonIQ B.V.
+ * Copyright (c) 2010-2026. Axon Framework
  *
- * Licensed under the AXONIQ TERMS OF SERVICE,
- * Version 29 April 2026 (the "License");
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * The software is available for evaluation use without registration.
- * Continued use beyond the evaluation period requires registration
- * and a commercial license. See the License for the specific language
- * governing permissions and limitations under the License.
- * You may not use this file except in compliance with the License.
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
- * You may obtain a copy of the License at:
- *  https://www.axoniq.io/legal/terms-of-service
- *
- * For licensing information and to register, visit:
- *  https://www.axoniq.io/pricing
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
-package io.axoniq.framework.examples.springcloud;
+package org.axonframework.examples.springcloud;
 
 import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
 import org.axonframework.messaging.queryhandling.gateway.QueryGateway;
 import org.reactivestreams.Publisher;
+import org.reactivestreams.Subscriber;
+import org.reactivestreams.Subscription;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.MediaType;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -32,12 +30,16 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.concurrent.CompletableFuture;
 
-import org.reactivestreams.Subscriber;
-import org.reactivestreams.Subscription;
-
+/**
+ * REST endpoints fronting the distributed {@code courses} command and query handlers.
+ * <p>
+ * Deployed under the {@code portal} profile, which carries no Axon handlers of its own: every request is dispatched
+ * through the Spring Cloud connector to whichever node registered as a handler.
+ */
 @RestController
 @Profile("portal")
 @RequestMapping("/courses")
@@ -58,7 +60,7 @@ class CourseController {
 
     @GetMapping("/{courseId}")
     CompletableFuture<Course> find(@PathVariable("courseId") String courseId) {
-        return queryGateway.query(new FindCourse(courseId), Course.class, null);
+        return queryGateway.query(new FindCourse(courseId), Course.class);
     }
 
     @PutMapping("/{courseId}")
