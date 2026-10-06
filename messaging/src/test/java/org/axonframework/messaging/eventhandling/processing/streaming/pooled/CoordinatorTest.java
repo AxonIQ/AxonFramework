@@ -355,6 +355,13 @@ class CoordinatorTest {
         return invocationOnMock -> CompletableFuture.runAsync(invocationOnMock.getArgument(0));
     }
 
+    private Answer<?> runExecutedTaskSync() {
+        return invocationOnMock -> {
+            ((Runnable) invocationOnMock.getArgument(0)).run();
+            return null;
+        };
+    }
+
     /**
      * Hands scheduled tasks to a real {@link ScheduledExecutorService}, so the coordinator keeps rescheduling itself as
      * it would in production. Running them on the invoking thread instead would recurse without bound.
@@ -534,6 +541,7 @@ class CoordinatorTest {
             doReturn(completedFuture(token)).when(tokenStore).fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_ZERO), any());
             doReturn(emptyCompletedFuture()).when(tokenStore).releaseClaim(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any());
             doAnswer(runTaskSync()).when(executorService).submit(any(Runnable.class));
+            doAnswer(runExecutedTaskSync()).when(executorService).execute(any(Runnable.class));
 
             // when
             awaitStart(testSubject);
@@ -854,6 +862,7 @@ class CoordinatorTest {
                 return emptyCompletedFuture();
             }).when(tokenStore).releaseClaim(eq(PROCESSOR_NAME), anyInt(), any());
             doAnswer(runTaskSync()).when(executorService).submit(any(Runnable.class));
+            doAnswer(runExecutedTaskSync()).when(executorService).execute(any(Runnable.class));
 
             Map<Integer, WorkPackage> workPackages =
                     ReflectionUtils.getFieldValue(Coordinator.class.getDeclaredField("workPackages"), coordinator);
@@ -885,6 +894,7 @@ class CoordinatorTest {
             doReturn(emptyCompletedFuture()).when(workPackage).abort(any());
             doReturn(emptyCompletedFuture()).when(tokenStore).releaseClaim(eq(PROCESSOR_NAME), anyInt(), any());
             doAnswer(runTaskSync()).when(executorService).submit(any(Runnable.class));
+            doAnswer(runExecutedTaskSync()).when(executorService).execute(any(Runnable.class));
 
             Map<Integer, WorkPackage> workPackages =
                     ReflectionUtils.getFieldValue(Coordinator.class.getDeclaredField("workPackages"), coordinator);
@@ -922,6 +932,7 @@ class CoordinatorTest {
             doReturn(emptyCompletedFuture()).when(workPackage).abort(any());
             doReturn(emptyCompletedFuture()).when(tokenStore).releaseClaim(eq(PROCESSOR_NAME), anyInt(), any());
             doAnswer(runTaskSync()).when(executorService).submit(any(Runnable.class));
+            doAnswer(runExecutedTaskSync()).when(executorService).execute(any(Runnable.class));
 
             Map<Integer, WorkPackage> workPackages =
                     ReflectionUtils.getFieldValue(Coordinator.class.getDeclaredField("workPackages"), coordinator);

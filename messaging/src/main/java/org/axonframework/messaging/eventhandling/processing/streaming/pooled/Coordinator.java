@@ -1515,14 +1515,14 @@ class Coordinator {
                                             name, generation, work.segment());
                            }
                        })
-                       .thenCompose(unused -> unitOfWorkFactory.create().executeWithResult(
-                               // Persist the final safe token (strategy onSegmentReleased -> store) and let the release
-                               // listeners wind down WHILE the claim is still held, then release the claim LAST so no
-                               // other node can resume past durable progress or pick up work still running here.
-                               context -> work.onSegmentReleased(context)
-                                              .thenCompose(r -> notifyReleaseListeners(work.segment()))
-                                              .thenCompose(r -> tokenStore.releaseClaim(name, segmentId, context))
-                       ))
+                       // Persist the final safe token (strategy onSegmentReleased -> store) and let the release
+                       // listeners wind down WHILE the claim is still held, then release the claim LAST so no
+                       // other node can resume past durable progress or pick up work still running here.
+                       .thenCompose(unused -> unitOfWorkFactory.create().executeWithResult(work::onSegmentReleased))
+                       .thenCompose(r -> notifyReleaseListeners(work.segment()))
+                       .thenComposeAsync(r -> unitOfWorkFactory.create().executeWithResult(
+                               context -> tokenStore.releaseClaim(name, segmentId, context)
+                       ), executorService)
                        .exceptionally(throwable -> {
                            Throwable unwrapped = throwable instanceof CompletionException ce ? ce.getCause() : throwable;
                            if (unwrapped instanceof Error error) {
