@@ -38,7 +38,7 @@ import org.axonframework.spring.stereotype.Saga;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
 /**
- * The bike rental sample application's {@code PaymentSaga}, moved across as literally as {@code axon-legacy} allows.
+ * The bike rental sample application's {@code PaymentSaga}, moved across as literally as {@code axoniq-legacy} allows.
  * <p>
  * <b>This is not a recipe to imitate.</b> The other implementations of this process under
  * {@link org.axonframework.examples.sagarecipes.saga} show how to model it in Axon Framework 5. This one exists so
@@ -66,7 +66,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
  * see private fields by default, where Axon Framework 4 defaulted to XStream, which did.
  * <p>
  * Everything the original did with a {@code DeadlineManager} is parked as commented-out Axon Framework 4 code until
- * deadlines are ported into {@code axon-legacy}. Leaving it visible, rather than replacing it with an Axon Framework
+ * deadlines are ported into {@code axoniq-legacy}. Leaving it visible, rather than replacing it with an Axon Framework
  * 5 equivalent, keeps this a port: the recipe that does solve payment timeouts without a deadline manager is
  * {@code saga/deadline}.
  *

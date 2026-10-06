@@ -16,7 +16,7 @@
 
 /**
  * The rental payment process as the bike rental sample application wrote it, running unchanged on
- * {@code axon-legacy}.
+ * {@code axoniq-legacy}.
  * <p>
  * The "before" picture the migration guide needs, and the only package in this module that is not an answer to
  * "how would you model this in Axon Framework 5". Nothing here is a pattern to copy: it is Axon Framework 4 code,

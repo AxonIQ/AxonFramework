@@ -38,11 +38,11 @@ import static org.openrewrite.kotlin.Assertions.srcMainKotlin;
 import static org.openrewrite.maven.Assertions.pomXml;
 
 /**
- * Verifies migration of Axon Framework 4 Sagas onto the {@code axon-legacy} compatibility module.
+ * Verifies migration of Axon Framework 4 Sagas onto the {@code io.axoniq.framework:axoniq-legacy} compatibility module.
  */
 class Axon4ToAxon5LegacyTest implements RewriteTest {
 
-    private static final String AXON_VERSION = axonVersion();
+    private static final String AXONIQ_VERSION = axoniqVersion();
 
     @Override
     public void defaults(RecipeSpec spec) {
@@ -327,7 +327,7 @@ class Axon4ToAxon5LegacyTest implements RewriteTest {
     class DependencyMigration {
 
         @Test
-        void addsAxonLegacyWhenSagaSourceIsPresent() {
+        void addsAxoniqLegacyWhenSagaSourceIsPresent() {
             rewriteRun(
                     Axon4ToAxon5LegacyTest::ignoreUnpublishedTargetVersionWarning,
                     mavenProject(
@@ -349,13 +349,13 @@ class Axon4ToAxon5LegacyTest implements RewriteTest {
                                 <version>1.0.0</version>
                                 <dependencies>
                                     <dependency>
-                                        <groupId>org.axonframework</groupId>
-                                        <artifactId>axon-legacy</artifactId>
+                                        <groupId>io.axoniq.framework</groupId>
+                                        <artifactId>axoniq-legacy</artifactId>
                                         <version>%s</version>
                                     </dependency>
                                 </dependencies>
                             </project>
-                            """.formatted(AXON_VERSION)
+                            """.formatted(AXONIQ_VERSION)
                             ),
                             srcMainJava(
                                     java(
@@ -377,7 +377,7 @@ class Axon4ToAxon5LegacyTest implements RewriteTest {
         }
 
         @Test
-        void addsAxonLegacyForKotlinSagaSource() {
+        void addsAxoniqLegacyForKotlinSagaSource() {
             rewriteRun(
                     Axon4ToAxon5LegacyTest::ignoreUnpublishedTargetVersionWarning,
                     mavenProject(
@@ -399,13 +399,13 @@ class Axon4ToAxon5LegacyTest implements RewriteTest {
                                         <version>1.0.0</version>
                                         <dependencies>
                                             <dependency>
-                                                <groupId>org.axonframework</groupId>
-                                                <artifactId>axon-legacy</artifactId>
+                                                <groupId>io.axoniq.framework</groupId>
+                                                <artifactId>axoniq-legacy</artifactId>
                                                 <version>%s</version>
                                             </dependency>
                                         </dependencies>
                                     </project>
-                                    """.formatted(AXON_VERSION)
+                                    """.formatted(AXONIQ_VERSION)
                             ),
                             srcMainKotlin(
                                     kotlin(
@@ -424,7 +424,7 @@ class Axon4ToAxon5LegacyTest implements RewriteTest {
         }
 
         @Test
-        void doesNotAddAxonLegacyWithoutSagaSource() {
+        void doesNotAddAxoniqLegacyWithoutSagaSource() {
             rewriteRun(
                     mavenProject(
                             "rental",
@@ -539,7 +539,7 @@ class Axon4ToAxon5LegacyTest implements RewriteTest {
     class SagaTestFixtureMigration {
 
         @Test
-        void keepsSagaTestFixtureAddsAxonLegacyTestAndATearDown() {
+        void keepsSagaTestFixtureAddsAxoniqLegacyTestAndATearDown() {
             rewriteRun(
                     Axon4ToAxon5LegacyTest::ignoreUnpublishedTargetVersionWarning,
                     mavenProject(
@@ -561,14 +561,14 @@ class Axon4ToAxon5LegacyTest implements RewriteTest {
                                 <version>1.0.0</version>
                                 <dependencies>
                                     <dependency>
-                                        <groupId>org.axonframework</groupId>
-                                        <artifactId>axon-legacy-test</artifactId>
+                                        <groupId>io.axoniq.framework</groupId>
+                                        <artifactId>axoniq-legacy-test</artifactId>
                                         <version>%s</version>
                                         <scope>test</scope>
                                     </dependency>
                                 </dependencies>
                             </project>
-                            """.formatted(AXON_VERSION)
+                            """.formatted(AXONIQ_VERSION)
                             ),
                             srcTestJava(
                                     java(
@@ -625,13 +625,13 @@ class Axon4ToAxon5LegacyTest implements RewriteTest {
         spec.markerPrinter(PrintOutputCapture.MarkerPrinter.SEARCH_MARKERS_ONLY);
     }
 
-    private static String axonVersion() {
+    private static String axoniqVersion() {
         Properties versions = new Properties();
         try (InputStream input = requireNonNull(
                 Axon4ToAxon5LegacyTest.class.getResourceAsStream("/migration-versions.properties")
         )) {
             versions.load(input);
-            return versions.getProperty("axon.version");
+            return versions.getProperty("axoniq.version");
         } catch (IOException exception) {
             throw new IllegalStateException("Unable to read migration target versions", exception);
         }

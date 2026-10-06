@@ -90,7 +90,7 @@ Keep the plugin at 6.46.1 or newer. An older plugin fails inside the recipe with
 
 For the free (Apache 2.0) path, replace the active recipe with `org.axonframework.migration.UpgradeAxon4ToAxon5`.
 
-Replace `<version>` with the Axon Framework 5 release you are targeting (for example, `5.1.1`).
+Replace `<version>` with the Axon Framework 5 release you are targeting (for example, `5.4.0-RC1`).
 
 === Gradle
 

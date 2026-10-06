@@ -46,9 +46,9 @@ After the migration run, search for every such location with:
   `queryMany()` when paired with `multipleInstancesOf`.
 - **Command handling**: converts `@CommandHandler` constructors to `public static void handle(...)` methods, and swaps
   in-handler `CommandGateway` fields for injected `CommandDispatcher` parameters.
-- **Legacy sagas**: adds `axon-legacy` when Saga source types are present, replaces static `SagaLifecycle` calls with
-  an injected lifecycle parameter, and replaces Saga `CommandGateway` fields with `CommandDispatcher` handler
-  parameters. Saga handlers stay synchronous; `send` remains fire-and-forget and `sendAndWait` keeps waiting.
+- **Legacy sagas**: adds `io.axoniq.framework:axoniq-legacy` when Saga source types are present, replaces static
+  `SagaLifecycle` calls with an injected lifecycle parameter, and replaces Saga `CommandGateway` fields with
+  `CommandDispatcher` handler parameters. Saga handlers stay synchronous; `send` remains fire-and-forget and `sendAndWait` keeps waiting.
 - **Spring config**: renames `axon.serializer.*` properties to `axon.converter.*` in `application.properties`/YAML, and
   adds advisory TODOs above obsolete `sequencing-policy` settings. Also **migrates Spring Boot snapshotting
   configuration** from the AF4 two-step pattern (`@Bean SnapshotTriggerDefinition` + `@Aggregate(snapshotTriggerDefinition
@@ -56,7 +56,7 @@ After the migration run, search for every such location with:
   `EventCountSnapshotTriggerDefinition(snapshotter, N)` → `@Snapshotting(afterEvents = N)`;
   `AggregateLoadTimeSnapshotTriggerDefinition(snapshotter, millis)` → `@Snapshotting(afterSourcingTime = "PTxS")`.
   Custom implementations that cannot be inferred automatically receive a `// TODO(axon4to5):` comment instead.
-- **Test fixtures**: replaces `AggregateTestFixture` with `AxonTestFixture` (saga tests keep `SagaTestFixture`, from `axon-legacy-test`) and rewrites the fluent
+- **Test fixtures**: replaces `AggregateTestFixture` with `AxonTestFixture` (saga tests keep `SagaTestFixture`, from `axoniq-legacy-test`) and rewrites the fluent
   Given-When-Then chain to the new phase-aware API.
 - **Commercial path** (`UpgradeAxon4ToAxoniq5` only): additionally re-namespaces Axon Server connector, DLQ,
   distributed-messaging, and Testcontainer classes from `org.axonframework.*` to `io.axoniq.framework.*` and swaps the

@@ -32,11 +32,11 @@ description: >-
   Relocates `org.axonframework.spring` to `org.axonframework.extension.spring`
   subpackage by subpackage, renames the Spring stereotype `@Aggregate` to
   `@EventSourced`, and leaves `@Saga` in `org.axonframework.spring.stereotype`,
-  where `axon-legacy` keeps it.
+  where `axoniq-legacy` keeps it.
 recipeList:
   # `org.axonframework.spring` moves to `org.axonframework.extension.spring`, one
   # subpackage at a time. The `stereotype` package is left alone on purpose:
-  # `@Saga` keeps its Axon Framework 4 name (`axon-legacy` ships it there) and
+  # `@Saga` keeps its Axon Framework 4 name (`axoniq-legacy` ships it there) and
   # `@Aggregate` is renamed to `@EventSourced` by the ChangeType below.
   - org.openrewrite.java.ChangeType:
       oldFullyQualifiedTypeName: org.axonframework.spring.SpringUtils
