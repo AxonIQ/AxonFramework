@@ -42,6 +42,7 @@ import reactor.test.StepVerifier;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Predicate;
 
@@ -152,7 +153,7 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
                                                                                             testQuery));
 
             // then - Verify RESPONSE interceptor: interception added metadata to the response AFTER handler executed
-            QueryResponseMessage response = result.first().asCompletableFuture().join().message();
+            QueryResponseMessage response = result.first().asCompletableFuture().orTimeout(10, TimeUnit.SECONDS).join().message();
             assertTrue(response.metadata().containsKey("dispatch1"),
                        "Expected dispatch1 interceptor to add metadata to RESPONSE");
             assertTrue(response.metadata().containsKey("dispatch2"),
@@ -278,7 +279,7 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
             ProcessingContext context = StubProcessingContext.forMessage(testQuery);
 
             // when
-            interceptingQueryBus.query(testQuery, context).first().asCompletableFuture().join();
+            interceptingQueryBus.query(testQuery, context).first().asCompletableFuture().orTimeout(10, TimeUnit.SECONDS).join();
 
             // then - Verify REQUEST interceptor: handler interception added metadata to the query BEFORE handler saw it
             assertThat(handler.getRecordedQueries()).hasSize(1);
@@ -315,7 +316,7 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
             MessageStream<QueryResponseMessage> result = interceptingQueryBus.query(testQuery, context);
 
             // then - Verify RESPONSE interception: handler interception added metadata to the response AFTER handler executed
-            QueryResponseMessage response = result.first().asCompletableFuture().join().message();
+            QueryResponseMessage response = result.first().asCompletableFuture().orTimeout(10, TimeUnit.SECONDS).join().message();
             assertTrue(response.metadata().containsKey("handler1"),
                        "Expected handler1 interceptor to add metadata to RESPONSE");
             assertTrue(response.metadata().containsKey("handler2"),
@@ -348,9 +349,9 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
 
             // when
             interceptingQueryBus.query(firstQuery, StubProcessingContext.forMessage(firstQuery)).first()
-                                .asCompletableFuture().join();
+                                .asCompletableFuture().orTimeout(10, TimeUnit.SECONDS).join();
             interceptingQueryBus.query(secondQuery, StubProcessingContext.forMessage(secondQuery)).first()
-                                .asCompletableFuture().join();
+                                .asCompletableFuture().orTimeout(10, TimeUnit.SECONDS).join();
 
             // then
             assertThat(counter.get()).isEqualTo(2);
@@ -470,7 +471,7 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
             MessageStream<QueryResponseMessage> result = testQueryBus.subscriptionQuery(testQuery, context, 10);
 
             // then
-            QueryResponseMessage response = result.first().asCompletableFuture().join().message();
+            QueryResponseMessage response = result.first().asCompletableFuture().orTimeout(10, TimeUnit.SECONDS).join().message();
             assertThat(response.payloadAs(String.class)).isEqualTo("initial");
         }
 
@@ -498,7 +499,7 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
             MessageStream<QueryResponseMessage> result = interceptingQueryBus.subscriptionQuery(testQuery, context, 10);
 
             // then
-            QueryResponseMessage response = result.first().asCompletableFuture().join().message();
+            QueryResponseMessage response = result.first().asCompletableFuture().orTimeout(10, TimeUnit.SECONDS).join().message();
             assertTrue(response.metadata().containsKey("handler1"),
                        "Expected handler1 interceptor to be applied to response");
             assertTrue(response.metadata().containsKey("handler2"),
@@ -541,7 +542,7 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
             MessageStream<QueryResponseMessage> result = interceptingQueryBus.subscriptionQuery(testQuery, context, 10);
 
             // then
-            QueryResponseMessage response = result.first().asCompletableFuture().join().message();
+            QueryResponseMessage response = result.first().asCompletableFuture().orTimeout(10, TimeUnit.SECONDS).join().message();
             assertTrue(response.metadata().containsKey("dispatch1"),
                        "Expected dispatch1 interceptor to be applied to response");
             assertTrue(response.metadata().containsKey("dispatch2"),
@@ -730,7 +731,7 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
                                                                         StubProcessingContext.forMessage(testQuery));
 
         // then
-        QueryResponseMessage response = result.first().asCompletableFuture().join().message();
+        QueryResponseMessage response = result.first().asCompletableFuture().orTimeout(10, TimeUnit.SECONDS).join().message();
         assertThat(response.payloadAs(String.class)).isEqualTo("subscribed-ok");
     }
 
