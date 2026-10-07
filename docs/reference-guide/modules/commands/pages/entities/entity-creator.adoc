@@ -85,7 +85,7 @@ When this form is used, command handlers must be split into xref:commands:entiti
 
 [TIP]
 ====
-As an alternative to a first-event-based creator, you can omit the creator entirely and create the entity from its first event with a xref:commands:entities/event-sourced-entity.adoc[static event sourcing handler], which receives the current (possibly `null`) state and returns the next state.
+As an alternative to a first-event-based creator, you can omit the creator entirely and create the entity from its first event with a xref:commands:entities/event-sourced-entity.adoc#_static_event_sourcing_handlers[static event sourcing handler], which receives the event and the current (possibly `null`) state and returns the next state.
 ====
 
 === Declarative

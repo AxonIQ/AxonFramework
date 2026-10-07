@@ -90,24 +90,50 @@ An entity only needs the state required to make decisions about incoming command
 An event sourcing handler is only needed when the resulting state change is relevant for validating future commands.
 ====
 
-=== Static Event Sourcing handlers
+=== Entity creator
 
-An event sourcing handler can also be `static`, taking the current entity state as its first parameter and returning the next state:
+The entity creator method can come in several forms.
+You can choose a no-argument, identifier-based, or first-event-based entity creator method.
+These options allow you to derive a mutable **and** immutable entity depending on the preferred structure.
+
+Depending on the configuration style, you either use the `EventSourcedEntityFactory` (declarative) or `@EntityCreator` (automated) to define the entity creator method.
+
+For more details on the options, see the xref:commands:entities/entity-creator.adoc[Entity creator] section.
+
+[#_static_event_sourcing_handlers]
+== Static Event Sourcing handlers
+
+An event sourcing handler can also be `static`.
+A static handler computes the next state from an event and the current state: like any other handler it receives the event as its first parameter, it receives the current entity state as an additional parameter, and it returns the next state.
+It can handle any event of the entity, not only the one that creates it:
 
 [source,java]
 ----
-@EventSourcingHandler
-static Course on(@Nullable Course state, CourseCreated event) {
-    return new Course(event.courseId(), event.name());
+@EventSourcedEntity(tagKey = "courseId")
+record Course(String courseId, String name, int capacity) {
+
+    @EventSourcingHandler
+    static Course on(CourseCreated event, @Nullable Course state) {
+        return new Course(event.courseId(), event.name(), event.capacity());
+    }
+
+    @EventSourcingHandler
+    static @Nullable Course on(CourseCapacityChanged event, @Nullable Course state) {
+        return state == null ? null : new Course(state.courseId(), state.name(), event.capacity());
+    }
 }
 ----
 
-The current-state parameter is `null` while the entity does not exist yet.
-A static handler therefore covers a case an instance handler cannot: it can create the entity from its first event.
-It can also evolve an existing instance (returning the next state), or, while the state is still `null`, return `null` to decline creating the entity for that event.
+The state parameter is `null` while the entity does not exist yet.
+That gives a static handler a case an instance handler cannot cover: it can create the entity from an event, without declaring a first-event-based xref:commands:entities/entity-creator.adoc[entity creator] for it.
+Once the entity exists, the state parameter holds the current entity and the handler returns its next state, just like an instance handler that returns a new instance.
+While the state is still `null`, a static handler can also return `null` to decline creating the entity for that event.
 
-Use a static event sourcing handler when an entity should not exist until a specific event establishes it, without declaring a first-event-based xref:commands:entities/entity-creator.adoc[entity creator] for that event.
-An instance handler still requires an existing entity, so it only runs once a static handler (or an entity creator) has produced one.
+A static handler is invoked for its event even while the entity does not exist yet.
+A handler for an event that should only change an existing entity therefore checks for a `null` state, as the second handler above does, so that the entity stays absent.
+
+Static and instance handlers can be combined on one entity.
+An instance handler requires an existing entity, so it only runs once a static handler, or an entity creator, has produced one.
 
 The state parameter is optional.
 When a handler creates the entity purely from the event and does not need the previous state, you can omit it:
@@ -116,7 +142,7 @@ When a handler creates the entity purely from the event and does not need the pr
 ----
 @EventSourcingHandler
 static Course on(CourseCreated event) {
-    return new Course(event.courseId(), event.name());
+    return new Course(event.courseId(), event.name(), event.capacity());
 }
 ----
 
@@ -127,19 +153,9 @@ Keep the state parameter (marked `@Nullable`) whenever the next state depends on
 [NOTE]
 ====
 Once an entity exists, it stays non-null.
-A static event sourcing handler must not return `null` for an already-existing entity: doing so is rejected.
+A static event sourcing handler that returns `null` for an existing entity is rejected with a `StateEvolvingException`.
 Model the end of an entity's lifecycle as a terminal state, for example a `closed` flag, rather than as a `null` entity.
 ====
-
-=== Entity creator
-
-The entity creator method can come in several forms.
-You can choose a no-argument, identifier-based, or first-event-based entity creator method.
-These options allow you to derive a mutable **and** immutable entity depending on the preferred structure.
-
-Depending on the configuration style, you either use the `EventSourcedEntityFactory` (declarative) or `@EntityCreator` (automated) to define the entity creator method.
-
-For more details on the options, see the xref:commands:entities/entity-creator.adoc[Entity creator] section.
 
 == Configuring an entity
 

@@ -157,7 +157,7 @@ void handle(RedeemCard command, @InjectEntity GiftCard card, EventAppender appen
 }
 ----
 
-* **Immutable entity**, whose event sourcing handlers return a new instance: the appended event advances the underlying entity, but the injected parameter still references the pre-append snapshot.
+* **Immutable entity**, whose event sourcing handlers return a new instance: the appended event advances the underlying entity, but the injected parameter still references the pre-append instance.
 Inject a xref:#inject_managed_entity[`ManagedEntity`] and read `entity()` after the append to observe the new instance.
 +
 [source,java]
