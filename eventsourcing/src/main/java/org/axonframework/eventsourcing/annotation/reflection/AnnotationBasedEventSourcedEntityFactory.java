@@ -19,6 +19,7 @@ package org.axonframework.eventsourcing.annotation.reflection;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.ReflectionUtils;
 import org.axonframework.common.annotation.AnnotationUtils;
+import org.axonframework.eventsourcing.EntityMissingAfterFirstEventException;
 import org.axonframework.eventsourcing.EventSourcedEntityFactory;
 import org.axonframework.messaging.core.Context;
 import org.axonframework.messaging.core.Message;
@@ -29,6 +30,7 @@ import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
 import org.axonframework.messaging.core.annotation.PayloadParameterResolver;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
+import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.axonframework.messaging.eventhandling.conversion.EventConverter;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
@@ -60,7 +62,13 @@ import java.util.stream.StreamSupport;
  * {@link ForcedEntityCreator}-annotated constructors and static methods, invoking them regardless of whether a first
  * event is present, as described on {@link ForcedEntityCreator}. When no creator matches (or the entity declares
  * none), creation is deferred by returning {@code null}, allowing a {@code static} event sourcing handler to build the
- * entity from the first event instead. This class is thread-safe.
+ * entity from the first event instead.
+ * <p>
+ * Two situations in which the entity could never be created are reported instead of leaving the entity absent: a
+ * creator that is invoked with the first event but returns {@code null} results in an
+ * {@link EntityMissingAfterFirstEventException}, and an entity that declares neither an {@link EntityCreator} nor a
+ * {@code static} event sourcing handler is rejected with an {@link AxonConfigurationException} at construction. This
+ * class is thread-safe.
  *
  * @param <E>  The type of entity to create.
  * @param <ID> The type of identifier used by the entity.
@@ -143,6 +151,22 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
     private void initialize() {
         scanMethods();
         scanConstructors();
+        validate();
+    }
+
+    private void validate() {
+        if (creators.isEmpty() && !declaresStaticEventHandler()) {
+            throw new AxonConfigurationException(
+                    "No @EntityCreator or static @EventSourcingHandler present on entity of type [%s], so it could never be created. Can not initialize AnnotationBasedEventSourcedEntityFactory.".formatted(
+                            entityType.getName()));
+        }
+    }
+
+    private boolean declaresStaticEventHandler() {
+        return types.stream()
+                    .flatMap(type -> StreamSupport.stream(ReflectionUtils.methodsOf(type).spliterator(), false))
+                    .anyMatch(method -> Modifier.isStatic(method.getModifiers())
+                            && AnnotationUtils.isAnnotationPresent(method, EventHandler.class));
     }
 
     private void scanConstructors() {
@@ -383,12 +407,18 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
                           .map(resolver -> tryResolveParameterValue(resolver, convertedContext))
                           .toArray(CompletableFuture[]::new);
 
-            return CompletableFuture.allOf(resolvedParams)
-                                    .thenApply(v -> Arrays.stream(resolvedParams)
-                                                          .map(CompletableFuture::resultNow)
-                                                          .toArray())
-                                    .thenApply(this::constructEntityWithArguments)
-                                    .join();
+            E entity = CompletableFuture.allOf(resolvedParams)
+                                        .thenApply(v -> Arrays.stream(resolvedParams)
+                                                              .map(CompletableFuture::resultNow)
+                                                              .toArray())
+                                        .thenApply(this::constructEntityWithArguments)
+                                        .join();
+            if (entity == null && firstEventMessage != null) {
+                // This creator accepted the first event, so it must create the entity from it. Declining to create
+                // is reserved for static event sourcing handlers, which only run when no creator matches.
+                throw new EntityMissingAfterFirstEventException(id);
+            }
+            return entity;
         }
 
         private CompletableFuture<?> tryResolveParameterValue(

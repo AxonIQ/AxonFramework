@@ -17,6 +17,8 @@
 package org.axonframework.eventsourcing.annotation.reflection;
 
 import org.axonframework.common.AxonConfigurationException;
+import org.axonframework.eventsourcing.EntityMissingAfterFirstEventException;
+import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
 import org.axonframework.conversion.PassThroughConverter;
 import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
 import org.axonframework.messaging.core.MessageType;
@@ -30,6 +32,7 @@ import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.messaging.eventhandling.conversion.DelegatingEventConverter;
 import org.axonframework.messaging.eventhandling.conversion.EventConverter;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.*;
 import org.mockito.*;
@@ -483,18 +486,40 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
         }
 
         @Test
-        void allowsEntityWithoutAnyEntityCreator() {
-            // An entity may declare no @EntityCreator at all: the factory then yields null (deferring creation to a
-            // static event sourcing handler) rather than failing at configuration time.
+        void throwsWhenEntityHasNeitherEntityCreatorNorStaticEventSourcingHandler() {
+            // given an entity that nothing could ever create
+
+            // when
+            var exception = assertThrows(AxonConfigurationException.class,
+                                         () -> new AnnotationBasedEventSourcedEntityFactory<>(
+                                                 NoAnnotatedMethodsEntity.class,
+                                                 String.class,
+                                                 Collections.singleton(NoAnnotatedMethodsEntity.class),
+                                                 parameterResolverFactory,
+                                                 messageTypeResolver,
+                                                 converter
+                                         ));
+
+            // then
+            assertTrue(exception.getMessage().contains(
+                    "No @EntityCreator or static @EventSourcingHandler present on entity of type"));
+        }
+
+        @Test
+        void allowsEntityWithoutEntityCreatorWhenStaticEventSourcingHandlerCreatesIt() {
+            // given an entity without @EntityCreator, created from its first event by a static event sourcing handler
+
+            // when
             var factory = assertDoesNotThrow(() -> new AnnotationBasedEventSourcedEntityFactory<>(
-                    NoAnnotatedMethodsEntity.class,
+                    StaticallyCreatedEntity.class,
                     String.class,
-                    Collections.singleton(NoAnnotatedMethodsEntity.class),
+                    Collections.singleton(StaticallyCreatedEntity.class),
                     parameterResolverFactory,
                     messageTypeResolver,
                     converter
             ));
 
+            // then the factory defers creation to the static event sourcing handler
             assertNull(factory.create("test-id", null, new StubProcessingContext()));
             assertNull(factory.create("test-id", eventMessage, StubProcessingContext.forMessage(eventMessage)));
         }
@@ -519,6 +544,60 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
 
             public NoAnnotatedMethodsEntity(String id) {
             }
+        }
+
+        public static class StaticallyCreatedEntity {
+
+            @EventSourcingHandler
+            static StaticallyCreatedEntity on(String event, @Nullable StaticallyCreatedEntity state) {
+                return new StaticallyCreatedEntity();
+            }
+        }
+    }
+
+    @Nested
+    class CreatorReturningNull {
+
+        @Test
+        void throwsEntityMissingAfterFirstEventExceptionWhenCreatorReturnsNullForItsEvent() {
+            // given an event-based creator that returns null although its event is the first event
+            var factory = new AnnotationBasedEventSourcedEntityFactory<>(
+                    NullReturningEntity.class, String.class, parameterResolverFactory, messageTypeResolver, converter
+            );
+            EventMessage firstEvent = new GenericEventMessage(new MessageType(CreatingPayload.class),
+                                                              new CreatingPayload());
+
+            // when / then
+            assertThrows(EntityMissingAfterFirstEventException.class,
+                         () -> factory.create("test-id", firstEvent, StubProcessingContext.forMessage(firstEvent)));
+        }
+
+        @Test
+        void returnsNullWhenNoCreatorMatchesTheFirstEvent() {
+            // given a first event that the creator does not accept
+            var factory = new AnnotationBasedEventSourcedEntityFactory<>(
+                    NullReturningEntity.class, String.class, parameterResolverFactory, messageTypeResolver, converter
+            );
+            EventMessage otherEvent = new GenericEventMessage(new MessageType("other-type"), "other-payload");
+
+            // when
+            NullReturningEntity entity =
+                    factory.create("test-id", otherEvent, StubProcessingContext.forMessage(otherEvent));
+
+            // then creation is deferred to the event sourcing handlers
+            assertNull(entity);
+        }
+
+        public static class NullReturningEntity {
+
+            @EntityCreator
+            public static @Nullable NullReturningEntity create(CreatingPayload payload) {
+                return null;
+            }
+        }
+
+        public record CreatingPayload() {
+
         }
     }
 }

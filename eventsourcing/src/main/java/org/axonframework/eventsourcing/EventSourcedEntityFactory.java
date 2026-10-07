@@ -33,7 +33,9 @@ import java.util.function.Supplier;
  * Defines how an {@link EventSourcingRepository} should construct an entity of type {@code E}.
  * <p>
  * When sourcing an entity, the state is initially {@code null}. The first event will initialize the entity through
- * {@link #create(Object, EventMessage, ProcessingContext)}.
+ * {@link #create(Object, EventMessage, ProcessingContext)}. A factory may return {@code null} for a first event it
+ * cannot create the entity from; the entity then stays absent unless a {@code static} event sourcing handler creates it
+ * from that event.
  * <p>
  * If no events are found during sourcing, the repository will return {@code null} for the entity if
  * {@link EventSourcingRepository#load(Object, ProcessingContext)} was used. However, if
