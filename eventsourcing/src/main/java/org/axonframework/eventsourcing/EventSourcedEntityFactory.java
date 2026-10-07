@@ -87,8 +87,10 @@ public interface EventSourcedEntityFactory<ID, E> {
      * instantiate the entity. Using {@link EventSourcingRepository#load(Object, ProcessingContext)} would never call
      * this method with a {@code null} {@code firstEventMessage}.
      * <p>
-     * Invocations with a non-null {@code firstEventMessage} must always return a non-null entity, while invocations
-     * with a null {@code firstEventMessage} may return null.
+     * Invocations with a non-null {@code firstEventMessage} should return the entity created from that event. They
+     * may return {@code null} when this factory cannot create the entity from that event, in which case a
+     * {@code static} event sourcing handler may create it instead. Invocations with a null {@code firstEventMessage}
+     * may return null.
      * <p>
      * Whether to return {@code null} from a {@code null} {@code firstEventMessage} invocation depends on the type of
      * command handler which should be invoked when the entity does not exist. If this is a
