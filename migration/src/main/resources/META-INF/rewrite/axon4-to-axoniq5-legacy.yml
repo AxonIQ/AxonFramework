@@ -14,44 +14,18 @@
 # limitations under the License.
 #
 
-# Axon Framework 4 Sagas: kept running on the Axoniq commercial `axoniq-legacy`
-# module (`io.axoniq.framework:axoniq-legacy`), with `SagaTestFixture` ported by
-# `io.axoniq.framework:axoniq-legacy-test`. Free Axon Framework 5 has no Saga
-# support, so this recipe only runs from `UpgradeAxon4ToAxoniq5`.
+# Axoniq Framework legacy module (`io.axoniq.framework:axoniq-legacy` and
+# `io.axoniq.framework:axoniq-legacy-test`): Axon Framework 4 APIs that Axoniq
+# Framework 5 keeps running. Composes one child recipe per ported feature; each
+# child adds the legacy dependencies it needs, so it can also run on its own.
 
 ---
 type: specs.openrewrite.org/v1beta/recipe
 name: io.axoniq.framework.migration.Axon4ToAxoniq5Legacy
-displayName: Migrate Axon Framework 4 Sagas to Axoniq Framework 5
+displayName: Migrate Axon Framework 4 legacy APIs to Axoniq Framework 5
 description: >-
-  Adds the Axoniq Framework legacy module (io.axoniq.framework:axoniq-legacy)
-  when Saga APIs are used, keeps saga tests on the SagaTestFixture ported by
-  axoniq-legacy-test, and adapts Saga lifecycle and command dispatch access to
-  ProcessingContext-scoped handler parameters.
+  Migrates the Axon Framework 4 APIs that the Axoniq Framework legacy modules
+  `io.axoniq.framework:axoniq-legacy` and `io.axoniq.framework:axoniq-legacy-test`
+  keep running. Today that covers Sagas.
 recipeList:
-  # `onlyIfUsing` evaluates the AF4-typed source model before source rewrites run.
-  - org.openrewrite.java.dependencies.AddDependency:
-      groupId: io.axoniq.framework
-      artifactId: axoniq-legacy
-      version: ${axoniq.version}
-      onlyIfUsing: org.axonframework.modelling.saga..*
-  # A class may use only the Spring @Saga stereotype in a partially migrated source tree.
-  - org.openrewrite.java.dependencies.AddDependency:
-      groupId: io.axoniq.framework
-      artifactId: axoniq-legacy
-      version: ${axoniq.version}
-      onlyIfUsing: org.axonframework.spring.stereotype.Saga
-
-  # Saga tests keep their SagaTestFixture, which axoniq-legacy-test ports. The ported
-  # fixture runs a live configuration and must be stopped after each test.
-  - org.openrewrite.java.dependencies.AddDependency:
-      groupId: io.axoniq.framework
-      artifactId: axoniq-legacy-test
-      version: ${axoniq.version}
-      scope: test
-      onlyIfUsing: org.axonframework.test.saga.SagaTestFixture
-  - org.axonframework.migration.AddAxonTestFixtureTearDown:
-      fixtureType: org.axonframework.test.saga.SagaTestFixture
-
-  - org.axonframework.migration.MigrateSagaLifecycle
-  - org.axonframework.migration.MigrateCommandGatewayInSagaEventHandler
+  - io.axoniq.framework.migration.Axon4ToAxoniq5LegacySaga

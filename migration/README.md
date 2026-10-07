@@ -157,7 +157,8 @@ files; they're no-ops today.
 | Axon Server connector           | `Axon4ToAxoniq5AxonServerConnector`  |
 | Sequenced Dead-Letter Queue     | `Axon4ToAxoniq5DeadLetter`           |
 | Distributed messaging           | `Axon4ToAxoniq5DistributedMessaging` |
-| Legacy Sagas (`axoniq-legacy`)  | `Axon4ToAxoniq5Legacy`               |
+| Legacy module (`axoniq-legacy`) | `Axon4ToAxoniq5Legacy`               |
+| Legacy module: Sagas            | `Axon4ToAxoniq5LegacySaga`           |
 | Testcontainer (Axon Server)     | `Axon4ToAxoniq5Testcontainer`        |
 
 A placeholder for the Axoniq-only event-streaming module without finalized

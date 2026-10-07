@@ -46,7 +46,7 @@ recipeList:
       oldFullyQualifiedTypeName: org.axonframework.test.aggregate.AggregateTestFixture
       newFullyQualifiedTypeName: org.axonframework.test.fixture.AxonTestFixture
   # `SagaTestFixture` is NOT renamed: `axoniq-legacy-test` ports it for sagas that
-  # keep running on `axoniq-legacy`. `Axon4ToAxoniq5Legacy`, run by the commercial
+  # keep running on `axoniq-legacy`. `Axon4ToAxoniq5LegacySaga`, run by the commercial
   # `UpgradeAxon4ToAxoniq5`, adds that dependency and the `@AfterEach` tear-down the
   # ported fixture needs.
   # FixtureConfiguration<T> is the interface type used as variable declarations

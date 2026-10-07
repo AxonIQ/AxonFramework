@@ -40,7 +40,7 @@ description: >-
   Maven adds for Sagas (`axoniq-legacy`), Axon Server connector, sequenced
   dead-letter queue, and distributed messaging.
 recipeList:
-  # Sagas onto axoniq-legacy run before the free leg, so the Saga-specific
+  # The axoniq-legacy migrations run before the free leg, so the Saga-specific
   # CommandGateway handling is complete before the general @EventHandler
   # recipe in Axon4ToAxon5Messaging is applied.
   - io.axoniq.framework.migration.Axon4ToAxoniq5Legacy
