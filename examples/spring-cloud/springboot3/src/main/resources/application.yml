@@ -1,0 +1,18 @@
+spring:
+  application:
+    name: university
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_CLIENT_SERVICEURL_DEFAULTZONE:http://localhost:8761/eureka/}
+    registry-fetch-interval-seconds: 1
+  instance:
+    prefer-ip-address: true
+    lease-renewal-interval-in-seconds: 1
+
+axon:
+  axonserver:
+    enabled: false
+  springcloud:
+    enabled: true

@@ -76,6 +76,7 @@
         <module>university-message-transformation</module>
         <module>university-multi-tenancy-examples</module>
         <module>saga-recipes</module>
+        <module>spring-cloud</module>
     </modules>
 
     <build>

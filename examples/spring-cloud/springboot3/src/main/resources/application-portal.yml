@@ -1,0 +1,5 @@
+server:
+  port: 8080
+
+university:
+  node-name: portal
