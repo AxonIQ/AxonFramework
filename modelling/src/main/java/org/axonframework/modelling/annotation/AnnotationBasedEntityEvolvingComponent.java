@@ -41,6 +41,7 @@ import java.lang.reflect.Modifier;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -67,7 +68,7 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
     private final Class<E> entityType;
     private final AnnotatedHandlerInspector<E> inspector;
     private final EventConverter converter;
-    private final Map<Class<?>, Map<QualifiedName, List<MessageHandlingMember<? super E>>>> handlersByEntityType;
+    private final Map<Class<?>, Map<QualifiedName, List<EvolvingHandler<E>>>> handlersByEntityType;
 
     /**
      * Initialize a new annotation-based {@link EntityEvolver}.
@@ -157,12 +158,12 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
                                                .getOrDefault(event.type().qualifiedName(), List.of());
 
             E evolvedEntity = entity;
-            for (var handler : handlers) {
-                boolean staticHandler = isStaticHandler(handler);
-                if (evolvedEntity == null && !staticHandler) {
+            for (var evolvingHandler : handlers) {
+                if (evolvedEntity == null && !evolvingHandler.isStatic()) {
                     // An instance handler cannot run without an instance to invoke it on.
                     continue;
                 }
+                var handler = evolvingHandler.member();
                 var convertedEvent = event.withConvertedPayload(handler.payloadType(), converter);
                 var contextWithEntity = ActiveEntity.set(context, evolvedEntity);
                 if (!handler.canHandle(convertedEvent, contextWithEntity)) {
@@ -173,7 +174,7 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
                                         .first()
                                         .asCompletableFuture()
                                         .join();
-                evolvedEntity = nextState(result, evolvedEntity, handler, staticHandler);
+                evolvedEntity = nextState(result, evolvedEntity, evolvingHandler);
             }
 
             return evolvedEntity;
@@ -187,7 +188,7 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
         }
     }
 
-    private Map<Class<?>, Map<QualifiedName, List<MessageHandlingMember<? super E>>>> indexHandlersByEntityType(
+    private Map<Class<?>, Map<QualifiedName, List<EvolvingHandler<E>>>> indexHandlersByEntityType(
             MessageTypeResolver messageTypeResolver
     ) {
         return inspector.getAllHandlers().entrySet().stream()
@@ -197,7 +198,7 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
                         ));
     }
 
-    private Map<QualifiedName, List<MessageHandlingMember<? super E>>> indexHandlersByEventName(
+    private Map<QualifiedName, List<EvolvingHandler<E>>> indexHandlersByEventName(
             Collection<MessageHandlingMember<? super E>> handlers,
             MessageTypeResolver messageTypeResolver
     ) {
@@ -206,10 +207,17 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
                        .collect(Collectors.collectingAndThen(
                                Collectors.groupingBy(
                                        handler -> eventName(handler, messageTypeResolver),
-                                       Collectors.toUnmodifiableList()
+                                       Collectors.mapping(this::toEvolvingHandler, Collectors.toUnmodifiableList())
                                ),
                                Map::copyOf
                        ));
+    }
+
+    private EvolvingHandler<E> toEvolvingHandler(MessageHandlingMember<? super E> handler) {
+        Optional<Method> method = handler.unwrap(Method.class);
+        boolean isStatic = method.map(m -> Modifier.isStatic(m.getModifiers())).orElse(false);
+        boolean returnsEntity = method.map(m -> entityType.isAssignableFrom(m.getReturnType())).orElse(false);
+        return new EvolvingHandler<>(handler, isStatic, returnsEntity);
     }
 
     private QualifiedName eventName(MessageHandlingMember<? super E> handler,
@@ -224,8 +232,7 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
     @Nullable
     private E nextState(MessageStream.@Nullable Entry<?> potentialEntityFromStream,
                         @Nullable E existing,
-                        MessageHandlingMember<? super E> handler,
-                        boolean staticHandler) {
+                        EvolvingHandler<E> handler) {
         if (potentialEntityFromStream != null) {
             var resultPayload = potentialEntityFromStream.message().payload();
             if (resultPayload != null && entityType.isAssignableFrom(resultPayload.getClass())) {
@@ -236,7 +243,7 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
         // A static handler declaring the entity as its return type returned null (an empty stream). While the entity
         // does not exist yet, this is a legitimate "decline to create" outcome. Once the entity exists, however, it
         // may not be removed by returning null: model end-of-life as a terminal state instead.
-        if (staticHandler && handlerReturnsEntity(handler)) {
+        if (handler.isStatic() && handler.returnsEntity()) {
             if (existing != null) {
                 throw new StateEvolvingException(
                         "A static event sourcing handler returned null for an existing [" + entityType.getName()
@@ -248,22 +255,25 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
         return existing;
     }
 
-    private boolean isStaticHandler(MessageHandlingMember<? super E> handler) {
-        return handler.unwrap(Method.class)
-                      .map(method -> Modifier.isStatic(method.getModifiers()))
-                      .orElse(false);
-    }
-
-    private boolean handlerReturnsEntity(MessageHandlingMember<? super E> handler) {
-        return handler.unwrap(Method.class)
-                      .map(method -> entityType.isAssignableFrom(method.getReturnType()))
-                      .orElse(false);
-    }
-
     @Override
     public Set<QualifiedName> supportedEvents() {
         return handlersByEntityType.values().stream()
                                   .flatMap(handlers -> handlers.keySet().stream())
                                   .collect(Collectors.toUnmodifiableSet());
+    }
+
+    /**
+     * A {@link MessageHandlingMember} together with the reflective facts the evolve loop needs, determined once at
+     * construction rather than on every event.
+     *
+     * @param member        the handler to invoke
+     * @param isStatic      whether the handler is a {@code static} method, which can run while the entity is
+     *                      {@code null}
+     * @param returnsEntity whether the handler declares the entity type as its return type, so that a {@code null}
+     *                      result means the handler returned {@code null} rather than nothing
+     * @param <E>           the entity type
+     */
+    private record EvolvingHandler<E>(MessageHandlingMember<? super E> member, boolean isStatic, boolean returnsEntity) {
+
     }
 }
