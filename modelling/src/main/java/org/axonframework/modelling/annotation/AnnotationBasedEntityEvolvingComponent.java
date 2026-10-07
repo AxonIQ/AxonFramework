@@ -150,11 +150,6 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
                                                      .anyMatch(EvolvingHandler::isStatic);
     }
 
-    @Override
-    public boolean canEvolveAbsentEntity() {
-        return hasStaticHandlers;
-    }
-
     @Nullable
     @Override
     public E evolve(@Nullable E entity,

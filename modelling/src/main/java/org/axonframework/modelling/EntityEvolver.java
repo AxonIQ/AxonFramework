@@ -54,18 +54,4 @@ public interface EntityEvolver<E> {
     E evolve(@Nullable E entity,
              EventMessage event,
              ProcessingContext context);
-
-    /**
-     * Indicates whether this evolver can evolve an entity that does not exist yet, meaning {@link #evolve} may be
-     * invoked with a {@code null} {@code entity}. This is the case when the evolver declares {@code static} event
-     * sourcing handlers, which can create the entity from an event.
-     * <p>
-     * Defaults to {@code false}. The framework then never invokes this evolver with a {@code null} {@code entity}:
-     * when no entity can be created for the first event of an entity, it reports that instead.
-     *
-     * @return {@code true} if this evolver can be invoked with a {@code null} {@code entity}, {@code false} otherwise
-     */
-    default boolean canEvolveAbsentEntity() {
-        return false;
-    }
 }

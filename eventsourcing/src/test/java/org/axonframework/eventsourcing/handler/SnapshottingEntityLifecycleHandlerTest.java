@@ -44,7 +44,6 @@ import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.messaging.eventhandling.SimpleEventBus;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.messaging.eventstreaming.Tag;
-import org.axonframework.modelling.EntityEvolver;
 import org.axonframework.modelling.repository.ManagedEntity;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.AfterEach;
@@ -296,19 +295,7 @@ class SnapshottingEntityLifecycleHandlerTest {
                     eventStore,
                     (id, ctx) -> EventCriteria.havingTags(Tag.of("account", id)),
                     new AnnotationBasedTagResolver(),
-                    new InitializingEntityEvolver<>((id, msg, ctx) -> null, new EntityEvolver<Account>() {
-                        @Override
-                        public @Nullable Account evolve(@Nullable Account entity,
-                                                        EventMessage event,
-                                                        ProcessingContext context) {
-                            return entity;
-                        }
-
-                        @Override
-                        public boolean canEvolveAbsentEntity() {
-                            return true;
-                        }
-                    }),
+                    new InitializingEntityEvolver<>((id, msg, ctx) -> null, (entity, event, ctx) -> entity),
                     SnapshotPolicy.whenEventMatches(msg -> true),
                     ACCOUNT_TYPE,
                     CONVERTER,

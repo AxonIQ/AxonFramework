@@ -20,6 +20,7 @@ import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.ObjectUtils;
 import org.axonframework.common.ReflectionUtils;
 import org.axonframework.common.annotation.AnnotationUtils;
+import org.axonframework.eventsourcing.EntityMissingAfterFirstEventException;
 import org.axonframework.eventsourcing.EventSourcedEntityFactory;
 import org.axonframework.messaging.core.Context;
 import org.axonframework.messaging.core.Message;
@@ -62,10 +63,12 @@ import java.util.stream.StreamSupport;
  * {@link ForcedEntityCreator}-annotated constructors and static methods, invoking them regardless of whether a first
  * event is present, as described on {@link ForcedEntityCreator}.
  * <p>
- * When no creator matches the first event, an {@link AxonConfigurationException} is thrown, unless the entity declares
- * {@code static} event sourcing handlers. Creation is then deferred by returning {@code null}, allowing a static event
- * sourcing handler to build the entity from the event instead. For the same reason, an entity without any
- * {@link EntityCreator} is only accepted when it declares static event sourcing handlers. This class is thread-safe.
+ * When no creator matches the first event, an {@link AxonConfigurationException} is thrown, and when a creator returns
+ * {@code null} for the first event, an {@link EntityMissingAfterFirstEventException} is thrown. Both only apply when
+ * the entity declares no {@code static} event sourcing handlers. Otherwise creation is deferred by returning
+ * {@code null}, allowing a static event sourcing handler to create the entity from the event instead. For the same
+ * reason, an entity without any {@link EntityCreator} is only accepted when it declares static event sourcing
+ * handlers. This class is thread-safe.
  *
  * @param <E>  The type of entity to create.
  * @param <ID> The type of identifier used by the entity.
@@ -418,12 +421,18 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
                           .map(resolver -> tryResolveParameterValue(resolver, convertedContext))
                           .toArray(CompletableFuture[]::new);
 
-            return CompletableFuture.allOf(resolvedParams)
-                                    .thenApply(v -> Arrays.stream(resolvedParams)
-                                                          .map(CompletableFuture::resultNow)
-                                                          .toArray())
-                                    .thenApply(this::constructEntityWithArguments)
-                                    .join();
+            E entity = CompletableFuture.allOf(resolvedParams)
+                                        .thenApply(v -> Arrays.stream(resolvedParams)
+                                                              .map(CompletableFuture::resultNow)
+                                                              .toArray())
+                                        .thenApply(this::constructEntityWithArguments)
+                                        .join();
+            if (entity == null && firstEventMessage != null && !declaresStaticEventHandler) {
+                // This creator accepted the first event but did not create the entity, and no static event sourcing
+                // handler can create it instead.
+                throw new EntityMissingAfterFirstEventException(id);
+            }
+            return entity;
         }
 
         private CompletableFuture<?> tryResolveParameterValue(

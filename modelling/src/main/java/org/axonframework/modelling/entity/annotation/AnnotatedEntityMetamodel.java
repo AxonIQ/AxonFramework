@@ -664,11 +664,6 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
         descriptor.describeProperty("entityType", entityType());
     }
 
-    @Override
-    public boolean canEvolveAbsentEntity() {
-        return delegateMetamodel.canEvolveAbsentEntity();
-    }
-
     @Nullable
     @Override
     public E evolve(@Nullable E entity, EventMessage event, ProcessingContext context) {

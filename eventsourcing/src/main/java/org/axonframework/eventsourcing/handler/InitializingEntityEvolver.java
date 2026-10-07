@@ -19,7 +19,6 @@ package org.axonframework.eventsourcing.handler;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.common.infra.DescribableComponent;
-import org.axonframework.eventsourcing.EntityMissingAfterFirstEventException;
 import org.axonframework.eventsourcing.EventSourcedEntityFactory;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
@@ -88,16 +87,15 @@ public class InitializingEntityEvolver<I, E> implements DescribableComponent {
      * entity using the given message, otherwise evolves it.
      * <p>
      * When the {@link EventSourcedEntityFactory} does not create the entity from the message, the {@code null} entity
-     * is passed to the {@link EntityEvolver} if it {@link EntityEvolver#canEvolveAbsentEntity() can evolve an absent
-     * entity}, so that a {@code static} event sourcing handler can create it, or deliberately leave it absent.
-     * Otherwise, an {@link EntityMissingAfterFirstEventException} is thrown.
+     * is passed to the {@link EntityEvolver}, so that a {@code static} event sourcing handler can create it, or
+     * deliberately leave it absent. A factory that should have created the entity reports this itself, for example
+     * with an {@link org.axonframework.eventsourcing.EntityMissingAfterFirstEventException}.
      *
      * @param identifier the entity's identifier, cannot be {@code null}
      * @param entity     the current state, can be {@code null}
      * @param message    an event message to initialize or evolve the entity with, cannot be {@code null}
      * @param context    a {@link ProcessingContext}, cannot be {@code null}
-     * @return an entity in its new state, or {@code null} when a static event sourcing handler left the entity absent
-     * @throws EntityMissingAfterFirstEventException if the entity could not be created from the message
+     * @return an entity in its new state, or {@code null} when the entity does not exist after applying the message
      */
     @Nullable
     public E evolve(I identifier, @Nullable E entity, EventMessage message, ProcessingContext context) {
@@ -113,12 +111,9 @@ public class InitializingEntityEvolver<I, E> implements DescribableComponent {
     private E ensureInitializedThenEvolve(I identifier, @Nullable E entity, EventMessage message,
                                           ProcessingContext context) {
         if (entity == null) {
+            // The factory reports an entity it should have created but could not, see
+            // EntityMissingAfterFirstEventException. A null result defers creation to static event sourcing handlers.
             entity = entityFactory.create(identifier, message, context);
-
-            // Only an evolver with static event sourcing handlers can still create the entity from this event.
-            if (entity == null && !entityEvolver.canEvolveAbsentEntity()) {
-                throw new EntityMissingAfterFirstEventException(identifier);
-            }
         }
 
         return entityEvolver.evolve(entity, message, context);
