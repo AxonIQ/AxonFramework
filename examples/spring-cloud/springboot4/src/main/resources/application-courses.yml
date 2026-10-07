@@ -1,0 +1,11 @@
+server:
+  port: 8081
+
+university:
+  node-name: courses
+
+axon:
+  eventhandling:
+    processors:
+      "[org.axonframework.examples.springcloud.domain]":
+        mode: subscribing
