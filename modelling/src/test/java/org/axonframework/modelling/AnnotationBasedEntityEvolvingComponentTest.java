@@ -343,15 +343,15 @@ class AnnotationBasedEntityEvolvingComponentTest {
         }
 
         @Test
-        void returnsNullWhenEvolvingNullStateWithOnlyInstanceHandlers() {
-            // given - TestState declares only instance handlers, which cannot run without an instance
+        void rejectsNullModel() {
+            // given
             var event = createEvent(0);
 
-            // when
-            var result = ENTITY_EVOLVER.evolve(null, event, StubProcessingContext.forMessage(event));
-
-            // then - the absent state is left absent
-            assertNull(result);
+            // when-then
+            //noinspection DataFlowIssue
+            assertThrows(NullPointerException.class,
+                         () -> ENTITY_EVOLVER.evolve(null, event, StubProcessingContext.forMessage(event)),
+                         "Model may not be null");
         }
     }
 

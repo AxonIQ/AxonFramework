@@ -69,6 +69,7 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
     private final AnnotatedHandlerInspector<E> inspector;
     private final EventConverter converter;
     private final Map<Class<?>, Map<QualifiedName, List<EvolvingHandler<E>>>> handlersByEntityType;
+    private final boolean hasStaticHandlers;
 
     /**
      * Initialize a new annotation-based {@link EntityEvolver}.
@@ -143,6 +144,15 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
         this.handlersByEntityType = indexHandlersByEntityType(
                 requireNonNull(messageTypeResolver, "The Message Type Resolver must not be null.")
         );
+        this.hasStaticHandlers = handlersByEntityType.values().stream()
+                                                     .flatMap(handlers -> handlers.values().stream())
+                                                     .flatMap(List::stream)
+                                                     .anyMatch(EvolvingHandler::isStatic);
+    }
+
+    @Override
+    public boolean canEvolveAbsentEntity() {
+        return hasStaticHandlers;
     }
 
     @Nullable
@@ -150,6 +160,11 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
     public E evolve(@Nullable E entity,
                     EventMessage event,
                     ProcessingContext context) {
+        if (entity == null && !hasStaticHandlers) {
+            throw new NullPointerException(
+                    "Cannot evolve an absent [" + entityType.getName() + "] entity without static event sourcing handlers."
+            );
+        }
         // With a null entity the concrete type is unknown, so static (create-from-null) handlers are routed by the
         // declared entity type, mirroring how creational command handlers are registered on the super type.
         Class<?> listenerType = entity != null ? entity.getClass() : entityType;
@@ -159,22 +174,25 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
 
             E evolvedEntity = entity;
             for (var evolvingHandler : handlers) {
-                if (evolvedEntity == null && !evolvingHandler.isStatic()) {
+                // An existing entity is handed to every handler as it was before the event, so each handler sees
+                // the same state. Only while the entity is absent does a handler see what an earlier handler created.
+                E target = entity != null ? entity : evolvedEntity;
+                if (target == null && !evolvingHandler.isStatic()) {
                     // An instance handler cannot run without an instance to invoke it on.
                     continue;
                 }
                 var handler = evolvingHandler.member();
                 var convertedEvent = event.withConvertedPayload(handler.payloadType(), converter);
-                var contextWithEntity = ActiveEntity.set(context, evolvedEntity);
+                var contextWithEntity = ActiveEntity.set(context, target);
                 if (!handler.canHandle(convertedEvent, contextWithEntity)) {
                     continue;
                 }
                 var interceptor = inspector.chainedInterceptor(listenerType);
-                var result = interceptor.handle(convertedEvent, contextWithEntity, evolvedEntity, handler)
+                var result = interceptor.handle(convertedEvent, contextWithEntity, target, handler)
                                         .first()
                                         .asCompletableFuture()
                                         .join();
-                evolvedEntity = nextState(result, evolvedEntity, evolvingHandler);
+                evolvedEntity = nextState(result, target, evolvingHandler);
             }
 
             return evolvedEntity;

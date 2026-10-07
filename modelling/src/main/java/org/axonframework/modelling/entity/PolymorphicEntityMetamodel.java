@@ -93,6 +93,12 @@ public class PolymorphicEntityMetamodel<E> implements EntityMetamodel<E>, Descri
         return new Builder<>(entityType);
     }
 
+    @Override
+    public boolean canEvolveAbsentEntity() {
+        // An absent entity has no concrete type yet, so only the super type can create it.
+        return superTypeMetamodel.canEvolveAbsentEntity();
+    }
+
     @Nullable
     @Override
     public E evolve(@Nullable E entity, EventMessage event, ProcessingContext context) {

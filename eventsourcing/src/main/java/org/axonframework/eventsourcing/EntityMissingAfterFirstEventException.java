@@ -20,17 +20,19 @@ import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 
 /**
- * Exception thrown by the {@link EventSourcedEntityFactory} when an entity creator accepts the {@code firstEventMessage}
- * passed to {@link EventSourcedEntityFactory#create(Object, EventMessage, ProcessingContext)}, but returns {@code null}
- * instead of an entity, during {@link EventSourcingRepository#load(Object, ProcessingContext)} or
+ * Exception thrown by the {@link EventSourcedEntityFactory} when the entity returned by
+ * {@link EventSourcedEntityFactory#create(Object, EventMessage, ProcessingContext)} is {@code null} when calling it with a non-null
+ * {@code firstEventMessage} during the {@link EventSourcingRepository#load(Object, ProcessingContext)} or
  * {@link EventSourcingRepository#loadOrCreate(Object, ProcessingContext)}.
  * <p>
- * A factory that cannot create the entity from a given first event may return {@code null}, deferring creation to a
- * {@code static} event sourcing handler. A creator that does accept the event, however, is expected to create the
- * entity from it: returning {@code null} there means the entity could never be created from its own creating event.
+ * Returning a {@code null} entity in this case indicates that the factory is incapable of creating an entity when
+ * provided an {@link EventMessage}, which violates the contract of the {@link EventSourcedEntityFactory}.
  * <p>
- * Ensure that the entity creator returns an entity for the event it accepts, or let a {@code static} event sourcing
- * handler decide whether to create the entity instead.
+ * Ensure that the factory is capable of creating an entity when provided with an event message.
+ * <p>
+ * This exception is not thrown when the entity's {@link org.axonframework.modelling.EntityEvolver} can evolve an absent
+ * entity, see {@link org.axonframework.modelling.EntityEvolver#canEvolveAbsentEntity()}. A {@code static} event
+ * sourcing handler may then create the entity from the event, or deliberately leave it absent.
  *
  * @author Mitchell Herrijgers
  * @since 5.0.0

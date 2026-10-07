@@ -229,6 +229,11 @@ public class ConcreteEntityMetamodel<E> implements DescribableComponent, EntityM
                 : new GenericCommandResultMessage(result);
     }
 
+    @Override
+    public boolean canEvolveAbsentEntity() {
+        return entityEvolver != null && entityEvolver.canEvolveAbsentEntity();
+    }
+
     @Nullable
     @Override
     public E evolve(@Nullable E entity, EventMessage event, ProcessingContext context) {

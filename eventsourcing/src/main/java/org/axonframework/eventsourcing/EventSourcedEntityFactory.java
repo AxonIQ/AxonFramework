@@ -33,9 +33,7 @@ import java.util.function.Supplier;
  * Defines how an {@link EventSourcingRepository} should construct an entity of type {@code E}.
  * <p>
  * When sourcing an entity, the state is initially {@code null}. The first event will initialize the entity through
- * {@link #create(Object, EventMessage, ProcessingContext)}. A factory may return {@code null} for a first event it
- * cannot create the entity from; the entity then stays absent unless a {@code static} event sourcing handler creates it
- * from that event.
+ * {@link #create(Object, EventMessage, ProcessingContext)}.
  * <p>
  * If no events are found during sourcing, the repository will return {@code null} for the entity if
  * {@link EventSourcingRepository#load(Object, ProcessingContext)} was used. However, if
@@ -87,10 +85,11 @@ public interface EventSourcedEntityFactory<ID, E> {
      * instantiate the entity. Using {@link EventSourcingRepository#load(Object, ProcessingContext)} would never call
      * this method with a {@code null} {@code firstEventMessage}.
      * <p>
-     * Invocations with a non-null {@code firstEventMessage} should return the entity created from that event. They
-     * may return {@code null} when this factory cannot create the entity from that event, in which case a
-     * {@code static} event sourcing handler may create it instead. Invocations with a null {@code firstEventMessage}
-     * may return null.
+     * Invocations with a non-null {@code firstEventMessage} must always return a non-null entity, while invocations
+     * with a null {@code firstEventMessage} may return null. The only exception is an entity whose
+     * {@link org.axonframework.modelling.EntityEvolver} can evolve an absent entity, see
+     * {@link org.axonframework.modelling.EntityEvolver#canEvolveAbsentEntity()}: returning {@code null} for a non-null
+     * {@code firstEventMessage} then lets its {@code static} event sourcing handlers create the entity instead.
      * <p>
      * Whether to return {@code null} from a {@code null} {@code firstEventMessage} invocation depends on the type of
      * command handler which should be invoked when the entity does not exist. If this is a
