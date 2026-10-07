@@ -101,7 +101,10 @@ public class PolymorphicEntityMetamodel<E> implements EntityMetamodel<E>, Descri
             // The entity does not exist yet (or was removed); the concrete type cannot be determined.
             return null;
         }
-        return metamodelFor(superTypeEvolvedEntity).evolve(superTypeEvolvedEntity, event, context);
+        // An existing entity keeps being evolved by the metamodel of its own concrete type. Only an entity that did
+        // not exist before this event takes the concrete type of the entity the super type just created.
+        var concreteTypeSource = entity != null ? entity : superTypeEvolvedEntity;
+        return metamodelFor(concreteTypeSource).evolve(superTypeEvolvedEntity, event, context);
     }
 
     /**
