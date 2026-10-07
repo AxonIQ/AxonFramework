@@ -16,6 +16,7 @@
 
 package org.axonframework.modelling.annotation;
 
+import org.axonframework.common.Priority;
 import org.axonframework.common.annotation.AnnotationUtils;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.messaging.core.Message;
@@ -49,12 +50,15 @@ import java.lang.reflect.Parameter;
  * This factory is registered through the {@link java.util.ServiceLoader} mechanism, like other parameter resolver
  * factories. It only acts on parameters after the first one of {@code static} {@code @EventHandler} methods, when the
  * parameter is typed as the declaring entity type, one of its super types, or one of its subtypes. It never resolves
- * parameters of instance handlers, command handlers, or other methods.
+ * parameters of instance handlers, command handlers, or other methods. It has the lowest priority, so any other
+ * factory able to resolve such a parameter, such as Spring bean or configuration component injection, takes
+ * precedence.
  *
  * @author Mateusz Nowak
  * @since 5.4.0
  */
 @Internal
+@Priority(Priority.LAST)
 public class ActiveEntityParameterResolverFactory implements ParameterResolverFactory {
 
     private static final ActiveEntityParameterResolver ACTIVE_ENTITY_RESOLVER = new ActiveEntityParameterResolver();

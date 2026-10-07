@@ -17,7 +17,9 @@
 package org.axonframework.modelling.annotation;
 
 import org.axonframework.messaging.core.annotation.ClasspathParameterResolverFactory;
+import org.axonframework.messaging.core.annotation.MultiParameterResolverFactory;
 import org.axonframework.messaging.core.annotation.ParameterResolver;
+import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
@@ -27,6 +29,7 @@ import org.junit.jupiter.api.*;
 
 import java.lang.reflect.Method;
 import java.time.Duration;
+import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -194,6 +197,34 @@ class ActiveEntityParameterResolverFactoryTest {
 
     @Nested
     class Registration {
+
+        @Test
+        void yieldsToAnyOtherFactoryThatResolvesTheSameParameter() throws Exception {
+            // given another factory resolving the same parameter, for example a Spring bean or configuration
+            // component of that type, registered with the default priority
+            ParameterResolver<Object> otherResolver = new ParameterResolver<>() {
+                @Override
+                public CompletableFuture<Object> resolveParameterValue(ProcessingContext context) {
+                    return CompletableFuture.completedFuture("other");
+                }
+
+                @Override
+                public boolean matches(ProcessingContext context) {
+                    return true;
+                }
+            };
+            ParameterResolverFactory otherFactory = (executable, parameters, index) -> otherResolver;
+            Method handler = method("onHappened", Happened.class, Shape.class);
+
+            // when
+            ParameterResolver<?> resolver = MultiParameterResolverFactory.ordered(testSubject, otherFactory)
+                                                                         .createInstance(handler,
+                                                                                         handler.getParameters(),
+                                                                                         1);
+
+            // then the active entity is only a fallback for parameters nothing else can resolve
+            assertThat(resolver).isSameAs(otherResolver);
+        }
 
         @Test
         void isRegisteredLikeAnyOtherParameterResolverFactory() throws Exception {
