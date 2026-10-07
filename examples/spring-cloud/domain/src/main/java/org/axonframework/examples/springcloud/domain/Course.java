@@ -14,13 +14,16 @@
  * limitations under the License.
  */
 
-package org.axonframework.examples.springcloud;
+package org.axonframework.examples.springcloud.domain;
 
 /**
- * HTTP request body for renaming a course through {@link CourseController}.
+ * Read model of a university course, including which node handled the request that produced this view. The
+ * {@code handledBy} field makes the Spring Cloud distribution hop visible in the HTTP response.
  *
- * @param name the new course name
+ * @param courseId  the unique identifier of the course
+ * @param name      the course name
+ * @param handledBy the node name of the application instance that handled the command or query producing this view
  */
-public record RenameCourseRequest(String name) {
+public record Course(String courseId, String name, String handledBy) {
 
 }

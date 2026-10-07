@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.axonframework.examples.springcloud;
+package org.axonframework.examples.springcloud.domain;
 
 import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
 import org.axonframework.messaging.queryhandling.gateway.QueryGateway;

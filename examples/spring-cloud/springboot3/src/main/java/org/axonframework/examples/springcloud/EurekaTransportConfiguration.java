@@ -21,8 +21,13 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * Registers the Jakarta/Jersey 3 Eureka transport client, which {@code spring-cloud-starter-netflix-eureka-client}
- * does not auto-configure on its own under Spring Boot 3.
+ * Registers the Jakarta/Jersey 3 Eureka transport client explicitly.
+ * <p>
+ * {@code com.netflix.eureka:eureka-client} pulls plain Jersey client libraries onto the classpath transitively,
+ * which trips a known {@code spring-cloud-netflix-eureka-client} issue
+ * (<a href="https://github.com/spring-cloud/spring-cloud-netflix/issues/4266">spring-cloud/spring-cloud-netflix#4266</a>):
+ * without an explicit {@link Jersey3TransportClientFactories} bean, {@code EurekaRegistration} ends up with a
+ * {@code null} Eureka client and every node fails to start.
  */
 @Configuration(proxyBeanMethods = false)
 class EurekaTransportConfiguration {
