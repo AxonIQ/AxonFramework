@@ -14,14 +14,14 @@
  * limitations under the License.
  */
 
-package org.axonframework.examples.springcloud;
+package org.axonframework.examples.springcloud.domain;
 
 /**
- * Event signaling that a course was renamed.
+ * Command requesting a new course to be added to the catalog.
  *
- * @param courseId the unique identifier of the renamed course
- * @param name     the new course name
+ * @param courseId the unique identifier for the new course
+ * @param name     the course name
  */
-public record CourseRenamed(String courseId, String name) {
+public record CreateCourse(String courseId, String name) {
 
 }
