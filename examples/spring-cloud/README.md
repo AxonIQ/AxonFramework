@@ -10,8 +10,14 @@ The examples complement the connector integration tests with a separately runnab
 applications, create a course through the portal, and retrieve it again through a distributed query. The response
 identifies the handling node, making the HTTP hop visible.
 
-The first implementation is `springboot3`, using Spring Boot 3.5 and Spring Cloud 2025.0. Its Docker Compose topology
-contains these processes:
+Two variants prove the connector works unmodified across Spring Boot major versions:
+
+| Module        | Spring Boot | Spring Cloud |
+|---------------|-------------|--------------|
+| `springboot3` | 3.5         | 2025.0       |
+| `springboot4` | 4.0         | 2025.1       |
+
+Their Docker Compose topology is identical:
 
 ```text
 browser or curl
@@ -27,9 +33,32 @@ members' capabilities through its HTTP endpoint, so the portal, which handles no
 handler. `courses` owns an in-memory course catalog for this initial slice; that keeps the example focused on message
 distribution rather than event transport or storage.
 
-## Run the Spring Boot 3.5 example
+## Module layout
 
-From this directory, build the executable JAR and start the three containers in detached mode:
+The command, event, query, handler, and controller code lives once, in `domain`, and is shared by both app modules:
+
+```text
+examples/spring-cloud/
+  domain/        University course commands, events, queries, handlers, and REST controller.
+                 No Spring Boot dependency; compiles against plain Spring Framework so the exact same classes run
+                 unmodified under every Spring Boot version below.
+  springboot3/   Spring Boot 3.5 bootstrap, Eureka wiring, and docker-compose setup.
+  springboot4/   Spring Boot 4.0 bootstrap, Eureka wiring, and docker-compose setup.
+```
+
+`springboot3` and `springboot4` each bring their own `application*.yml`, `Dockerfile`, and `compose.yaml`. These are
+intentionally duplicated rather than shared from `domain`: Spring Boot auto-loads `application*.yml` from every jar on
+the classpath, so sharing them would mean merging profile-specific properties across jars with classloader-order-
+dependent precedence, a strictly worse failure mode than two small, deliberately near-identical files. Mirror any
+change to one module's `application*.yml` into the other's.
+
+Porting the connector itself to a new Spring Boot version only ever touches a `springboot*` module's `pom.xml` and its
+own `UniversityApplication`/`Eureka*Configuration` classes; the `domain` module and its test never need to change.
+
+## Run an example
+
+From this directory, build the executable JAR and start the three containers in detached mode (substitute
+`springboot4` throughout for the Spring Boot 4 variant):
 
 ```bash
 ../../mvnw -Pexamples -pl examples/spring-cloud/springboot3 -am package
@@ -105,7 +134,8 @@ because the catalog is in memory.
 
 ### IntelliJ IDEA HTTP client
 
-Open [`springboot3/courses.http`](springboot3/courses.http) in IntelliJ IDEA. Define or select values for:
+Open [`springboot3/courses.http`](springboot3/courses.http) (or `springboot4/courses.http`) in IntelliJ IDEA. Define
+or select values for:
 
 ```text
 portalUrl = http://localhost:8080
@@ -130,15 +160,22 @@ docker compose -f springboot3/compose.yaml down
 
 ## Scope and follow-up
 
-The Boot 3.5 example proves command, point-to-point query, and subscription-query distribution. The course catalog is
-intentionally ephemeral and uses an in-memory projection; the example does not claim to distribute an event store.
+Both variants prove command, point-to-point query, and subscription-query distribution. The course catalog is
+intentionally ephemeral and uses an in-memory projection; neither variant claims to distribute an event store.
+Deciding whether the tutorial should keep the ephemeral catalog or introduce durable storage and an explicit
+event-sharing mechanism is separate from Spring Cloud message distribution, and remains open.
 
-The next increments are:
+Porting the `springboot4` module surfaced two findings worth keeping in mind for future ports:
 
-1. Add the mirrored `springboot4` module using Spring Boot 4.0 and Spring Cloud 2025.1, preserving the same roles and
-   HTTP walkthrough.
-2. Decide whether the tutorial should keep the intentionally ephemeral catalog or introduce durable storage and an
-   explicit event-sharing mechanism. That is separate from Spring Cloud message distribution.
+- Spring Cloud 2025.1.0's own compatibility verifier only supports Spring Boot 4.0.x, not 4.1.x. Unlike
+  `examples/university-java-springboot-4` and `examples/saga-recipes`, this module has no JPA, so it never hits the
+  `applicationTaskExecutor`/`UnitOfWorkFactory` deadlock that forces those two to 4.1.1, and stays on 4.0.x instead.
+- Both variants need the same `EurekaTransportConfiguration`/`eureka-client-jersey3` workaround: `eureka-client`
+  pulls plain Jersey client libraries onto the classpath transitively regardless of Boot version, which trips
+  [spring-cloud-netflix#4266](https://github.com/spring-cloud/spring-cloud-netflix/issues/4266) unless a
+  `Jersey3TransportClientFactories` bean is registered explicitly. Without it, both the `courses` and `portal`
+  containers fail to start with `EurekaRegistration.getEurekaClient()` returning `null`, caught only by the
+  docker-compose manual walkthrough, not by the unit tests (which disable Eureka entirely).
 
 ## Decisions to revisit
 
