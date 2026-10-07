@@ -157,7 +157,7 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
     private void validate() {
         if (creators.isEmpty() && !declaresStaticEventHandler()) {
             throw new AxonConfigurationException(
-                    "No @EntityCreator or static @EventSourcingHandler present on entity of type [%s], so it could never be created. Can not initialize AnnotationBasedEventSourcedEntityFactory.".formatted(
+                    "No @EntityCreator present on entity of type [%s], nor a static @EventSourcingHandler that could create it. Can not initialize AnnotationBasedEventSourcedEntityFactory.".formatted(
                             entityType.getName()));
         }
     }

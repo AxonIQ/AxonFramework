@@ -502,7 +502,7 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
 
             // then
             assertTrue(exception.getMessage().contains(
-                    "No @EntityCreator or static @EventSourcingHandler present on entity of type"));
+                    "No @EntityCreator present on entity of type"));
         }
 
         @Test

@@ -265,7 +265,8 @@ class EntityAbsentAfterFirstEventTest {
             assertThatThrownBy(() -> start(new Handlers(), GiftCard.class))
                     .rootCause()
                     .isInstanceOf(AxonConfigurationException.class)
-                    .hasMessageContaining("No @EntityCreator or static @EventSourcingHandler present on entity of type");
+                    .hasMessageContaining("No @EntityCreator present on entity of type")
+                    .hasMessageContaining("nor a static @EventSourcingHandler that could create it");
         }
     }
 }
