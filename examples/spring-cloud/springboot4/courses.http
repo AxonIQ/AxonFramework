@@ -1,0 +1,26 @@
+### Create a course through the portal
+# @name createCourse
+POST {{portalUrl}}/courses
+Content-Type: application/json
+
+{
+  "courseId": "{{courseId}}",
+  "name": "Axon Framework 5"
+}
+
+### Query the course through the portal
+GET {{portalUrl}}/courses/{{courseId}}
+
+### Subscribe to course changes through the portal
+# Run this request and leave it open. It receives the initial course and later updates.
+GET {{portalUrl}}/courses/{{courseId}}/subscription
+Accept: text/event-stream
+
+### Rename a course through the portal
+# Run this request in another HTTP-client tab while the subscription is open.
+PUT {{portalUrl}}/courses/{{courseId}}
+Content-Type: application/json
+
+{
+  "name": "Axon Framework 5 - Updated"
+}

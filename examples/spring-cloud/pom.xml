@@ -34,5 +34,6 @@
     <modules>
         <module>domain</module>
         <module>springboot3</module>
+        <module>springboot4</module>
     </modules>
 </project>
