@@ -52,10 +52,19 @@ import java.lang.annotation.Target;
  * <p>
  * Note that this forced-creation-approach is viewed as an aggregate-centric solution, whereas this library aims to
  * steer away from that. Hence, any opportunity to use other mechanisms than this are encouraged.
+ * <p>
+ * As of 5.4.0 a no-arguments or identifier-based {@link EntityCreator} always creates the entity even without a first
+ * event, which is exactly the behavior this annotation used to force. That makes {@code @ForcedEntityCreator}
+ * redundant: it now behaves identically to {@link EntityCreator}. It remains meta-annotated with {@link EntityCreator},
+ * so annotated elements are still discovered and invoked as regular creators and existing code keeps working, but new
+ * code should use {@link EntityCreator} directly.
  *
  * @author Steven van Beelen
  * @since 5.3.1
+ * @deprecated Since 5.4.0 a no-arguments or identifier-based {@link EntityCreator} always creates the entity, making
+ * this annotation redundant. Use {@link EntityCreator} directly instead.
  */
+@Deprecated(since = "5.4.0", forRemoval = true)
 @EntityCreator
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.METHOD, ElementType.CONSTRUCTOR, ElementType.ANNOTATION_TYPE})
@@ -66,7 +75,7 @@ public @interface ForcedEntityCreator {
      * and this value is left at default, the payload's qualified name will be determined based on the
      * {@link MessageTypeResolver}.
      *
-     * @return The qualified names of the payload types that this factory method can handle.
+     * @return the qualified names of the payload types that this factory method can handle
      */
     String[] payloadQualifiedNames() default {};
 }

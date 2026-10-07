@@ -29,28 +29,33 @@ import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 import org.axonframework.modelling.annotation.InjectEntity;
 
 /**
- * A stateful command handler for which the entity is created based on the identifier through a static factory
- * {@code @EntityCreator} method (rather than a constructor), will fail for both creational and instance command
- * handlers when the entity does not exist yet.
- * <p>
- * This mirrors {@link GiftCardIdCreatorStateful}, but proves the no-arg/id-only not-found guard applies equally to
- * method-based creators, not just constructors.
+ * A stateful command handler whose entity is created based on the identifier through a static factory
+ * {@code @EntityCreator} method (rather than a constructor). Because an identifier-based creator always constructs the
+ * entity, the non-null {@code @InjectEntity} parameter always resolves to a (possibly empty) entity. The handler
+ * therefore guards the lifecycle on the entity's own state, mirroring {@link GiftCardIdCreatorStateful} for a
+ * method-based creator.
  *
  * @author Steven van Beelen
  */
 public class GiftCardIdFactoryMethodCreatorStateful {
 
-    @SuppressWarnings("unused")
     @CommandHandler
     public void handle(IssueCardCommand command,
-                       @InjectEntity GiftCard entity) {
-        throw new IllegalStateException("GiftCard for id [" + command.cardId() + "] already exists");
+                       @InjectEntity GiftCard entity,
+                       EventAppender appender) {
+        if (entity.issued) {
+            throw new IllegalStateException("GiftCard for id [" + command.cardId() + "] already exists");
+        }
+        appender.append(new CardIssuedEvent(command.cardId(), command.amount()));
     }
 
     @CommandHandler
     public void handle(RedeemCardCommand command,
                        @InjectEntity GiftCard entity,
                        EventAppender appender) {
+        if (!entity.issued) {
+            throw new IllegalStateException("GiftCard for id [" + command.cardId() + "] does not exist");
+        }
         if (entity.amount - command.amount() < 0) {
             throw new IllegalStateException("Insufficient funds");
         }
@@ -62,6 +67,7 @@ public class GiftCardIdFactoryMethodCreatorStateful {
 
         String cardId;
         double amount;
+        boolean issued;
 
         private GiftCard(String cardId, double amount) {
             this.cardId = cardId;
@@ -70,13 +76,14 @@ public class GiftCardIdFactoryMethodCreatorStateful {
 
         @EntityCreator
         public static GiftCard create(@InjectEntityId String cardId) {
-            return new GiftCard(cardId, 9001);
+            return new GiftCard(cardId, 0);
         }
 
         @EventSourcingHandler
         public void on(CardIssuedEvent event) {
             cardId = event.cardId();
             amount = event.amount();
+            issued = true;
         }
 
         @EventSourcingHandler
