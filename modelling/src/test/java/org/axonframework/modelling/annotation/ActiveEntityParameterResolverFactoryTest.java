@@ -16,6 +16,7 @@
 
 package org.axonframework.modelling.annotation;
 
+import org.axonframework.common.Priority;
 import org.axonframework.messaging.core.annotation.ClasspathParameterResolverFactory;
 import org.axonframework.messaging.core.annotation.MultiParameterResolverFactory;
 import org.axonframework.messaging.core.annotation.ParameterResolver;
@@ -27,7 +28,9 @@ import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.*;
 
+import java.lang.reflect.Executable;
 import java.lang.reflect.Method;
+import java.lang.reflect.Parameter;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 
@@ -197,6 +200,46 @@ class ActiveEntityParameterResolverFactoryTest {
 
     @Nested
     class Registration {
+
+        @Priority(Priority.LAST)
+        private static class CatchAllFactory implements ParameterResolverFactory {
+
+            private final ParameterResolver<Object> resolver;
+
+            private CatchAllFactory(ParameterResolver<Object> resolver) {
+                this.resolver = resolver;
+            }
+
+            @Override
+            public ParameterResolver<?> createInstance(Executable executable, Parameter[] parameters, int index) {
+                return resolver;
+            }
+        }
+
+        @Test
+        void precedesCatchAllFactoriesThatResolveEveryParameter() throws Exception {
+            // given a catch-all factory with the last priority, such as the test fixture's resource resolver
+            ParameterResolver<Object> catchAllResolver = new ParameterResolver<>() {
+                @Override
+                public CompletableFuture<Object> resolveParameterValue(ProcessingContext context) {
+                    return CompletableFuture.completedFuture("catch-all");
+                }
+
+                @Override
+                public boolean matches(ProcessingContext context) {
+                    return false;
+                }
+            };
+            Method handler = method("onHappened", Happened.class, Shape.class);
+
+            // when
+            ParameterResolver<?> resolver =
+                    MultiParameterResolverFactory.ordered(new CatchAllFactory(catchAllResolver), testSubject)
+                                                 .createInstance(handler, handler.getParameters(), 1);
+
+            // then the entity state is still resolved by the active entity resolver
+            assertThat(resolver).isNotSameAs(catchAllResolver).isNotNull();
+        }
 
         @Test
         void yieldsToAnyOtherFactoryThatResolvesTheSameParameter() throws Exception {
