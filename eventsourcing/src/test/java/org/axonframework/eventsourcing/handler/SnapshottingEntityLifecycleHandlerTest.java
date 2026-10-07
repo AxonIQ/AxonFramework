@@ -288,6 +288,31 @@ class SnapshottingEntityLifecycleHandlerTest {
         }
 
         @Test
+        void noSnapshotStoredWhileEntityIsStillAbsentAfterItsEvents() {
+            // given events for an entity that nothing creates (as when a static event sourcing handler declines)
+            SnapshottingEntityLifecycleHandler<String, Account> absentEntityHandler =
+                new SnapshottingEntityLifecycleHandler<>(
+                    eventStore,
+                    (id, ctx) -> EventCriteria.havingTags(Tag.of("account", id)),
+                    new AnnotationBasedTagResolver(),
+                    new InitializingEntityEvolver<>((id, msg, ctx) -> null, (entity, event, ctx) -> entity),
+                    SnapshotPolicy.whenEventMatches(msg -> true),
+                    ACCOUNT_TYPE,
+                    CONVERTER,
+                    Account.class,
+                    snapshotStore
+                );
+            publish(new AccountCreated(ACCOUNT_ID, "Alice"), new FundsDeposited(ACCOUNT_ID, 100));
+
+            // when
+            Account sourced = source(absentEntityHandler);
+
+            // then the absent entity is returned and nothing is snapshotted
+            assertThat(sourced).isNull();
+            assertThat(snapshotStore.load(ACCOUNT_TYPE.qualifiedName(), ACCOUNT_ID, null).join()).isNull();
+        }
+
+        @Test
         void noSnapshotStoredWhenEntityComesEntirelyFromSnapshot() {
             publish(new AccountCreated(ACCOUNT_ID, "Alice"));
             storeSnapshot(new Account(ACCOUNT_ID, "Alice", 500), GlobalIndexPositions.of(1));
