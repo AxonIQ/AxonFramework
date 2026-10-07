@@ -18,6 +18,7 @@ package org.axonframework.integrationtests.testsuite.giftcard;
 
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.configuration.AxonConfiguration;
+import org.axonframework.common.configuration.Configuration;
 import org.axonframework.eventsourcing.EntityMissingAfterFirstEventException;
 import org.axonframework.eventsourcing.annotation.EventSourcedEntity;
 import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
@@ -28,7 +29,15 @@ import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.commandhandling.configuration.CommandHandlingModule;
 import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
+import org.axonframework.messaging.core.MessageTypeResolver;
+import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
+import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
+import org.axonframework.messaging.eventhandling.conversion.EventConverter;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
+import org.axonframework.messaging.eventstreaming.EventCriteria;
+import org.axonframework.messaging.eventstreaming.Tag;
+import org.axonframework.modelling.EntityEvolver;
+import org.axonframework.modelling.annotation.AnnotationBasedEntityEvolvingComponent;
 import org.axonframework.modelling.annotation.InjectEntity;
 import org.axonframework.modelling.annotation.TargetEntityId;
 import org.jspecify.annotations.Nullable;
@@ -36,6 +45,7 @@ import org.junit.jupiter.api.*;
 
 import java.time.Duration;
 import java.util.concurrent.ExecutionException;
+import java.util.function.Function;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -44,7 +54,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * Test class validating what happens when no entity has been created after an event has been sourced for it. A first
  * event that no {@link EntityCreator} matches, a creator that returns {@code null} for its own event, and an entity
  * that nothing could ever create are reported, as they were before static event sourcing handlers existed. Only an
- * entity with a static event sourcing handler may stay absent until its creating event arrives.
+ * entity with a static event sourcing handler may stay absent until its creating event arrives. A declaratively
+ * configured entity whose factory does not create it leaves creation to its evolver.
  *
  * @author Mateusz Nowak
  */
@@ -283,6 +294,118 @@ class EntityAbsentAfterFirstEventTest {
 
             // then
             assertThat(issuing).succeedsWithin(TIMEOUT);
+            assertThat(commandGateway.send(new DescribeCard("cardId"), String.class))
+                    .succeedsWithin(TIMEOUT).isEqualTo("issued with 100");
+        }
+    }
+
+    @Nested
+    class DeclarativeEntityCreatedByItsEvolver {
+
+        @EventSourcedEntity(tagKey = "cardId")
+        public record StaticGiftCard(int amount) {
+
+            @EventSourcingHandler
+            static StaticGiftCard on(CardIssued event, @Nullable StaticGiftCard state) {
+                return state != null ? state : new StaticGiftCard(event.amount());
+            }
+        }
+
+        public record GiftCard(int amount) {
+
+        }
+
+        public static class StaticGiftCardHandlers {
+
+            @CommandHandler
+            public void handle(IssueCard command, @InjectEntity @Nullable StaticGiftCard card, EventAppender appender) {
+                appender.append(new CardIssued(command.cardId(), command.amount()));
+            }
+
+            @CommandHandler
+            public String handle(DescribeCard command, @InjectEntity @Nullable StaticGiftCard card) {
+                return card == null ? "absent" : "issued with " + card.amount();
+            }
+        }
+
+        public static class GiftCardHandlers {
+
+            @CommandHandler
+            public void handle(IssueCard command, @InjectEntity @Nullable GiftCard card, EventAppender appender) {
+                appender.append(new CardIssued(command.cardId(), command.amount()));
+            }
+
+            @CommandHandler
+            public String handle(DescribeCard command, @InjectEntity @Nullable GiftCard card) {
+                return card == null ? "absent" : "issued with " + card.amount();
+            }
+        }
+
+        private <E> CommandGateway startDeclarative(Class<E> entityType,
+                                                    Function<Configuration, EntityEvolver<E>> evolver,
+                                                    Object commandHandlers) {
+            var entityModule =
+                    EventSourcedEntityModule.declarative(String.class, entityType)
+                                            .messagingModel((c, model) -> model.entityEvolver(evolver.apply(c))
+                                                                               .build())
+                                            // A factory that never creates the entity from an event.
+                                            .entityFactory(c -> (id, event, context) -> null)
+                                            .criteriaResolver(c -> (id, context) -> EventCriteria.havingTags(
+                                                    Tag.of("cardId", id)
+                                            ))
+                                            .build();
+            return EventSourcingConfigurer.create()
+                                          .registerEntity(entityModule)
+                                          .registerCommandHandlingModule(
+                                                  CommandHandlingModule.named("declarative-" + entityType.getSimpleName())
+                                                                       .commandHandlers()
+                                                                       .autodetectedCommandHandlingComponent(
+                                                                               c -> commandHandlers
+                                                                       )
+                                                                       .build()
+                                          )
+                                          .start()
+                                          .getComponent(CommandGateway.class);
+        }
+
+        @Test
+        void staticEventSourcingHandlerCreatesTheEntityWhenTheFactoryDoesNot() {
+            // given a declarative entity whose evolver is annotation-based, with a static event sourcing handler
+            CommandGateway commandGateway = startDeclarative(
+                    StaticGiftCard.class,
+                    c -> new AnnotationBasedEntityEvolvingComponent<>(
+                            StaticGiftCard.class,
+                            c.getComponent(EventConverter.class),
+                            c.getComponent(MessageTypeResolver.class),
+                            c.getComponent(ParameterResolverFactory.class),
+                            ClasspathHandlerDefinition.forClass(StaticGiftCard.class)
+                    ),
+                    new StaticGiftCardHandlers()
+            );
+
+            // when
+            assertThat(commandGateway.send(new IssueCard("cardId", 100), Void.class)).succeedsWithin(TIMEOUT);
+
+            // then
+            assertThat(commandGateway.send(new DescribeCard("cardId"), String.class))
+                    .succeedsWithin(TIMEOUT).isEqualTo("issued with 100");
+        }
+
+        @Test
+        void evolverCreatesTheEntityFromAnAbsentStateWhenTheFactoryDoesNot() {
+            // given a declarative entity whose evolver creates the entity from an absent state
+            CommandGateway commandGateway = startDeclarative(
+                    GiftCard.class,
+                    c -> (card, event, context) -> card != null
+                            ? card
+                            : new GiftCard(((CardIssued) event.payload()).amount()),
+                    new GiftCardHandlers()
+            );
+
+            // when
+            assertThat(commandGateway.send(new IssueCard("cardId", 100), Void.class)).succeedsWithin(TIMEOUT);
+
+            // then
             assertThat(commandGateway.send(new DescribeCard("cardId"), String.class))
                     .succeedsWithin(TIMEOUT).isEqualTo("issued with 100");
         }

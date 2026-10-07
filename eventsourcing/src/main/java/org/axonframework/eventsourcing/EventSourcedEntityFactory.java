@@ -86,10 +86,11 @@ public interface EventSourcedEntityFactory<ID, E> {
      * this method with a {@code null} {@code firstEventMessage}.
      * <p>
      * Invocations with a non-null {@code firstEventMessage} must always return a non-null entity, while invocations
-     * with a null {@code firstEventMessage} may return null. The only exception is an entity with {@code static} event
-     * sourcing handlers: returning {@code null} for a non-null {@code firstEventMessage} then lets those handlers create
-     * the entity from the event instead. A factory that accepts the event but cannot create the entity should report
-     * that with an {@link EntityMissingAfterFirstEventException}.
+     * with a null {@code firstEventMessage} may return null. The exception is a factory that leaves creation to the
+     * entity's {@link org.axonframework.modelling.EntityEvolver}: returning {@code null} for a non-null
+     * {@code firstEventMessage} passes the absent entity to the evolver, which can create it from the event, for example
+     * through {@code static} event sourcing handlers, or leave it absent. A factory that accepts the event but cannot
+     * create the entity should report that with an {@link EntityMissingAfterFirstEventException}.
      * <p>
      * Whether to return {@code null} from a {@code null} {@code firstEventMessage} invocation depends on the type of
      * command handler which should be invoked when the entity does not exist. If this is a
