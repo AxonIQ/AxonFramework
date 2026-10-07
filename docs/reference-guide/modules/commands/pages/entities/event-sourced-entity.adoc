@@ -90,6 +90,47 @@ An entity only needs the state required to make decisions about incoming command
 An event sourcing handler is only needed when the resulting state change is relevant for validating future commands.
 ====
 
+=== Static Event Sourcing handlers
+
+An event sourcing handler can also be `static`, taking the current entity state as its first parameter and returning the next state:
+
+[source,java]
+----
+@EventSourcingHandler
+static Course on(@Nullable Course state, CourseCreated event) {
+    return new Course(event.courseId(), event.name());
+}
+----
+
+The current-state parameter is `null` while the entity does not exist yet.
+A static handler therefore covers a case an instance handler cannot: it can create the entity from its first event.
+It can also evolve an existing instance (returning the next state), or, while the state is still `null`, return `null` to decline creating the entity for that event.
+
+Use a static event sourcing handler when an entity should not exist until a specific event establishes it, without declaring a first-event-based xref:commands:entities/entity-creator.adoc[entity creator] for that event.
+An instance handler still requires an existing entity, so it only runs once a static handler (or an entity creator) has produced one.
+
+The state parameter is optional.
+When a handler creates the entity purely from the event and does not need the previous state, you can omit it:
+
+[source,java]
+----
+@EventSourcingHandler
+static Course on(CourseCreated event) {
+    return new Course(event.courseId(), event.name());
+}
+----
+
+Because this form has no access to the prior state, it always produces a fresh instance from the event.
+Use it only for an event that establishes the entity; if that event type could also arrive once the entity already exists, it would replace the current state.
+Keep the state parameter (marked `@Nullable`) whenever the next state depends on the previous one.
+
+[NOTE]
+====
+Once an entity exists, it stays non-null.
+A static event sourcing handler must not return `null` for an already-existing entity: doing so is rejected.
+Model the end of an entity's lifecycle as a terminal state, for example a `closed` flag, rather than as a `null` entity.
+====
+
 === Entity creator
 
 The entity creator method can come in several forms.

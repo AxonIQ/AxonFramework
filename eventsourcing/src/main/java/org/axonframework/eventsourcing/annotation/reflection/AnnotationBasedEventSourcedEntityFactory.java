@@ -17,7 +17,6 @@
 package org.axonframework.eventsourcing.annotation.reflection;
 
 import org.axonframework.common.AxonConfigurationException;
-import org.axonframework.common.ObjectUtils;
 import org.axonframework.common.ReflectionUtils;
 import org.axonframework.common.annotation.AnnotationUtils;
 import org.axonframework.eventsourcing.EventSourcedEntityFactory;
@@ -32,7 +31,10 @@ import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.conversion.EventConverter;
 import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.lang.invoke.MethodHandles;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Executable;
 import java.lang.reflect.Method;
@@ -56,7 +58,9 @@ import java.util.stream.StreamSupport;
  * <p>
  * This class implements the requirements as per the {@link EntityCreator} annotation. It also honors
  * {@link ForcedEntityCreator}-annotated constructors and static methods, invoking them regardless of whether a first
- * event is present, as described on {@link ForcedEntityCreator}. This class is thread-safe.
+ * event is present, as described on {@link ForcedEntityCreator}. When no creator matches (or the entity declares
+ * none), creation is deferred by returning {@code null}, allowing a {@code static} event sourcing handler to build the
+ * entity from the first event instead. This class is thread-safe.
  *
  * @param <E>  The type of entity to create.
  * @param <ID> The type of identifier used by the entity.
@@ -64,6 +68,8 @@ import java.util.stream.StreamSupport;
  * @since 5.0.0
  */
 public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSourcedEntityFactory<ID, E> {
+
+    private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 
     private final Context.ResourceKey<ID> ID_KEY = Context.ResourceKey.withLabel("EventSourcedEntityFactory.id");
 
@@ -137,7 +143,6 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
     private void initialize() {
         scanMethods();
         scanConstructors();
-        validate();
     }
 
     private void scanConstructors() {
@@ -154,14 +159,6 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
              .filter(method -> AnnotationUtils.isAnnotationPresent(method, EntityCreator.class))
              .distinct()
              .forEach(this::addEntityCreatorMethod);
-    }
-
-    private void validate() {
-        if (creators.isEmpty()) {
-            throw new AxonConfigurationException(
-                    "No @EntityCreator present on entity of type [%s]. Can not initialize AnnotationBasedEventSourcedEntityFactory.".formatted(
-                            entityType.getName()));
-        }
     }
 
     private void addEntityCreatorMethod(Method method) {
@@ -275,16 +272,14 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
             compatibleCreators = getMethodsCompatibleWithIdAndNoMessage(id);
         }
         if (compatibleCreators.isEmpty()) {
-            if (eventMessage == null) {
-                // No first event and no no-arg/id-based creator matched, so the entity does not exist yet.
-                // Return no-op ScannedEntityCreator, which defaults to returning null for the entity creation.
-                return new ScannedEntityCreator();
+            // No matching @EntityCreator (or the entity declares none). Rather than fail, defer creation by returning
+            // a no-op that yields null, so a static event sourcing handler can build the entity from the first event.
+            if (logger.isDebugEnabled()) {
+                logger.debug("No @EntityCreator matched id [{}]{}. Deferring creation to event sourcing handlers.",
+                             id,
+                             eventMessage == null ? " (no first event)" : " and event [" + eventMessage.type() + "]");
             }
-            StringBuilder message = new StringBuilder(
-                    "No suitable @EntityCreator found for id: [%s] and event message [%s]. Candidates were:"
-                            .formatted(id, ObjectUtils.getOrDefault(eventMessage, Message::type, "none")));
-            creators.forEach(creator -> message.append("\n - ").append(creator));
-            throw new AxonConfigurationException(message.toString());
+            return new ScannedEntityCreator();
         }
         Set<ScannedEntityCreator> matchingCreators = compatibleCreators
                 .stream()

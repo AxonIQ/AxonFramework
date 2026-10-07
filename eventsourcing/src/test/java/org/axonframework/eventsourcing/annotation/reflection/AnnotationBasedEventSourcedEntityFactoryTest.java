@@ -144,12 +144,12 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
         }
 
         @Test
-        void throwsConfigurationExceptionIfNoMatchingPayloadType() {
+        void returnsNullWhenNoMatchingPayloadType() {
+            // No creator matches the event and there is no identifier-based fallback creator: creation is deferred by
+            // returning null, so a static event sourcing handler can build the entity instead.
             when(eventMessage.type()).thenReturn(new MessageType("non-matching-test-type"));
-            AxonConfigurationException exception = assertThrows(AxonConfigurationException.class, () -> {
-                factory.create("test-id", eventMessage, StubProcessingContext.forMessage(eventMessage));
-            });
-            assertTrue(exception.getMessage().contains("No suitable @EntityCreator found for id"));
+
+            assertNull(factory.create("test-id", eventMessage, StubProcessingContext.forMessage(eventMessage)));
         }
 
         @Test
@@ -218,15 +218,11 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
         }
 
         @Test
-        void throwsConfigurationExceptionIfNoMatchingPayloadType() {
+        void returnsNullWhenNoMatchingPayloadType() {
             eventMessage = new GenericEventMessage(new MessageType("non-matching-test-type"),
                                                    new PayloadSpecificPayload("my-specific-payload"));
 
-            AxonConfigurationException exception = assertThrows(
-                    AxonConfigurationException.class,
-                    () -> factory.create("test-id", eventMessage, StubProcessingContext.forMessage(eventMessage))
-            );
-            assertTrue(exception.getMessage().contains("No suitable @EntityCreator found for id"));
+            assertNull(factory.create("test-id", eventMessage, StubProcessingContext.forMessage(eventMessage)));
         }
 
         @Test
@@ -487,18 +483,20 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
         }
 
         @Test
-        void throwsOnMissingFactoryMethods() {
-            var exception = assertThrows(AxonConfigurationException.class,
-                                         () -> new AnnotationBasedEventSourcedEntityFactory<>(
-                                                 NoAnnotatedMethodsEntity.class,
-                                                 String.class,
-                                                 Collections.singleton(NoAnnotatedMethodsEntity.class),
-                                                 parameterResolverFactory,
-                                                 messageTypeResolver,
-                                                 converter
-                                         ));
-            assertTrue(exception.getMessage().contains(
-                    "No @EntityCreator present on entity of type"));
+        void allowsEntityWithoutAnyEntityCreator() {
+            // An entity may declare no @EntityCreator at all: the factory then yields null (deferring creation to a
+            // static event sourcing handler) rather than failing at configuration time.
+            var factory = assertDoesNotThrow(() -> new AnnotationBasedEventSourcedEntityFactory<>(
+                    NoAnnotatedMethodsEntity.class,
+                    String.class,
+                    Collections.singleton(NoAnnotatedMethodsEntity.class),
+                    parameterResolverFactory,
+                    messageTypeResolver,
+                    converter
+            ));
+
+            assertNull(factory.create("test-id", null, new StubProcessingContext()));
+            assertNull(factory.create("test-id", eventMessage, StubProcessingContext.forMessage(eventMessage)));
         }
 
         public static class InvalidEntityNonStaticMethod {

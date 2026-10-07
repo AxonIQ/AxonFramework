@@ -18,6 +18,7 @@ package org.axonframework.modelling;
 
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.jspecify.annotations.Nullable;
 
 import java.util.function.BiFunction;
 
@@ -28,6 +29,10 @@ import static java.util.Objects.requireNonNull;
  * {@code payloadType} to evolve an entity with.
  * <p>
  * Will throw a {@link ClassCastException} if the {@code payloadType} does not match.
+ * <p>
+ * This is an imperative evolver that requires a non-null {@code entity}: it does not support the functional
+ * create-from-{@code null} style. Use an annotation-based entity with a {@code static @EventSourcingHandler} when the
+ * entity may be absent.
  *
  * @param <P> The payload type of the event to apply.
  * @param <E> The entity type to evolve.
@@ -56,7 +61,7 @@ public class PayloadBasedEntityEvolver<P, E> implements EntityEvolver<E> {
     }
 
     @Override
-    public E evolve(E entity,
+    public E evolve(@Nullable E entity,
                     EventMessage event,
                     ProcessingContext context) {
         P payload = payloadType.cast(requireNonNull(event, "The event must not be null.").payload());

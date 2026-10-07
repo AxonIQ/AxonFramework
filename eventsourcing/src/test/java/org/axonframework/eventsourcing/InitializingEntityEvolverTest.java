@@ -28,6 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.axonframework.messaging.eventhandling.EventTestUtils.createEvent;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -75,7 +76,21 @@ class InitializingEntityEvolverTest {
     }
 
     @Test
-    void evolveShouldThrowExceptionWhenFactoryReturnsNull() {
-        assertThatThrownBy(() -> evolver.evolve(1001, null, event, context)).isInstanceOf(EntityMissingAfterFirstEventException.class);
+    void evolveDelegatesToEvolverWhenFactoryReturnsNull() {
+        // The factory declines to create (returns null), so a static event sourcing handler in the evolver builds the
+        // entity from a null state instead.
+        when(entityEvolver.evolve(null, event, context)).thenReturn("created-from-null");
+
+        assertThat(evolver.evolve(1001, null, event, context)).isEqualTo("created-from-null");
+    }
+
+    @Test
+    void evolveReturnsNullWhenNeitherFactoryNorEvolverProducesState() {
+        // The factory returns null (default mock) and the evolver leaves the state null (default mock): a null state
+        // is a legitimate outcome, not an error.
+        when(entityFactory.create(1001, event, context)).thenReturn(null);
+
+        assertThat(evolver.evolve(1001, null, event, context)).isNull();
+        verify(entityEvolver).evolve(null, event, context);
     }
 }

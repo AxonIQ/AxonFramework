@@ -19,7 +19,6 @@ package org.axonframework.eventsourcing.handler;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.common.infra.DescribableComponent;
-import org.axonframework.eventsourcing.EntityMissingAfterFirstEventException;
 import org.axonframework.eventsourcing.EventSourcedEntityFactory;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
@@ -84,15 +83,18 @@ public class InitializingEntityEvolver<I, E> implements DescribableComponent {
     }
 
     /**
-     * Initializes or evolves the given entity using the given message. If the entity is {@code null}, creates the
-     * entity using the given message, otherwise evolves it.
+     * Initializes or evolves the given entity using the given message. If the entity is {@code null}, an attempt is
+     * made to create it with the {@link EventSourcedEntityFactory} first; the (possibly still {@code null}) entity is
+     * then passed to the {@link EntityEvolver}. This lets a {@code static} event sourcing handler build the entity from
+     * a {@code null} state, or deliberately leave it absent.
      *
      * @param identifier the entity's identifier, cannot be {@code null}
      * @param entity     the current state, can be {@code null}
      * @param message    an event message to initialize or evolve the entity with, cannot be {@code null}
      * @param context    a {@link ProcessingContext}, cannot be {@code null}
-     * @return an entity in its new state, never {@code null}
+     * @return an entity in its new state, or {@code null} when the entity does not exist after applying the message
      */
+    @Nullable
     public E evolve(I identifier, @Nullable E entity, EventMessage message, ProcessingContext context) {
         return ensureInitializedThenEvolve(
                 Objects.requireNonNull(identifier, "The identifier parameter must not be null."),
@@ -102,14 +104,13 @@ public class InitializingEntityEvolver<I, E> implements DescribableComponent {
         );
     }
 
+    @Nullable
     private E ensureInitializedThenEvolve(I identifier, @Nullable E entity, EventMessage message,
                                           ProcessingContext context) {
         if (entity == null) {
+            // The factory may decline (return null) for an event-based or absent creator; a static event sourcing
+            // handler can then build the entity from the null state during evolution.
             entity = entityFactory.create(identifier, message, context);
-
-            if (entity == null) {
-                throw new EntityMissingAfterFirstEventException(identifier);
-            }
         }
 
         return entityEvolver.evolve(entity, message, context);
