@@ -259,7 +259,9 @@ In Spring Boot applications, the auto-configuration can create a schema store th
 For production use with multiple services, consider implementing a custom `SchemaStore` that connects to a central schema registry.
 We doing so, be sure to implement caching to maintain performance.
 
+ifdef::advanced-framework[]
 include::ROOT:partial$xstream-converter.adoc[]
+endif::[]
 
 === Custom converters
 
