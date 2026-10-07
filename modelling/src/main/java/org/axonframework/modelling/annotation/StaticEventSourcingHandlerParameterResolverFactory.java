@@ -50,7 +50,7 @@ import java.lang.reflect.Parameter;
  * entity handler inspection and is not registered globally.
  *
  * @author Mateusz Nowak
- * @since 5.1.0
+ * @since 5.4.0
  */
 @Internal
 @Priority(Priority.HIGH)

@@ -16,7 +16,6 @@
 
 package org.axonframework.modelling.annotation;
 
-import org.axonframework.common.annotation.Internal;
 import org.axonframework.messaging.core.Context;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.jspecify.annotations.Nullable;
@@ -30,9 +29,8 @@ import org.jspecify.annotations.Nullable;
  * resource signals that an evolve step is in progress, while the wrapped value carries the actual, nullable state.
  *
  * @author Mateusz Nowak
- * @since 5.1.0
+ * @since 5.4.0
  */
-@Internal
 final class ActiveEntity {
 
     static final Context.ResourceKey<ActiveEntity> RESOURCE_KEY =

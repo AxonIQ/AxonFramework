@@ -27,7 +27,7 @@ public class StateEvolvingException extends RuntimeException {
     /**
      * Initialize the exception with the given {@code message}.
      *
-     * @param message The message describing the exception.
+     * @param message the message describing the exception
      */
     public StateEvolvingException(String message) {
         super(message);

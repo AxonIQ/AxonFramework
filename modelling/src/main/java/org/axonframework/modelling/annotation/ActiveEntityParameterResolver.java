@@ -16,7 +16,6 @@
 
 package org.axonframework.modelling.annotation;
 
-import org.axonframework.common.annotation.Internal;
 import org.axonframework.messaging.core.annotation.ParameterResolver;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 
@@ -31,9 +30,8 @@ import java.util.concurrent.CompletableFuture;
  * {@code null} state or to decide not to create it at all.
  *
  * @author Mateusz Nowak
- * @since 5.1.0
+ * @since 5.4.0
  */
-@Internal
 class ActiveEntityParameterResolver implements ParameterResolver<Object> {
 
     @Override
