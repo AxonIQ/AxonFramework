@@ -74,7 +74,7 @@ mvn -U org.openrewrite.maven:rewrite-maven-plugin:6.46.1:run \
   -Drewrite.activeRecipes=io.axoniq.framework.migration.UpgradeAxon4ToAxoniq5
 ```
 
-Replace the recipe name with `org.axonframework.migration.UpgradeAxon4ToAxoniq5` for the non-commercial path.
+Replace the recipe name with `org.axonframework.migration.UpgradeAxon4ToAxon5` for the non-commercial path.
 
 Keep the plugin version at 6.46.1 or newer. An older plugin (6.29.0 for example) fails inside the recipe with a
 `NoSuchMethodError` and then deletes every source file of the project. Run on a clean git working tree, so a bad run
