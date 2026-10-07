@@ -223,6 +223,72 @@ class EntityAbsentAfterFirstEventTest {
     }
 
     @Nested
+    class StaticEventSourcingHandlerDecliningToCreate {
+
+        private CommandGateway commandGateway;
+
+        @EventSourcedEntity(tagKey = "cardId")
+        public record GiftCard(int amount) {
+
+            @EventSourcingHandler
+            static @Nullable GiftCard on(CardIssued event, @Nullable GiftCard state) {
+                if (state != null) {
+                    return state;
+                }
+                // Decline to create a card without value: the entity stays absent.
+                return event.amount() > 0 ? new GiftCard(event.amount()) : null;
+            }
+        }
+
+        public static class Handlers {
+
+            @CommandHandler
+            public void handle(IssueCard command, @InjectEntity @Nullable GiftCard card, EventAppender appender) {
+                if (card != null) {
+                    throw new IllegalStateException("GiftCard [" + command.cardId() + "] was already issued");
+                }
+                appender.append(new CardIssued(command.cardId(), command.amount()));
+            }
+
+            @CommandHandler
+            public String handle(DescribeCard command, @InjectEntity @Nullable GiftCard card) {
+                return card == null ? "absent" : "issued with " + card.amount();
+            }
+        }
+
+        @BeforeEach
+        void setUp() {
+            commandGateway = start(new Handlers(), GiftCard.class).getComponent(CommandGateway.class);
+        }
+
+        @Test
+        void entityStaysAbsentWhenTheStaticHandlerDeclinesToCreateIt() {
+            // given the static handler declines to create a card issued without value
+            assertThat(commandGateway.send(new IssueCard("cardId", 0), Void.class)).succeedsWithin(TIMEOUT);
+
+            // when
+            var description = commandGateway.send(new DescribeCard("cardId"), String.class);
+
+            // then
+            assertThat(description).succeedsWithin(TIMEOUT).isEqualTo("absent");
+        }
+
+        @Test
+        void laterEventCreatesTheEntityAfterTheStaticHandlerDeclined() {
+            // given the static handler declined to create the card for its first event
+            assertThat(commandGateway.send(new IssueCard("cardId", 0), Void.class)).succeedsWithin(TIMEOUT);
+
+            // when
+            var issuing = commandGateway.send(new IssueCard("cardId", 100), Void.class);
+
+            // then
+            assertThat(issuing).succeedsWithin(TIMEOUT);
+            assertThat(commandGateway.send(new DescribeCard("cardId"), String.class))
+                    .succeedsWithin(TIMEOUT).isEqualTo("issued with 100");
+        }
+    }
+
+    @Nested
     class CreatorReturnsNullForItsEvent {
 
         private CommandGateway commandGateway;
