@@ -21,7 +21,6 @@ import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
 import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
 import org.axonframework.messaging.core.annotation.ClasspathParameterResolverFactory;
 import org.axonframework.messaging.core.annotation.MetadataValue;
-import org.axonframework.modelling.annotation.StaticEventSourcingHandlerParameterResolverFactory;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
@@ -41,9 +40,10 @@ import static org.axonframework.messaging.eventhandling.EventTestUtils.asEventMe
 
 /**
  * Test class validating {@code static} {@code @EventHandler} support in the
- * {@link AnnotationBasedEntityEvolvingComponent}, where the current entity state is injected as the first argument and
- * may be {@code null}. This expresses a functional evolve step of the form {@code (@Nullable State, Event) -> State},
- * covering create-from-{@code null}, ordinary evolution, declining creation, and removal (tombstone).
+ * {@link AnnotationBasedEntityEvolvingComponent}, where the event is the first parameter and the current entity state
+ * is injected as an additional parameter that may be {@code null}. This expresses a functional evolve step of the form
+ * {@code (Event, @Nullable State) -> State}, covering create-from-{@code null}, ordinary evolution, declining creation,
+ * and rejecting removal of an existing entity.
  *
  * @author Mateusz Nowak
  */
@@ -80,18 +80,18 @@ class StaticEventSourcingHandlerTest {
         }
 
         @EventHandler
-        static Counter onCreated(@Nullable Counter state, Created event) {
+        static Counter onCreated(Created event, @Nullable Counter state) {
             return new Counter(0);
         }
 
         @EventHandler
-        static Counter onIncremented(@Nullable Counter state, Incremented event) {
+        static Counter onIncremented(Incremented event, @Nullable Counter state) {
             // A functional evolve: only meaningful once the counter exists.
             return state == null ? null : new Counter(state.value + event.by());
         }
 
         @EventHandler
-        static Counter onDeleted(@Nullable Counter state, Deleted event) {
+        static Counter onDeleted(Deleted event, @Nullable Counter state) {
             // Removal: the entity no longer exists after this event.
             return null;
         }
@@ -234,7 +234,7 @@ class StaticEventSourcingHandlerTest {
             private boolean instanceHandlerInvoked;
 
             @EventHandler
-            static MixedCounter onCreated(@Nullable MixedCounter state, Created event) {
+            static MixedCounter onCreated(Created event, @Nullable MixedCounter state) {
                 return new MixedCounter();
             }
 
@@ -286,8 +286,8 @@ class StaticEventSourcingHandlerTest {
         private record MetadataAware(String lastMetadata) {
 
             @EventHandler
-            static MetadataAware onCreated(@Nullable MetadataAware state,
-                                           Created event,
+            static MetadataAware onCreated(Created event,
+                                           @Nullable MetadataAware state,
                                            @MetadataValue("sampleKey") String metadata) {
                 return new MetadataAware(metadata);
             }
@@ -323,7 +323,7 @@ class StaticEventSourcingHandlerTest {
         sealed interface Shape permits Circle, Square {
 
             @EventHandler
-            static Shape onCreated(@Nullable Shape state, CreatedCircle event) {
+            static Shape onCreated(CreatedCircle event, @Nullable Shape state) {
                 return new Circle(event.radius());
             }
         }
@@ -348,9 +348,7 @@ class StaticEventSourcingHandlerTest {
                     inspectType(
                             Shape.class,
                             messageTypeResolver,
-                            StaticEventSourcingHandlerParameterResolverFactory.wrapping(
-                                    ClasspathParameterResolverFactory.forClass(Shape.class)
-                            ),
+                            ClasspathParameterResolverFactory.forClass(Shape.class),
                             ClasspathHandlerDefinition.forClass(Shape.class),
                             Set.of(Circle.class, Square.class)
                     ),

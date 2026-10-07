@@ -85,10 +85,14 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
                                                   EventConverter converter,
                                                   MessageTypeResolver messageTypeResolver) {
         this(entityType,
+             AnnotatedHandlerInspector.inspectType(
+                     entityType,
+                     messageTypeResolver,
+                     ClasspathParameterResolverFactory.forClass(entityType),
+                     ClasspathHandlerDefinition.forClass(entityType)
+             ),
              converter,
-             messageTypeResolver,
-             ClasspathParameterResolverFactory.forClass(entityType),
-             ClasspathHandlerDefinition.forClass(entityType));
+             messageTypeResolver);
     }
 
     /**
@@ -111,7 +115,7 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
                 AnnotatedHandlerInspector.inspectType(
                         entityType,
                         messageTypeResolver,
-                        StaticEventSourcingHandlerParameterResolverFactory.wrapping(parameterResolverFactory),
+                        parameterResolverFactory,
                         handlerDefinition
                 ),
                 converter,

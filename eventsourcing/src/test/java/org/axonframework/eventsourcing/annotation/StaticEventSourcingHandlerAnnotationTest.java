@@ -34,8 +34,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.axonframework.messaging.eventhandling.EventTestUtils.asEventMessage;
 
 /**
- * Verifies that a {@code static} {@link EventSourcingHandler} works with the current entity state as its first,
- * possibly {@code null}, argument, without requiring any additional annotation on that parameter.
+ * Verifies that a {@code static} {@link EventSourcingHandler} works with the event as its first parameter and the
+ * current, possibly {@code null}, entity state as an additional parameter, without requiring any additional annotation
+ * on that parameter.
  *
  * @author Mateusz Nowak
  */
@@ -61,12 +62,12 @@ class StaticEventSourcingHandlerAnnotationTest {
     private record Account(String id, int balance) {
 
         @EventSourcingHandler
-        static Account on(@Nullable Account state, Opened event) {
+        static Account on(Opened event, @Nullable Account state) {
             return new Account(event.id(), 0);
         }
 
         @EventSourcingHandler
-        static Account on(@Nullable Account state, Deposited event) {
+        static Account on(Deposited event, @Nullable Account state) {
             return state == null ? null : new Account(state.id(), state.balance() + event.amount());
         }
     }
@@ -151,7 +152,7 @@ class StaticEventSourcingHandlerAnnotationTest {
             private int balance;
 
             @EventSourcingHandler
-            static BankAccount onOpened(@Nullable BankAccount state, Opened event) {
+            static BankAccount onOpened(Opened event, @Nullable BankAccount state) {
                 var account = new BankAccount();
                 account.id = event.id();
                 return account;

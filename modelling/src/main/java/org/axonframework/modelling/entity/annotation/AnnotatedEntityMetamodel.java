@@ -36,7 +36,6 @@ import org.axonframework.messaging.core.annotation.AnnotatedHandlerInspector;
 import org.axonframework.messaging.core.annotation.HandlerDefinition;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
-import org.axonframework.modelling.annotation.StaticEventSourcingHandlerParameterResolverFactory;
 import org.axonframework.messaging.core.conversion.MessageConverter;
 import org.axonframework.messaging.core.interception.annotation.ChainedMessageHandlerInterceptorMember;
 import org.axonframework.messaging.core.interception.annotation.MessageHandlerInterceptorMemberChain;
@@ -284,7 +283,7 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
     private EntityMetamodel<E> initializeConcreteModel(Class<E> entityType) {
         EntityMetamodelBuilder<E> builder = EntityMetamodel.forEntityType(entityType);
         AnnotatedHandlerInspector<E> inspected = inspectType(
-                entityType, messageTypeResolver, withStaticEventSourcingHandlerSupport(), handlerDefinition
+                entityType, messageTypeResolver, parameterResolverFactory, handlerDefinition
         );
         builder.entityEvolver(new AnnotationBasedEntityEvolvingComponent<>(
                 entityType, inspected, eventConverter, messageTypeResolver
@@ -304,7 +303,7 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
         AnnotatedHandlerInspector<E> inspected = inspectType(
                 entityType,
                 messageTypeResolver,
-                withStaticEventSourcingHandlerSupport(),
+                parameterResolverFactory,
                 handlerDefinition,
                 hasMemberEntities ? Collections.emptySet() : concreteTypes
         );
@@ -328,15 +327,6 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
             builder.addConcreteType(createdConcreteEntityModel);
         });
         return builder.build();
-    }
-
-    /**
-     * Wraps the configured {@link ParameterResolverFactory} so that {@code static} {@code @EventHandler} methods can
-     * receive the (possibly {@code null}) current entity state as their first argument. Scoped to entity handler
-     * inspection; it does not affect instance or command handlers.
-     */
-    private ParameterResolverFactory withStaticEventSourcingHandlerSupport() {
-        return StaticEventSourcingHandlerParameterResolverFactory.wrapping(parameterResolverFactory);
     }
 
     private boolean hasEntityMembers(Class<?> type) {
