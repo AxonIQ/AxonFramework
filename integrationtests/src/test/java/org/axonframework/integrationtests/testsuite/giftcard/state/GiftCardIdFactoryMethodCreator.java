@@ -29,11 +29,10 @@ import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 
 /**
  * An entity-centric command handler for which the entity is created based on the identifier through a static factory
- * {@code @EntityCreator} method (rather than a constructor), will fail on instance command handlers with an
- * {@link org.axonframework.modelling.repository.EntityNotFoundException}.
- * <p>
- * This mirrors {@link GiftCardIdCreator}, but proves the no-arg/id-only not-found guard applies equally to method-based
- * creators, not just constructors.
+ * {@code @EntityCreator} method (rather than a constructor). Because an identifier-based creator always constructs the
+ * entity, the entity is never absent; the instance command handler runs on the (empty) entity and guards its own
+ * lifecycle, rejecting a redemption on a card that has not been issued yet. This mirrors {@link GiftCardIdCreator} for
+ * a method-based creator.
  *
  * @author Steven van Beelen
  */
@@ -42,6 +41,7 @@ public class GiftCardIdFactoryMethodCreator {
 
     private String cardId;
     private double amount;
+    private boolean issued;
 
     private GiftCardIdFactoryMethodCreator(String cardId) {
         this.cardId = cardId;
@@ -59,6 +59,9 @@ public class GiftCardIdFactoryMethodCreator {
 
     @CommandHandler
     public void handle(RedeemCardCommand command, EventAppender appender) {
+        if (!issued) {
+            throw new IllegalStateException("GiftCard for id [" + command.cardId() + "] does not exist");
+        }
         if (amount - command.amount() < 0) {
             throw new IllegalStateException("Insufficient funds");
         }
@@ -69,6 +72,7 @@ public class GiftCardIdFactoryMethodCreator {
     public void on(CardIssuedEvent event) {
         cardId = event.cardId();
         amount = event.amount();
+        issued = true;
     }
 
     @EventSourcingHandler

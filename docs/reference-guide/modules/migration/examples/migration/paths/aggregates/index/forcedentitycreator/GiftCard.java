@@ -17,7 +17,7 @@ package migration.paths.aggregates.index.forcedentitycreator;
 
 import org.axonframework.eventsourcing.annotation.EventSourcedEntity;
 import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
-import org.axonframework.eventsourcing.annotation.reflection.ForcedEntityCreator;
+import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
 import org.axonframework.eventsourcing.annotation.reflection.InjectEntityId;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
@@ -29,7 +29,7 @@ public class GiftCard {
     private String cardId;
     private boolean issued;
 
-    @ForcedEntityCreator
+    @EntityCreator
     public GiftCard(@InjectEntityId String cardId) {
         this.cardId = cardId;
     }

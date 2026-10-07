@@ -23,6 +23,25 @@ The annotated examples below use `@EventSourcedEntity(tagKey = "courseId")`, the
 In Spring Boot, replace `@EventSourcedEntity` with `@EventSourced`; the `@EntityCreator` patterns are identical.
 ====
 
+== Entity existence and the creator style
+
+The creator style decides when the entity is considered to exist, which governs what a xref:commands:entities/stateful-command-handler.adoc[stateful command handler] sees through `@InjectEntity`, and whether an instance command handler runs before any event:
+
+[cols="1,2"]
+|===
+|Creator style |Existence
+
+|No-argument or identifier-based creator
+|The entity **always exists**, with an empty default state, even before any event. A non-`@Nullable` `@InjectEntity` parameter always resolves, and the entity guards its own lifecycle (for example rejecting a redemption on a card that has not been issued yet) rather than relying on an `EntityNotFoundException`.
+
+|First-event-based creator, a xref:commands:entities/event-sourced-entity.adoc[static event sourcing handler], or no creator at all
+|The entity is **absent until its creating event**. A non-`@Nullable` `@InjectEntity` parameter then propagates an `EntityNotFoundException`, while a `@Nullable` or `Optional` parameter supports a create-if-missing flow.
+|===
+
+Choose a no-argument or identifier-based creator when the entity conceptually exists as soon as its identifier is known.
+Choose a first-event-based creator, or a static event sourcing handler with no creator, when the entity should only come into being once a specific event has happened.
+See xref:commands:entities/stateful-command-handler.adoc#missing_injected_entity[Handling a missing entity] for how a stateful command handler reacts to an absent entity.
+
 == No-argument creator
 
 Suited for **mutable** entities.

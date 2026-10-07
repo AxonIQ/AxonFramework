@@ -28,30 +28,32 @@ import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 import org.axonframework.modelling.annotation.InjectEntity;
 
 /**
- * A stateful command handler for which the entity is created based on a no-arg constructor, will fail for both
- * creational and instance command handlers when the entity does not exist yet.
- * <p>
- * Although the no-arg constructor could produce an empty entity without any preceding event, the non-nullable
- * {@code @InjectEntity} parameter requires the entity to actually exist. Because of this, neither handler can ever run
- * before the entity has been created; see {@link NullableGiftCardNoArgCreatorStateful} for the {@code @Nullable}
- * counterpart that supports create-or-update semantics.
+ * A stateful command handler whose entity is created by a no-arg constructor. Because a no-argument
+ * {@link EntityCreator} always constructs the entity, the non-null {@code @InjectEntity} parameter always resolves to a
+ * (possibly empty) entity. The handler therefore guards the lifecycle on the entity's own state: issuing succeeds only
+ * when the card has not been issued yet, and redeeming requires an issued card.
  *
  * @author Steven van Beelen
  */
 public class GiftCardNoArgCreatorStateful {
 
-    @SuppressWarnings("unused")
     @CommandHandler
     public void handle(IssueCardCommand command,
-                       @InjectEntity GiftCard entity) {
-        // This throw is never reached, as the GiftCard is expected while it can never exist for the IssueCardCommand.
-        throw new IllegalStateException("GiftCard for id [" + command.cardId() + "] already exists");
+                       @InjectEntity GiftCard entity,
+                       EventAppender appender) {
+        if (entity.issued) {
+            throw new IllegalStateException("GiftCard for id [" + command.cardId() + "] already exists");
+        }
+        appender.append(new CardIssuedEvent(command.cardId(), command.amount()));
     }
 
     @CommandHandler
     public void handle(RedeemCardCommand command,
                        @InjectEntity GiftCard entity,
                        EventAppender appender) {
+        if (!entity.issued) {
+            throw new IllegalStateException("GiftCard for id [" + command.cardId() + "] does not exist");
+        }
         if (entity.amount - command.amount() < 0) {
             throw new IllegalStateException("Insufficient funds");
         }
@@ -63,6 +65,7 @@ public class GiftCardNoArgCreatorStateful {
 
         String cardId;
         double amount;
+        boolean issued;
 
         @EntityCreator
         public GiftCard() {
@@ -73,6 +76,7 @@ public class GiftCardNoArgCreatorStateful {
         public void on(CardIssuedEvent event) {
             cardId = event.cardId();
             amount = event.amount();
+            issued = true;
         }
 
         @EventSourcingHandler

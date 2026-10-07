@@ -56,11 +56,11 @@ import java.util.stream.StreamSupport;
  * {@link EntityCreator}-annotated constructors and static methods on the entity type and its supertypes to find a
  * suitable constructor or static method to create an entity instance.
  * <p>
- * This class implements the requirements as per the {@link EntityCreator} annotation. It also honors
- * {@link ForcedEntityCreator}-annotated constructors and static methods, invoking them regardless of whether a first
- * event is present, as described on {@link ForcedEntityCreator}. When no creator matches (or the entity declares
- * none), creation is deferred by returning {@code null}, allowing a {@code static} event sourcing handler to build the
- * entity from the first event instead. This class is thread-safe.
+ * This class implements the requirements as per the {@link EntityCreator} annotation. A no-argument or
+ * identifier-based creator always creates the entity, even without a first event, while an event-based creator only
+ * creates when a matching first event is present. When no creator matches (or the entity declares none), creation is
+ * deferred by returning {@code null}, allowing a {@code static} event sourcing handler to build the entity from the
+ * first event instead. This class is thread-safe.
  *
  * @param <E>  The type of entity to create.
  * @param <ID> The type of identifier used by the entity.
@@ -175,7 +175,6 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
     }
 
     private void addEntityCreatorExecutable(Executable executable) {
-        boolean forced = AnnotationUtils.isAnnotationPresent(executable, ForcedEntityCreator.class);
         String[] payloadQualifiedNamesAttribute = AnnotationUtils
                 .findAnnotationAttribute(executable, EntityCreator.class, "payloadQualifiedNames")
                 .map(o -> (String[]) o)
@@ -239,8 +238,7 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
                                               payloadQualifiedNames,
                                               concreteIdType,
                                               expectedPayloadRepresentation,
-                                              hasMessageParameter,
-                                              forced));
+                                              hasMessageParameter));
     }
 
     private Set<ScannedEntityCreator> getMethodsCompatibleWithIdAndNoMessage(ID id) {
@@ -331,7 +329,6 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
         private final @Nullable Class<?> concreteIdType;
         private final @Nullable Class<?> expectedPayloadRepresentation;
         private final boolean hasMessageParameter;
-        private final boolean forced;
         private final boolean noOp;
 
         /**
@@ -346,7 +343,6 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
             this.concreteIdType = null;
             this.expectedPayloadRepresentation = null;
             this.hasMessageParameter = false;
-            this.forced = false;
             this.noOp = true;
         }
 
@@ -356,8 +352,7 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
                 List<QualifiedName> payloadQualifiedNames,
                 @Nullable Class<?> concreteIdType,
                 @Nullable Class<?> expectedPayloadRepresentation,
-                boolean hasMessageParameter,
-                boolean forced
+                boolean hasMessageParameter
         ) {
             ReflectionUtils.ensureAccessible(executable);
             this.executable = executable;
@@ -366,12 +361,11 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
             this.concreteIdType = concreteIdType;
             this.expectedPayloadRepresentation = expectedPayloadRepresentation;
             this.hasMessageParameter = hasMessageParameter;
-            this.forced = forced;
             this.noOp = false;
         }
 
         private @Nullable E invoke(ID id, @Nullable EventMessage firstEventMessage, ProcessingContext context) {
-            if (noOp || (!forced && isNoArgOrIdBasedCreatorWithoutFirstEvent(firstEventMessage))) {
+            if (noOp) {
                 return null;
             }
 
@@ -400,33 +394,6 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
             } catch (Exception e) {
                 return CompletableFuture.failedFuture(e);
             }
-        }
-
-        /**
-         * Returns {@code true} when this {@link EntityCreator} annotated {@link Executable} (a {@link Constructor} or a
-         * static factory {@link java.lang.reflect.Method}) has no parameters beyond {@link InjectEntityId}-annotated
-         * ones, and no {@code firstEventMessage} is present, indicating that the entity has never been created by an
-         * event and therefore does not exist.
-         * <p>
-         * Concretely, this returns {@code true} when both conditions hold:
-         * <ul>
-         *   <li>every parameter resolver is an {@link IdTypeParameterResolver} (covers both zero-arg creators and
-         *       creators whose only parameters are {@link InjectEntityId}-annotated)</li>
-         *   <li>{@code firstEventMessage} is {@code null}</li>
-         * </ul>
-         * <p>
-         * The {@link #invoke(Object, EventMessage, ProcessingContext)} operation ignores this outcome for
-         * {@link ForcedEntityCreator}-annotated creators, since those are invoked regardless of whether a first event
-         * is present.
-         *
-         * @param firstEventMessage the first {@link EventMessage}, if any, for the entity that is about to be
-         *                          constructed
-         * @return {@code true} when the creator requires no event to produce an entity but no event was supplied,
-         * meaning the entity does not exist yet
-         */
-        private boolean isNoArgOrIdBasedCreatorWithoutFirstEvent(@Nullable EventMessage firstEventMessage) {
-            return firstEventMessage == null
-                    && Arrays.stream(parameterResolvers).allMatch(r -> r == idTypeParameterResolver);
         }
 
         private boolean supportsId(ID id) {
