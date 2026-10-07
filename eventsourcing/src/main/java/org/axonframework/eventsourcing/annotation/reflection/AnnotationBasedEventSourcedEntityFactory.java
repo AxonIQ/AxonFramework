@@ -17,9 +17,9 @@
 package org.axonframework.eventsourcing.annotation.reflection;
 
 import org.axonframework.common.AxonConfigurationException;
+import org.axonframework.common.ObjectUtils;
 import org.axonframework.common.ReflectionUtils;
 import org.axonframework.common.annotation.AnnotationUtils;
-import org.axonframework.eventsourcing.EntityMissingAfterFirstEventException;
 import org.axonframework.eventsourcing.EventSourcedEntityFactory;
 import org.axonframework.messaging.core.Context;
 import org.axonframework.messaging.core.Message;
@@ -60,15 +60,12 @@ import java.util.stream.StreamSupport;
  * <p>
  * This class implements the requirements as per the {@link EntityCreator} annotation. It also honors
  * {@link ForcedEntityCreator}-annotated constructors and static methods, invoking them regardless of whether a first
- * event is present, as described on {@link ForcedEntityCreator}. When no creator matches (or the entity declares
- * none), creation is deferred by returning {@code null}, allowing a {@code static} event sourcing handler to build the
- * entity from the first event instead.
+ * event is present, as described on {@link ForcedEntityCreator}.
  * <p>
- * Two situations in which the entity could never be created are reported instead of leaving the entity absent: a
- * creator that is invoked with the first event but returns {@code null} results in an
- * {@link EntityMissingAfterFirstEventException}, and an entity that declares neither an {@link EntityCreator} nor a
- * {@code static} event sourcing handler is rejected with an {@link AxonConfigurationException} at construction. This
- * class is thread-safe.
+ * When no creator matches the first event, an {@link AxonConfigurationException} is thrown, unless the entity declares
+ * {@code static} event sourcing handlers. Creation is then deferred by returning {@code null}, allowing a static event
+ * sourcing handler to build the entity from the event instead. For the same reason, an entity without any
+ * {@link EntityCreator} is only accepted when it declares static event sourcing handlers. This class is thread-safe.
  *
  * @param <E>  The type of entity to create.
  * @param <ID> The type of identifier used by the entity.
@@ -89,6 +86,7 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
     private final ParameterResolverFactory resolverFactory;
     private final MessageTypeResolver messageTypeResolver;
     private final EventConverter converter;
+    private final boolean declaresStaticEventHandler;
 
     /**
      * Instantiate an annotation-based {@link EventSourcedEntityFactory} for the given concrete {@code entityType}. When
@@ -144,6 +142,7 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
         this.messageTypeResolver = Objects.requireNonNull(messageTypeResolver,
                                                           "The messageTypeResolver must not be null.");
         this.converter = Objects.requireNonNull(converter, "The converter must not be null.");
+        this.declaresStaticEventHandler = scanForStaticEventHandlers();
 
         initialize();
     }
@@ -155,14 +154,14 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
     }
 
     private void validate() {
-        if (creators.isEmpty() && !declaresStaticEventHandler()) {
+        if (creators.isEmpty() && !declaresStaticEventHandler) {
             throw new AxonConfigurationException(
                     "No @EntityCreator present on entity of type [%s], nor a static @EventSourcingHandler that could create it. Can not initialize AnnotationBasedEventSourcedEntityFactory.".formatted(
                             entityType.getName()));
         }
     }
 
-    private boolean declaresStaticEventHandler() {
+    private boolean scanForStaticEventHandlers() {
         return types.stream()
                     .flatMap(type -> StreamSupport.stream(ReflectionUtils.methodsOf(type).spliterator(), false))
                     .anyMatch(method -> Modifier.isStatic(method.getModifiers())
@@ -296,14 +295,26 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
             compatibleCreators = getMethodsCompatibleWithIdAndNoMessage(id);
         }
         if (compatibleCreators.isEmpty()) {
-            // No matching @EntityCreator (or the entity declares none). Rather than fail, defer creation by returning
-            // a no-op that yields null, so a static event sourcing handler can build the entity from the first event.
-            if (logger.isDebugEnabled()) {
-                logger.debug("No @EntityCreator matched id [{}]{}. Deferring creation to event sourcing handlers.",
-                             id,
-                             eventMessage == null ? " (no first event)" : " and event [" + eventMessage.type() + "]");
+            if (eventMessage == null) {
+                // No first event and no no-arg/id-based creator matched, so the entity does not exist yet.
+                // Return no-op ScannedEntityCreator, which defaults to returning null for the entity creation.
+                return new ScannedEntityCreator();
             }
-            return new ScannedEntityCreator();
+            if (declaresStaticEventHandler) {
+                // No @EntityCreator matched the first event, but a static event sourcing handler may create the
+                // entity from it. Defer creation by returning a no-op that yields null.
+                if (logger.isDebugEnabled()) {
+                    logger.debug("No @EntityCreator matched id [{}] and event [{}]. "
+                                         + "Deferring creation to static event sourcing handlers.",
+                                 id, eventMessage.type());
+                }
+                return new ScannedEntityCreator();
+            }
+            StringBuilder message = new StringBuilder(
+                    "No suitable @EntityCreator found for id: [%s] and event message [%s]. Candidates were:"
+                            .formatted(id, ObjectUtils.getOrDefault(eventMessage, Message::type, "none")));
+            creators.forEach(creator -> message.append("\n - ").append(creator));
+            throw new AxonConfigurationException(message.toString());
         }
         Set<ScannedEntityCreator> matchingCreators = compatibleCreators
                 .stream()
@@ -407,18 +418,12 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
                           .map(resolver -> tryResolveParameterValue(resolver, convertedContext))
                           .toArray(CompletableFuture[]::new);
 
-            E entity = CompletableFuture.allOf(resolvedParams)
-                                        .thenApply(v -> Arrays.stream(resolvedParams)
-                                                              .map(CompletableFuture::resultNow)
-                                                              .toArray())
-                                        .thenApply(this::constructEntityWithArguments)
-                                        .join();
-            if (entity == null && firstEventMessage != null) {
-                // This creator accepted the first event, so it must create the entity from it. Declining to create
-                // is reserved for static event sourcing handlers, which only run when no creator matches.
-                throw new EntityMissingAfterFirstEventException(id);
-            }
-            return entity;
+            return CompletableFuture.allOf(resolvedParams)
+                                    .thenApply(v -> Arrays.stream(resolvedParams)
+                                                          .map(CompletableFuture::resultNow)
+                                                          .toArray())
+                                    .thenApply(this::constructEntityWithArguments)
+                                    .join();
         }
 
         private CompletableFuture<?> tryResolveParameterValue(

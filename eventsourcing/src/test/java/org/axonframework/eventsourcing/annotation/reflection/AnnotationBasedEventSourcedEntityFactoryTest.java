@@ -17,7 +17,6 @@
 package org.axonframework.eventsourcing.annotation.reflection;
 
 import org.axonframework.common.AxonConfigurationException;
-import org.axonframework.eventsourcing.EntityMissingAfterFirstEventException;
 import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
 import org.axonframework.conversion.PassThroughConverter;
 import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
@@ -147,12 +146,12 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
         }
 
         @Test
-        void returnsNullWhenNoMatchingPayloadType() {
-            // No creator matches the event and there is no identifier-based fallback creator: creation is deferred by
-            // returning null, so a static event sourcing handler can build the entity instead.
+        void throwsConfigurationExceptionIfNoMatchingPayloadType() {
             when(eventMessage.type()).thenReturn(new MessageType("non-matching-test-type"));
-
-            assertNull(factory.create("test-id", eventMessage, StubProcessingContext.forMessage(eventMessage)));
+            AxonConfigurationException exception = assertThrows(AxonConfigurationException.class, () -> {
+                factory.create("test-id", eventMessage, StubProcessingContext.forMessage(eventMessage));
+            });
+            assertTrue(exception.getMessage().contains("No suitable @EntityCreator found for id"));
         }
 
         @Test
@@ -221,11 +220,15 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
         }
 
         @Test
-        void returnsNullWhenNoMatchingPayloadType() {
+        void throwsConfigurationExceptionIfNoMatchingPayloadType() {
             eventMessage = new GenericEventMessage(new MessageType("non-matching-test-type"),
                                                    new PayloadSpecificPayload("my-specific-payload"));
 
-            assertNull(factory.create("test-id", eventMessage, StubProcessingContext.forMessage(eventMessage)));
+            AxonConfigurationException exception = assertThrows(
+                    AxonConfigurationException.class,
+                    () -> factory.create("test-id", eventMessage, StubProcessingContext.forMessage(eventMessage))
+            );
+            assertTrue(exception.getMessage().contains("No suitable @EntityCreator found for id"));
         }
 
         @Test
@@ -556,43 +559,34 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
     }
 
     @Nested
-    class CreatorReturningNull {
+    class DeferralToStaticEventSourcingHandlers {
 
         @Test
-        void throwsEntityMissingAfterFirstEventExceptionWhenCreatorReturnsNullForItsEvent() {
-            // given an event-based creator that returns null although its event is the first event
+        void defersWhenNoCreatorMatchesTheFirstEventAndStaticEventSourcingHandlersExist() {
+            // given an entity with an event-based creator and a static event sourcing handler
             var factory = new AnnotationBasedEventSourcedEntityFactory<>(
-                    NullReturningEntity.class, String.class, parameterResolverFactory, messageTypeResolver, converter
-            );
-            EventMessage firstEvent = new GenericEventMessage(new MessageType(CreatingPayload.class),
-                                                              new CreatingPayload());
-
-            // when / then
-            assertThrows(EntityMissingAfterFirstEventException.class,
-                         () -> factory.create("test-id", firstEvent, StubProcessingContext.forMessage(firstEvent)));
-        }
-
-        @Test
-        void returnsNullWhenNoCreatorMatchesTheFirstEvent() {
-            // given a first event that the creator does not accept
-            var factory = new AnnotationBasedEventSourcedEntityFactory<>(
-                    NullReturningEntity.class, String.class, parameterResolverFactory, messageTypeResolver, converter
+                    CreatorAndStaticHandlerEntity.class, String.class, parameterResolverFactory, messageTypeResolver,
+                    converter
             );
             EventMessage otherEvent = new GenericEventMessage(new MessageType("other-type"), "other-payload");
 
             // when
-            NullReturningEntity entity =
+            CreatorAndStaticHandlerEntity entity =
                     factory.create("test-id", otherEvent, StubProcessingContext.forMessage(otherEvent));
 
-            // then creation is deferred to the event sourcing handlers
+            // then creation is deferred to the static event sourcing handler
             assertNull(entity);
         }
 
-        public static class NullReturningEntity {
+        public static class CreatorAndStaticHandlerEntity {
 
             @EntityCreator
-            public static @Nullable NullReturningEntity create(CreatingPayload payload) {
-                return null;
+            public CreatorAndStaticHandlerEntity(CreatingPayload payload) {
+            }
+
+            @EventSourcingHandler
+            static CreatorAndStaticHandlerEntity on(String event, @Nullable CreatorAndStaticHandlerEntity state) {
+                return new CreatorAndStaticHandlerEntity(new CreatingPayload());
             }
         }
 

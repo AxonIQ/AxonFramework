@@ -41,9 +41,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Test class validating what happens when an entity is still absent after an event has been sourced for it: the first
- * event may legitimately not create the entity, while a creator that cannot create from its own event, or an entity
- * that nothing could ever create, is reported instead of silently leaving the entity absent.
+ * Test class validating what happens when no entity has been created after an event has been sourced for it. A first
+ * event that no {@link EntityCreator} matches, a creator that returns {@code null} for its own event, and an entity
+ * that nothing could ever create are reported, as they were before static event sourcing handlers existed. Only an
+ * entity with a static event sourcing handler may stay absent until its creating event arrives.
  *
  * @author Mateusz Nowak
  */
@@ -86,23 +87,69 @@ class EntityAbsentAfterFirstEventTest {
     }
 
     @Nested
-    class FirstEventIsNotTheCreatingEvent {
+    class FirstEventIsNotTheCreatingEventOfAnEntityCreator {
 
         private CommandGateway commandGateway;
 
         @EventSourcedEntity(tagKey = "cardId")
         public static class GiftCard {
 
-            private final int amount;
-
             @EntityCreator
             public GiftCard(CardIssued event) {
-                this.amount = event.amount();
+            }
+        }
+
+        public static class Handlers {
+
+            @CommandHandler
+            public void handle(NoteCard command, EventAppender appender) {
+                appender.append(new CardNoted(command.cardId()));
+            }
+
+            @CommandHandler
+            public String handle(DescribeCard command, @InjectEntity @Nullable GiftCard card) {
+                return card == null ? "absent" : "issued";
+            }
+        }
+
+        @BeforeEach
+        void setUp() {
+            commandGateway = start(new Handlers(), GiftCard.class).getComponent(CommandGateway.class);
+        }
+
+        @Test
+        void loadingFailsBecauseNoEntityCreatorMatchesTheFirstEvent() {
+            // given a non-creating event is the first event of the card
+            assertThat(commandGateway.send(new NoteCard("cardId"), Void.class)).succeedsWithin(TIMEOUT);
+
+            // when
+            var description = commandGateway.send(new DescribeCard("cardId"), String.class);
+
+            // then
+            assertThat(description).failsWithin(TIMEOUT)
+                                   .withThrowableOfType(ExecutionException.class)
+                                   .withCauseInstanceOf(AxonConfigurationException.class)
+                                   .havingCause()
+                                   .withMessageContaining("No suitable @EntityCreator found");
+        }
+    }
+
+    @Nested
+    class FirstEventIsNotTheCreatingEventOfAStaticEventSourcingHandler {
+
+        private CommandGateway commandGateway;
+
+        @EventSourcedEntity(tagKey = "cardId")
+        public record GiftCard(int amount) {
+
+            @EventSourcingHandler
+            static GiftCard on(CardIssued event, @Nullable GiftCard state) {
+                return new GiftCard(event.amount());
             }
 
             @EventSourcingHandler
-            void on(CardNoted event) {
-                // A note does not change the card.
+            GiftCard on(CardNoted event) {
+                return this;
             }
         }
 
@@ -123,7 +170,7 @@ class EntityAbsentAfterFirstEventTest {
 
             @CommandHandler
             public String handle(DescribeCard command, @InjectEntity @Nullable GiftCard card) {
-                return card == null ? "absent" : "issued with " + card.amount;
+                return card == null ? "absent" : "issued with " + card.amount();
             }
         }
 

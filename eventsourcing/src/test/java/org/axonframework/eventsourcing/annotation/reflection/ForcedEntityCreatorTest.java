@@ -16,6 +16,7 @@
 
 package org.axonframework.eventsourcing.annotation.reflection;
 
+import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.conversion.PassThroughConverter;
 import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
 import org.axonframework.messaging.core.MessageType;
@@ -293,19 +294,18 @@ class ForcedEntityCreatorTest {
         }
 
         @Test
-        void forcedCreatorDefersWhenPayloadQualifiedNameDoesNotMatch() {
-            // given an event-based creator that matches no incoming event now defers creation by returning null
+        void forcedCreatorRejectsNonMatchingPayloadQualifiedName() {
+            // given
             var factory = new AnnotationBasedEventSourcedEntityFactory<>(
                     Entity.class, String.class, parameterResolverFactory, messageTypeResolver, converter
             );
             EventMessage nonMatchingEvent = new GenericEventMessage(new MessageType("other-type"), "payload");
 
-            // when
-            Entity entity =
-                    factory.create("entity-id", nonMatchingEvent, StubProcessingContext.forMessage(nonMatchingEvent));
-
-            // then
-            assertThat(entity).isNull();
+            // when / then
+            assertThatThrownBy(() -> factory.create(
+                    "entity-id", nonMatchingEvent, StubProcessingContext.forMessage(nonMatchingEvent)
+            )).isInstanceOf(AxonConfigurationException.class)
+              .hasMessageContaining("No suitable @EntityCreator found for id");
         }
 
         public static class Entity {
