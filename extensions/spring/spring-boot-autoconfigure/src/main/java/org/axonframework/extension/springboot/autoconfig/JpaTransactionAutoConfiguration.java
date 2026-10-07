@@ -20,13 +20,16 @@ import jakarta.persistence.EntityManagerFactory;
 import org.axonframework.common.jdbc.ConnectionProvider;
 import org.axonframework.common.jpa.EntityManagerProvider;
 import org.axonframework.extension.spring.messaging.unitofwork.SpringTransactionManager;
+import org.axonframework.extension.springboot.TransactionProperties;
 import org.axonframework.messaging.core.unitofwork.transaction.TransactionManager;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.lang.Nullable;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.DefaultTransactionDefinition;
 
 /**
  * Autoconfiguration class that registers a bean creation method for the {@link SpringTransactionManager} if a
@@ -40,6 +43,7 @@ import org.springframework.transaction.PlatformTransactionManager;
         "org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration"
 })
 @ConditionalOnBean({EntityManagerFactory.class, PlatformTransactionManager.class})
+@EnableConfigurationProperties(TransactionProperties.class)
 public class JpaTransactionAutoConfiguration {
 
     /**
@@ -50,6 +54,8 @@ public class JpaTransactionAutoConfiguration {
      *                              {@link SpringTransactionManager}.
      * @param entityManagerProvider An optional entity manager provider.
      * @param connectionProvider    An optional connection provider.
+     * @param transactionProperties The properties deciding whether a {@code connectionProvider} outside the
+     *                              transactions of the {@code transactionManager} is allowed.
      * @return The {@link TransactionManager} to be used by Axon Framework.
      */
     @Bean
@@ -57,8 +63,13 @@ public class JpaTransactionAutoConfiguration {
     public TransactionManager axonTransactionManager(
             PlatformTransactionManager transactionManager,
             @Nullable EntityManagerProvider entityManagerProvider,
-            @Nullable ConnectionProvider connectionProvider
+            @Nullable ConnectionProvider connectionProvider,
+            TransactionProperties transactionProperties
     ) {
-        return new SpringTransactionManager(transactionManager, entityManagerProvider, connectionProvider);
+        return new SpringTransactionManager(transactionManager,
+                                            entityManagerProvider,
+                                            connectionProvider,
+                                            new DefaultTransactionDefinition(),
+                                            transactionProperties.nonTransactionalConnectionPolicy());
     }
 }

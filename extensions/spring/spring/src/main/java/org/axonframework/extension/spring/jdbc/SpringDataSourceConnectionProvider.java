@@ -52,6 +52,15 @@ public class SpringDataSourceConnectionProvider implements ConnectionProvider {
         return ConnectionWrapperFactory.wrap(connection, closeHandler);
     }
 
+    /**
+     * Returns the {@link DataSource} this provider obtains its connections from.
+     *
+     * @return The {@link DataSource} this provider obtains its connections from.
+     */
+    public DataSource dataSource() {
+        return dataSource;
+    }
+
     private static class SpringConnectionCloseHandler implements ConnectionWrapperFactory.ConnectionCloseHandler {
 
         private final DataSource dataSource;
