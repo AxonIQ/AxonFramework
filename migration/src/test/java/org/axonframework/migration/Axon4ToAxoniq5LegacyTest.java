@@ -19,6 +19,7 @@ package org.axonframework.migration;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.openrewrite.PrintOutputCapture;
+import org.openrewrite.Recipe;
 import org.openrewrite.config.Environment;
 import org.openrewrite.test.RecipeSpec;
 import org.openrewrite.test.RewriteTest;
@@ -29,6 +30,7 @@ import java.io.InputStream;
 import java.util.Properties;
 
 import static java.util.Objects.requireNonNull;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.openrewrite.java.Assertions.java;
 import static org.openrewrite.java.Assertions.mavenProject;
 import static org.openrewrite.java.Assertions.srcMainJava;
@@ -40,7 +42,7 @@ import static org.openrewrite.maven.Assertions.pomXml;
 /**
  * Verifies migration of Axon Framework 4 Sagas onto the {@code io.axoniq.framework:axoniq-legacy} compatibility module.
  */
-class Axon4ToAxon5LegacyTest implements RewriteTest {
+class Axon4ToAxoniq5LegacyTest implements RewriteTest {
 
     private static final String AXONIQ_VERSION = axoniqVersion();
 
@@ -49,7 +51,7 @@ class Axon4ToAxon5LegacyTest implements RewriteTest {
         spec.recipe(Environment.builder()
                                .scanRuntimeClasspath("org.axonframework.migration")
                                .build()
-                               .activateRecipes("org.axonframework.migration.Axon4ToAxon5Legacy"))
+                               .activateRecipes("io.axoniq.framework.migration.Axon4ToAxoniq5Legacy"))
             .typeValidationOptions(TypeValidation.none());
     }
 
@@ -329,7 +331,7 @@ class Axon4ToAxon5LegacyTest implements RewriteTest {
         @Test
         void addsAxoniqLegacyWhenSagaSourceIsPresent() {
             rewriteRun(
-                    Axon4ToAxon5LegacyTest::ignoreUnpublishedTargetVersionWarning,
+                    Axon4ToAxoniq5LegacyTest::ignoreUnpublishedTargetVersionWarning,
                     mavenProject(
                             "rental",
                             pomXml(
@@ -379,7 +381,7 @@ class Axon4ToAxon5LegacyTest implements RewriteTest {
         @Test
         void addsAxoniqLegacyForKotlinSagaSource() {
             rewriteRun(
-                    Axon4ToAxon5LegacyTest::ignoreUnpublishedTargetVersionWarning,
+                    Axon4ToAxoniq5LegacyTest::ignoreUnpublishedTargetVersionWarning,
                     mavenProject(
                             "rental",
                             pomXml(
@@ -541,7 +543,7 @@ class Axon4ToAxon5LegacyTest implements RewriteTest {
         @Test
         void keepsSagaTestFixtureAddsAxoniqLegacyTestAndATearDown() {
             rewriteRun(
-                    Axon4ToAxon5LegacyTest::ignoreUnpublishedTargetVersionWarning,
+                    Axon4ToAxoniq5LegacyTest::ignoreUnpublishedTargetVersionWarning,
                     mavenProject(
                             "rental",
                             pomXml(
@@ -619,6 +621,75 @@ class Axon4ToAxon5LegacyTest implements RewriteTest {
         }
     }
 
+    @Nested
+    class TopLevelRecipes {
+
+        private static final String SAGA_POM = """
+                <project>
+                    <modelVersion>4.0.0</modelVersion>
+                    <groupId>com.example</groupId>
+                    <artifactId>rental</artifactId>
+                    <version>1.0.0</version>
+                </project>
+                """;
+
+        private static final String SAGA_SOURCE = """
+                package com.example;
+
+                import org.axonframework.modelling.saga.SagaEventHandler;
+                import org.axonframework.modelling.saga.SagaLifecycle;
+
+                class PaymentSaga {
+                    @SagaEventHandler(associationProperty = "rentalId")
+                    void on(Object event) {
+                        SagaLifecycle.end();
+                    }
+                }
+                """;
+
+        @Test
+        void freeUpgradeLeavesSagasAndAxoniqLegacyOut() {
+            // Sagas only run on the commercial axoniq-legacy module, so the free upgrade must not pull it in.
+            rewriteRun(
+                    spec -> spec.recipe(topLevelRecipe("org.axonframework.migration.UpgradeAxon4ToAxon5")),
+                    mavenProject(
+                            "rental",
+                            pomXml(SAGA_POM, pom -> pom.after(actual -> {
+                                assertThat(actual).doesNotContain("axoniq-legacy");
+                                return actual;
+                            })),
+                            srcMainJava(java(SAGA_SOURCE))
+                    )
+            );
+        }
+
+        @Test
+        void commercialUpgradeMigratesSagasOntoAxoniqLegacy() {
+            rewriteRun(
+                    spec -> spec.recipe(topLevelRecipe("io.axoniq.framework.migration.UpgradeAxon4ToAxoniq5"))
+                                .markerPrinter(PrintOutputCapture.MarkerPrinter.SEARCH_MARKERS_ONLY),
+                    mavenProject(
+                            "rental",
+                            pomXml(SAGA_POM, pom -> pom.after(actual -> {
+                                assertThat(actual).contains("<artifactId>axoniq-legacy</artifactId>");
+                                return actual;
+                            })),
+                            srcMainJava(java(SAGA_SOURCE, source -> source.after(actual -> {
+                                assertThat(actual).contains("void on(Object event, SagaLifecycle sagaLifecycle)");
+                                return actual;
+                            })))
+                    )
+            );
+        }
+
+        private static Recipe topLevelRecipe(String name) {
+            return Environment.builder()
+                              .scanRuntimeClasspath("org.axonframework.migration")
+                              .build()
+                              .activateRecipes(name);
+        }
+    }
+
     private static void ignoreUnpublishedTargetVersionWarning(RecipeSpec spec) {
         // The target may be an unreleased snapshot in CI. Keep asserting the generated coordinate without rendering
         // Maven's download warning as part of the expected POM.
@@ -628,7 +699,7 @@ class Axon4ToAxon5LegacyTest implements RewriteTest {
     private static String axoniqVersion() {
         Properties versions = new Properties();
         try (InputStream input = requireNonNull(
-                Axon4ToAxon5LegacyTest.class.getResourceAsStream("/migration-versions.properties")
+                Axon4ToAxoniq5LegacyTest.class.getResourceAsStream("/migration-versions.properties")
         )) {
             versions.load(input);
             return versions.getProperty("axoniq.version");

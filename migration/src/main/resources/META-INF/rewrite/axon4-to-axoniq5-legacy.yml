@@ -14,10 +14,15 @@
 # limitations under the License.
 #
 
+# Axon Framework 4 Sagas: kept running on the Axoniq commercial `axoniq-legacy`
+# module (`io.axoniq.framework:axoniq-legacy`), with `SagaTestFixture` ported by
+# `io.axoniq.framework:axoniq-legacy-test`. Free Axon Framework 5 has no Saga
+# support, so this recipe only runs from `UpgradeAxon4ToAxoniq5`.
+
 ---
 type: specs.openrewrite.org/v1beta/recipe
-name: org.axonframework.migration.Axon4ToAxon5Legacy
-displayName: Migrate Axon Framework 4 legacy APIs
+name: io.axoniq.framework.migration.Axon4ToAxoniq5Legacy
+displayName: Migrate Axon Framework 4 Sagas to Axoniq Framework 5
 description: >-
   Adds the Axoniq Framework legacy module (io.axoniq.framework:axoniq-legacy)
   when Saga APIs are used, keeps saga tests on the SagaTestFixture ported by

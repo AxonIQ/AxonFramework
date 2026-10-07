@@ -18,9 +18,10 @@
 #
 # WARNING for users: a few AF4 features were dropped from free AF5 and exist
 # only in Axoniq Framework 5 commercial — Axon Server connector, sequenced
-# dead-letter queue, and DistributedCommandBus. If your AF4 application uses
-# any of those, this recipe alone leaves your codebase non-compiling. Use
-# `UpgradeAxon4ToAxoniq5` instead.
+# dead-letter queue, DistributedCommandBus, and Sagas (kept running by
+# `axoniq-legacy`). If your AF4 application uses any of those, this recipe
+# alone leaves your codebase non-compiling. Use `UpgradeAxon4ToAxoniq5`
+# instead.
 
 ---
 type: specs.openrewrite.org/v1beta/recipe
@@ -31,7 +32,7 @@ description: >-
   Axon Framework 5. Bumps the Axon Framework dependency versions, applies
   per-module rename recipes (one per core framework module), and renames
   Maven coordinates within the `org.axonframework.*` namespace. Does NOT
-  touch features dropped from free AF5 (Axon Server, DLQ, DistributedCommandBus)
+  touch features dropped from free AF5 (Axon Server, DLQ, DistributedCommandBus, Sagas)
   — see `UpgradeAxon4ToAxoniq5` for the commercial path.
 recipeList:
   # ── 1. Java compiler-target bump ────────────────────────────────────────
@@ -60,9 +61,6 @@ recipeList:
   - org.axonframework.migration.Axon4ToAxon5Bom
 
   # ── 4. Core framework module migrations ─────────────────────────────────
-  # Legacy runs before messaging so Saga-specific CommandGateway handling is
-  # complete before the general @EventHandler recipe is applied.
-  - org.axonframework.migration.Axon4ToAxon5Legacy
   - org.axonframework.migration.Axon4ToAxon5Common
   - org.axonframework.migration.Axon4ToAxon5Conversion
   - org.axonframework.migration.Axon4ToAxon5Messaging

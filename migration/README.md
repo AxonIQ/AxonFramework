@@ -46,9 +46,9 @@ After the migration run, search for every such location with:
   `queryMany()` when paired with `multipleInstancesOf`.
 - **Command handling**: converts `@CommandHandler` constructors to `public static void handle(...)` methods, and swaps
   in-handler `CommandGateway` fields for injected `CommandDispatcher` parameters.
-- **Legacy sagas**: adds `io.axoniq.framework:axoniq-legacy` when Saga source types are present, replaces static
-  `SagaLifecycle` calls with an injected lifecycle parameter, and replaces Saga `CommandGateway` fields with
-  `CommandDispatcher` handler parameters. Saga handlers stay synchronous; `send` remains fire-and-forget and `sendAndWait` keeps waiting.
+- **Legacy sagas** (`UpgradeAxon4ToAxoniq5` only): adds `io.axoniq.framework:axoniq-legacy` when Saga source types are
+  present, replaces static `SagaLifecycle` calls with an injected lifecycle parameter, and replaces Saga
+  `CommandGateway` fields with `CommandDispatcher` handler parameters. Saga handlers stay synchronous; `send` remains fire-and-forget and `sendAndWait` keeps waiting.
 - **Spring config**: renames `axon.serializer.*` properties to `axon.converter.*` in `application.properties`/YAML, and
   adds advisory TODOs above obsolete `sequencing-policy` settings. Also **migrates Spring Boot snapshotting
   configuration** from the AF4 two-step pattern (`@Bean SnapshotTriggerDefinition` + `@Aggregate(snapshotTriggerDefinition
@@ -117,8 +117,8 @@ For background, see the upstream guide on
 
 | Recipe                                                | What it does                                                                                                                                                                                                                                                                            | When to use                                                                                                                                                                                                                                            |
 |-------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `org.axonframework.migration.UpgradeAxon4ToAxon5`     | Migrates AF4 → non-commercial AF5. Renames packages/classes and updates Maven coordinates within the `org.axonframework.*` namespace.                                                                                                                                                   | You want to land on non-commercial AF5. **Warning**: if your AF4 app uses Axon Server / distributed command bus / DLQ, this recipe alone leaves your codebase non-compiling — those features moved to commercial. Use `UpgradeAxon4ToAxoniq5` instead. |
-| `io.axoniq.framework.migration.UpgradeAxon4ToAxoniq5` | Composes `UpgradeAxon4ToAxon5` then layers commercial-only migrations on top: source rewrites for Axon Server / DLQ / distributed-messaging, BOM swap to `axoniq-framework-bom`, Spring Boot starter swap to `axoniq-spring-boot-starter`, conditional `AddDependency` for Axoniq jars. | Recommended default for AF4 applications using Axon Server / DLQ / distributed messaging.                                                                                                                                                              |
+| `org.axonframework.migration.UpgradeAxon4ToAxon5`     | Migrates AF4 to non-commercial AF5. Renames packages/classes and updates Maven coordinates within the `org.axonframework.*` namespace.                                                                                                                                                  | You want to land on non-commercial AF5. **Warning**: if your AF4 app uses Axon Server / distributed command bus / DLQ / Sagas, this recipe alone leaves your codebase non-compiling, because those features moved to commercial. Use `UpgradeAxon4ToAxoniq5` instead. |
+| `io.axoniq.framework.migration.UpgradeAxon4ToAxoniq5` | Composes `UpgradeAxon4ToAxon5` then layers commercial-only migrations on top: source rewrites for Sagas / Axon Server / DLQ / distributed-messaging, BOM swap to `axoniq-framework-bom`, Spring Boot starter swap to `axoniq-spring-boot-starter`, conditional `AddDependency` for Axoniq jars. | Recommended default for AF4 applications using Axon Server / DLQ / distributed messaging / Sagas.                                                                                                                                                      |
 
 ### Per-module recipes
 
@@ -135,7 +135,6 @@ also run independently. Module names map 1:1 to published Maven modules.
 | Event sourcing                                             | `Axon4ToAxon5EventSourcing`                 |
 | Common (config + module API; was AF4 `axon-configuration`) | `Axon4ToAxon5Common`                        |
 | Conversion (was Serialization)                             | `Axon4ToAxon5Conversion`                    |
-| Legacy Sagas                                               | `Axon4ToAxon5Legacy`                        |
 | Test (axon-test)                                           | `Axon4ToAxon5Test`                          |
 | Spring extension                                           | `Axon4ToAxon5SpringExtension`               |
 | Spring Boot extension                                      | `Axon4ToAxon5SpringBootExtension`           |
@@ -158,6 +157,7 @@ files; they're no-ops today.
 | Axon Server connector           | `Axon4ToAxoniq5AxonServerConnector`  |
 | Sequenced Dead-Letter Queue     | `Axon4ToAxoniq5DeadLetter`           |
 | Distributed messaging           | `Axon4ToAxoniq5DistributedMessaging` |
+| Legacy Sagas (`axoniq-legacy`)  | `Axon4ToAxoniq5Legacy`               |
 | Testcontainer (Axon Server)     | `Axon4ToAxoniq5Testcontainer`        |
 
 A placeholder for the Axoniq-only event-streaming module without finalized

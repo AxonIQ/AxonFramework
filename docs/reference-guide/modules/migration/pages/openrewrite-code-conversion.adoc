@@ -29,12 +29,12 @@ Two top-level recipes are available depending on whether you are targeting the f
 | `org.axonframework.migration.UpgradeAxon4ToAxon5`
 | Migrates an Axon Framework 4 application to free Axon Framework 5.
 Renames packages and classes within the `org.axonframework.*` namespace and applies all core source rewrites.
-| You are targeting free Axon Framework 5 and your AF4 application does *not* use Axon Server connector, the sequenced dead-letter queue, or `DistributedCommandBus`.
+| You are targeting free Axon Framework 5 and your AF4 application does *not* use Axon Server connector, the sequenced dead-letter queue, `DistributedCommandBus`, or sagas.
 *Warning:* if your application does use those features, this recipe alone leaves the codebase non-compiling—use `UpgradeAxon4ToAxoniq5` instead.
 
 | `io.axoniq.framework.migration.UpgradeAxon4ToAxoniq5`
 | Composes the free recipe, then layers commercial migrations on top and swaps the Spring Boot starter and BOM to the commercial coordinates.
-| Recommended for any AF4 application that uses Axon Server, the DLQ, or distributed messaging.
+| Recommended for any AF4 application that uses Axon Server, the DLQ, distributed messaging, or sagas.
 |===
 
 == What gets converted
@@ -51,7 +51,7 @@ AF4's `@TargetAggregateIdentifier` was *both* the target-id and the command's ro
 ====
 * **Message API**:accessor method renames, `AggregateLifecycle.apply(...)` replaced with `EventAppender#append(...)`
 * **Command handling**:`@CommandHandler` constructors converted to static `handle(...)` methods, `CommandGateway` replaced with `CommandDispatcher`
-* **Legacy sagas**:`axoniq-legacy` added when saga types are detected, static `SagaLifecycle` calls moved to an injected handler parameter, and injected `CommandGateway` fields replaced with `CommandDispatcher` handler parameters. Other injected saga dependencies must be moved to handler parameters manually. `CommandGateway.send(...)` remains fire-and-forget, while `CommandGateway.sendAndWait(...)` remains synchronous.
+* **Legacy sagas** (commercial recipe only):`axoniq-legacy` added when saga types are detected, static `SagaLifecycle` calls moved to an injected handler parameter, and injected `CommandGateway` fields replaced with `CommandDispatcher` handler parameters. Other injected saga dependencies must be moved to handler parameters manually. `CommandGateway.send(...)` remains fire-and-forget, while `CommandGateway.sendAndWait(...)` remains synchronous.
 * **Query API**:`ResponseTypes.instanceOf(X.class)` unwrapped to a direct class argument, `query()` renamed to `queryMany()` when used with `multipleInstancesOf`
 * **Spring configuration**:`axon.serializer.*` properties renamed to `axon.converter.*`
 * **Test fixtures**:`AggregateTestFixture` replaced with `AxonTestFixture`, Given-When-Then chain rewritten
