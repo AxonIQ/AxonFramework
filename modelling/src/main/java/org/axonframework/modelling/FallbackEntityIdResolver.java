@@ -20,7 +20,10 @@ import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.common.infra.DescribableComponent;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.lang.invoke.MethodHandles;
 import java.util.Objects;
 
 /**
@@ -38,6 +41,8 @@ import java.util.Objects;
  * @since 5.4.0
  */
 public class FallbackEntityIdResolver<ID> implements EntityIdResolver<ID>, DescribableComponent {
+
+    private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 
     private final EntityIdResolver<ID> primary;
     private final EntityIdResolver<ID> secondary;
@@ -62,6 +67,10 @@ public class FallbackEntityIdResolver<ID> implements EntityIdResolver<ID>, Descr
         try {
             return primary.resolve(message, context);
         } catch (EntityIdResolutionException e) {
+            logger.debug(
+                    "Unable to resolve primary entity id for message [{}]. Falling back to secondary entity id resolver.",
+                    message, e
+            );
             return secondary.resolve(message, context);
         }
     }
