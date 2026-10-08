@@ -3,8 +3,8 @@
 > Part of the Axon Framework 4→5 migration guide.
 > Covers: database schema changes that require migration scripts.
 > Sections: JPA event entry rename (`domain_event_entry` → `aggregate_event_entry`) and column renames,
-> Dead Letter table column renames (JPA and JDBC), Deadline scheduler format changes
-> (JobRunr, Quartz, dbscheduler), and TokenStore new `mask` column.
+> Dead Letter table column renames (JPA and JDBC), the unchanged deadline job layout
+> (JobRunr, Quartz, db-scheduler), and TokenStore new `mask` column.
 
 Stored Format Changes
 =====================
@@ -68,14 +68,38 @@ consuming events through the `EventStorageEngine#stream(StreamingCondition)` met
 
 ## Deadlines
 
-1. The JobRunr `org.axonframework.deadline.jobrunr.DeadlineDetails` expects the `QualifiedName` to be present under the
-   field `type`.
-2. The Quartz `org.axonframework.deadline.quartz.DeadlineJob` expects the QualifiedName to be present in the
-   `JobDataMap` under the key `qualifiedType`.
-3. The dbscheduler `org.axonframework.deadline.dbscheduler.DbSchedulerBinaryDeadlineDetails` expects the `QualifiedName`
-   to be present under the field `t`.
-4. The dbscheduler `org.axonframework.deadline.dbscheduler.DbSchedulerHumanReadableDeadlineDetails` expects the
-   `QualifiedName` to be present under the field `type`.
+The Quartz, JobRunr and db-scheduler deadline managers in `axoniq-legacy` keep the Axon Framework 4.13 job layout:
+every `JobDataMap` key, details field, job signature and task name is unchanged, and no `QualifiedName` is stored.
+Deadlines that Axon Framework 4 scheduled therefore fire without migration, and during a rolling upgrade Axon Framework 4
+and Axon Framework 5 nodes fire and cancel each other's jobs. The `MessageType` of a fired deadline is derived from its
+payload class.
+
+The payload, metadata and scope descriptor are read and written with the `Converter` given to the manager's builder.
+It has to match the `Serializer` the Axon Framework 4 deadline manager used, including its configuration:
+
+- **Jackson:** a `JacksonConverter` configured like the Axon Framework 4 `ObjectMapper`. The Spring Boot
+  auto-configuration of the JobRunr and db-scheduler deadline managers uses the `EventConverter`, as Axon Framework 4
+  used the event serializer.
+- **XStream:** the Quartz deadline manager defaulted to an `XStreamSerializer`, and so did Spring Boot applications
+  without `axon.serializer.*` properties. Their jobs are XStream XML, which only an
+  `org.axonframework.conversion.xstream.XStreamConverter`, configured with the application's own `XStream` instance,
+  reads; see the reference guide's Conversion page, XStreamConverter section. In Spring Boot, this means defining the
+  `DeadlineManager` bean.
+- **Java serialization:** jobs written by Axon Framework 4's `JavaSerializer` are not readable.
+
+Further differences when reading a job:
+
+- A payload type name that does not resolve to a class, such as an XStream alias or a class that was renamed or
+  removed, fires the deadline with an `org.axonframework.deadline.UnknownDeadlinePayload`. It holds the stored type
+  name, revision and data.
+- Metadata values become strings: numbers and booleans as `String.valueOf(...)`, nested maps and lists as JSON. An Axon
+  Framework 4 node reading a job written by Axon Framework 5 sees every metadata value as a string.
+- The stored revision is read but not used. A deadline payload is not upcast.
+- Quartz jobs in the Axon Framework 3.3 layout, with the `serializedDeadlineMessage` key, are not readable and fail with
+  a `DeadlineException`.
+
+`axoniq-legacy` manages its own versions of Quartz, JobRunr and db-scheduler. Both Axon Framework versions share the
+scheduler library's own store during a rolling upgrade, so run the same library version on all nodes.
 
 ## TokenStore
 
