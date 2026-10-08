@@ -16,6 +16,8 @@
 
 package org.axonframework.modelling;
 
+import org.axonframework.common.infra.ComponentDescriptor;
+import org.axonframework.common.infra.DescribableComponent;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 
@@ -35,7 +37,7 @@ import java.util.Objects;
  * @see MetadataEntityIdResolver
  * @since 5.4.0
  */
-public class FallbackEntityIdResolver<ID> implements EntityIdResolver<ID> {
+public class FallbackEntityIdResolver<ID> implements EntityIdResolver<ID>, DescribableComponent {
 
     private final EntityIdResolver<ID> primary;
     private final EntityIdResolver<ID> secondary;
@@ -62,5 +64,11 @@ public class FallbackEntityIdResolver<ID> implements EntityIdResolver<ID> {
         } catch (EntityIdResolutionException e) {
             return secondary.resolve(message, context);
         }
+    }
+
+    @Override
+    public void describeTo(ComponentDescriptor descriptor) {
+        descriptor.describeProperty("primary", primary);
+        descriptor.describeProperty("secondary", secondary);
     }
 }

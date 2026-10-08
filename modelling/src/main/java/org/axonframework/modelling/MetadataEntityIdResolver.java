@@ -17,6 +17,8 @@
 package org.axonframework.modelling;
 
 import org.axonframework.common.BuilderUtils;
+import org.axonframework.common.infra.ComponentDescriptor;
+import org.axonframework.common.infra.DescribableComponent;
 import org.axonframework.conversion.Converter;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
@@ -45,7 +47,7 @@ import java.util.Objects;
  * @see FallbackEntityIdResolver
  * @since 5.4.0
  */
-public class MetadataEntityIdResolver<ID> implements EntityIdResolver<ID> {
+public class MetadataEntityIdResolver<ID> implements EntityIdResolver<ID>, DescribableComponent {
 
     private final String key;
     @Nullable
@@ -94,5 +96,12 @@ public class MetadataEntityIdResolver<ID> implements EntityIdResolver<ID> {
         return converter == null
                 ? (ID) value // Cast is still required to comply with API.
                 : Objects.requireNonNull(converter.convert(value, idType), "The converted identifier cannot be null.");
+    }
+
+    @Override
+    public void describeTo(ComponentDescriptor descriptor) {
+        descriptor.describeProperty("key", key);
+        descriptor.describeProperty("idType", idType);
+        descriptor.describeProperty("converter", converter);
     }
 }
