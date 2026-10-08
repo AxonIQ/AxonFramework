@@ -1,0 +1,53 @@
+flowchart TB
+    O["0 - Orchestrate one saga at a time<br/>Fresh doer, verifier and scorer; record evidence in the plan"]:::llm
+
+    subgraph PIPELINE[" "]
+        direction LR
+        subgraph PLAN["PLAN - before code"]
+            direction TB
+            P1["1 - Read the saga's code<br/>Extract handler and command facts"]:::machine
+            P2["2 - Build the flow graph<br/>States, deadlines and late events"]:::machine
+            P3["3 - Recognise patterns and plan<br/>Derive the workflow skeleton"]:::machine
+            L["3a - Resolve leftovers<br/>Judgment backed by code quotes"]:::llm
+            C["3b - Check consumers<br/>Preserve or adapt event contracts"]:::llm
+            A["Prepared for the build<br/>Plan, API sheet, templates,<br/>declared changes and test baseline"]:::asset
+            P1 --> P2 --> P3
+            P3 --> L --> A
+            P3 --> C --> A
+        end
+
+        subgraph BUILD["BUILD LOOP - one saga"]
+            direction TB
+            W["4 - Write the workflow and tests<br/>Doer runs checks 5 and 6 first"]:::llm
+            K["5 - Check the code<br/>Compile, tests and OpenRewrite lint"]:::machine
+            E["6 - Compare behaviour<br/>Equivalent model or counterexample"]:::machine
+            J["7 - Answer judged items<br/>Independent verifier, with code quotes"]:::llm
+            G{"All verification<br/>checks pass?"}:::machine
+            B["Same rule fails three rounds<br/>Record blocker; continue next saga"]:::blocked
+            W -->|Fresh verifier reruns checks| K
+            K --> E --> J --> G
+            G -->|No: return failure evidence| W
+            G -->|Retry budget exhausted| B
+        end
+
+        subgraph SCORE["SCORE - per saga"]
+            direction TB
+            S["8 - Score the result<br/>Independent scorer; evidence for every deduction"]:::llm
+            R["Scorecard out of 10<br/>Measured gates and dimensions,<br/>judged readability"]:::asset
+            H["Hooks - original automation<br/>Reject forbidden edits, check commits,<br/>track open work and sandbox access"]:::hook
+            S --> R
+        end
+        PLAN -->|Plan and prepared assets| BUILD
+        BUILD -->|Verified, review-ready result| SCORE
+    end
+    O --> PIPELINE
+
+    classDef machine fill:#e3f1e9,stroke:#2c795c,color:#1f2933,stroke-width:2px;
+    classDef llm fill:#f5e6f1,stroke:#a44580,color:#1f2933,stroke-width:2px;
+    classDef asset fill:#e4edfb,stroke:#326fbd,color:#1f2933,stroke-width:2px;
+    classDef hook fill:#f5f0dc,stroke:#887123,color:#1f2933,stroke-width:2px;
+    classDef blocked fill:#f0e9df,stroke:#91775e,color:#1f2933,stroke-width:1px;
+    style PLAN fill:#fafbfc,stroke:#d5ddd8
+    style BUILD fill:#fafbfc,stroke:#74818d,stroke-dasharray:5 3
+    style SCORE fill:#fafbfc,stroke:#d5ddd8
+    style PIPELINE fill:transparent,stroke:transparent

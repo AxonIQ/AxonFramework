@@ -1,0 +1,357 @@
+= Saga to Workflow Upgrade
+:navtitle: Sagas to workflows
+
+This guide explains how to model an existing saga process as an Axoniq workflow.
+There is no direct, general-purpose saga-to-workflow conversion.
+Reconstruct the saga's state machine, implement the intended behavior with workflow steps, and verify the differences explicitly.
+Existing instances finish in the legacy saga runtime; new instances start as workflows.
+It covers behavior conversion, verification, coexistence, and retirement.
+
+The link:https://docs.axoniq.io/axon-framework-reference/development/migration/paths/sagas/[Axon 4 sagas to Axon 5 legacy sagas] path covers the preceding compatibility upgrade.
+Return to the xref:migration:index.adoc#staged-upgrade[staged upgrade plan] for the complete application upgrade.
+
+[#prerequisites]
+== Prerequisites
+
+* Run the existing sagas on a compatible Axoniq Framework release and prove they can resume their persisted state.
+The legacy compatibility route requires version 5.4.0.
+* Complete xref:migration:index.adoc#dcb-context[DCB context preparation] for the workflow event store.
+* Resolve legacy deadline, serialization, and token compatibility before changing process ownership.
+* Preserve a baseline of saga source, tests, stored state, associations, and processor identities.
+
+Use the link:https://docs.axoniq.io/axon-framework-reference/development/workflows/[workflow reference] for the selected release's APIs and configuration.
+Use the link:https://github.com/AxonIQ/agent-skills/tree/main/plugins/axoniq-migration/skills/saga-to-workflow[`saga-to-workflow` skill] for behavior inventory, implementation, and verification.
+See <<use-skill,installation and usage>> below.
+Framework-wide OpenRewrite recipes belong to the earlier code upgrade stage.
+They do not convert persisted saga state into workflow execution history.
+
+[#sagas-and-workflows]
+== Sagas and workflows
+
+A saga coordinates a process through event handlers and persisted fields.
+Association values route events to the right instance.
+Flags, counters, and deadline identifiers describe where the process is and what it should do next.
+
+A workflow expresses the process as a method containing durable steps, waits, branches, and loops.
+Its execution history records step progress; the workflow body must remain deterministic during replay.
+Put commands, queries, and external side effects inside steps.
+The link:https://docs.axoniq.io/axon-framework-reference/development/workflows/[workflow reference] introduces this execution model.
+
+[cols="1,2,2",options="header"]
+|===
+| Concern | Saga | Workflow
+| Process state
+| Persisted saga fields updated by handlers.
+| Step history and workflow payload; local control flow reconstructed during replay.
+| Event correlation
+| Association properties and values select saga instances.
+| Workflow identity and event-wait associations select the intended process and result.
+| Parallel work
+| Dispatch several commands, then join their outcome events with flags or counters.
+| Start non-blocking steps and waits, then combine their results with `allMatch` or `anyMatch`.
+| Timeouts
+| Schedule a deadline, store its identifier, handle expiry, and cancel it on success.
+| Configure a timeout on the step and branch on its outcome.
+| Retries
+| Persist an attempt counter and arrange the next attempt, often through a deadline.
+| Configure a step retry policy and backoff, or model a business retry loop explicitly.
+| Compensation
+| Store enough state to decide which effects must be undone in later handlers.
+| Express compensation around the relevant steps, preserving the same guards and failure handling.
+| Operational evidence
+| Inspect saga state, processor progress, and scheduled deadlines.
+| Inspect workflow and step histories as well as processor progress and external effects.
+|===
+
+Workflow primitives make concurrency, timeout policy, retries, and compensation explicit in the process definition.
+They reduce the bookkeeping spread across handlers and provide step-level execution evidence.
+They do not infer business intent or make external effects exactly once.
+A retry can repeat an external call; use a stable idempotency key when that call must tolerate repetition.
+See link:https://docs.axoniq.io/axon-framework-reference/development/workflows/understanding-steps/[step outcomes and retries], link:https://docs.axoniq.io/axon-framework-reference/development/workflows/step-orchestration/[step orchestration], and link:https://docs.axoniq.io/axon-framework-reference/development/workflows/common-patterns/[workflow patterns].
+
+[#model-behavior]
+== Model the same process
+
+Record the observable contract before selecting workflow primitives:
+
+* Which events start or advance the process, and how they are correlated.
+* Which commands and terminal events each path produces.
+* Which command results the saga observes, including failures it deliberately ignores.
+* Timeouts, attempt limits, compensation guards, and events accepted after another branch advances.
+* Duplicate, out-of-order, and late events, including updates to consumers when an event contract changes.
+
+Compare success, rejection, failure, timeout, and restart traces against that contract.
+Register event waits before the command that can produce their event.
+Do not replace a dispatch-only command with a result-aware call without deciding how the newly observed failure should affect the process.
+
+Some saga behavior has no equivalent in a proposed workflow, or cannot be represented by the available analyzer.
+Record such cases as unresolved or as explicitly accepted behavior changes.
+A shorter workflow is not evidence of equivalence.
+The <<process-overview,skill process>> helps derive and check this model; it does not guarantee a direct conversion.
+
+[#examples]
+== Compare complete process examples
+
+Each tab shows the complete class body. Imports are in the compilable example sources.
+
+[cols="1,3",options="header"]
+|===
+|Example |Shared business behavior
+|Parallel checks |Start credit and stock checks; join their first results in either order; accept only if both accept; each missing result expires as rejected after one day.
+|Approval timeout |Request approval; record approval if it arrives before expiry, otherwise expire after one hour.
+|Delivery retries |Attempt delivery up to three times after service exceptions, three seconds apart; record success or exhausted retries in the database.
+|===
+
+Workflow service calls run inside durable steps; the process method contains the ordering, waits, and decisions.
+Service parameters on `execute` are supplied by Axon's parameter resolvers; register the service implementations as Axon components or resolvable Spring beans.
+Application bootstrapping and service implementations remain application-specific; follow the link:https://docs.axoniq.io/axon-framework-reference/development/workflows/configuration/[workflow configuration guide] to register the workflow definitions.
+
+[IMPORTANT]
+====
+The saga examples compile against Axon Framework 4.12.1 and preserve the original deadline APIs for comparison.
+The workflow examples target Axoniq Framework 5.4.0.
+They are separate applications and must not share a Framework classpath.
+The selected AF5 legacy release does not provide the AF4 deadline API shown here; resolve that prerequisite using the existing legacy saga upgrade guide before coexistence.
+====
+
+=== Parallel steps
+
+Both versions use the same `ChecksService` to start independent credit and stock checks.
+The service methods enqueue work and return without waiting for its result; both checks can be in progress together.
+Both versions accept the first result for each check in either order and ignore duplicate results.
+The saga publishes `ChecksCompleted`; the workflow completes naturally when both checks accept, or fails on rejection or timeout.
+The workflow does not publish a custom completion event. Consumers of `ChecksCompleted` therefore require a separate compatibility decision; the event contracts are not identical.
+Each check has one day to respond; a missing result counts as rejected. The saga joins both responses or expiries. The workflow can reject as soon as one wait times out, without waiting for the other deadline.
+The decision is accepted only when both results are accepted.
+
+The saga stores result flags and deadline identifiers, cancels deadlines for received results, and joins results in separate handlers.
+The workflow registers the event waits, starts two durable service steps with `ctx.execute`, and joins the requests and results with `ctx.allMatch`.
+The step calls can execute concurrently; using `awaitExecute` for the first call would serialize the requests.
+
+[tabs]
+====
+Saga (Axon Framework 4)::
++
+[source,java,role=axon4]
+----
+include::example$migration/paths/sagastoworkflows/saga/src/main/java/migration/paths/sagastoworkflows/ParallelChecksSaga.java[tag=parallel-saga,indent=0]
+----
+Workflow (Axoniq Framework 5)::
++
+[source,java]
+----
+include::example$migration/paths/sagastoworkflows/workflow/src/main/java/migration/paths/sagastoworkflows/ParallelChecksWorkflow.java[tag=parallel-workflow,indent=0]
+----
+====
+
+`CreditChecked` and `StockChecked` carry the business outcomes in both versions, including rejected checks (`accepted = false`).
+Both joins use `WorkflowStepResult::success` directly. The result join succeeds after both results arrive; a timeout makes it return false.
+The business decision also requires both result payloads to contain `accepted = true`.
+Request methods must be idempotent using `orderId`, and each check must produce one authoritative result.
+
+A rejected business result is still a successful event-wait step, so the result join waits for the other result.
+A failed or timed-out step short-circuits the join; it does not undo another branch's external work.
+These examples perform read-only checks; reservation or payment branches need explicit handling for cancellation, compensation, and late success.
+See link:https://docs.axoniq.io/axon-framework-reference/development/workflows/step-orchestration/[parallel steps and short-circuit behavior].
+
+=== A step with a timeout
+
+Both versions request approval and produce an approved result when confirmation arrives, or an expired result after one hour.
+The saga stores and cancels a deadline identifier.
+The workflow's event wait carries the timeout and exposes its outcome directly.
+Both call `ApprovalService.requestApproval`, which enqueues the request and returns without waiting for approval.
+The workflow registers the wait before making this call inside a step, so a fast confirmation can be received.
+
+[tabs]
+====
+Saga (Axon Framework 4)::
++
+[source,java,role=axon4]
+----
+include::example$migration/paths/sagastoworkflows/saga/src/main/java/migration/paths/sagastoworkflows/ApprovalSaga.java[tag=timeout-saga,indent=0]
+----
+Workflow (Axoniq Framework 5)::
++
+[source,java]
+----
+include::example$migration/paths/sagastoworkflows/workflow/src/main/java/migration/paths/sagastoworkflows/ApprovalWorkflow.java[tag=timeout-workflow,indent=0]
+----
+====
+
+The workflow does not need a separate cancellation command for a wait that already completed.
+A timeout is a normal business outcome in this example, so the workflow publishes a negative result and completes.
+An unhandled `StepFailedException` fails the workflow; a failed event wait calls `ctx.fail(...)`.
+
+*Timing boundary:* the hour begins when the saga schedules its deadline or the workflow registers its wait, not when an external user receives the request.
+Specify and test the policy for an approval racing with expiry and for an approval arriving after completion.
+A step timeout does not undo the external request.
+See link:https://docs.axoniq.io/axon-framework-reference/development/workflows/waiting-for-events/[event waits] and link:https://docs.axoniq.io/axon-framework-reference/development/workflows/workflow-lifecycle/[workflow completion and failure].
+
+=== Retry a failed service call
+
+The saga stores an attempt counter and schedules a deadline three seconds after a failed service call.
+The workflow puts the delivery call in one durable step with a retry policy.
+Both allow three total attempts: the initial attempt plus two retries.
+Both call the same `DeliveryClient` and use the order identifier as its idempotency key.
+Both save `delivered = true` after success, or `false` after three failed calls.
+This example retries any exception from the delivery service, with the same limit in both versions. Both rely on the delivery client's transport timeout; the client reports that timeout as an exception.
+Workflow service steps also have a five-second default timeout; configure it above the client's transport timeout. A step timeout or cancellation leaves the delivery outcome unknown and requires reconciliation.
+The workflow performs that write in a separate durable step; it does not publish an extra delivery-completed event.
+
+[tabs]
+====
+Saga (Axon Framework 4)::
++
+[source,java,role=axon4]
+----
+include::example$migration/paths/sagastoworkflows/saga/src/main/java/migration/paths/sagastoworkflows/DeliverySaga.java[tag=retry-saga,indent=0]
+----
+Workflow (Axoniq Framework 5)::
++
+[source,java]
+----
+include::example$migration/paths/sagastoworkflows/workflow/src/main/java/migration/paths/sagastoworkflows/DeliveryWorkflow.java[tag=retry-workflow,indent=0]
+----
+====
+
+`RetryPolicy.maxRetries(2)` means two retries in addition to the initial attempt.
+The saga maintains an attempt counter and schedules retry deadlines; the workflow step applies the same retry limit and backoff.
+The database write follows the delivery outcome in both versions and is not part of the delivery retry loop.
+
+Step retries rerun an action after a technical failure.
+A business retry driven by an event such as `PaymentDeclined` needs an explicit event wait and loop; a successful dispatch step does not fail merely because a later business event reports rejection.
+Preserve the original event contracts, backoff, attempt correlation, and cancellation behavior when modeling that loop.
+See link:https://docs.axoniq.io/axon-framework-reference/development/workflows/understanding-steps/#retries[retry policies and backoff].
+
+[#process-overview]
+== How the skill works
+
+The skill models the saga's observable behavior, implements a workflow, and verifies it one saga type at a time.
+
+[#use-skill]
+.Use the saga-to-workflow skill
+[TIP]
+====
+Install the link:https://github.com/AxonIQ/agent-skills/tree/main/plugins/axoniq-migration/skills/saga-to-workflow/SKILL.md[*saga-to-workflow* skill] from your application's repository:
+
+[source,bash]
+----
+npx skills add AxonIQ/agent-skills --skill saga-to-workflow
+----
+
+Then ask your coding agent (replace `OrderSaga` with your saga class):
+
+[quote]
+Use the saga-to-workflow skill to upgrade OrderSaga to a workflow. First inventory its behavior and propose a plan. Preserve existing saga instances while new requests use workflows.
+
+Start after the AF5 legacy-saga and DCB prerequisites are ready.
+See the link:https://github.com/AxonIQ/agent-skills/tree/main/plugins/axoniq-migration/skills/saga-to-workflow/README.md[skill README] for the detailed workflow and included tools.
+====
+
+include::partial$saga-to-workflow-process.adoc[]
+
+=== Plan and implement
+
+Record events, commands, deadlines, late events, and intentional behavior changes before writing code.
+Use that model to implement the workflow and port the saga's behavioral tests.
+The link:https://github.com/AxonIQ/agent-skills/tree/main/plugins/axoniq-migration/skills/saga-to-workflow/README.md[skill README] documents the orchestration, tools, inputs, outputs, scoring, and available assets.
+
+=== Verify and review
+
+Independent checks compare the implementation with the recorded behavior; failures return to the build loop.
+Agent judgment cannot override a failed machine check, and unsupported cases remain explicit.
+A passing result is ready for review, not proof of production durability.
+Complete the <<coexistence,persistent coexistence and restart checks>> before retiring legacy sagas.
+
+[#coexistence]
+== Introduce workflows alongside legacy sagas
+
+Keep existing instances in the saga runtime; route new starts to workflows.
+First verify the <<model-behavior,behavior inventory>>, accept intentional changes, and update affected consumers.
+
+=== 1. Prepare the coexistence deployment
+
+Find the upgraded saga's start handlers:
+
+[source,bash]
+----
+rg -n '@StartSaga|@SagaEventHandler' src/main/java
+----
+
+Remove only its `@StartSaga` annotations (including their imports):
+
+[source,diff]
+----
+-    @StartSaga
+     @SagaEventHandler(associationProperty = "orderId")
+----
+
+Keep its handlers, command/event contracts, type identities, serialized fields, associations, stores, and processor identities unchanged.
+Associated instances still receive events; unmatched events no longer create sagas.
+Register the tested workflow using the link:https://docs.axoniq.io/axon-framework-reference/development/workflows/configuration/[workflow configuration guide].
+Deploy both changes together.
+
+=== 2. Pause, deploy, and resume
+
+. Pause requests that start new processes. Existing sagas do not need to finish first.
+. Stop all instances of the old application so they cannot start new sagas.
+. Start the updated application with the existing saga handlers and the new workflow.
+. Confirm that the workflow processor is ready and has saved its starting position before accepting new requests.
+. Resume new requests: existing processes finish through sagas; new ones use workflows.
+
+The saved position, called a _token_, is a bookmark in the event stream.
+A new workflow processor starts at the current end, leaving old start events with the sagas.
+Keep new requests paused until this bookmark is saved so they are not skipped.
+On later restarts, preserve the token and processor identity; resetting the position can duplicate or skip work.
+See xref:events:event-processors/streaming.adoc#initial_token[initial tracking tokens].
+
+=== 3. Check both processes, then let old sagas finish
+
+Test with persistent event, token, saga, and scheduler stores so state survives a restart:
+
+. Before deploying, start one order and leave its saga waiting.
+. Deploy the updated application. Confirm that the old order still uses its saga and that historical start events create no workflows.
+. Start a new order and leave it waiting. Confirm that it creates exactly one workflow and no saga.
+. Restart the application, then finish both orders. Both must resume and complete without missing events or repeating business actions.
+
+Also test timeouts, retries, compensation, and duplicate or late events against the expected behavior.
+Keep the existing saga tests, but do not treat unit tests as proof that persistent recovery works.
+Fix any restart or persistence failures before proceeding.
+
+Count the remaining sagas with a read-only query.
+Use your application's table/column names and stored saga type; run separately for each tenant or add a tenant filter:
+
+[source,sql]
+----
+SELECT COUNT(*) AS remaining
+FROM saga_entry
+WHERE saga_type = 'com.example.orders.OrderSaga';
+----
+
+Wait for the count to reach zero *and* for commands, scheduled work, and failed/dead-lettered messages that need the saga to finish or be resolved.
+Track how long the oldest saga has been running; choose an observation period based on the process lifetime.
+Then follow <<retirement,Retire drained legacy sagas>>.
+
+*If you roll back:* keep the workflow definition and runtime available until existing workflows finish.
+Do not let sagas and workflows both start the same process.
+Test how new requests will be assigned during rollback, or fix the new deployment instead.
+
+[#retirement]
+== Retire drained legacy sagas
+
+Remove legacy code only after each upgraded saga type has no running instances or pending work depending on its handlers.
+
+. Remove the drained saga type, its registration, and its dedicated deadline bridge.
+Preserve useful behavior assertions in workflow tests or an upgrade regression suite.
+. Remove `axoniq-legacy` and `axoniq-legacy-test` only when no other saga or legacy feature requires them.
+. Keep JPA and its transaction configuration when tokens, projections, or application data still use them.
+. Prepare storage cleanup as a separate, reviewed schema change scoped to the retired type, tenant, and processor.
+Retain data required by recovery and retention policies.
+
+Never drop a shared token table or remove workflow and projection tokens.
+Remove retired saga processor rows only after every deployment using that processor is gone.
+Shared saga, association, and scheduler tables may also serve other components.
+
+*Completion check:* a fresh workflow completes and a waiting workflow resumes after restart without the retired legacy runtime.
+Other projections and processors retain their progress.
+Record drain evidence and the exact runtime components and storage objects removed.

@@ -1,26 +1,30 @@
-= Axon Framework 5 Migration Guide
-:navtitle: Migration Guide
+= Axon 4 to Axon 5 Upgrade
+:navtitle: Axon 4 to Axon 5 Upgrade
 
 Axon Framework 5 represents the most significant evolution in the framework's history.
-This comprehensive migration guide will help you navigate the transition from Axon Framework 4.x to Axon Framework 5, equipping you with the knowledge, patterns, and practical steps needed to modernize your event-sourced applications successfully.
+This comprehensive upgrade guide will help you navigate the transition from Axon Framework 4.x to Axon Framework 5, equipping you with the knowledge, patterns, and practical steps needed to modernize your event-sourced applications successfully.
 
-Whether you're running a small microservice or a large distributed system, this guide provides pathways for every scenario—from maintaining compatibility with your existing architecture to embracing the transformative new capabilities that Axon Framework 5 enables.
+Whether you're running a small microservice or a large distributed system, this guide provides pathways for every scenario, from maintaining compatibility with your existing architecture to embracing the transformative new capabilities that Axon Framework 5 enables.
 
-== What You'll Find in This Guide
+== What you'll find in this guide
 
-This migration guide is structured as follows:
+This upgrade guide is structured as follows:
+
+<<staged-upgrade,Staged upgrade plan>>::
+Follow the upgrade from an existing Axon Framework 4 application through code conversion and, where needed, DCB, legacy saga compatibility, and workflows.
+Each stage links to its documentation, agent skills, and tooling, with checks to complete before continuing.
 
 xref:migration:why-upgrade.adoc[Why Upgrade to Axon Framework 5]::
-Before you commit to migration, understand what you're gaining.
+Before you commit to the upgrade, understand what you're gaining.
 This section explores the transformative new capabilities available only in Axon Framework 5: async-native architectures that eliminate ThreadLocal bottlenecks, Dynamic Consistency Boundaries (DCB) that liberate you from fixed aggregate structures, simplified configurations that adapt to your preferences, domain entities free from framework annotations, and a thriving ecosystem of first-class extensions like the Apache Kafka and PostgreSQL integrations.
 
 xref:migration:prerequisites.adoc[Prerequisites & System Requirements]::
 Verify your infrastructure readiness.
-We cover Java version alignment, Spring Boot compatibility, and Axon Server requirements to ensure smooth migration.
+We cover Java version alignment, Spring Boot compatibility, and Axon Server requirements to ensure a smooth upgrade.
 
 xref:migration:openrewrite-code-conversion.adoc[Automated Code Conversion]::
 Get a head start with OpenRewrite-based recipes that mechanically rewrite the predictable parts of your Axon Framework 4 codebase.
-Running them does not guarantee a compiling project—the compile errors that remain, together with `axon4to5` markers left in the source, become your guided checklist for the manual steps.
+Running them does not guarantee a compiling project; the compile errors that remain, together with `axon4to5` markers left in the source, become your guided checklist for the manual steps.
 Code conversion covers only source and build file transformations; it does not touch event store data, token tables, or any other runtime state.
 
 xref:migration:solved-architecture-choices.adoc[Application Design Problems Solved by Axon Framework 5]::
@@ -30,9 +34,162 @@ We walk through the application design problems that Axon Framework 5 solves, th
 xref:migration:understanding-architecture-principles.adoc[Understanding the Architecture Principles of Axon Framework 5]::
 Detailed explanations of how foundational components have evolved, providing a conceptual background how we adjusted the architecture principles for Axon Framework 5.
 
-xref:migration:paths/index.adoc[Migration Paths]::
+xref:migration:paths/index.adoc[Upgrade Paths]::
 The practical heart of the guide.
-Acts as the starting point for every code migration from Axon Framework 4 to Axon Framework 5. Contains numerous subsections (or "paths") showing how Framework 4 approached things like messaging, aggregates, and testing, and how those should be tackled in Axon Framework 5.
+Acts as the starting point for every code upgrade from Axon Framework 4 to Axon Framework 5. Contains numerous subsections (or "paths") showing how Framework 4 approached things like messaging, aggregates, and testing, and how those should be tackled in Axon Framework 5.
+
+[#staged-upgrade]
+== Staged upgrade plan
+
+=== Choose the upgrade route
+
+* *Framework upgrade:* complete the baseline and code upgrade stages, plus the legacy saga stage if the application uses sagas.
+An Axon Framework 5 application can retain aggregate-based storage; DCB conversion is optional for this route.
+* *Saga to workflow:* also complete the DCB stage for the Axon Server workflow route, then introduce workflows alongside existing sagas and retire the legacy code after it drains.
+* *Already on Axon Framework 5:* verify the completed stages and start at the first remaining stage.
+
+The stages describe separate work packages, not necessarily separate deployments.
+For an application with sagas, complete the code upgrade and legacy saga adaptation before its first Axon Framework 5 deployment.
+Complete context conversion before deploying an application configured with a DCB event storage engine.
+Context conversion can also precede the code upgrade while a compatible Axon Framework 4 application is still running.
+
+[IMPORTANT]
+====
+Legacy sagas and workflows require a compatible Axoniq Framework release and its dependencies.
+The legacy compatibility route described here is available in the 5.4 release line; do not apply it to Axon Framework 5.0.
+Use version 5.4.0 for the legacy saga and workflow route.
+A successful code conversion does not verify persistent state or production cutover behavior.
+====
+
+[cols="1,2,2",options="header"]
+|===
+| Stage | Documentation | Agent skill or tooling
+
+| <<baseline,0. Establish the baseline>>
+| xref:migration:prerequisites.adoc[Prerequisites]
+| Existing application tests and a representative persisted-data copy
+
+| <<framework-upgrade,1. Axon 4 to Axon 5 code>>
+| xref:migration:openrewrite-code-conversion.adoc[OpenRewrite code conversion] and xref:migration:paths/index.adoc[component upgrade paths]
+| link:https://github.com/AxonIQ/agent-skills/tree/main/plugins/axoniq-migration/skills/axon4to5-openrewrite[`axon4to5-openrewrite`], then link:https://github.com/AxonIQ/agent-skills/tree/main/plugins/axoniq-migration/skills/axon4to5-migrate-code[`axon4to5-migrate-code`]; link:https://github.com/AxonIQ/AxonFramework/tree/main/migration[OpenRewrite recipes]
+
+| <<dcb-context,2. Regular context to DCB context>>
+| xref:migration:paths/event-store.adoc[Event storage engine selection] and link:https://docs.axoniq.io/axon-server-reference/v2026.1/axon-server/administration/multi-context/#_context_migration_to_dcb[Axon Server context upgrade]
+| Axon Server upgrade UI or REST API; no OpenRewrite recipe
+
+| <<legacy-sagas,3. Axon 4 sagas to Axon 5 legacy sagas>>
+| link:https://docs.axoniq.io/axon-framework-reference/development/migration/paths/sagas/[Legacy saga upgrade]
+| `axon4to5-migrate-code` saga recipe; `Axon4ToAxon5Legacy` within the OpenRewrite upgrade recipes
+
+| <<saga-to-workflow,4. Sagas to workflows with coexistence>>
+| xref:migration:paths/sagas-to-workflows.adoc[Legacy sagas to workflows]
+| link:https://github.com/AxonIQ/agent-skills/tree/main/plugins/axoniq-migration/skills/saga-to-workflow[`saga-to-workflow`]; behavior-driven implementation and tests
+
+| <<retire-legacy,5. Retire legacy sagas>>
+| xref:migration:paths/sagas-to-workflows.adoc#retirement[Retirement checks]
+| `saga-to-workflow`; drain verification and application-specific cleanup
+|===
+
+Install the skills from link:https://github.com/AxonIQ/agent-skills[Axoniq Agent Skills].
+That repository owns the skill instructions and supporting resources.
+OpenRewrite owns mechanical source transformations; neither OpenRewrite nor the code upgrade skill modifies runtime data.
+
+[#baseline]
+=== Stage 0: Establish the baseline
+
+Record the application's Framework, Java, Spring Boot, Axon Server, and extension versions.
+Check xref:migration:prerequisites.adoc[prerequisites] against the selected target release.
+Inventory the following before changing the application:
+
+* Modules, commands, queries, event handlers, serialization formats, and stored event revisions.
+* Event storage engines, context names, event processor names, tracking tokens, and dead-letter queues.
+* Saga types, associations, serialized state, deadlines, and the number of running instances per saga type.
+* Existing behavior tests, schema upgrade scripts, backups, and recovery procedures.
+
+*Completion check:* the existing application passes its tests and resumes representative persisted processes after a restart.
+Use a copy of production-like state to verify subsequent stages, including an instance waiting for an event and one waiting for a deadline.
+
+[#framework-upgrade]
+=== Stage 1: Axon 4 to Axon 5 code
+
+Run the xref:migration:openrewrite-code-conversion.adoc[OpenRewrite conversion] on a working copy with a recoverable baseline.
+Choose the recipe for the selected Framework distribution:
+
+* `org.axonframework.migration.UpgradeAxon4ToAxon5` for the open-source Framework route.
+* `io.axoniq.framework.migration.UpgradeAxon4ToAxoniq5` for the Axoniq route, including applications using Axon Server or the legacy saga module.
+
+Both recipes are distributed in `org.axonframework:axon-migration:<version>` from the link:https://github.com/AxonIQ/AxonFramework/tree/main/migration[Axon Framework upgrade module].
+The module also supplies the Gradle initialization script.
+The `axon4to5-openrewrite` skill runs the automated part; pass `--recipe-version <version>` to select the recipe release instead of its bundled default.
+The `axon4to5-migrate-code` skill handles the remaining component changes.
+The link:https://github.com/AxonIQ/agent-skills/tree/main/plugins/axoniq-migration/skills/axon4to5-isolatedtest[`axon4to5-isolatedtest`] skill supports scoped verification during that work.
+
+Review compiler errors and every `TODO(axon4to5)` marker.
+Apply the relevant xref:migration:paths/index.adoc[upgrade paths], including xref:migration:paths/serializers.adoc[serialization], xref:migration:paths/token-store.adoc[token storage], and xref:migration:paths/projectors-event-processors.adoc[event processors].
+Verify dependency coordinates against the selected release rather than assuming the recipe output is complete.
+
+*Completion check:* application code and tests compile, behavior tests pass, and persisted events and processor tokens remain readable.
+For applications with sagas, include <<legacy-sagas,stage 3>> in this check before deployment.
+If the application uses a DCB engine, also complete <<dcb-context,stage 2>> first.
+
+[#dcb-context]
+=== Stage 2: Regular context to DCB context
+
+This stage applies when moving an Axon Server context to Dynamic Consistency Boundaries (DCB), including the workflow route in this guide.
+To upgrade the Framework while retaining a regular context, use `AggregateBasedAxonServerEventStorageEngine` as described in xref:migration:paths/event-store.adoc[event store upgrade] and defer this stage.
+
+Follow the version-specific link:https://docs.axoniq.io/axon-server-reference/v2026.1/axon-server/administration/multi-context/#_context_migration_to_dcb[Axon Server context upgrade procedure].
+It covers preparation, completion, cleanup, permissions, and restrictions on the source context.
+Schedule the completion step for an interruption: the context is temporarily unavailable during the switch.
+If Axon Framework 4 clients continue to use the context, upgrade them to 4.12 or newer before conversion.
+
+Verify snapshot compatibility for the selected engine and Framework release; see xref:migration:paths/snapshotting.adoc#reusing_existing_snapshots[snapshot upgrade].
+Include entity reconstruction from historical event streams in the verification.
+
+*Completion check:* the server reports a DCB context, historical events remain readable, and the application continues processing from its retained tokens.
+Verify each context used by the workflow and the storage engine configured for it.
+
+[NOTE]
+====
+The link:https://github.com/AxonIQ/axonserver-migration-tool[Axon Server upgrade tool] copies events from other event stores or Axon Server instances.
+It does not perform regular-context-to-DCB conversion.
+Use it only if moving event-store data is a separate requirement of the upgrade.
+====
+
+[#legacy-sagas]
+=== Stage 3: Axon 4 sagas to Axon 5 legacy sagas
+
+Use the link:https://docs.axoniq.io/axon-framework-reference/development/migration/paths/sagas/[legacy saga upgrade path] to run existing sagas on the selected Axoniq Framework release.
+The OpenRewrite upgrade includes `org.axonframework.migration.Axon4ToAxon5Legacy` for mechanical saga changes.
+Finish the remaining handler injection, configuration, and test changes with `axon4to5-migrate-code`.
+
+Preserve saga type identities, serialized payloads, association values, and the existing processor identity and tracking positions.
+Keep the same value when changing `@ProcessingGroup` to `@Namespace`.
+Resolve deadline behavior explicitly: a removed deadline or a commented-out handler is not a completed upgrade.
+When the selected legacy release does not support an existing deadline mechanism, implement and test its replacement or drain the affected instances before cutover.
+
+*Completion check:* an instance created on Axon Framework 4 loads and advances on Axon Framework 5 without being recreated.
+Verify success, failure, pending deadlines, and restart behavior against persisted state.
+New instances may still start as legacy sagas at this stage.
+
+[#saga-to-workflow]
+=== Stage 4: Sagas to workflows with coexistence
+
+Start this stage after the application runs on the target Framework release and its workflow event storage is ready.
+Follow xref:migration:paths/sagas-to-workflows.adoc[Legacy Sagas to Workflows] for the process diagram, behavior conversion, verification, and coexistence procedure.
+Use the link:https://github.com/AxonIQ/agent-skills/tree/main/plugins/axoniq-migration/skills/saga-to-workflow[`saga-to-workflow` skill] for implementation support.
+Existing instances finish as sagas; new instances start as workflows at a verified cutover boundary.
+
+*Completion check:* an old saga completes, a new workflow completes, and a restart resumes both from durable state.
+See the xref:migration:paths/sagas-to-workflows.adoc#coexistence[persistent coexistence checks].
+
+[#retire-legacy]
+=== Stage 5: Retire legacy sagas
+
+Follow the xref:migration:paths/sagas-to-workflows.adoc#retirement[legacy saga retirement procedure] after running instances and their pending work have drained.
+Remove only unused legacy code, dependencies, and dedicated storage; preserve shared token tables and unrelated processor progress.
+
+*Completion check:* a fresh workflow completes and a running workflow resumes after a restart without the retired legacy runtime.
 
 == Scope of this guide
 
