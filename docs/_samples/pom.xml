@@ -175,6 +175,7 @@
                                 <source>${project.basedir}/../getting-started/modules/ROOT/examples</source>
                                 <source>${project.basedir}/../identifier-generation-guide/modules/ROOT/examples</source>
                                 <source>${project.basedir}/../message-handler-customization-guide/modules/ROOT/examples</source>
+                                <source>${project.basedir}/../message-scheduling-guide/modules/ROOT/examples</source>
                                 <source>${project.basedir}/../meta-annotations-guide/modules/ROOT/examples</source>
                             </sources>
                         </configuration>

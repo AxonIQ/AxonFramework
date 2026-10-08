@@ -162,7 +162,9 @@ needs no new infrastructure. It is acceptable because every command it sends can
 
 If a scheduled projection does not fit, the command is still the right target and only the trigger changes.
 
-* An external scheduler, such as Quartz or a cloud scheduler, sending the same command.
+* A real scheduling tool, such as Quartz, JobRunr, or db-scheduler, sending the same command. See
+  xref:message-scheduling-guide:ROOT:index.adoc#scheduling-commands[Scheduling
+  commands] for the shape this takes.
 * A message broker's delayed delivery, if you already run one.
 * link:https://docs.axoniq.io/axon-framework-reference/development/workflows/[Axoniq Framework Workflows,role=external,window=_blank],
   which handles waiting as a first-class concern. It is available as a preview and requires a licence for production
