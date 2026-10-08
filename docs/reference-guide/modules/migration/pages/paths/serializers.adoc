@@ -52,7 +52,7 @@ xref:paths/index.adoc#missing-a-migration-path[Contact the Axon Framework team] 
 The above applies to general and event conversion; it does not apply to data an Axon Framework 4 node serialized with
 XStream for sagas, deadlines, or scheduled events. For that narrow case, the `axoniq-legacy` module ships a
 deprecated, opt-in `XStreamConverter` that wraps your own `XStream` instance to read (and, for sagas, keep writing)
-that data unchanged. See xref:paths/sagas.adoc[Saga Migration] and xref:ROOT:conversion.adoc#xstream_converter[XStreamConverter].
+that data unchanged. See link:https://docs.axoniq.io/axon-framework-reference/development/migration/paths/sagas/[Saga upgrade] and xref:ROOT:conversion.adoc#xstream_converter[XStreamConverter].
 ====
 
 == Message and event converter types

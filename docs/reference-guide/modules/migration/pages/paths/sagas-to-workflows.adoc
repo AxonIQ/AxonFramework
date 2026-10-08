@@ -330,14 +330,14 @@ WHERE saga_type = 'com.example.orders.OrderSaga';
 
 Wait for the count to reach zero *and* for commands, scheduled work, and failed/dead-lettered messages that need the saga to finish or be resolved.
 Track how long the oldest saga has been running; choose an observation period based on the process lifetime.
-Then follow <<retirement,Retire drained legacy sagas>>.
+Then follow <<retirement,Retire the drained legacy implementation>>.
 
 *If you roll back:* keep the workflow definition and runtime available until existing workflows finish.
 Do not let sagas and workflows both start the same process.
 Test how new requests will be assigned during rollback, or fix the new deployment instead.
 
 [#retirement]
-== Retire drained legacy sagas
+== Retire the drained legacy implementation
 
 Remove legacy code only after each upgraded saga type has no running instances or pending work depending on its handlers.
 
