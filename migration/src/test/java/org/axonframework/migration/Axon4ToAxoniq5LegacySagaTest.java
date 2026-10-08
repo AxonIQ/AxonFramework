@@ -216,6 +216,70 @@ class Axon4ToAxoniq5LegacySagaTest implements RewriteTest {
     }
 
     @Nested
+    class ResourceInjectionMigration {
+
+        @Test
+        void migratesTheGatewayAndMarksTheOtherInjectedField() {
+            // The CommandGateway field becomes a handler parameter, so only the remaining injected field is marked.
+            // The @Autowired stub resolves the annotation type, as Spring on a real classpath would; unresolved, the
+            // gateway migration would drop the import the remaining field still needs.
+            rewriteRun(
+                    java(
+                            """
+                            package org.springframework.beans.factory.annotation;
+
+                            public @interface Autowired {
+                            }
+                            """
+                    ),
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.commandhandling.gateway.CommandGateway;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.springframework.beans.factory.annotation.Autowired;
+
+                            class PaymentSaga {
+                                @Autowired
+                                private transient CommandGateway commandGateway;
+                                @Autowired
+                                private transient PaymentService paymentService;
+
+                                @SagaEventHandler(associationProperty = "rentalId")
+                                void on(Object command) {
+                                    paymentService.charge(command);
+                                    commandGateway.send(command);
+                                }
+                            }
+                            interface PaymentService { void charge(Object command); }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.springframework.beans.factory.annotation.Autowired;
+
+                            class PaymentSaga {
+                                // TODO(axon4to5): add this dependency as a parameter of each @SagaEventHandler method that uses it, then remove the field. Axon Framework 5 does not inject Saga fields.
+                                @Autowired
+                                private transient PaymentService paymentService;
+
+                                @SagaEventHandler(associationProperty = "rentalId")
+                                void on(Object command, CommandDispatcher commandDispatcher) {
+                                    paymentService.charge(command);
+                                    commandDispatcher.send(command);
+                                }
+                            }
+                            interface PaymentService { void charge(Object command); }
+                            """
+                    )
+            );
+        }
+    }
+
+    @Nested
     class KotlinSagaMigration {
 
         @Test

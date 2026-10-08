@@ -194,4 +194,23 @@ class Axon4ToAxon5SpringExtensionTest implements RewriteTest {
         );
     }
 
+    @Test
+    void leavesSpringResourceInjectorInItsAxonFramework4Package() {
+        // SpringResourceInjector has no Axon Framework 5 counterpart, so moving its package would only trade one
+        // missing type for another. The commercial Saga recipe marks its usage instead.
+        rewriteRun(
+                java(
+                        """
+                        import org.axonframework.spring.saga.SpringResourceInjector;
+
+                        class SagaConfig {
+                            Object resourceInjector() {
+                                return new SpringResourceInjector();
+                            }
+                        }
+                        """
+                )
+        );
+    }
+
 }

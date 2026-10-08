@@ -31,7 +31,10 @@ description: >-
   stereotype are used, and `io.axoniq.framework:axoniq-legacy-test` plus an
   `@AfterEach` tear-down when `SagaTestFixture` is used. Replaces static
   `SagaLifecycle` calls with an injected `SagaLifecycle` handler parameter, and
-  a `CommandGateway` field with a `CommandDispatcher` handler parameter.
+  a `CommandGateway` field with a `CommandDispatcher` handler parameter. Leaves a
+  `TODO(axon4to5)` marker on the other `@Autowired` or `@Inject` Saga fields
+  and on `ResourceInjector` usage, because Axon Framework 5 resolves Saga
+  collaborators as handler parameters instead of injecting fields.
 recipeList:
   # `onlyIfUsing` evaluates the AF4-typed source model before source rewrites run.
   - org.openrewrite.java.dependencies.AddDependency:
@@ -59,3 +62,6 @@ recipeList:
 
   - org.axonframework.migration.MigrateSagaLifecycle
   - org.axonframework.migration.MigrateCommandGatewayInSagaEventHandler
+  # Runs after the CommandGateway migration, which already turned that field into a
+  # handler parameter, so only the remaining injected fields are marked.
+  - org.axonframework.migration.MarkSagaResourceInjection

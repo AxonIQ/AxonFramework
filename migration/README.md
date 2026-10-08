@@ -49,6 +49,9 @@ After the migration run, search for every such location with:
 - **Legacy sagas** (`UpgradeAxon4ToAxoniq5` only): adds `io.axoniq.framework:axoniq-legacy` when Saga source types are
   present, replaces static `SagaLifecycle` calls with an injected lifecycle parameter, and replaces Saga
   `CommandGateway` fields with `CommandDispatcher` handler parameters. Saga handlers stay synchronous; `send` remains fire-and-forget and `sendAndWait` keeps waiting.
+  Other `@Autowired` or `@Inject` Saga fields, and any `ResourceInjector` usage, get a `TODO(axon4to5)` marker: Axon
+  Framework 5 does not inject Saga fields, so move each dependency to a parameter of the `@SagaEventHandler` methods
+  that use it.
 - **Spring config**: renames `axon.serializer.*` properties to `axon.converter.*` in `application.properties`/YAML, and
   adds advisory TODOs above obsolete `sequencing-policy` settings. Also **migrates Spring Boot snapshotting
   configuration** from the AF4 two-step pattern (`@Bean SnapshotTriggerDefinition` + `@Aggregate(snapshotTriggerDefinition
