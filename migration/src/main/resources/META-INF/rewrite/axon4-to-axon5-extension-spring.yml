@@ -73,10 +73,9 @@ recipeList:
       oldPackageName: org.axonframework.spring.modelling
       newPackageName: org.axonframework.extension.spring.modelling
       recursive: true
-  - org.openrewrite.java.ChangePackage:
-      oldPackageName: org.axonframework.spring.saga
-      newPackageName: org.axonframework.extension.spring.saga
-      recursive: true
+  # `org.axonframework.spring.saga` is left alone on purpose: its only type,
+  # `SpringResourceInjector`, has no Axon Framework 5 counterpart. The commercial
+  # `Axon4ToAxoniq5LegacySaga` marks its usage with a TODO instead.
   - org.openrewrite.java.ChangePackage:
       oldPackageName: org.axonframework.spring.serialization
       newPackageName: org.axonframework.extension.spring.serialization

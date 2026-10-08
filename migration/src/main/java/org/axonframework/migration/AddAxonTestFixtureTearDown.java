@@ -85,7 +85,7 @@ public class AddAxonTestFixtureTearDown extends Recipe {
     @Option(displayName = "Fixture type",
             description = "Fully qualified name of the fixture type whose field must be stopped. "
                     + "Defaults to `org.axonframework.test.fixture.AxonTestFixture`. "
-                    + "`Axon4ToAxon5Legacy` uses it for `org.axonframework.test.saga.SagaTestFixture`.",
+                    + "`Axon4ToAxoniq5LegacySaga` uses it for `org.axonframework.test.saga.SagaTestFixture`.",
             example = "org.axonframework.test.saga.SagaTestFixture",
             required = false)
     @Nullable

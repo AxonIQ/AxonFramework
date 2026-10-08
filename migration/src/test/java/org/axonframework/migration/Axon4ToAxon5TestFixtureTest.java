@@ -452,7 +452,7 @@ class Axon4ToAxon5TestFixtureTest implements RewriteTest {
     @Test
     void leavesSagaTestFixtureAlone() {
         // SagaTestFixture is ported by axoniq-legacy-test for sagas that keep running on axoniq-legacy.
-        // Neither the type nor the setup changes. Axon4ToAxon5Legacy adds the dependency and the tear-down.
+        // Neither the type nor the setup changes. Axon4ToAxoniq5LegacySaga adds the dependency and the tear-down.
         rewriteRun(
                 java(
                         """
