@@ -209,12 +209,6 @@
             <artifactId>cache-api</artifactId>
             <scope>test</scope>
         </dependency>
-        <!-- Scheduling -->
-        <dependency>
-            <groupId>org.quartz-scheduler</groupId>
-            <artifactId>quartz</artifactId>
-            <optional>true</optional>
-        </dependency>
         <!-- Project Reactor -->
         <dependency>
             <groupId>io.projectreactor</groupId>
