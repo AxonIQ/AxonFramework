@@ -37,6 +37,7 @@ import org.axonframework.messaging.core.conversion.MessageConverter;
 import org.axonframework.messaging.eventhandling.conversion.EventConverter;
 import org.axonframework.modelling.EntityIdResolver;
 import org.axonframework.modelling.annotation.AnnotationBasedEntityIdResolverDefinition;
+import org.axonframework.modelling.annotation.DefaultEntityIdResolverDefinition;
 import org.axonframework.modelling.annotation.EntityIdResolverDefinition;
 import org.axonframework.modelling.entity.EntityMetamodel;
 import org.axonframework.modelling.entity.annotation.AnnotatedEntityMetamodel;
@@ -177,7 +178,7 @@ class AnnotatedEventSourcedEntityModule<I, E>
     }
 
     private static @Nullable EntityIdResolverDefinition explicitDefinitionFor(Class<EntityIdResolverDefinition> type) {
-        return AnnotationBasedEntityIdResolverDefinition.class.equals(type)
+        return DefaultEntityIdResolverDefinition.class.equals(type)
                 ? null
                 : getConstructorFunctionWithZeroArguments(type).get();
     }

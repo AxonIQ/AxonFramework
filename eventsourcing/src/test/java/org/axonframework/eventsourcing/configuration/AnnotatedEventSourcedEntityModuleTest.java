@@ -59,6 +59,7 @@ import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.modelling.EntityIdResolver;
 import org.axonframework.modelling.StateManager;
+import org.axonframework.modelling.annotation.AnnotationBasedEntityIdResolverDefinition;
 import org.axonframework.modelling.annotation.EntityIdResolverDefinition;
 import org.axonframework.modelling.annotation.TargetEntityId;
 import org.axonframework.modelling.entity.EntityMetamodel;
@@ -710,6 +711,36 @@ class AnnotatedEventSourcedEntityModuleTest {
             assertThat(loaded).isEqualTo(new TestEntityId("explicit-definition"));
         }
 
+        @Test
+        void respectsAnExplicitAnnotationBasedEntityIdResolverDefinitionEvenWithARegisteredConfigurationOverride() {
+            // given
+            AxonConfiguration configuration =
+                    EventSourcingConfigurer.create()
+                                           .componentRegistry(cr -> cr.registerComponent(
+                                                   EntityIdResolverDefinition.class,
+                                                   c -> new StubEntityIdResolverDefinition(new TestEntityId(
+                                                           "configuration-override"
+                                                   ))
+                                           ))
+                                           .componentRegistry(cr -> cr.registerModule(
+                                                   EventSourcedEntityModule.autodetected(
+                                                           TestEntityId.class, ExplicitAnnotationBasedCourse.class
+                                                   )
+                                           ))
+                                           .start();
+            CommandGateway commandGateway = configuration.getComponent(CommandGateway.class);
+            commandGateway.sendAndWait(new CreateCourse(new TestEntityId("course-1")));
+            commandGateway.sendAndWait(new CreateCourse(new TestEntityId("configuration-override")));
+
+            // when
+            TestEntityId loaded = commandGateway.sendAndWait(
+                    new RenameCourse(new TestEntityId("course-1"), "DDD"), TestEntityId.class
+            );
+
+            // then
+            assertThat(loaded).isEqualTo(new TestEntityId("course-1"));
+        }
+
         record TestEntityId(String value) {
 
         }
@@ -760,6 +791,32 @@ class AnnotatedEventSourcedEntityModuleTest {
 
             @EntityCreator
             ExplicitResolverCourse() {
+            }
+
+            @CommandHandler
+            static void handle(CreateCourse command, EventAppender appender) {
+                appender.append(new CourseCreated(command.id()));
+            }
+
+            @CommandHandler
+            TestEntityId handle(RenameCourse command) {
+                return id;
+            }
+
+            @EventSourcingHandler
+            void on(CourseCreated event) {
+                this.id = event.id();
+            }
+        }
+
+        @SuppressWarnings("unused")
+        @EventSourcedEntity(tagKey = "testEntityId", entityIdResolverDefinition = AnnotationBasedEntityIdResolverDefinition.class)
+        static class ExplicitAnnotationBasedCourse {
+
+            private TestEntityId id;
+
+            @EntityCreator
+            ExplicitAnnotationBasedCourse() {
             }
 
             @CommandHandler
