@@ -25,9 +25,10 @@ import org.axonframework.eventsourcing.annotation.EventCriteriaBuilder;
 import org.axonframework.eventsourcing.annotation.EventSourcedEntity;
 import org.axonframework.eventsourcing.annotation.EventSourcedEntityFactoryDefinition;
 import org.axonframework.eventsourcing.annotation.reflection.AnnotationBasedEventSourcedEntityFactoryDefinition;
-import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.messaging.commandhandling.CommandMessage;
+import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.modelling.annotation.AnnotationBasedEntityIdResolverDefinition;
+import org.axonframework.modelling.annotation.DefaultEntityIdResolverDefinition;
 import org.axonframework.modelling.annotation.EntityIdResolverDefinition;
 import org.axonframework.modelling.annotation.TargetEntityId;
 import org.axonframework.modelling.entity.annotation.AnnotatedEntityMetamodel;
@@ -41,7 +42,8 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Annotation that informs Axon's auto configurer for Spring that a given {@link Component} is an event-sourced entity instance.
+ * Annotation that informs Axon's auto configurer for Spring that a given {@link Component} is an event-sourced entity
+ * instance.
  * <p>This annotation is a meta-annotation of {@link EventSourcedEntity} allowing to put the configuration
  * directly.</p>
  *
@@ -115,13 +117,15 @@ public @interface EventSourced {
 
     /**
      * The definition of the {@link EntityIdResolverDefinition} to use to resolve the entity id from a
-     * {@link CommandMessage command message}. Defaults to the
-     * {@link AnnotationBasedEntityIdResolverDefinition}, which resolves the entity id based on the
-     * {@link TargetEntityId} annotation on a payload field or method. Conversion of the payload to the
-     * representation wanted by the entity is applied by the module before resolution.
+     * {@link CommandMessage command message}.
+     * <p>
+     * Defaults to {@link DefaultEntityIdResolverDefinition}, a {@link AnnotationBasedEntityIdResolverDefinition}
+     * implementation that resolves the entity id based on the {@link TargetEntityId} annotation on a payload field or
+     * method. Conversion of the payload to the representation wanted by the entity is applied by the module before
+     * resolution.
      *
-     * @return The definition to construct an {@link EntityIdResolverDefinition}.
+     * @return the definition to construct an {@link EntityIdResolverDefinition}
      */
     @AliasFor(annotation = EventSourcedEntity.class, attribute = "entityIdResolverDefinition")
-    Class<? extends EntityIdResolverDefinition> entityIdResolverDefinition() default AnnotationBasedEntityIdResolverDefinition.class;
+    Class<? extends EntityIdResolverDefinition> entityIdResolverDefinition() default DefaultEntityIdResolverDefinition.class;
 }
