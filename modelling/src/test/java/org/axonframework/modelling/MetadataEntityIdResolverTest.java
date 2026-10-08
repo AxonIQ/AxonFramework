@@ -16,6 +16,7 @@
 
 package org.axonframework.modelling;
 
+import org.axonframework.conversion.Converter;
 import org.axonframework.conversion.PassThroughConverter;
 import org.axonframework.messaging.commandhandling.GenericCommandMessage;
 import org.axonframework.messaging.core.Message;
@@ -26,6 +27,8 @@ import org.junit.jupiter.api.*;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
 
 /**
  * Test class validating the {@link MetadataEntityIdResolver}.
@@ -124,10 +127,9 @@ class MetadataEntityIdResolverTest {
         @Test
         void delegatesTheResolvedMetadataValueAndIdTypeToTheGivenConverter() throws EntityIdResolutionException {
             // given
-            // PassThroughConverter only "converts" between identical source and target types, so a successful
-            // result here proves MetadataEntityIdResolver passed both the resolved value and String.class through.
+            Converter converter = spy(PassThroughConverter.INSTANCE);
             MetadataEntityIdResolver<String> testSubject =
-                    new MetadataEntityIdResolver<>(METADATA_KEY, String.class, PassThroughConverter.INSTANCE);
+                    new MetadataEntityIdResolver<>(METADATA_KEY, String.class, converter);
             record Payload() {
 
             }
@@ -140,6 +142,7 @@ class MetadataEntityIdResolverTest {
 
             // then
             assertThat(result).isEqualTo("entity-1");
+            verify(converter).convert("entity-1", String.class);
         }
     }
 }
