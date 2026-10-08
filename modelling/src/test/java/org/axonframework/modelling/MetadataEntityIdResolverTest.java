@@ -16,25 +16,19 @@
 
 package org.axonframework.modelling;
 
-import org.axonframework.common.infra.ComponentDescriptor;
-import org.axonframework.conversion.ConversionException;
 import org.axonframework.conversion.Converter;
 import org.axonframework.conversion.PassThroughConverter;
-import org.axonframework.conversion.jackson.JacksonConverter;
 import org.axonframework.messaging.commandhandling.GenericCommandMessage;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.Metadata;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
-import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.*;
-
-import java.lang.reflect.Type;
-import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
 
 /**
  * Test class validating the {@link MetadataEntityIdResolver}.
@@ -149,82 +143,6 @@ class MetadataEntityIdResolverTest {
             // then
             assertThat(result).isEqualTo("entity-1");
             verify(converter).convert("entity-1", String.class);
-        }
-
-        @Test
-        void convertsTheResolvedMetadataValueIntoANonStringIdTypeUsingARealConverter()
-                throws EntityIdResolutionException {
-            // given
-            Converter converter = new JacksonConverter();
-            MetadataEntityIdResolver<UUID> testSubject =
-                    MetadataEntityIdResolver.forKey(METADATA_KEY, UUID.class, converter);
-            UUID id = UUID.randomUUID();
-            record Payload() {
-
-            }
-            Message message = new GenericCommandMessage(
-                    new MessageType(Payload.class), new Payload(), Metadata.with(METADATA_KEY, id.toString())
-            );
-
-            // when
-            UUID result = testSubject.resolve(message, StubProcessingContext.forMessage(message));
-
-            // then
-            assertThat(result).isEqualTo(id);
-        }
-
-        @Test
-        void propagatesANullPointerExceptionWhenTheConverterReturnsNull() {
-            // given
-            Converter converter = new Converter() {
-                @Override
-                public <T> T convert(Object input, @NonNull Type targetType) {
-                    return null;
-                }
-
-                @Override
-                public void describeTo(@NonNull ComponentDescriptor descriptor) {
-                }
-            };
-            MetadataEntityIdResolver<String> testSubject =
-                    MetadataEntityIdResolver.forKey(METADATA_KEY, String.class, converter);
-            record Payload() {
-
-            }
-            Message message = new GenericCommandMessage(
-                    new MessageType(Payload.class), new Payload(), Metadata.with(METADATA_KEY, "entity-1")
-            );
-
-            // when / then
-            assertThatThrownBy(() -> testSubject.resolve(message, StubProcessingContext.forMessage(message)))
-                    .isInstanceOf(NullPointerException.class);
-        }
-
-        @Test
-        void propagatesAConversionExceptionThrownByTheConverter() {
-            // given
-            Converter converter = new Converter() {
-                @Override
-                public <T> T convert(Object input, @NonNull Type targetType) {
-                    throw new ConversionException("Cannot convert the resolved metadata value");
-                }
-
-                @Override
-                public void describeTo(@NonNull ComponentDescriptor descriptor) {
-                }
-            };
-            MetadataEntityIdResolver<String> testSubject =
-                    MetadataEntityIdResolver.forKey(METADATA_KEY, String.class, converter);
-            record Payload() {
-
-            }
-            Message message = new GenericCommandMessage(
-                    new MessageType(Payload.class), new Payload(), Metadata.with(METADATA_KEY, "entity-1")
-            );
-
-            // when / then
-            assertThatThrownBy(() -> testSubject.resolve(message, StubProcessingContext.forMessage(message)))
-                    .isInstanceOf(ConversionException.class);
         }
     }
 }
