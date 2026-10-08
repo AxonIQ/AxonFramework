@@ -36,6 +36,7 @@ import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
 import org.axonframework.messaging.core.conversion.MessageConverter;
 import org.axonframework.messaging.eventhandling.conversion.EventConverter;
 import org.axonframework.modelling.EntityIdResolver;
+import org.axonframework.modelling.annotation.AnnotationBasedEntityIdResolverDefinition;
 import org.axonframework.modelling.annotation.EntityIdResolverDefinition;
 import org.axonframework.modelling.entity.EntityMetamodel;
 import org.axonframework.modelling.entity.annotation.AnnotatedEntityMetamodel;
@@ -99,7 +100,7 @@ class AnnotatedEventSourcedEntityModule<I, E>
         if (hasSnapshottingAnnotation) {
             Map<String, Object> resolved = AnnotationUtils
                     .findAnnotationAttributesOnType(entityType, Snapshotting.class,
-                                                   AnnotatedEventSourcedEntityModule::hasConcreteSnapshotValue)
+                                                    AnnotatedEventSourcedEntityModule::hasConcreteSnapshotValue)
                     .orElseThrow(() -> new AxonConfigurationException(
                             "@Snapshotting on [" + entityType.getName()
                                     + "] could not resolve a concrete trigger. "
@@ -160,8 +161,8 @@ class AnnotatedEventSourcedEntityModule<I, E>
     @SuppressWarnings("unchecked")
     private ComponentBuilder<EntityIdResolver<I>> entityIdResolver(Map<String, Object> annotationAttributes) {
         var type = (Class<EntityIdResolverDefinition>) annotationAttributes.get("entityIdResolverDefinition");
-        var definition = getConstructorFunctionWithZeroArguments(type).get();
         return c -> {
+            EntityIdResolverDefinition definition = entityIdResolverDefinition(c, type);
             AnnotatedEntityMetamodel<E> annotatedMetamodel = getOrBuildMetamodel(c);
             EntityMetamodel<E> metamodel = c.getComponent(EntityMetamodel.class, entityName());
             EntityIdResolver<I> inner = definition.createIdResolver(entityType, idType, metamodel, c);
@@ -171,6 +172,36 @@ class AnnotatedEventSourcedEntityModule<I, E>
                     c.getComponent(MessageConverter.class)
             );
         };
+    }
+
+    /**
+     * Resolves which {@link EntityIdResolverDefinition} to construct the entity's {@link EntityIdResolver} with.
+     * <p>
+     * {@code type} is the {@code entityIdResolverDefinition} attribute read off the entity's
+     * {@code @EventSourcedEntity}/{@code @EventSourced} annotation. When it names an explicit, non-default definition,
+     * that choice always wins. Only when the attribute is left at its default
+     * ({@link AnnotationBasedEntityIdResolverDefinition}) is an optional {@code config}-registered
+     * {@link EntityIdResolverDefinition} component consulted, falling back to constructing
+     * {@link AnnotationBasedEntityIdResolverDefinition} directly when none is registered. This lets an application
+     * register a {@link Configuration}-wide default without overriding entities that already name their own, explicit
+     * definition.
+     *
+     * @param config the configuration to resolve an optional {@link EntityIdResolverDefinition} component from
+     * @param type   the {@code entityIdResolverDefinition} class named by the entity's annotation, possibly its
+     *               default
+     * @return the {@link EntityIdResolverDefinition} to construct the entity's {@link EntityIdResolver} with
+     */
+    private static EntityIdResolverDefinition entityIdResolverDefinition(
+            Configuration config,
+            Class<EntityIdResolverDefinition> type
+    ) {
+        EntityIdResolverDefinition explicitDefinition = AnnotationBasedEntityIdResolverDefinition.class.equals(type)
+                ? null
+                : getConstructorFunctionWithZeroArguments(type).get();
+        return explicitDefinition != null
+                ? explicitDefinition
+                : config.getOptionalComponent(EntityIdResolverDefinition.class)
+                        .orElseGet(AnnotationBasedEntityIdResolverDefinition::new);
     }
 
     private static boolean hasConcreteSnapshotValue(Map<String, Object> attrs) {
@@ -206,12 +237,12 @@ class AnnotatedEventSourcedEntityModule<I, E>
     }
 
     /**
-     * Collects the types from {@link EventSourcedEntity#concreteTypes()} and subtypes of sealed superType, if
-     * the given {@link #entityType} is sealed.
+     * Collects the types from {@link EventSourcedEntity#concreteTypes()} and subtypes of sealed superType, if the given
+     * {@link #entityType} is sealed.
      *
      * @param attributes the annotation properties derived from {@link EventSourcedEntity}
      * @return set of classes that are either explicitly configured via <code>concreteTypes</code> or derived from the
-     *         sealed supertype
+     * sealed supertype
      */
     private Set<Class<? extends E>> getConcreteEntityTypes(Map<String, Object> attributes) {
         @SuppressWarnings("unchecked")
