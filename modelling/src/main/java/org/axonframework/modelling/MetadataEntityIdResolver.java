@@ -35,10 +35,10 @@ import java.util.Objects;
  * looking up the given {@code key} in the message's metadata. If the {@code key} is absent, or maps to a blank value, a
  * {@link EntityIdResolutionException} is thrown.
  * <p>
- * Metadata values are always {@link String Strings}. The single-argument constructor enforces this: it assumes
- * {@code ID} to be {@link String} itself, returning the metadata value unconverted. To resolve an identifier of another
- * type, a {@code String}-converted identifier can be converted back to the required type. For that, use the constructor
- * taking a {@link Converter} and the target {@code idType}.
+ * Metadata values are always {@link String Strings}. The {@link #forKey(String)} factory method enforces this: it
+ * assumes {@code ID} to be {@link String} itself, returning the metadata value unconverted. To resolve an identifier of
+ * another type, a {@code String}-converted identifier can be converted back to the required type. For that, use
+ * {@link #forKey(String, Class, Converter)}.
  *
  * @param <ID> the type of the identifier to resolve
  * @author Steven van Beelen
@@ -49,40 +49,50 @@ import java.util.Objects;
 public class MetadataEntityIdResolver<ID> implements EntityIdResolver<ID>, DescribableComponent {
 
     private final String key;
-    @Nullable
     private final Class<ID> idType;
     @Nullable
     private final Converter converter;
 
-    /**
-     * Initializes the resolver with the given {@code key}, enforcing {@code ID} to be {@link String}.
-     *
-     * @param key the name of the metadata entry to resolve the identifier from
-     */
-    public MetadataEntityIdResolver(String key) {
+    private MetadataEntityIdResolver(String key,
+                                     Class<ID> idType,
+                                     @Nullable Converter converter) {
         BuilderUtils.assertNonEmpty(key, "The metadata key cannot be empty or null");
         this.key = key;
-        this.idType = null;
-        this.converter = null;
+        this.idType = idType;
+        this.converter = converter;
     }
 
     /**
-     * Initializes the resolver with the given {@code key}, converting the resolved metadata value into the given
-     * {@code idType} using the given {@code converter}.
+     * Constructs a {@code MetadataEntityIdResolver} resolving the identifier from the given {@code key}, enforcing
+     * {@code ID} to be {@link String}.
+     *
+     * @param key the name of the metadata entry to resolve the identifier from
+     * @return a {@code MetadataEntityIdResolver} resolving a {@link String} identifier from the given {@code key}
+     */
+    public static MetadataEntityIdResolver<String> forKey(String key) {
+        return new MetadataEntityIdResolver<>(key, String.class, null);
+    }
+
+    /**
+     * Constructs a {@code MetadataEntityIdResolver} resolving the identifier from the given {@code key}, converting the
+     * resolved metadata value into the given {@code idType} using the given {@code converter}.
      *
      * @param key       the name of the metadata entry to resolve the identifier from
      * @param idType    the type to convert the resolved metadata value into
      * @param converter the {@link Converter} to convert the resolved metadata value with
+     * @param <ID>      the type of the identifier to resolve
+     * @return a {@code MetadataEntityIdResolver} resolving an identifier of the given {@code idType} from the given
+     * {@code key}
      */
-    public MetadataEntityIdResolver(String key, Class<ID> idType, Converter converter) {
-        BuilderUtils.assertNonEmpty(key, "The metadata key cannot be empty or null");
-        this.key = key;
-        this.idType = Objects.requireNonNull(idType, "The id type may not be null.");
-        this.converter = Objects.requireNonNull(converter, "The Converter may not be null.");
+    public static <ID> MetadataEntityIdResolver<ID> forKey(String key, Class<ID> idType, Converter converter) {
+        return new MetadataEntityIdResolver<>(
+                key,
+                Objects.requireNonNull(idType, "The id type may not be null."),
+                Objects.requireNonNull(converter, "The Converter may not be null.")
+        );
     }
 
     @Override
-    @SuppressWarnings("unchecked")
     public ID resolve(
             Message message,
             ProcessingContext context
@@ -95,7 +105,7 @@ public class MetadataEntityIdResolver<ID> implements EntityIdResolver<ID>, Descr
         }
 
         return converter == null
-                ? (ID) value // Cast is still required to comply with API.
+                ? idType.cast(value)
                 : Objects.requireNonNull(converter.convert(value, idType), "The converted identifier cannot be null.");
     }
 

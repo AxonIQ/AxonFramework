@@ -39,35 +39,35 @@ class MetadataEntityIdResolverTest {
 
     private static final String METADATA_KEY = "targetEntityId";
 
-    private final MetadataEntityIdResolver<Object> testSubject = new MetadataEntityIdResolver<>(METADATA_KEY);
+    private final MetadataEntityIdResolver<String> testSubject = MetadataEntityIdResolver.forKey(METADATA_KEY);
 
     @Nested
     class Construction {
 
         @Test
         void rejectsAnEmptyMetadataKey() {
-            assertThatThrownBy(() -> new MetadataEntityIdResolver<>(""))
+            assertThatThrownBy(() -> MetadataEntityIdResolver.forKey(""))
                     .isInstanceOf(org.axonframework.common.AxonConfigurationException.class);
         }
 
         @SuppressWarnings("DataFlowIssue")
         @Test
         void rejectsANullMetadataKey() {
-            assertThatThrownBy(() -> new MetadataEntityIdResolver<>(null))
+            assertThatThrownBy(() -> MetadataEntityIdResolver.forKey(null))
                     .isInstanceOf(org.axonframework.common.AxonConfigurationException.class);
         }
 
         @SuppressWarnings("DataFlowIssue")
         @Test
         void rejectsANullIdTypeWithAConverter() {
-            assertThatThrownBy(() -> new MetadataEntityIdResolver<>(METADATA_KEY, null, PassThroughConverter.INSTANCE))
+            assertThatThrownBy(() -> MetadataEntityIdResolver.forKey(METADATA_KEY, null, PassThroughConverter.INSTANCE))
                     .isInstanceOf(NullPointerException.class);
         }
 
         @SuppressWarnings("DataFlowIssue")
         @Test
         void rejectsANullConverter() {
-            assertThatThrownBy(() -> new MetadataEntityIdResolver<>(METADATA_KEY, String.class, null))
+            assertThatThrownBy(() -> MetadataEntityIdResolver.forKey(METADATA_KEY, String.class, null))
                     .isInstanceOf(NullPointerException.class);
         }
     }
@@ -86,7 +86,7 @@ class MetadataEntityIdResolverTest {
             );
 
             // when
-            Object result = testSubject.resolve(message, StubProcessingContext.forMessage(message));
+            String result = testSubject.resolve(message, StubProcessingContext.forMessage(message));
 
             // then
             assertThat(result).isEqualTo("entity-1");
@@ -129,7 +129,7 @@ class MetadataEntityIdResolverTest {
             // given
             Converter converter = spy(PassThroughConverter.INSTANCE);
             MetadataEntityIdResolver<String> testSubject =
-                    new MetadataEntityIdResolver<>(METADATA_KEY, String.class, converter);
+                    MetadataEntityIdResolver.forKey(METADATA_KEY, String.class, converter);
             record Payload() {
 
             }
