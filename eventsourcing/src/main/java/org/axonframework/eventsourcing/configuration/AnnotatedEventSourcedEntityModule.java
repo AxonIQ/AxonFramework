@@ -40,6 +40,7 @@ import org.axonframework.modelling.annotation.AnnotationBasedEntityIdResolverDef
 import org.axonframework.modelling.annotation.EntityIdResolverDefinition;
 import org.axonframework.modelling.entity.EntityMetamodel;
 import org.axonframework.modelling.entity.annotation.AnnotatedEntityMetamodel;
+import org.jspecify.annotations.Nullable;
 
 import java.time.Duration;
 import java.util.Arrays;
@@ -161,8 +162,9 @@ class AnnotatedEventSourcedEntityModule<I, E>
     @SuppressWarnings("unchecked")
     private ComponentBuilder<EntityIdResolver<I>> entityIdResolver(Map<String, Object> annotationAttributes) {
         var type = (Class<EntityIdResolverDefinition>) annotationAttributes.get("entityIdResolverDefinition");
+        EntityIdResolverDefinition explicitDefinition = explicitDefinitionFor(type);
         return c -> {
-            EntityIdResolverDefinition definition = entityIdResolverDefinition(c, type);
+            EntityIdResolverDefinition definition = entityIdResolverDefinition(explicitDefinition, c);
             AnnotatedEntityMetamodel<E> annotatedMetamodel = getOrBuildMetamodel(c);
             EntityMetamodel<E> metamodel = c.getComponent(EntityMetamodel.class, entityName());
             EntityIdResolver<I> inner = definition.createIdResolver(entityType, idType, metamodel, c);
@@ -174,30 +176,33 @@ class AnnotatedEventSourcedEntityModule<I, E>
         };
     }
 
+    private static @Nullable EntityIdResolverDefinition explicitDefinitionFor(Class<EntityIdResolverDefinition> type) {
+        return AnnotationBasedEntityIdResolverDefinition.class.equals(type)
+                ? null
+                : getConstructorFunctionWithZeroArguments(type).get();
+    }
+
     /**
      * Resolves which {@link EntityIdResolverDefinition} to construct the entity's {@link EntityIdResolver} with.
      * <p>
-     * {@code type} is the {@code entityIdResolverDefinition} attribute read off the entity's
-     * {@code @EventSourcedEntity}/{@code @EventSourced} annotation. When it names an explicit, non-default definition,
-     * that choice always wins. Only when the attribute is left at its default
-     * ({@link AnnotationBasedEntityIdResolverDefinition}) is an optional {@code config}-registered
-     * {@link EntityIdResolverDefinition} component consulted, falling back to constructing
-     * {@link AnnotationBasedEntityIdResolverDefinition} directly when none is registered. This lets an application
-     * register a {@link Configuration}-wide default without overriding entities that already name their own, explicit
-     * definition.
+     * A non-{@code null} {@code explicitDefinition}, the entity's {@code @EventSourcedEntity}/{@code @EventSourced}
+     * annotation named one explicitly, see {@link #explicitDefinitionFor(Class)}, always wins. Only when
+     * {@code explicitDefinition} is {@code null}, meaning the annotation left {@code entityIdResolverDefinition} at
+     * its default, is an optional {@code config}-registered {@link EntityIdResolverDefinition} component consulted,
+     * falling back to constructing {@link AnnotationBasedEntityIdResolverDefinition} directly when none is
+     * registered. This lets an application register a {@link Configuration}-wide default without overriding entities
+     * that already name their own, explicit definition.
      *
-     * @param config the configuration to resolve an optional {@link EntityIdResolverDefinition} component from
-     * @param type   the {@code entityIdResolverDefinition} class named by the entity's annotation, possibly its
-     *               default
+     * @param explicitDefinition the explicitly named {@link EntityIdResolverDefinition}, or {@code null} when the
+     *                           entity's annotation left {@code entityIdResolverDefinition} at its default
+     * @param config             the configuration to resolve an optional {@link EntityIdResolverDefinition} component
+     *                           from
      * @return the {@link EntityIdResolverDefinition} to construct the entity's {@link EntityIdResolver} with
      */
     private static EntityIdResolverDefinition entityIdResolverDefinition(
-            Configuration config,
-            Class<EntityIdResolverDefinition> type
+            @Nullable EntityIdResolverDefinition explicitDefinition,
+            Configuration config
     ) {
-        EntityIdResolverDefinition explicitDefinition = AnnotationBasedEntityIdResolverDefinition.class.equals(type)
-                ? null
-                : getConstructorFunctionWithZeroArguments(type).get();
         return explicitDefinition != null
                 ? explicitDefinition
                 : config.getOptionalComponent(EntityIdResolverDefinition.class)
