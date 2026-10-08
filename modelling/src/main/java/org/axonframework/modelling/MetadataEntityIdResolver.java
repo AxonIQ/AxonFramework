@@ -24,7 +24,6 @@ import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.jspecify.annotations.Nullable;
 
-import java.util.List;
 import java.util.Objects;
 
 /**
@@ -90,7 +89,9 @@ public class MetadataEntityIdResolver<ID> implements EntityIdResolver<ID>, Descr
     ) throws EntityIdResolutionException {
         String value = message.metadata().get(key);
         if (value == null || value.isBlank()) {
-            throw new EntityIdResolutionException(message.payloadType(), List.of());
+            throw new EntityIdResolutionException(
+                    "Unable to resolve entity identifier under key [" + key + "] from the message's metadata."
+            );
         }
 
         return converter == null
