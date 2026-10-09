@@ -1,0 +1,151 @@
+= Message Scheduling
+:navtitle: Message Scheduling
+:reftext: Message Scheduling
+
+A reminder that fires an hour before a bike rental is due back.
+A command that cancels a rental's payment request if it has not arrived in time.
+Both are reactions with a time-based trigger.
+Something has to fire at a *point in time*, not in response to something that happened.
+
+Axon Framework deliberately has no dedicated scheduling API.
+There are dozens of mature scheduling tools solving this problem, each with its own semantics for persistence, clustering, retry, and cron-style recurrence.
+Any scheduling-agnostic API Axon would provide will either hide those choices behind a lowest-common-denominator abstraction or reimplement a subset of them.
+
+Hence, when you want to schedule a message to be sent at a given moment in time we recommend you pick a scheduling tool, wire the right gateway from the Framework, and trigger the dispatching when the chosen scheduler is triggered.
+That integration is the entire surface area.
+
+Scheduling a message, whichever tool fires it, always takes the same shape:
+
+. Pick a scheduling tool.
+. Pick the right message gateway from the Framework.
+. Schedule the publish or send call on that tool.
+. Handle the scheduled message like any in your application.
+
+As stated, there are numerous scheduling tools out there to choose from.
+Which fits your application is dependent on the requirements you have of them.
+Some options you have as a scheduling tool are:
+
+`ScheduledExecutorService`:: No persistence or clustering: a single instance, where losing a scheduled task on restart is acceptable.
+Used in the samples below because it needs no extra dependency.
+Spring's `@Scheduled`:: Same trade-off as `ScheduledExecutorService`, backed by Spring's task scheduling support instead of the JDK API directly.
+JobRunr:: Several storage backends: a relational database, MongoDB, Redis, and others.
+Built-in dashboard for inspecting scheduled and recurring jobs.
+Quartz:: A JDBC `JobStore` shares jobs across a cluster and survives a restart.
+Cron-expression support, widely deployed.
+db-scheduler:: A single database table, no extra infrastructure beyond the database already in use.
+Minimal: one table, one library, no separate server.
+
+[TIP]
+.Scheduling as part of a larger process
+====
+A scheduled event or command that stands on its own is what this page covers.
+When the wait is one step inside a longer business process, use
+xref:saga-guide:ROOT:workflows.adoc[Workflows] instead: waiting is written as an ordinary statement in the flow.
+Where Workflows are not available,
+xref:saga-guide:ROOT:deadlines.adoc[the deadline pattern] replaces a scheduler with a projection and a periodic sweep, at the cost of exact timing.
+====
+
+When it comes to scheduling messages, there are two types of message where doing so makes sense:
+<<scheduling-commands,scheduling command>> and <<scheduling-events,scheduling events>>.
+If you are dealing with a rather involved process, check out <<process-scheduling,process scheduling>> instead.
+
+[#scheduling-commands]
+== Scheduling commands
+
+You would schedule a command to trigger a specific *action* at a given point in time.
+A command always targets a specific command handler.
+Hence, a scheduled command is targeted to a domain-specific instance.
+Once triggered, this handler will decide whether the action can actually happen, refusing it based on state that may have changed since the command was scheduled.
+
+Scenarios when this is applicable are for example closing an account after a period of inactivity, checking a payment deadline that has passed, or validating a process step somewhere further down the line.
+
+Now let's look at a concrete example, a payment validate deadline.
+We should assume there is some process that schedules the `CancelRentalPayment` command, which will essentially cancel the payment request.
+The handler for this command validates if the rental payment should be canceled at that moment in time.
+If it was already paid, there's nothing to cancel.
+If it hasn't been paid yet, we do cancel, as the time window for payment has exceeded.
+
+Now, let's look at the command and the scheduler:
+
+[source,java]
+----
+include::example$messagescheduling/commands/PaymentTimeouts.java[tag=cancel-rental-payment,indent=0]
+----
+
+[source,java]
+----
+include::example$messagescheduling/commands/PaymentTimeouts.java[tag=schedule-command,indent=0]
+----
+
+<1> A `ScheduledExecutorService` for simplicity. Replace for whichever scheduling tool is preferred.
+<2> The command is sent through the `CommandGateway`, just like any other command, when the trigger fires.
+
+Once the deadline set by the `PaymentTimeouts` is met, the handler will receive a `CancelRentalPayment` and validate it like any other command:
+
+[source,java]
+----
+include::example$messagescheduling/commands/PaymentTimeouts.java[tag=cancel-rental-payment-handler,indent=0]
+----
+
+<1> The payment arrived before the timeout fired: the handler refuses the cancellation.
+<2> No confirmation arrived in time: the cancellation goes through.
+
+The above is a simple example showing how you can create a deadline to validate change within your system.
+Looking at the use case exactly, the payment may have arrived by the time the command fires, and cancelling an arrived payment is wrong.
+That shows a *decision* is to be made based on a *command*.
+If an event was used, it would state "rental payment canceled", while that is not know at the time of scheduling.
+
+[#scheduling-events]
+== Scheduling events
+
+Although <<scheduling-commands,scheduling a command>> is a typical use case in several applications, scheduling an event has a more limited set of uses.
+This stems from the fact that a scheduled event is broadcast by definition, as events are readable by anybody that connects to the source it was published in.
+There is no decision an event handler can make here since an event states a fact of something that has happened.
+The event handler thus needs to deal with this fact as it sees fit.
+
+As such, scheduling an event becomes applicable in applications whenever it is evident a deadline should notify a multitude of components about the deadline.
+The example below follows this style: a rental return reminder is shared, which several will be interested in.
+Namely, the renter *and* the rentee, as the renter should return the item and the rentee wants to know when something is due:
+
+[source,java]
+----
+include::example$messagescheduling/events/RentalReturnReminders.java[tag=rental-return-reminder-due,indent=0]
+----
+
+[source,java]
+----
+include::example$messagescheduling/events/RentalReturnReminders.java[tag=schedule-event,indent=0]
+----
+
+<1> A `ScheduledExecutorService` for simplicity. Replace for whichever scheduling tool is preferred.
+<2> The event is published through the `EventGateway` directly instead of the usual `EventAppender`.
+The latter is only to be used inside Axon's message handlers and the scheduler's trigger is not a message handler.
+Hence, the `EventGateway` is used instead.
+
+Each interested party reacts to `RentalReturnReminderDue` the same way it reacts to any other event, independently of the others.
+Nothing about it being scheduled rather than published immediately crosses into the handler.
+Here, the renter gets reminded to return the item, and the rentee gets notified the item is due back, each from its own handler:
+
+[source,java]
+----
+include::example$messagescheduling/events/RentalReturnReminders.java[tag=notify-renter,indent=0]
+----
+
+[source,java]
+----
+include::example$messagescheduling/events/RentalReturnReminders.java[tag=notify-rentee,indent=0]
+----
+
+[#process-scheduling]
+== Scheduling within a process
+
+A single scheduled message handles one decision pinned to one moment in time.
+A business process with several steps is a different shape.
+Each step commits on its own, state built up by earlier steps decides what a later step does, and a later step may have to wait on something that has not happened yet.
+A rental that moves through request, payment, pickup, and return is such a process.
+Whether a late payment should still be cancelled depends on which of those steps already completed, a decision no single scheduled message carries on its own.
+
+Compose a process like that with xref:saga-guide:ROOT:workflows.adoc[workflows] instead of scheduled messages.
+A workflow is a single imperative method that reads top to bottom.
+Waiting for a scheduled moment, or for another message to arrive, is an ordinary statement in that method, and Axoniq Framework persists its execution position so a restart resumes where it left off.
+See the xref:saga-guide:ROOT:workflows.adoc[Workflows reference] for the full picture.
