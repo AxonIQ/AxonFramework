@@ -32,12 +32,14 @@ import org.axonframework.examples.sagarecipes.rental.write.rejectrequest.RejectR
 import org.axonframework.examples.sagarecipes.saga.shared.RentalPaymentReference;
 import org.axonframework.examples.sagarecipes.saga.shared.RentalPricing;
 import org.axonframework.test.saga.SagaTestFixture;
+import org.axonframework.test.util.CallbackBehavior;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * The bike rental sample application's own {@code PaymentSagaTest}, kept as it was written.
@@ -166,6 +168,67 @@ class PaymentSagaTest {
                    .andThenAPublished(new PaymentConfirmed(paymentId, reference))
                    .whenTimeElapses(Duration.ofSeconds(30))
                    .expectNoDispatchedCommands();
+        }
+    }
+
+    /**
+     * The payment context may be unreachable when the Saga asks it to prepare a payment. The original did not give up,
+     * but asked again five seconds later, through a deadline.
+     */
+    @Nested
+    class PaymentRequestRetry {
+
+        private final CallbackBehavior unavailable = (command, metadata) -> {
+            throw new IllegalStateException("payment context unavailable");
+        };
+
+        @Test
+        void isNotScheduledWhenThePaymentIsPrepared() {
+            // given / when / then
+            fixture.givenNoPriorActivity()
+                   .whenPublishingA(new BikeRequested(bikeId, renter, rentalId))
+                   .expectNoScheduledDeadlines();
+        }
+
+        @Test
+        void isScheduledWhenPreparingThePaymentFails() {
+            // given
+            fixture.setCallbackBehavior(unavailable);
+
+            // when / then
+            fixture.givenNoPriorActivity()
+                   .whenPublishingA(new BikeRequested(bikeId, renter, rentalId))
+                   .expectScheduledDeadline(Duration.ofSeconds(5), reference.raw());
+        }
+
+        @Test
+        void asksForThePaymentAgainWhenTheDeadlineFires() {
+            // given the payment context is down for the first attempt only
+            AtomicInteger attempts = new AtomicInteger();
+            fixture.setCallbackBehavior((command, metadata) -> {
+                if (attempts.incrementAndGet() == 1) {
+                    return unavailable.handle(command, metadata);
+                }
+                return null;
+            });
+
+            // when / then
+            fixture.givenAPublished(new BikeRequested(bikeId, renter, rentalId))
+                   .whenTimeElapses(Duration.ofSeconds(5))
+                   .expectDispatchedCommands(new PreparePayment(reference, RentalPricing.PRICE))
+                   .expectNoScheduledDeadlines();
+        }
+
+        @Test
+        void keepsAskingWhileThePaymentContextStaysUnavailable() {
+            // given
+            fixture.setCallbackBehavior(unavailable);
+
+            // when / then
+            fixture.givenAPublished(new BikeRequested(bikeId, renter, rentalId))
+                   .whenTimeElapses(Duration.ofSeconds(5))
+                   .expectDispatchedCommands(new PreparePayment(reference, RentalPricing.PRICE))
+                   .expectScheduledDeadline(Duration.ofSeconds(5), reference.raw());
         }
     }
 }

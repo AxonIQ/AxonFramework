@@ -33,6 +33,8 @@ import org.axonframework.examples.sagarecipes.rental.write.approverequest.Approv
 import org.axonframework.examples.sagarecipes.rental.write.rejectrequest.RejectRequest;
 import org.axonframework.examples.sagarecipes.saga.shared.RentalPaymentReference;
 import org.axonframework.examples.sagarecipes.saga.shared.RentalPricing;
+import org.axonframework.messaging.Scope;
+import org.axonframework.messaging.ScopeDescriptor;
 import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher;
 import org.axonframework.modelling.saga.EndSaga;
 import org.axonframework.modelling.saga.SagaEventHandler;
@@ -55,10 +57,10 @@ import java.time.Duration;
  * <ul>
  *     <li>{@link StartSaga @StartSaga} is deprecated for removal. It is used here because the original used it, and
  *     showing Axon Framework 4 code as it was written is the whole point of this class.</li>
- *     <li>The handlers return {@code void} and never look at what the command did. Axon Framework 4's
- *     {@code commandGateway.send(..)} was fire-and-forget in exactly this way, and a failed command therefore left
- *     the process stuck. The Axon Framework 5 recipes return the {@code CompletableFuture} instead, which is what
- *     makes the event processor retry.</li>
+ *     <li>The handlers return {@code void} and, apart from the request for payment, never look at what the command
+ *     did. Axon Framework 4's {@code commandGateway.send(..)} was fire-and-forget in exactly this way, and a failed
+ *     approval or rejection therefore left the process stuck. The Axon Framework 5 recipes return the
+ *     {@code CompletableFuture} instead, which is what makes the event processor retry.</li>
  *     <li>{@code bikeId} and {@code renter} are mutable fields filled in by the {@code @StartSaga} handler.
  *     {@code PaymentConfirmed} and {@code PaymentRejected} carry neither, so the process has nowhere else to get
  *     them from. That is the state the recipes each find a different home for.</li>
@@ -71,11 +73,21 @@ import java.time.Duration;
  * {@link org.axonframework.conversion.Converter Converter}: this application converts with Jackson, which does not
  * see private fields by default, where Axon Framework 4 defaulted to XStream, which did.
  * <p>
- * The payment timeout is the original's own: a deadline scheduled when the payment is prepared, called off when the
- * request is rejected, and answered by rejecting the payment. The {@code DeadlineManager} reaches the handlers the same
- * way the {@code CommandDispatcher} does, as a parameter. The deadline's payload is the payment's raw identifier, a
- * {@link String} as in the original. The retry of a failed payment request is still parked below as commented-out Axon
- * Framework 4 code.
+ * Deadlines are ported with {@code axoniq-legacy}'s {@code DeadlineManager}, and they behave as they did. A prepared
+ * payment nobody confirms within 30 seconds is rejected, a rejected rental request calls that timeout off, and a
+ * request for payment the payment context could not take is made again five seconds later, through the same method
+ * that made the first attempt. Besides the {@code DeadlineManager} arriving as a parameter, three things differ.
+ * <ul>
+ *     <li>The deadline payloads are the raw {@link String}s of the payment's identifier and reference, as the
+ *     original's were, rather than {@code PaymentId} and {@code PaymentReference}, so they do not depend on how a
+ *     {@code DeadlineManager} stores or converts its payload.</li>
+ *     <li>A failed dispatch is noticed with {@code CommandResult.onError(..)}, since {@code send(..)} on a
+ *     {@code CommandDispatcher} returns a {@code CommandResult} rather than a {@code CompletableFuture}.</li>
+ *     <li>The class suppresses deprecation warnings, because {@code axoniq-legacy} deprecates scheduling new deadlines
+ *     through a {@code DeadlineManager}. It keeps Axon Framework 4 code running while migrating; it is not how to
+ *     schedule in new code. The recipe that does solve payment timeouts without a deadline manager is
+ *     {@code saga/deadline}.</li>
+ * </ul>
  *
  * @author Mateusz Nowak
  * @since 5.4.0
@@ -92,25 +104,20 @@ public class PaymentSaga {
     /**
      * Asks for payment as soon as a bike is requested, associating the Saga with the payment it is about to order.
      *
-     * @param event      the event that started this Saga
-     * @param lifecycle  gives access to this Saga's association values
-     * @param dispatcher dispatches the resulting command
+     * @param event           the event that started this Saga
+     * @param lifecycle       gives access to this Saga's association values
+     * @param dispatcher      dispatches the resulting command
+     * @param deadlineManager schedules and cancels this Saga's deadlines
      */
     @StartSaga
     @SagaEventHandler(associationProperty = "bikeId")
-    public void on(BikeRequested event, SagaLifecycle lifecycle, CommandDispatcher dispatcher) {
+    public void on(BikeRequested event, SagaLifecycle lifecycle, CommandDispatcher dispatcher,
+                   DeadlineManager deadlineManager) {
         this.bikeId = event.bikeId();
         this.renter = event.renter();
         PaymentReference reference = RentalPaymentReference.forRental(event.rentalId());
         lifecycle.associateWith("paymentReference", reference.raw());
-        dispatcher.send(new PreparePayment(reference, RentalPricing.PRICE));
-        // TODO #3065 - Axon Framework 4 retried a failed dispatch through a scheduled "retryPayment" deadline:
-        // commandGateway.send(new PreparePayment(reference, RentalPricing.PRICE))
-        //               .whenComplete((r, e) -> {
-        //                   if (e != null) {
-        //                       deadlineManager.schedule(Duration.ofSeconds(5), "retryPayment", reference, scope);
-        //                   }
-        //               });
+        preparePayment(reference.raw(), dispatcher, deadlineManager);
     }
 
     /**
@@ -178,16 +185,25 @@ public class PaymentSaga {
         dispatcher.send(new RejectPayment(PaymentId.of(paymentId)));
     }
 
-    // TODO #3065 - Axon Framework 4 re-attempted a dispatch that had failed, and asked for the payment in the first
-    // place through the very same method:
-    // @DeadlineHandler(deadlineName = "retryPayment")
-    // public void preparePayment(PaymentReference reference) {
-    //     ScopeDescriptor scope = Scope.describeCurrentScope();
-    //     commandGateway.send(new PreparePayment(reference, RentalPricing.PRICE))
-    //                   .whenComplete((r, e) -> {
-    //                       if (e != null) {
-    //                           deadlineManager.schedule(Duration.ofSeconds(5), "retryPayment", reference, scope);
-    //                       }
-    //                   });
-    // }
+    /**
+     * Asks for the payment, and asks again five seconds later whenever the command could not be dispatched.
+     * <p>
+     * The first attempt, made when the Saga starts, and every retry, made by the {@code retryPayment} deadline, go
+     * through this one method, as in the original. The Saga's scope is described before the command is dispatched,
+     * because the dispatch can fail after this handler has returned, when no scope is current any more.
+     *
+     * @param rentalReference the raw payment reference of the rental being paid for
+     * @param dispatcher      dispatches the resulting command
+     * @param deadlineManager schedules and cancels this Saga's deadlines
+     */
+    @DeadlineHandler(deadlineName = "retryPayment")
+    public void preparePayment(String rentalReference, CommandDispatcher dispatcher,
+                               DeadlineManager deadlineManager) {
+        ScopeDescriptor scope = Scope.describeCurrentScope();
+        dispatcher.send(new PreparePayment(PaymentReference.of(rentalReference), RentalPricing.PRICE))
+                  .onError(e -> deadlineManager.schedule(Duration.ofSeconds(5),
+                                                         "retryPayment",
+                                                         rentalReference,
+                                                         scope));
+    }
 }
