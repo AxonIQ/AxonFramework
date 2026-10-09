@@ -21,6 +21,7 @@ import org.axonframework.common.infra.DescribableComponent;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -61,8 +62,9 @@ public class SimpleEntityEvolvingComponent<E> implements EntityEvolvingComponent
         this.supportedEvents = Set.copyOf(this.entityEvolvers.keySet());
     }
 
+    @Nullable
     @Override
-    public E evolve(E entity,
+    public E evolve(@Nullable E entity,
                     EventMessage event,
                     ProcessingContext context) {
         QualifiedName eventName = event.type().qualifiedName();

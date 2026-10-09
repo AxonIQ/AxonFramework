@@ -83,6 +83,11 @@ Subsequent state changes produce a new instance returned from the `@EventSourcin
 
 When this form is used, command handlers must be split into xref:commands:entities/event-sourced-entity.adoc#_entity_members[creational and instance command handlers]: a creational handler appends the creation event before the entity exists, and instance handlers operate on the already-created entity for subsequent commands.
 
+[TIP]
+====
+As an alternative to a first-event-based creator, you can omit the creator entirely and create the entity from its first event with a xref:commands:entities/event-sourced-entity.adoc#_static_event_sourcing_handlers[static event sourcing handler], which receives the event and the current (possibly `null`) state and returns the next state.
+====
+
 === Declarative
 
 [source,java]

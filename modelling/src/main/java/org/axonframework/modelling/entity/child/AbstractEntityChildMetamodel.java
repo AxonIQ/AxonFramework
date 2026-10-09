@@ -25,6 +25,7 @@ import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.modelling.entity.ChildEntityNotFoundException;
 import org.axonframework.modelling.entity.EntityMetamodel;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -103,8 +104,13 @@ public abstract class AbstractEntityChildMetamodel<C, P> implements EntityChildM
         return metamodel.handleInstance(message, targetChildEntity, context);
     }
 
+    @Nullable
     @Override
-    public P evolve(P entity, EventMessage event, ProcessingContext context) {
+    public P evolve(@Nullable P entity, EventMessage event, ProcessingContext context) {
+        if (entity == null) {
+            // A not-yet-existing parent has no children to evolve.
+            return null;
+        }
         Map<Object, C> children = getChildEntities(entity);
         boolean evolvedAnyChild = false;
         Map<Object, C> evolvedChildren = new LinkedHashMap<>();

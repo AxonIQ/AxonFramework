@@ -93,10 +93,18 @@ public class PolymorphicEntityMetamodel<E> implements EntityMetamodel<E>, Descri
         return new Builder<>(entityType);
     }
 
+    @Nullable
     @Override
-    public E evolve(E entity, EventMessage event, ProcessingContext context) {
+    public E evolve(@Nullable E entity, EventMessage event, ProcessingContext context) {
         var superTypeEvolvedEntity = superTypeMetamodel.evolve(entity, event, context);
-        return metamodelFor(entity).evolve(superTypeEvolvedEntity, event, context);
+        if (superTypeEvolvedEntity == null) {
+            // The entity does not exist yet (or was removed); the concrete type cannot be determined.
+            return null;
+        }
+        // An existing entity keeps being evolved by the metamodel of its own concrete type. Only an entity that did
+        // not exist before this event takes the concrete type of the entity the super type just created.
+        var concreteTypeSource = entity != null ? entity : superTypeEvolvedEntity;
+        return metamodelFor(concreteTypeSource).evolve(superTypeEvolvedEntity, event, context);
     }
 
     /**

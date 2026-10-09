@@ -34,10 +34,14 @@ import org.axonframework.messaging.eventhandling.conversion.EventConverter;
 import org.axonframework.modelling.EntityEvolver;
 import org.axonframework.modelling.EntityEvolvingComponent;
 import org.axonframework.modelling.StateEvolvingException;
+import org.jspecify.annotations.Nullable;
 
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -64,7 +68,8 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
     private final Class<E> entityType;
     private final AnnotatedHandlerInspector<E> inspector;
     private final EventConverter converter;
-    private final Map<Class<?>, Map<QualifiedName, List<MessageHandlingMember<? super E>>>> handlersByEntityType;
+    private final Map<Class<?>, Map<QualifiedName, List<EvolvingHandler<E>>>> handlersByEntityType;
+    private final boolean hasStaticHandlers;
 
     /**
      * Initialize a new annotation-based {@link EntityEvolver}.
@@ -139,42 +144,64 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
         this.handlersByEntityType = indexHandlersByEntityType(
                 requireNonNull(messageTypeResolver, "The Message Type Resolver must not be null.")
         );
+        this.hasStaticHandlers = handlersByEntityType.values().stream()
+                                                     .flatMap(handlers -> handlers.values().stream())
+                                                     .flatMap(List::stream)
+                                                     .anyMatch(EvolvingHandler::isStatic);
     }
 
+    @Nullable
     @Override
-    public E evolve(E entity,
+    public E evolve(@Nullable E entity,
                     EventMessage event,
                     ProcessingContext context) {
+        if (entity == null && !hasStaticHandlers) {
+            throw new NullPointerException(
+                    "Cannot evolve an absent [" + entityType.getName() + "] entity without static event sourcing handlers."
+            );
+        }
+        // With a null entity the concrete type is unknown, so static (create-from-null) handlers are routed by the
+        // declared entity type, mirroring how creational command handlers are registered on the super type.
+        Class<?> listenerType = entity != null ? entity.getClass() : entityType;
         try {
-            var listenerType = entity.getClass();
-
             var handlers = handlersByEntityType.getOrDefault(listenerType, Map.of())
                                                .getOrDefault(event.type().qualifiedName(), List.of());
 
             E evolvedEntity = entity;
-            for (var handler : handlers) {
+            for (var evolvingHandler : handlers) {
+                // An existing entity is handed to every handler as it was before the event, so each handler sees
+                // the same state. Only while the entity is absent does a handler see what an earlier handler created.
+                E target = entity != null ? entity : evolvedEntity;
+                if (target == null && !evolvingHandler.isStatic()) {
+                    // An instance handler cannot run without an instance to invoke it on.
+                    continue;
+                }
+                var handler = evolvingHandler.member();
                 var convertedEvent = event.withConvertedPayload(handler.payloadType(), converter);
-                if (!handler.canHandle(convertedEvent, context)) {
+                var contextWithEntity = ActiveEntity.set(context, target);
+                if (!handler.canHandle(convertedEvent, contextWithEntity)) {
                     continue;
                 }
                 var interceptor = inspector.chainedInterceptor(listenerType);
-                var result = interceptor.handle(convertedEvent, context, entity, handler)
+                var result = interceptor.handle(convertedEvent, contextWithEntity, target, handler)
                                         .first()
                                         .asCompletableFuture()
                                         .join();
-                evolvedEntity = entityFromStreamResultOrUpdatedExisting(result, entity);
+                evolvedEntity = nextState(result, target, evolvingHandler);
             }
 
             return evolvedEntity;
+        } catch (StateEvolvingException e) {
+            throw e;
         } catch (Exception e) {
             throw new StateEvolvingException(
-                    "Failed to apply event [" + event.type() + "] in order to evolve [" + entity.getClass() + "] state",
+                    "Failed to apply event [" + event.type() + "] in order to evolve [" + listenerType + "] state",
                     e
             );
         }
     }
 
-    private Map<Class<?>, Map<QualifiedName, List<MessageHandlingMember<? super E>>>> indexHandlersByEntityType(
+    private Map<Class<?>, Map<QualifiedName, List<EvolvingHandler<E>>>> indexHandlersByEntityType(
             MessageTypeResolver messageTypeResolver
     ) {
         return inspector.getAllHandlers().entrySet().stream()
@@ -184,7 +211,7 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
                         ));
     }
 
-    private Map<QualifiedName, List<MessageHandlingMember<? super E>>> indexHandlersByEventName(
+    private Map<QualifiedName, List<EvolvingHandler<E>>> indexHandlersByEventName(
             Collection<MessageHandlingMember<? super E>> handlers,
             MessageTypeResolver messageTypeResolver
     ) {
@@ -193,10 +220,17 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
                        .collect(Collectors.collectingAndThen(
                                Collectors.groupingBy(
                                        handler -> eventName(handler, messageTypeResolver),
-                                       Collectors.toUnmodifiableList()
+                                       Collectors.mapping(this::toEvolvingHandler, Collectors.toUnmodifiableList())
                                ),
                                Map::copyOf
                        ));
+    }
+
+    private EvolvingHandler<E> toEvolvingHandler(MessageHandlingMember<? super E> handler) {
+        Optional<Method> method = handler.unwrap(Method.class);
+        boolean isStatic = method.map(m -> Modifier.isStatic(m.getModifiers())).orElse(false);
+        boolean returnsEntity = method.map(m -> entityType.isAssignableFrom(m.getReturnType())).orElse(false);
+        return new EvolvingHandler<>(handler, isStatic, returnsEntity);
     }
 
     private QualifiedName eventName(MessageHandlingMember<? super E> handler,
@@ -208,13 +242,28 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
                       .orElseGet(() -> messageTypeResolver.resolveOrThrow(handler.payloadType()).qualifiedName());
     }
 
-    private E entityFromStreamResultOrUpdatedExisting(MessageStream.Entry<?> potentialEntityFromStream, E existing) {
+    @Nullable
+    private E nextState(MessageStream.@Nullable Entry<?> potentialEntityFromStream,
+                        @Nullable E existing,
+                        EvolvingHandler<E> handler) {
         if (potentialEntityFromStream != null) {
             var resultPayload = potentialEntityFromStream.message().payload();
             if (resultPayload != null && entityType.isAssignableFrom(resultPayload.getClass())) {
                 //noinspection unchecked
                 return (E) entityType.cast(resultPayload);
             }
+        }
+        // A static handler declaring the entity as its return type returned null (an empty stream). While the entity
+        // does not exist yet, this is a legitimate "decline to create" outcome. Once the entity exists, however, it
+        // may not be removed by returning null: model end-of-life as a terminal state instead.
+        if (handler.isStatic() && handler.returnsEntity()) {
+            if (existing != null) {
+                throw new StateEvolvingException(
+                        "A static event sourcing handler returned null for an existing [" + entityType.getName()
+                                + "] entity. An entity that exists cannot be removed by returning null; "
+                                + "model end-of-life as a terminal state instead.");
+            }
+            return null;
         }
         return existing;
     }
@@ -224,5 +273,20 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
         return handlersByEntityType.values().stream()
                                   .flatMap(handlers -> handlers.keySet().stream())
                                   .collect(Collectors.toUnmodifiableSet());
+    }
+
+    /**
+     * A {@link MessageHandlingMember} together with the reflective facts the evolve loop needs, determined once at
+     * construction rather than on every event.
+     *
+     * @param member        the handler to invoke
+     * @param isStatic      whether the handler is a {@code static} method, which can run while the entity is
+     *                      {@code null}
+     * @param returnsEntity whether the handler declares the entity type as its return type, so that a {@code null}
+     *                      result means the handler returned {@code null} rather than nothing
+     * @param <E>           the entity type
+     */
+    private record EvolvingHandler<E>(MessageHandlingMember<? super E> member, boolean isStatic, boolean returnsEntity) {
+
     }
 }
