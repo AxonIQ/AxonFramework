@@ -27,10 +27,12 @@ import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
@@ -49,7 +51,7 @@ public class SimpleCommandBus implements CommandBus {
 
     private static final Logger logger = LoggerFactory.getLogger(SimpleCommandBus.class);
 
-    private final ConcurrentMap<QualifiedName, CommandHandler> subscriptions = new ConcurrentHashMap<>();
+    private final ConcurrentMap<QualifiedName, List<CommandHandler>> subscriptions = new ConcurrentHashMap<>();
     private final UnitOfWorkFactory unitOfWorkFactory;
 
     /**
@@ -70,13 +72,25 @@ public class SimpleCommandBus implements CommandBus {
     @Override
     public SimpleCommandBus subscribe(QualifiedName name, CommandHandler commandHandler) {
         CommandHandler handler = requireNonNull(commandHandler, "Given command handler cannot be null.");
+        requireNonNull(name, "The command name cannot be null.");
         logger.debug("Subscribing command handler with name [{}].", name);
-        var existingHandler =
-                subscriptions.putIfAbsent(requireNonNull(name, "The command name cannot be null."), handler);
 
-        if (existingHandler != null && existingHandler != handler) {
-            throw new DuplicateCommandHandlerSubscriptionException(name, existingHandler, handler);
-        }
+        subscriptions.compute(name, (key, existingHandlers) -> {
+            if (existingHandlers == null) {
+                existingHandlers = new CopyOnWriteArrayList<>();
+            }
+            for (CommandHandler existing : existingHandlers) {
+                if (existing == handler) {
+                    return existingHandlers;
+                }
+                if (existing.supportedVersions().overlaps(handler.supportedVersions())) {
+                    throw new DuplicateCommandHandlerSubscriptionException(name, existing, handler);
+                }
+            }
+            existingHandlers.add(handler);
+            return existingHandlers;
+        });
+
         return this;
     }
 
@@ -91,7 +105,14 @@ public class SimpleCommandBus implements CommandBus {
     }
 
     private Optional<CommandHandler> findCommandHandlerFor(CommandMessage command) {
-        return Optional.ofNullable(subscriptions.get(command.type().qualifiedName()));
+        String version = command.type().version();
+        List<CommandHandler> handlers = subscriptions.get(command.type().qualifiedName());
+        if (handlers == null) {
+            return Optional.empty();
+        }
+        return handlers.stream()
+                       .filter(h -> h.supportedVersions().matches(version))
+                       .findFirst();
     }
 
     /**

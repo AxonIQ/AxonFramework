@@ -24,6 +24,7 @@ import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.annotation.AnnotatedHandlerInspector;
 import org.axonframework.messaging.core.annotation.HandlerAttributes;
+import org.axonframework.messaging.core.VersionSpecifier;
 import org.axonframework.messaging.core.annotation.HandlerDefinition;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
@@ -131,17 +132,11 @@ public class AnnotatedEventHandlingComponent<T> implements EventHandlingComponen
     private EventHandler constructEventHandlerFor(QualifiedName qualifiedName,
                                                   MessageHandlingMember<? super T> handler) {
         MessageHandlerInterceptorMemberChain<T> interceptorChain = model.chainedInterceptor(target.getClass());
-        EventHandler interceptedHandler =
-                (event, context) -> interceptorChain.handle(
-                                                            event.withConvertedPayload(
-                                                                    handler.payloadType(), converter
-                                                            ),
-                                                            context,
-                                                            target,
-                                                            handler
-                                                    )
-                                                    .ignoreEntries()
-                                                    .cast();
+        VersionSpecifier versionSpecifier = handler.<String>attribute(HandlerAttributes.EVENT_VERSION_RANGE)
+                                                   .map(VersionSpecifier::parse)
+                                                   .orElse(VersionSpecifier.any());
+
+        EventHandler interceptedHandler = new AdapterEventHandler(handler, interceptorChain, versionSpecifier);
 
         return whenCustomSequencingPolicyOn(handler)
                 .map(sequencingPolicy -> {
@@ -272,5 +267,36 @@ public class AnnotatedEventHandlingComponent<T> implements EventHandlingComponen
         descriptor.describeWrapperOf(handlingComponent);
         descriptor.describeProperty("messageTypeResolver", messageTypeResolver);
         descriptor.describeProperty("converter", converter);
+    }
+
+    private class AdapterEventHandler implements EventHandler {
+        private final MessageHandlingMember<? super T> delegate;
+        private final MessageHandlerInterceptorMemberChain<T> interceptorChain;
+        private final VersionSpecifier versionSpecifier;
+
+        private AdapterEventHandler(MessageHandlingMember<? super T> delegate,
+                                    MessageHandlerInterceptorMemberChain<T> interceptorChain,
+                                    VersionSpecifier versionSpecifier) {
+            this.delegate = delegate;
+            this.interceptorChain = interceptorChain;
+            this.versionSpecifier = versionSpecifier;
+        }
+
+        @Override
+        public MessageStream.Empty<Message> handle(EventMessage event, ProcessingContext context) {
+            return interceptorChain.handle(
+                                           event.withConvertedPayload(delegate.payloadType(), converter),
+                                           context,
+                                           target,
+                                           delegate
+                                   )
+                                   .ignoreEntries()
+                                   .cast();
+        }
+
+        @Override
+        public VersionSpecifier supportedVersions() {
+            return versionSpecifier;
+        }
     }
 }
