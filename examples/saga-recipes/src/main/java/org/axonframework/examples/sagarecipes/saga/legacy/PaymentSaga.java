@@ -17,11 +17,15 @@
 package org.axonframework.examples.sagarecipes.saga.legacy;
 
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
+import org.axonframework.deadline.DeadlineManager;
+import org.axonframework.deadline.annotation.DeadlineHandler;
+import org.axonframework.examples.sagarecipes.payment.PaymentId;
 import org.axonframework.examples.sagarecipes.payment.PaymentReference;
 import org.axonframework.examples.sagarecipes.payment.event.PaymentConfirmed;
 import org.axonframework.examples.sagarecipes.payment.event.PaymentPrepared;
 import org.axonframework.examples.sagarecipes.payment.event.PaymentRejected;
 import org.axonframework.examples.sagarecipes.payment.write.preparepayment.PreparePayment;
+import org.axonframework.examples.sagarecipes.payment.write.rejectpayment.RejectPayment;
 import org.axonframework.examples.sagarecipes.rental.BikeId;
 import org.axonframework.examples.sagarecipes.rental.event.BikeRequested;
 import org.axonframework.examples.sagarecipes.rental.event.RequestRejected;
@@ -36,6 +40,8 @@ import org.axonframework.modelling.saga.SagaLifecycle;
 import org.axonframework.modelling.saga.StartSaga;
 import org.axonframework.spring.stereotype.Saga;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+
+import java.time.Duration;
 
 /**
  * The bike rental sample application's {@code PaymentSaga}, moved across as literally as {@code axoniq-legacy} allows.
@@ -65,10 +71,11 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
  * {@link org.axonframework.conversion.Converter Converter}: this application converts with Jackson, which does not
  * see private fields by default, where Axon Framework 4 defaulted to XStream, which did.
  * <p>
- * Everything the original did with a {@code DeadlineManager} is parked as commented-out Axon Framework 4 code until
- * deadlines are ported into {@code axoniq-legacy}. Leaving it visible, rather than replacing it with an Axon Framework
- * 5 equivalent, keeps this a port: the recipe that does solve payment timeouts without a deadline manager is
- * {@code saga/deadline}.
+ * The payment timeout is the original's own: a deadline scheduled when the payment is prepared, called off when the
+ * request is rejected, and answered by rejecting the payment. The {@code DeadlineManager} reaches the handlers the same
+ * way the {@code CommandDispatcher} does, as a parameter. The deadline's payload is the payment's raw identifier, a
+ * {@link String} as in the original. The retry of a failed payment request is still parked below as commented-out Axon
+ * Framework 4 code.
  *
  * @author Mateusz Nowak
  * @since 5.4.0
@@ -76,7 +83,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 @Saga
 @ConditionalOnProperty(name = "saga.recipe", havingValue = "legacy")
 @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
-@SuppressWarnings("removal")
+@SuppressWarnings({"removal", "deprecation"})
 public class PaymentSaga {
 
     private BikeId bikeId;
@@ -131,39 +138,45 @@ public class PaymentSaga {
     }
 
     /**
-     * Ends the Saga when the request is turned down for reasons of the rental context's own.
+     * Ends the Saga when the request is turned down for reasons of the rental context's own, and calls off the payment
+     * timeout that is still running.
      * <p>
-     * The original cancelled the payment timeout here and did nothing else, which is why the body is empty: with no
-     * deadline to cancel there is nothing left to do. Note what the original did <b>not</b> do, and what the Axon
-     * Framework 5 recipes have to: call the payment off. Axon Framework 4 let it stand and relied on the timeout.
+     * Note what the original did <b>not</b> do, and what the Axon Framework 5 recipes have to: call the payment off.
+     * Axon Framework 4 cancelled the timeout and let the payment stand.
      *
-     * @param event the rejection
+     * @param event           the rejection
+     * @param deadlineManager schedules and cancels this Saga's deadlines
      */
     @EndSaga
     @SagaEventHandler(associationProperty = "bikeId")
-    public void on(RequestRejected event) {
-        // TODO #3065 - Axon Framework 4 cancelled the payment timeout scheduled below:
-        // deadlineManager.cancelAllWithinScope("cancelPayment");
+    public void on(RequestRejected event, DeadlineManager deadlineManager) {
+        deadlineManager.cancelAllWithinScope("cancelPayment");
     }
 
     /**
      * Starts the clock on a payment that has been set up and not yet paid.
-     * <p>
-     * Empty for now: scheduling the timeout is all the original did here.
      *
-     * @param event the payment that is waiting to be paid
+     * @param event           the payment that is waiting to be paid
+     * @param deadlineManager schedules and cancels this Saga's deadlines
      */
     @SagaEventHandler(associationProperty = "paymentReference")
-    public void on(PaymentPrepared event) {
-        // TODO #3065 - Axon Framework 4 scheduled the payment timeout here:
-        // deadlineManager.schedule(Duration.ofSeconds(30), "cancelPayment", event.paymentId());
+    public void on(PaymentPrepared event, DeadlineManager deadlineManager) {
+        deadlineManager.schedule(Duration.ofSeconds(30), "cancelPayment", event.paymentId().raw());
     }
 
-    // TODO #3065 - Axon Framework 4 gave up on a payment nobody paid in time:
-    // @DeadlineHandler(deadlineName = "cancelPayment")
-    // public void cancelPayment(String paymentId) {
-    //     commandGateway.send(new RejectPayment(PaymentId.of(paymentId)));
-    // }
+    /**
+     * Gives up on a payment nobody paid in time.
+     * <p>
+     * The deadline carries the payment's raw identifier, a plain {@link String} as it was in the original, so that the
+     * deadline does not depend on how a {@code DeadlineManager} stores its payload.
+     *
+     * @param paymentId  the raw identifier of the payment that went unpaid
+     * @param dispatcher dispatches the resulting command
+     */
+    @DeadlineHandler(deadlineName = "cancelPayment")
+    public void cancelPayment(String paymentId, CommandDispatcher dispatcher) {
+        dispatcher.send(new RejectPayment(PaymentId.of(paymentId)));
+    }
 
     // TODO #3065 - Axon Framework 4 re-attempted a dispatch that had failed, and asked for the payment in the first
     // place through the very same method:
