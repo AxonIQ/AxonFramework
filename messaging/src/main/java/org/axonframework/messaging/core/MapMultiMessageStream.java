@@ -99,6 +99,11 @@ class MapMultiMessageStream<M extends Message, N extends Message> extends Abstra
     }
 
     @Override
+    protected FetchResult<Entry<N>> terminalState() {
+        return buffer.isEmpty() ? terminalStateOf(delegate) : FetchResult.notReady();
+    }
+
+    @Override
     protected void onCompleted() {
         delegate.close();
     }

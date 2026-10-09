@@ -193,14 +193,12 @@ class SingleValueMessageStreamTest extends MessageStreamTest<Message> {
             assertThat(ms.hasNextAvailable()).isTrue();
             assertThat(ms.peek()).isNotEmpty();
             assertThat(ms.next()).isNotEmpty();
+        }
 
-            /*
-             * Expect that the stream has not completed at this point. Streams
-             * should never complete before returning their last element, even
-             * if they know it was the last element.
-             */
-
-            assertThat(ms.isCompleted()).isFalse();
+        @Test
+        void ensureStreamCompletesOnceTheSingleValueWasHandedOut() {
+            // the source resolved and its value was handed out, so the stream is completed
+            assertThat(ms.isCompleted()).isTrue();
         }
 
         @Test

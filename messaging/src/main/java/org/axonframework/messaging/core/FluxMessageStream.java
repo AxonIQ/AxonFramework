@@ -77,6 +77,17 @@ class FluxMessageStream<M extends Message> extends AbstractMessageStream<M> {
     }
 
     @Override
+    protected FetchResult<Entry<M>> terminalState() {
+        FetchResult<Entry<M>> head = peeked.peek();
+
+        if (head instanceof FetchResult.Error) {
+            return head;
+        }
+
+        return head == null && sealed.get() ? FetchResult.completed() : FetchResult.notReady();
+    }
+
+    @Override
     protected final void onCompleted() {
         seal();
     }
