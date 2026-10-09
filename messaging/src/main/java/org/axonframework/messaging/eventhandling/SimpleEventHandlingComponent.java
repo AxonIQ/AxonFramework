@@ -125,9 +125,12 @@ public class SimpleEventHandlingComponent implements
         }
         MessageStream<Message> result = MessageStream.empty();
 
+        String version = event.type().version();
         for (var handler : handlers) {
-            var handlerResult = handler.handle(event, context);
-            result = result.concatWith(handlerResult);
+            if (handler.supportedVersions().matches(version)) {
+                var handlerResult = handler.handle(event, context);
+                result = result.concatWith(handlerResult);
+            }
         }
         return result.ignoreEntries().cast();
     }

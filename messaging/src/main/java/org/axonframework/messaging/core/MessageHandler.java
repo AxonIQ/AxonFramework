@@ -26,4 +26,18 @@ package org.axonframework.messaging.core;
  */
 public interface MessageHandler {
 
+    /**
+     * Returns the {@link VersionSpecifier} indicating which message versions this handler supports.
+     * <p>
+     * During dispatch, the framework uses this specifier to determine whether this handler is eligible to handle an
+     * incoming message based on its {@link VersionedType#version() version}.
+     * <p>
+     * Defaults to {@link VersionSpecifier#any()}, meaning the handler accepts all versions. Override this method to
+     * restrict handling to a specific version or version range.
+     *
+     * @return The {@link VersionSpecifier} for this handler.
+     */
+    default VersionSpecifier supportedVersions() {
+        return VersionSpecifier.any();
+    }
 }
