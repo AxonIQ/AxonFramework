@@ -40,6 +40,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -197,6 +198,7 @@ public abstract class AbstractAdministrationIT extends AbstractIT {
         );
         commandGateway.send(new GenericCommandMessage(new MessageType(SuspendEmployeeCommand.COMMAND_NAME), command))
                       .getResultMessage()
+                      .orTimeout(2, TimeUnit.SECONDS)
                       .join();
 
         assertThat(capturedEmployeeSuspendedEvents)
@@ -225,7 +227,10 @@ public abstract class AbstractAdministrationIT extends AbstractIT {
     }
 
     private void sendCommand(Object command) {
-        commandGateway.send(command).getResultMessage().join();
+        commandGateway.send(command)
+                      .getResultMessage()
+                      .orTimeout(2, TimeUnit.SECONDS)
+                      .join();
     }
 
     @SuppressWarnings("unused")
