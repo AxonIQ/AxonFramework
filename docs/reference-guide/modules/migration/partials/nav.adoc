@@ -19,6 +19,7 @@
 ifdef::advanced-framework[]
 *** xref:migration:paths/sagas.adoc[]
 endif::[]
+*** xref:migration:paths/sagas-to-workflows.adoc[]
 *** xref:migration:paths/test-fixtures.adoc[]
 *** xref:migration:paths/configuration.adoc[]
 *** xref:migration:paths/serializers.adoc[]

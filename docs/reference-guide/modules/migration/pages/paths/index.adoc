@@ -1,5 +1,5 @@
-= Migration Paths
-:navtitle: Migration Paths
+= Upgrade Paths
+:navtitle: Upgrade Paths
 
 Axon Framework 5 introduces several architectural shifts that may require different migration strategies depending on your application's complexity and the features you use.
 This section outlines the common migration tasks and provides detailed "paths" for specific components.
@@ -21,6 +21,7 @@ Whether you are performing a straightforward version bump or a deep architectura
 ifdef::advanced-framework[]
 * xref:migration:paths/sagas.adoc[Saga migration]
 endif::[]
+* xref:migration:paths/sagas-to-workflows.adoc[Legacy sagas to workflows]
 * xref:migration:paths/test-fixtures.adoc[Test Fixture migration]
 * xref:migration:paths/configuration.adoc[Configuration migration]
 * xref:migration:paths/serializers.adoc[Serializer migration]

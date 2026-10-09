@@ -1,0 +1,98 @@
+// Diagram presentation; the corresponding flow is in attachments/sagas-to-workflows.mmd.
+++++
+<style>
+.saga-process {
+  --sp-text: var(--color-text-primary, #172033);
+  --sp-muted: var(--color-text-secondary, #475569);
+  --sp-bg: var(--color-bg-primary, #fff);
+  --sp-panel: light-dark(#f5f7fa, #15191f);
+  --sp-line: light-dark(#d6dce5, #394352);
+  --sp-machine: light-dark(#17643c, #8cdbaf);
+  --sp-agent: light-dark(#783b89, #d8ace8);
+  --sp-asset: light-dark(#295ca0, #9dbfee);
+  --sp-hook: light-dark(#805c1d, #dfc58a);
+  container-type: inline-size;
+  margin: 1.75rem 0;
+  padding: 1.25rem;
+  border: 1px solid var(--sp-line);
+  border-radius: 16px;
+  background: var(--sp-bg);
+  color: var(--sp-text);
+  font-family: inherit;
+  line-height: 1.5;
+  hyphens: none;
+  text-wrap: pretty;
+}
+.saga-process * { box-sizing: border-box; }
+.saga-process .sp-machine { --sp-accent: var(--sp-machine); }
+.saga-process .sp-agent { --sp-accent: var(--sp-agent); }
+.saga-process .sp-asset { --sp-accent: var(--sp-asset); }
+.saga-process .sp-hook { --sp-accent: var(--sp-hook); }
+.saga-process .sp-legend { display: flex; flex-wrap: wrap; gap: .4rem 1.1rem; margin-bottom: 1.25rem; font-size: .75rem; color: var(--sp-muted); }
+.saga-process .sp-key { display: inline-flex; align-items: center; gap: .4rem; }
+.saga-process .sp-key::before { content: ''; width: .5rem; height: .5rem; border-radius: 50%; background: var(--sp-accent); }
+.saga-process .sp-node { min-width: 0; padding: 1rem; border-radius: 8px; background: color-mix(in srgb, var(--sp-accent) 7%, var(--sp-bg)); color: var(--sp-text); }
+.saga-process .sp-role { display: block; margin-bottom: .45rem; color: var(--sp-accent); font-size: .65rem; font-weight: 650; letter-spacing: .025em; }
+.saga-process .sp-title { display: block; color: var(--sp-text); font-size: .95rem; font-weight: 650; line-height: 1.35; }
+.saga-process .sp-copy { display: block; margin-top: .4rem; color: var(--sp-muted); font-size: .8rem; line-height: 1.55; }
+.saga-process .sp-orchestrator { padding: 1rem 1.25rem; border-left: 3px solid var(--sp-agent); }
+.saga-process .sp-orchestrator .sp-title { font-size: 1.05rem; }
+.saga-process .sp-bridge { margin: 1rem 0; color: var(--sp-muted); text-align: center; font-size: .8rem; }
+.saga-process .sp-columns { display: grid; gap: 1.5rem; }
+.saga-process .sp-phase { min-width: 0; position: relative; }
+.saga-process .sp-phase + .sp-phase::before { content: '\2193'; display: block; margin: -.75rem 0 .65rem; text-align: center; color: var(--sp-asset); font-size: 1.2rem; }
+.saga-process .sp-phase-head { display: flex; align-items: center; gap: .8rem; margin-bottom: .85rem; }
+.saga-process .sp-phase-number { display: grid; place-items: center; width: 2.2rem; height: 2.2rem; border: 1px solid var(--sp-line); border-radius: 50%; color: var(--sp-muted); font-size: .8rem; }
+.saga-process .sp-phase-name { display: block; color: var(--sp-text); font-size: 1.1rem; font-weight: 700; }
+.saga-process .sp-phase-caption { display: block; color: var(--sp-muted); font-size: .75rem; }
+.saga-process .sp-phase-body { display: grid; gap: .65rem; padding: .75rem; border-radius: 12px; background: var(--sp-panel); }
+.saga-process .sp-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .65rem; }
+.saga-process .sp-row .sp-node { position: relative; }
+.saga-process .sp-plan-row .sp-node + .sp-node::before { content: '\2192'; position: absolute; top: 1rem; left: -.57rem; z-index: 1; color: var(--sp-machine); font-size: .85rem; }
+.saga-process .sp-branch { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; }
+.saga-process .sp-branch .sp-node, .saga-process .sp-prepared { padding: .8rem 1rem; }
+.saga-process .sp-prepared .sp-role, .saga-process .sp-prepared .sp-title { display: inline; margin-right: .6rem; }
+.saga-process .sp-arrow { color: var(--sp-asset); text-align: center; height: .8rem; line-height: .8rem; font-size: 1rem; }
+.saga-process .sp-doer { border-left: 3px solid var(--sp-agent); }
+.saga-process .sp-outcomes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; padding: .8rem .25rem .15rem; border-top: 1px solid var(--sp-line); }
+.saga-process .sp-outcome { color: var(--sp-muted); font-size: .75rem; line-height: 1.5; }
+.saga-process .sp-outcome strong { display: block; margin-bottom: .3rem; color: var(--sp-accent); font-size: .8rem; }
+.saga-process .sp-result { margin: .65rem .2rem 0; color: var(--sp-muted); font-size: .75rem; }
+.saga-process .sp-score-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.saga-process .sp-hooks { margin-top: .2rem; border-left: 3px solid var(--sp-hook); }
+.saga-process .sp-hooks .sp-role, .saga-process .sp-hooks .sp-title { display: inline; margin-right: .6rem; }
+.saga-process .sp-footer { margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--sp-line); color: var(--sp-muted); font-size: .8rem; }
+@container (max-width: 580px) {
+  .saga-process .sp-row { grid-template-columns: 1fr; }
+  .saga-process .sp-plan-row .sp-node + .sp-node::before { content: '\2193'; left: 50%; top: -.85rem; }
+  .saga-process .sp-outcomes { grid-template-columns: 1fr; gap: .75rem; }
+}
+@container (max-width: 380px) {
+  .saga-process .sp-branch { grid-template-columns: 1fr; }
+}
+@media print {
+  .saga-process { color-scheme: light; --sp-text: #172033; --sp-muted: #475569; --sp-bg: #fff; --sp-panel: #f5f7fa; }
+}
+</style>
+<div class="saga-process" role="group" aria-label="Saga to workflow skill: plan, build and verify, then score">
+<div class="sp-legend"><span class="sp-key sp-machine">Machine check</span><span class="sp-key sp-agent">Agent judgment</span><span class="sp-key sp-asset">Prepared asset</span><span class="sp-key sp-hook">Original hooks</span></div>
+<div class="sp-node sp-agent sp-orchestrator"><span class="sp-role">Agent judgment</span><strong class="sp-title">0. Orchestrate one saga at a time</strong><span class="sp-copy">Assign fresh doers and independent verifiers and scorers. Copy verification evidence into the plan.</span></div><div class="sp-bridge">Plan &#8594; Build and verify &#8594; Score</div>
+<div class="sp-columns">
+<section class="sp-phase" aria-label="Plan">
+<div class="sp-phase-head"><span class="sp-phase-number" aria-hidden="true">01</span><div><strong class="sp-phase-name">Plan</strong><span class="sp-phase-caption">Before writing code</span></div></div>
+<div class="sp-phase-body"><div class="sp-row sp-plan-row"><div class="sp-node sp-machine "><span class="sp-role">Machine check</span><strong class="sp-title">1. Read the saga</strong><span class="sp-copy">Extract events, commands, deadlines, and state changes.</span></div><div class="sp-node sp-machine "><span class="sp-role">Machine check</span><strong class="sp-title">2. Build the flow graph</strong><span class="sp-copy">Model success, failure, timeout, and late-event paths.</span></div><div class="sp-node sp-machine "><span class="sp-role">Machine check</span><strong class="sp-title">3. Recognise patterns</strong><span class="sp-copy">Derive the workflow skeleton and record decisions.</span></div></div><div class="sp-arrow" aria-hidden="true">&#8595;</div><div class="sp-branch"><div class="sp-node sp-agent "><span class="sp-role">Agent judgment</span><strong class="sp-title">3a. Resolve leftovers</strong><span class="sp-copy">Use source quotes for decisions the rules cannot make.</span></div><div class="sp-node sp-agent "><span class="sp-role">Agent judgment</span><strong class="sp-title">3b. Check consumers</strong><span class="sp-copy">Preserve event contracts or adapt affected handlers.</span></div></div><div class="sp-arrow" aria-hidden="true">&#8595;</div><div class="sp-node sp-asset sp-prepared "><span class="sp-role">Prepared asset</span><strong class="sp-title">Prepare the build</strong><span class="sp-copy">Plan, API sheet, templates, declared changes, and test baseline.</span></div></div>
+<div class="sp-result">Pass the plan and prepared assets into the build loop.</div></section>
+<section class="sp-phase" aria-label="Build and verify">
+<div class="sp-phase-head"><span class="sp-phase-number" aria-hidden="true">02</span><div><strong class="sp-phase-name">Build and verify</strong><span class="sp-phase-caption">Repeat for one saga</span></div></div>
+<div class="sp-phase-body"><div class="sp-node sp-agent sp-doer "><span class="sp-role">Agent judgment</span><strong class="sp-title">4. Write the workflow</strong><span class="sp-copy">A fresh doer implements the workflow and tests, then runs checks 5 and 6.</span></div><div class="sp-arrow" aria-hidden="true">&#8595;</div><div class="sp-row"><div class="sp-node sp-machine "><span class="sp-role">Machine check</span><strong class="sp-title">5. Check the code</strong><span class="sp-copy">An independent verifier reruns compilation, tests, and lint.</span></div><div class="sp-node sp-machine "><span class="sp-role">Machine check</span><strong class="sp-title">6. Compare behavior</strong><span class="sp-copy">Compare the supported models; report a separating event sequence or unsupported case.</span></div><div class="sp-node sp-agent "><span class="sp-role">Agent judgment</span><strong class="sp-title">7. Review judged items</strong><span class="sp-copy">The verifier answers the remaining questions with code quotes.</span></div></div><div class="sp-outcomes" aria-label="Verification outcomes">
+<div class="sp-outcome sp-agent"><strong>A check fails</strong>Return the failure evidence to step 4 with a fresh doer.</div>
+<div class="sp-outcome sp-hook"><strong>Same rule fails three rounds</strong>Record the blocker; continue with another saga.</div>
+<div class="sp-outcome sp-machine"><strong>All checks pass</strong>The result is ready for review and scoring.</div>
+</div></div>
+<div class="sp-result">A review cannot override a failing machine check.</div></section>
+<section class="sp-phase" aria-label="Score">
+<div class="sp-phase-head"><span class="sp-phase-number" aria-hidden="true">03</span><div><strong class="sp-phase-name">Score</strong><span class="sp-phase-caption">After verification</span></div></div>
+<div class="sp-phase-body"><div class="sp-row sp-score-row"><div class="sp-node sp-agent "><span class="sp-role">Agent judgment</span><strong class="sp-title">8. Score the result</strong><span class="sp-copy">An independent scorer reviews the saga, workflow, reports, and rubric.</span></div><div class="sp-node sp-asset "><span class="sp-role">Prepared asset</span><strong class="sp-title">Record the scorecard</strong><span class="sp-copy">Score out of 10, with evidence for gates, measured checks, and readability.</span></div></div><div class="sp-node sp-hook sp-hooks"><span class="sp-role">Original hooks</span><strong class="sp-title">Hooks, when installed</strong><span class="sp-copy">Check forbidden edits, commits, open work, and sandbox access.</span></div></div>
+<div class="sp-result">Scoring records quality; it cannot make a failed check pass.</div></section>
+</div><div class="sp-footer">After code verification: prove persistent coexistence and restart recovery before retiring legacy sagas.</div></div>
+++++
