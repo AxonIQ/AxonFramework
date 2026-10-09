@@ -14,13 +14,16 @@
  * limitations under the License.
  */
 
-package org.axonframework.examples.springcloud;
+package org.axonframework.examples.springcloud.domain;
 
 /**
- * Query requesting the current view of a single course, also used as the update filter for the subscription query.
+ * Read model of a university course, including which node handled the request that produced this view. The
+ * {@code handledBy} field makes the Spring Cloud distribution hop visible in the HTTP response.
  *
- * @param courseId the unique identifier of the course to find
+ * @param courseId  the unique identifier of the course
+ * @param name      the course name
+ * @param handledBy the node name of the application instance that handled the command or query producing this view
  */
-public record FindCourse(String courseId) {
+public record Course(String courseId, String name, String handledBy) {
 
 }

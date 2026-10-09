@@ -25,28 +25,37 @@
         <version>${revision}</version>
     </parent>
 
-    <artifactId>university-springboot3</artifactId>
+    <artifactId>university-springboot4</artifactId>
 
-    <name>Axoniq Framework Example - University Spring Boot 3 Spring Cloud</name>
+    <name>Axoniq Framework Example - University Spring Boot 4 Spring Cloud</name>
     <description>
-        University example using Spring Boot 3.5 and Spring Cloud 2025.0 to distribute commands and queries without
+        University example using Spring Boot 4.1 and Spring Cloud 2025.1 to distribute commands and queries without
         Axon Server.
     </description>
 
     <properties>
         <axoniq-framework.version>${project.version}</axoniq-framework.version>
-        <!--
-        Deliberately not aligned with the framework's own jackson2.version (2.22.3): that version resolves only
-        through the internal Nexus mirror core modules use, and is not published to Maven Central. 2.22 is the
-        latest jackson-annotations release actually available to this example's dependency resolution.
-        -->
-        <jackson2.version>2.22</jackson2.version>
-        <spring-boot.version>3.5.16</spring-boot.version>
-        <spring-cloud.version>2025.0.3</spring-cloud.version>
+        <spring-boot.version>4.0.6</spring-boot.version>
+        <spring-cloud.version>2025.1.0</spring-cloud.version>
+        <jackson.version>3.2.3</jackson.version>
     </properties>
 
     <dependencyManagement>
         <dependencies>
+            <!-- Jackson 3 BOM before Spring Boot to ensure jackson-annotations
+                 is at the version required by Jackson 3 (not the older one managed by Spring Boot). -->
+            <dependency>
+                <groupId>tools.jackson</groupId>
+                <artifactId>jackson-bom</artifactId>
+                <version>${jackson.version}</version>
+                <scope>import</scope>
+                <type>pom</type>
+            </dependency>
+            <dependency>
+                <groupId>com.google.protobuf</groupId>
+                <artifactId>protobuf-java</artifactId>
+                <version>4.36.2</version>
+            </dependency>
             <dependency>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-dependencies</artifactId>
@@ -82,7 +91,11 @@
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
+            <artifactId>spring-boot-starter-webmvc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jackson</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.cloud</groupId>
@@ -96,16 +109,17 @@
             <groupId>com.netflix.eureka</groupId>
             <artifactId>eureka-client-jersey3</artifactId>
         </dependency>
-        <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-annotations</artifactId>
-            <version>${jackson2.version}</version>
-        </dependency>
 
         <!-- Testing -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Spring Boot 4 extracted TestRestTemplate out of spring-boot-test into its own module. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-resttestclient</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

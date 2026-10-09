@@ -16,14 +16,16 @@
 
 package org.axonframework.examples.springcloud;
 
+import org.springframework.cloud.netflix.eureka.server.EnableEurekaServer;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
+
 /**
- * Read model of a university course, including which node handled the request that produced this view. The
- * {@code handledBy} field makes the Spring Cloud distribution hop visible in the HTTP response.
- *
- * @param courseId  the unique identifier of the course
- * @param name      the course name
- * @param handledBy the node name of the application instance that handled the command or query producing this view
+ * Enables the embedded Eureka server used as this example's discovery registry.
  */
-public record Course(String courseId, String name, String handledBy) {
+@Configuration(proxyBeanMethods = false)
+@EnableEurekaServer
+@Profile("discovery-server")
+class EurekaServerConfiguration {
 
 }

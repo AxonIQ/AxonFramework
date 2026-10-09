@@ -32,6 +32,8 @@
     <description>Runnable Spring Cloud message distribution examples without Axon Server.</description>
 
     <modules>
+        <module>domain</module>
         <module>springboot3</module>
+        <module>springboot4</module>
     </modules>
 </project>

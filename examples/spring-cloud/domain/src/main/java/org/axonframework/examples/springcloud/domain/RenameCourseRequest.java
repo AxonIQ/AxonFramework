@@ -14,14 +14,13 @@
  * limitations under the License.
  */
 
-package org.axonframework.examples.springcloud;
+package org.axonframework.examples.springcloud.domain;
 
 /**
- * Command requesting a new course to be added to the catalog.
+ * HTTP request body for renaming a course through {@link CourseController}.
  *
- * @param courseId the unique identifier for the new course
- * @param name     the course name
+ * @param name the new course name
  */
-public record CreateCourse(String courseId, String name) {
+public record RenameCourseRequest(String name) {
 
 }
