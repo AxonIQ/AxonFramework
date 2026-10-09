@@ -32,33 +32,30 @@ import org.axonframework.modelling.EntityIdResolver;
 import org.jspecify.annotations.NonNull;
 
 import java.util.Collections;
-import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 class PersonIdentifierEntityIdResolver implements EntityIdResolver<PersonIdentifier> {
+
+    private static final Map<String, Class<? extends PersonCommand>> COMMAND_TYPES_BY_NAME = Map.of(
+            AssignTaskCommand.class.getName(), AssignTaskCommand.class,
+            ChangeEmailAddress.class.getName(), ChangeEmailAddress.class,
+            CompleteTaskCommand.class.getName(), CompleteTaskCommand.class,
+            GiveRaise.class.getName(), GiveRaise.class,
+            GrantCertificationCommand.class.getName(), GrantCertificationCommand.class,
+            RevokeCertificationCommand.class.getName(), RevokeCertificationCommand.class,
+            SuspendEmployeeCommand.COMMAND_NAME, SuspendEmployeeCommand.class
+    );
 
     @Override
     public PersonIdentifier resolve(
             @NonNull Message message,
             @NonNull ProcessingContext context
     ) throws EntityIdResolutionException {
-        List<Class<? extends PersonCommand>> personCommandTypes = List.of(
-                AssignTaskCommand.class,
-                ChangeEmailAddress.class,
-                CompleteTaskCommand.class,
-                GiveRaise.class,
-                GrantCertificationCommand.class,
-                RevokeCertificationCommand.class,
-                SuspendEmployeeCommand.class
-        );
-        // Matched by payload type, not message.type().name(): SuspendEmployeeCommand is dispatched under its own
-        // explicit command name rather than a name derived from its class.
-        var clazz = personCommandTypes.stream()
-                                      .filter(type -> type.equals(message.payloadType()))
-                                      .findFirst()
-                                      .orElseThrow(() -> new EntityIdResolutionException(
-                                              message.payloadType(), Collections.emptyList()
-                                      ));
+        Class<? extends PersonCommand> clazz = COMMAND_TYPES_BY_NAME.get(message.type().name());
+        if (clazz == null) {
+            throw new EntityIdResolutionException(message.payloadType(), Collections.emptyList());
+        }
         return Objects.requireNonNull(message.payloadAs(clazz)).identifier();
     }
 }
