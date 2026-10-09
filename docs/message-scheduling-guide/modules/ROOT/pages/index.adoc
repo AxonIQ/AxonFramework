@@ -45,9 +45,9 @@ Where Workflows are not available,
 xref:saga-guide:ROOT:deadlines.adoc[the deadline pattern] replaces a scheduler with a projection and a periodic sweep, at the cost of exact timing.
 ====
 
-When it comes to scheduling messages, there are two types of message where doing so makes sense.
-This is for <<scheduling-commands,scheduling command>> and <<scheduling-events,scheduling events>>.
-If you are dealing with a rather involved process, check out <<process-scheduling,processing scheduling>> instead.
+When it comes to scheduling messages, there are two types of message where doing so makes sense:
+<<scheduling-commands,scheduling command>> and <<scheduling-events,scheduling events>>.
+If you are dealing with a rather involved process, check out <<process-scheduling,process scheduling>> instead.
 
 [#scheduling-commands]
 == Scheduling commands
@@ -77,8 +77,7 @@ include::example$messagescheduling/commands/PaymentTimeouts.java[tag=cancel-rent
 include::example$messagescheduling/commands/PaymentTimeouts.java[tag=schedule-command,indent=0]
 ----
 
-<1> The plain `ScheduledExecutorService` at this point in time for simplicity.
-Replace for whichever scheduling tool is preferred.
+<1> A `ScheduledExecutorService` for simplicity. Replace for whichever scheduling tool is preferred.
 <2> The command is sent through the `CommandGateway`, just like any other command, when the trigger fires.
 
 Once the deadline set by the `PaymentTimeouts` is met, the handler will receive a `CancelRentalPayment` and validate it like any other command:
@@ -118,8 +117,7 @@ include::example$messagescheduling/events/RentalReturnReminders.java[tag=rental-
 include::example$messagescheduling/events/RentalReturnReminders.java[tag=schedule-event,indent=0]
 ----
 
-<1> The plain `ScheduledExecutorService` at this point in time for simplicity.
-Replace for whichever scheduling tool is preferred.
+<1> A `ScheduledExecutorService` for simplicity. Replace for whichever scheduling tool is preferred.
 <2> The event is published through the `EventGateway` directly instead of the usual `EventAppender`.
 The latter is only to be used inside Axon's message handlers and the scheduler's trigger is not a message handler.
 Hence, the `EventGateway` is used instead.
