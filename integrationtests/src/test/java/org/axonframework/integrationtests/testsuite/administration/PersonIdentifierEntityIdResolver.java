@@ -23,6 +23,7 @@ import org.axonframework.integrationtests.testsuite.administration.commands.Give
 import org.axonframework.integrationtests.testsuite.administration.commands.GrantCertificationCommand;
 import org.axonframework.integrationtests.testsuite.administration.commands.PersonCommand;
 import org.axonframework.integrationtests.testsuite.administration.commands.RevokeCertificationCommand;
+import org.axonframework.integrationtests.testsuite.administration.commands.SuspendEmployeeCommand;
 import org.axonframework.integrationtests.testsuite.administration.common.PersonIdentifier;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
@@ -47,10 +48,13 @@ class PersonIdentifierEntityIdResolver implements EntityIdResolver<PersonIdentif
                 CompleteTaskCommand.class,
                 GiveRaise.class,
                 GrantCertificationCommand.class,
-                RevokeCertificationCommand.class
+                RevokeCertificationCommand.class,
+                SuspendEmployeeCommand.class
         );
+        // Matched by payload type, not message.type().name(): SuspendEmployeeCommand is dispatched under its own
+        // explicit command name rather than a name derived from its class.
         var clazz = personCommandTypes.stream()
-                                      .filter(type -> type.getName().equals(message.type().name()))
+                                      .filter(type -> type.equals(message.payloadType()))
                                       .findFirst()
                                       .orElseThrow(() -> new EntityIdResolutionException(
                                               message.payloadType(), Collections.emptyList()

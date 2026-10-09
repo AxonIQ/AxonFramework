@@ -21,10 +21,12 @@ import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
 import org.axonframework.integrationtests.testsuite.administration.commands.AssignTaskCommand;
 import org.axonframework.integrationtests.testsuite.administration.commands.CreateEmployee;
 import org.axonframework.integrationtests.testsuite.administration.commands.GrantCertificationCommand;
+import org.axonframework.integrationtests.testsuite.administration.commands.SuspendEmployeeCommand;
 import org.axonframework.integrationtests.testsuite.administration.common.PersonIdentifier;
 import org.axonframework.integrationtests.testsuite.administration.events.CertificationGranted;
 import org.axonframework.integrationtests.testsuite.administration.events.EmailAddressChanged;
 import org.axonframework.integrationtests.testsuite.administration.events.EmployeeCreated;
+import org.axonframework.integrationtests.testsuite.administration.events.EmployeeSuspended;
 import org.axonframework.integrationtests.testsuite.administration.events.TaskAssigned;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
@@ -89,6 +91,15 @@ public record SealedEmployee(
                 command.certificationName(),
                 command.issuingBody()
         ));
+    }
+
+    /**
+     * Registered under {@link SuspendEmployeeCommand#COMMAND_NAME} rather than a name derived from
+     * {@link SuspendEmployeeCommand}, proving an entity's {@code @CommandHandler(commandName = ...)} is honored.
+     */
+    @CommandHandler(commandName = SuspendEmployeeCommand.COMMAND_NAME)
+    public void handle(SuspendEmployeeCommand command, EventAppender eventAppender) {
+        eventAppender.append(new EmployeeSuspended(command.identifier(), command.reason()));
     }
 
     @EventSourcingHandler

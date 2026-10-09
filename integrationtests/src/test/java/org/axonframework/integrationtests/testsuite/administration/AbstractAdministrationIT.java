@@ -27,13 +27,22 @@ import org.axonframework.integrationtests.testsuite.administration.commands.Crea
 import org.axonframework.integrationtests.testsuite.administration.commands.GiveRaise;
 import org.axonframework.integrationtests.testsuite.administration.commands.GrantCertificationCommand;
 import org.axonframework.integrationtests.testsuite.administration.commands.RevokeCertificationCommand;
+import org.axonframework.integrationtests.testsuite.administration.commands.SuspendEmployeeCommand;
 import org.axonframework.integrationtests.testsuite.administration.common.PersonIdentifier;
 import org.axonframework.integrationtests.testsuite.administration.common.PersonType;
+import org.axonframework.integrationtests.testsuite.administration.events.EmployeeSuspended;
+import org.axonframework.messaging.commandhandling.GenericCommandMessage;
+import org.axonframework.messaging.core.MessageType;
+import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.junit.jupiter.api.*;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.CompletionException;
 import java.util.stream.Collectors;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Test suite for verifying polymorphic behavior of entities. Can be implemented by different test classes that verify
@@ -52,6 +61,8 @@ public abstract class AbstractAdministrationIT extends AbstractIT {
             "homer@the-simpsons.io"
     );
 
+    private final List<EmployeeSuspended> capturedEmployeeSuspendedEvents = new ArrayList<>();
+
     @BeforeEach
     public void doStartApp() {
         super.startApp();
@@ -59,8 +70,16 @@ public abstract class AbstractAdministrationIT extends AbstractIT {
 
     @Override
     protected ApplicationConfigurer applicationConfigurer() {
-        var configurer = EventSourcingConfigurer.create();
-        return testSuiteConfigurer(configurer);
+        var configurer = testSuiteConfigurer(EventSourcingConfigurer.create());
+        return configurer.messaging(m -> m.eventProcessing(ep -> ep.subscribing(subscribing -> subscribing.processor(
+                "employee-suspended-test-processor",
+                phase -> phase.eventHandlingComponents(
+                        components -> components.autodetected(
+                                "employee-suspended-handler",
+                                c -> new EmployeeSuspendedCapturingHandler(capturedEmployeeSuspendedEvents)
+                        )
+                ).notCustomized()
+        ))));
     }
 
     /**
@@ -169,6 +188,21 @@ public abstract class AbstractAdministrationIT extends AbstractIT {
     }
 
 
+    @Test
+    void commandNameRegisteredHandlerPublishesEvent() {
+        sendCommand(CREATE_EMPLOYEE_1_COMMAND);
+
+        SuspendEmployeeCommand command = new SuspendEmployeeCommand(
+                CREATE_EMPLOYEE_1_COMMAND.identifier(), "policy violation"
+        );
+        commandGateway.send(new GenericCommandMessage(new MessageType(SuspendEmployeeCommand.COMMAND_NAME), command))
+                      .getResultMessage()
+                      .join();
+
+        assertThat(capturedEmployeeSuspendedEvents)
+                .containsExactly(new EmployeeSuspended(CREATE_EMPLOYEE_1_COMMAND.identifier(), "policy violation"));
+    }
+
     private void assertThrowsExceptionWithText(String expectedMessage, Runnable runnable) {
         try {
             runnable.run();
@@ -192,6 +226,21 @@ public abstract class AbstractAdministrationIT extends AbstractIT {
 
     private void sendCommand(Object command) {
         commandGateway.send(command).getResultMessage().join();
+    }
+
+    @SuppressWarnings("unused")
+    private static class EmployeeSuspendedCapturingHandler {
+
+        private final List<EmployeeSuspended> capturedEvents;
+
+        private EmployeeSuspendedCapturingHandler(List<EmployeeSuspended> capturedEvents) {
+            this.capturedEvents = capturedEvents;
+        }
+
+        @EventHandler
+        void on(EmployeeSuspended event) {
+            capturedEvents.add(event);
+        }
     }
 }
 

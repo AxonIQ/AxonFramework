@@ -28,6 +28,7 @@ import org.axonframework.integrationtests.testsuite.administration.commands.Crea
 import org.axonframework.integrationtests.testsuite.administration.commands.GiveRaise;
 import org.axonframework.integrationtests.testsuite.administration.commands.GrantCertificationCommand;
 import org.axonframework.integrationtests.testsuite.administration.commands.RevokeCertificationCommand;
+import org.axonframework.integrationtests.testsuite.administration.commands.SuspendEmployeeCommand;
 import org.axonframework.integrationtests.testsuite.administration.common.PersonIdentifier;
 import org.axonframework.integrationtests.testsuite.administration.common.PersonType;
 import org.axonframework.integrationtests.testsuite.administration.events.CertificationRevoked;
@@ -41,6 +42,7 @@ import org.axonframework.integrationtests.testsuite.administration.state.mutable
 import org.axonframework.integrationtests.testsuite.administration.state.mutable.MutableTask;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageTypeResolver;
+import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.annotation.AnnotatedHandlerInspector;
 import org.axonframework.messaging.core.annotation.HandlerDefinition;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
@@ -159,6 +161,14 @@ public abstract class MutableBuilderEntityModelAdministrationIT extends Abstract
                                             EventAppender eventAppender = EventAppender.forContext(context);
                                             GrantCertificationCommand convertedPayload =
                                                     command.payloadAs(GrantCertificationCommand.class);
+                                            entity.handle(convertedPayload, eventAppender);
+                                            return MessageStream.empty().cast();
+                                        }))
+                .instanceCommandHandler(new QualifiedName(SuspendEmployeeCommand.COMMAND_NAME),
+                                        ((command, entity, context) -> {
+                                            EventAppender eventAppender = EventAppender.forContext(context);
+                                            SuspendEmployeeCommand convertedPayload =
+                                                    command.payloadAs(SuspendEmployeeCommand.class);
                                             entity.handle(convertedPayload, eventAppender);
                                             return MessageStream.empty().cast();
                                         }))
