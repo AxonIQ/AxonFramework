@@ -196,10 +196,7 @@ public abstract class AbstractAdministrationIT extends AbstractIT {
         SuspendEmployeeCommand command = new SuspendEmployeeCommand(
                 CREATE_EMPLOYEE_1_COMMAND.identifier(), "policy violation"
         );
-        commandGateway.send(new GenericCommandMessage(new MessageType(SuspendEmployeeCommand.COMMAND_NAME), command))
-                      .getResultMessage()
-                      .orTimeout(2, TimeUnit.SECONDS)
-                      .join();
+        sendCommand(new GenericCommandMessage(new MessageType(SuspendEmployeeCommand.COMMAND_NAME), command));
 
         assertThat(capturedEmployeeSuspendedEvents)
                 .containsExactly(new EmployeeSuspended(CREATE_EMPLOYEE_1_COMMAND.identifier(), "policy violation"));
