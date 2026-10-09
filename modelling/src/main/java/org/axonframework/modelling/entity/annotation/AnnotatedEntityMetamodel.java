@@ -23,7 +23,6 @@ import org.axonframework.common.StringUtils;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.common.infra.DescribableComponent;
-import org.axonframework.conversion.ConversionException;
 import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.commandhandling.CommandResultMessage;
 import org.axonframework.messaging.commandhandling.GenericCommandResultMessage;
@@ -637,11 +636,7 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
         }
         Class<?> expectedRepresentation = getExpectedRepresentation(type.qualifiedName());
         if (expectedRepresentation == null) {
-            // Should not happen, since how does a command reach the model without a handler for it.
-            throw new ConversionException(String.format(
-                    "Cannot convert command [%s] for handling since entity [%s] has no handler for this command type.",
-                    type, entityType()
-            ));
+            return MessageStream.failed(new NoHandlerForCommandException(message, entityType()));
         }
         CommandMessage convertedMessage = message.withConvertedPayload(expectedRepresentation, messageConverter);
         return delegateMetamodel.handleCreate(convertedMessage, context);
@@ -658,11 +653,7 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
         }
         Class<?> expectedRepresentation = getExpectedRepresentation(type.qualifiedName());
         if (expectedRepresentation == null) {
-            // Should not happen, since how does a command reach the model without a handler for it.
-            throw new NoHandlerForCommandException(String.format(
-                    "Cannot convert command [%s] for handling since entity [%s] has no handler for this command type.",
-                    type, entityType()
-            ));
+            return MessageStream.failed(new NoHandlerForCommandException(message, entityType()));
         }
         CommandMessage convertedMessage = message.withConvertedPayload(expectedRepresentation, messageConverter);
         return delegateMetamodel.handleInstance(convertedMessage, entity, context);

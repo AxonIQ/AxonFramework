@@ -78,7 +78,24 @@ class AnnotatedEntityMetamodelCommandNameRegistrationTest
         // when / then
         assertThatThrownBy(
                 () -> metamodel.handleInstance(command, entityState, StubProcessingContext.forMessage(command))
-        ).isInstanceOf(NoHandlerForCommandException.class);
+                               .first()
+                               .asCompletableFuture()
+                               .join()
+        ).hasCauseInstanceOf(NoHandlerForCommandException.class);
+    }
+
+    @Test
+    void handleCreateForUnregisteredCommandNameReturnsFailedStreamWithNoHandlerForCommandException() {
+        // given
+        CommandMessage command = new GenericCommandMessage(new MessageType(Rename.class), new Rename("new-name"));
+
+        // when / then
+        assertThatThrownBy(
+                () -> metamodel.handleCreate(command, StubProcessingContext.forMessage(command))
+                               .first()
+                               .asCompletableFuture()
+                               .join()
+        ).hasCauseInstanceOf(NoHandlerForCommandException.class);
     }
 
     public record Rename(String name) {
