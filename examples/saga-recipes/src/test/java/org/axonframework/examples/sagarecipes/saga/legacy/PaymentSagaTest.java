@@ -32,12 +32,14 @@ import org.axonframework.examples.sagarecipes.rental.write.rejectrequest.RejectR
 import org.axonframework.examples.sagarecipes.saga.shared.RentalPaymentReference;
 import org.axonframework.examples.sagarecipes.saga.shared.RentalPricing;
 import org.axonframework.test.saga.SagaTestFixture;
+import org.axonframework.test.util.CallbackBehavior;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * The bike rental sample application's own {@code PaymentSagaTest}, kept as it was written.
@@ -45,9 +47,6 @@ import java.time.Duration;
  * This is the other half of the port: the Axon Framework 4 saga runs on the Axon Framework 4 fixture, so a reader
  * migrating a suite can see how much of it survives untouched. Only the domain types differ from the original, since
  * this module models the two contexts as records rather than as one shared package of aggregates.
- * <p>
- * The scenarios that depend on a scheduled deadline stay here, disabled, rather than being rewritten. Rewriting them
- * would hide exactly what a migration has to deal with.
  *
  * @author Mateusz Nowak
  */
@@ -107,8 +106,6 @@ class PaymentSagaTest {
                .expectActiveSagas(0);
     }
 
-    @Disabled("#3065: SagaTestFixture.whenTimeElapses(..) throws UnsupportedOperationException until deadlines "
-                      + "are ported into axoniq-legacy")
     @Test
     void shouldRejectPaymentWhenNotConfirmedIn30Seconds() {
         // given
@@ -119,5 +116,119 @@ class PaymentSagaTest {
                .andThenAPublished(new PaymentPrepared(paymentId, RentalPricing.PRICE, reference))
                .whenTimeElapses(Duration.ofSeconds(30))
                .expectDispatchedCommands(new RejectPayment(paymentId));
+    }
+
+    @Nested
+    class PaymentTimeout {
+
+        @Test
+        void isScheduledWhenPaymentIsPrepared() {
+            // given
+            PaymentId paymentId = PaymentId.random();
+
+            // when / then
+            fixture.givenAPublished(new BikeRequested(bikeId, renter, rentalId))
+                   .whenPublishingA(new PaymentPrepared(paymentId, RentalPricing.PRICE, reference))
+                   .expectScheduledDeadline(Duration.ofSeconds(30), paymentId.raw());
+        }
+
+        @Test
+        void isCancelledWhenRequestIsRejected() {
+            // given
+            PaymentId paymentId = PaymentId.random();
+
+            // when / then
+            fixture.givenAPublished(new BikeRequested(bikeId, renter, rentalId))
+                   .andThenAPublished(new PaymentPrepared(paymentId, RentalPricing.PRICE, reference))
+                   .whenPublishingA(new RequestRejected(bikeId, renter, rentalId))
+                   .expectNoScheduledDeadlines()
+                   .expectActiveSagas(0);
+        }
+
+        @Test
+        void doesNotRejectPaymentBeforeItIsDue() {
+            // given
+            PaymentId paymentId = PaymentId.random();
+
+            // when / then
+            fixture.givenAPublished(new BikeRequested(bikeId, renter, rentalId))
+                   .andThenAPublished(new PaymentPrepared(paymentId, RentalPricing.PRICE, reference))
+                   .whenTimeElapses(Duration.ofSeconds(29))
+                   .expectNoDispatchedCommands();
+        }
+
+        @Test
+        void doesNothingWhenItFiresAfterThePaymentWasConfirmed() {
+            // given
+            PaymentId paymentId = PaymentId.random();
+
+            // when / then the Saga ended on the confirmation, and a deadline outliving it finds nobody to handle it
+            fixture.givenAPublished(new BikeRequested(bikeId, renter, rentalId))
+                   .andThenAPublished(new PaymentPrepared(paymentId, RentalPricing.PRICE, reference))
+                   .andThenAPublished(new PaymentConfirmed(paymentId, reference))
+                   .whenTimeElapses(Duration.ofSeconds(30))
+                   .expectNoDispatchedCommands();
+        }
+    }
+
+    /**
+     * The payment context may be unreachable when the Saga asks it to prepare a payment. The original did not give up,
+     * but asked again five seconds later, through a deadline.
+     */
+    @Nested
+    class PaymentRequestRetry {
+
+        private final CallbackBehavior unavailable = (command, metadata) -> {
+            throw new IllegalStateException("payment context unavailable");
+        };
+
+        @Test
+        void isNotScheduledWhenThePaymentIsPrepared() {
+            // given / when / then
+            fixture.givenNoPriorActivity()
+                   .whenPublishingA(new BikeRequested(bikeId, renter, rentalId))
+                   .expectNoScheduledDeadlines();
+        }
+
+        @Test
+        void isScheduledWhenPreparingThePaymentFails() {
+            // given
+            fixture.setCallbackBehavior(unavailable);
+
+            // when / then
+            fixture.givenNoPriorActivity()
+                   .whenPublishingA(new BikeRequested(bikeId, renter, rentalId))
+                   .expectScheduledDeadline(Duration.ofSeconds(5), reference.raw());
+        }
+
+        @Test
+        void asksForThePaymentAgainWhenTheDeadlineFires() {
+            // given the payment context is down for the first attempt only
+            AtomicInteger attempts = new AtomicInteger();
+            fixture.setCallbackBehavior((command, metadata) -> {
+                if (attempts.incrementAndGet() == 1) {
+                    return unavailable.handle(command, metadata);
+                }
+                return null;
+            });
+
+            // when / then
+            fixture.givenAPublished(new BikeRequested(bikeId, renter, rentalId))
+                   .whenTimeElapses(Duration.ofSeconds(5))
+                   .expectDispatchedCommands(new PreparePayment(reference, RentalPricing.PRICE))
+                   .expectNoScheduledDeadlines();
+        }
+
+        @Test
+        void keepsAskingWhileThePaymentContextStaysUnavailable() {
+            // given
+            fixture.setCallbackBehavior(unavailable);
+
+            // when / then
+            fixture.givenAPublished(new BikeRequested(bikeId, renter, rentalId))
+                   .whenTimeElapses(Duration.ofSeconds(5))
+                   .expectDispatchedCommands(new PreparePayment(reference, RentalPricing.PRICE))
+                   .expectScheduledDeadline(Duration.ofSeconds(5), reference.raw());
+        }
     }
 }
