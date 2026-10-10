@@ -42,11 +42,15 @@ import java.time.Duration;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * The bike rental sample application's own {@code PaymentSagaTest}, kept as it was written.
+ * The bike rental sample application's own {@code PaymentSagaTest}, with its scenarios kept as they were written.
  * <p>
  * This is the other half of the port: the Axon Framework 4 saga runs on the Axon Framework 4 fixture, so a reader
  * migrating a suite can see how much of it survives untouched. Only the domain types differ from the original, since
  * this module models the two contexts as records rather than as one shared package of aggregates.
+ * <p>
+ * The top-level tests are the original's five scenarios. The nested {@code PaymentTimeout} and
+ * {@code PaymentRequestRetry} groups are additions that pin down the deadline behaviour the original only exercised
+ * in {@code shouldRejectPaymentWhenNotConfirmedIn30Seconds}.
  *
  * @author Mateusz Nowak
  */
@@ -183,7 +187,7 @@ class PaymentSagaTest {
         };
 
         @Test
-        void isNotScheduledWhenThePaymentIsPrepared() {
+        void isNotScheduledWhenPreparingThePaymentSucceeds() {
             // given / when / then
             fixture.givenNoPriorActivity()
                    .whenPublishingA(new BikeRequested(bikeId, renter, rentalId))
