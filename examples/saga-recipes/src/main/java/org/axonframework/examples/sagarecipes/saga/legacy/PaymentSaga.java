@@ -81,8 +81,9 @@ import java.time.Duration;
  *     <li>The deadline payloads are the raw {@link String}s of the payment's identifier and reference, as the
  *     original's were, rather than {@code PaymentId} and {@code PaymentReference}, so they do not depend on how a
  *     {@code DeadlineManager} stores or converts its payload.</li>
- *     <li>A failed dispatch is noticed with {@code CommandResult.onError(..)}, since {@code send(..)} on a
- *     {@code CommandDispatcher} returns a {@code CommandResult} rather than a {@code CompletableFuture}.</li>
+ *     <li>The request for payment is sent with the expected result type, {@code send(command, Object.class)}, which
+ *     is what gives back the {@code CompletableFuture} the original's {@code whenComplete(..)} block is attached
+ *     to.</li>
  *     <li>The class suppresses deprecation warnings, because {@code axoniq-legacy} deprecates scheduling new deadlines
  *     through a {@code DeadlineManager}. It keeps Axon Framework 4 code running while migrating; it is not how to
  *     schedule in new code. The recipe that does solve payment timeouts without a deadline manager is
@@ -200,10 +201,11 @@ public class PaymentSaga {
     public void preparePayment(String rentalReference, CommandDispatcher dispatcher,
                                DeadlineManager deadlineManager) {
         ScopeDescriptor scope = Scope.describeCurrentScope();
-        dispatcher.send(new PreparePayment(PaymentReference.of(rentalReference), RentalPricing.PRICE))
-                  .onError(e -> deadlineManager.schedule(Duration.ofSeconds(5),
-                                                         "retryPayment",
-                                                         rentalReference,
-                                                         scope));
+        dispatcher.send(new PreparePayment(PaymentReference.of(rentalReference), RentalPricing.PRICE), Object.class)
+                  .whenComplete((r, e) -> {
+                      if (e != null) {
+                          deadlineManager.schedule(Duration.ofSeconds(5), "retryPayment", rentalReference, scope);
+                      }
+                  });
     }
 }
