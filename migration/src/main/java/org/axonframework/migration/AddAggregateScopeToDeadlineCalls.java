@@ -97,7 +97,6 @@ public class AddAggregateScopeToDeadlineCalls extends ScanningRecipe<AddAggregat
     private static final String AGGREGATE_ROOT_FQN = "org.axonframework.modelling.command.AggregateRoot";
     private static final String AGGREGATE_IDENTIFIER_FQN = "org.axonframework.modelling.command.AggregateIdentifier";
     private static final String ENTITY_ID_FQN = "org.axonframework.modelling.command.EntityId";
-    private static final String AGGREGATE_MEMBER_FQN = "org.axonframework.modelling.command.AggregateMember";
     private static final String CREATION_POLICY_FQN = "org.axonframework.modelling.command.CreationPolicy";
     /**
      * The Axon Framework 4 methods taking the class an aggregate's repository is configured for: the aggregate
@@ -158,7 +157,7 @@ public class AddAggregateScopeToDeadlineCalls extends ScanningRecipe<AddAggregat
 
         final SagaClasses sagaClasses = new SagaClasses();
         final Map<String, ClassInfo> classes = new HashMap<>();
-        final Map<String, String> memberEntityOwners = new HashMap<>();
+        final MemberEntities memberEntities = new MemberEntities();
         final Set<String> configuredRoots = new HashSet<>();
     }
 
@@ -235,7 +234,7 @@ public class AddAggregateScopeToDeadlineCalls extends ScanningRecipe<AddAggregat
                             hasAggregateHandler(classDeclaration)
                     ));
                 }
-                collectMemberEntityTypes(classDeclaration, acc.memberEntityOwners);
+                acc.memberEntities.collect(classDeclaration);
                 return super.visitClassDeclaration(classDeclaration, ctx);
             }
 
@@ -298,7 +297,7 @@ public class AddAggregateScopeToDeadlineCalls extends ScanningRecipe<AddAggregat
                 if (mayCreateAggregate(enclosingMethod)) {
                     return markStatement(visited, todo(type, CREATION_REASON));
                 }
-                String owner = acc.memberEntityOwners.get(className);
+                String owner = acc.memberEntities.ownerOf(className);
                 if (owner != null) {
                     return markStatement(visited, todo(Aggregate.of(owner, acc).type, MEMBER_REASON));
                 }
@@ -538,36 +537,6 @@ public class AddAggregateScopeToDeadlineCalls extends ScanningRecipe<AddAggregat
     }
 
     /**
-     * Records the entity types of the {@code @AggregateMember} fields with the class declaring them: the field type
-     * itself, the element type of a collection, or the value type of a map.
-     */
-    private static void collectMemberEntityTypes(J.ClassDeclaration classDeclaration,
-                                                 Map<String, String> memberEntityOwners) {
-        JavaType.FullyQualified owner = classDeclaration.getType();
-        if (owner == null) {
-            return;
-        }
-        for (Statement statement : classDeclaration.getBody().getStatements()) {
-            if (!(statement instanceof J.VariableDeclarations field)
-                    || field.getLeadingAnnotations().stream()
-                            .noneMatch(annotation -> isAnnotation(annotation,
-                                                                  AGGREGATE_MEMBER_FQN,
-                                                                  "AggregateMember"))) {
-                continue;
-            }
-            JavaType type = field.getType();
-            if (type instanceof JavaType.Parameterized parameterized
-                    && !parameterized.getTypeParameters().isEmpty()) {
-                type = parameterized.getTypeParameters().getLast();
-            }
-            String name = resolvedName(type);
-            if (name != null) {
-                memberEntityOwners.put(name, owner.getFullyQualifiedName());
-            }
-        }
-    }
-
-    /**
      * Prepends the TODO line comment to the element's prefix, keeping the element on its original indent below it.
      */
     private static <T extends J> T mark(T element, String todo) {
@@ -601,7 +570,7 @@ public class AddAggregateScopeToDeadlineCalls extends ScanningRecipe<AddAggregat
             if (self == null) {
                 return new Aggregate(false, null, null);
             }
-            boolean recognised = acc.memberEntityOwners.containsKey(className);
+            boolean recognised = acc.memberEntities.ownerOf(className) != null;
             String declaredType = null;
             String configuredType = null;
             Identifier identifier = null;

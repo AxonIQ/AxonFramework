@@ -122,45 +122,6 @@ class MigrateAggregateDeadlineHandlerTest implements RewriteTest {
         }
 
         @Test
-        void replacesDeadlineHandlerOfMemberEntity() {
-            rewriteRun(
-                    java(PAYLOAD),
-                    java(
-                            """
-                            package com.example;
-
-                            import org.axonframework.deadline.annotation.DeadlineHandler;
-                            import org.axonframework.modelling.command.EntityId;
-
-                            class OrderLine {
-                                @EntityId
-                                private String lineId;
-
-                                @DeadlineHandler(deadlineName = "paymentDeadline")
-                                void on(PaymentDeadline deadline) {
-                                }
-                            }
-                            """,
-                            """
-                            package com.example;
-
-                            import org.axonframework.commandhandling.CommandHandler;
-                            import org.axonframework.modelling.command.EntityId;
-
-                            class OrderLine {
-                                @EntityId
-                                private String lineId;
-
-                                @CommandHandler
-                                void on(PaymentDeadline deadline) {
-                                }
-                            }
-                            """
-                    )
-            );
-        }
-
-        @Test
         void marksBothHandlersThatReceiveTheSamePayloadType() {
             rewriteRun(
                     java(PAYLOAD),
@@ -186,12 +147,12 @@ class MigrateAggregateDeadlineHandlerTest implements RewriteTest {
                             import org.axonframework.commandhandling.CommandHandler;
 
                             class Order {
-                                // TODO(axon4to5): give each deadline handled here a payload class of its own. Another handler of this class receives the same payload type, which Axon Framework 4 told apart by deadline name or message type. A fired aggregate deadline now arrives as a command named after its payload class, or after the deadline name when it has no payload.
+                                // TODO(axon4to5): give each deadline handled here a payload class of its own. Another handler of this aggregate or of its member entities receives the same payload type, which Axon Framework 4 told apart by deadline name or message type. A fired aggregate deadline now arrives as a command named after its payload class, or after the deadline name when it has no payload.
                                 @CommandHandler
                                 void onFirst(PaymentDeadline deadline) {
                                 }
 
-                                // TODO(axon4to5): give each deadline handled here a payload class of its own. Another handler of this class receives the same payload type, which Axon Framework 4 told apart by deadline name or message type. A fired aggregate deadline now arrives as a command named after its payload class, or after the deadline name when it has no payload.
+                                // TODO(axon4to5): give each deadline handled here a payload class of its own. Another handler of this aggregate or of its member entities receives the same payload type, which Axon Framework 4 told apart by deadline name or message type. A fired aggregate deadline now arrives as a command named after its payload class, or after the deadline name when it has no payload.
                                 @CommandHandler
                                 void onSecond(PaymentDeadline deadline) {
                                 }
@@ -232,7 +193,7 @@ class MigrateAggregateDeadlineHandlerTest implements RewriteTest {
                                 void handle(PaymentDeadline command) {
                                 }
 
-                                // TODO(axon4to5): give each deadline handled here a payload class of its own. Another handler of this class receives the same payload type, which Axon Framework 4 told apart by deadline name or message type. A fired aggregate deadline now arrives as a command named after its payload class, or after the deadline name when it has no payload.
+                                // TODO(axon4to5): give each deadline handled here a payload class of its own. Another handler of this aggregate or of its member entities receives the same payload type, which Axon Framework 4 told apart by deadline name or message type. A fired aggregate deadline now arrives as a command named after its payload class, or after the deadline name when it has no payload.
                                 @CommandHandler
                                 void on(PaymentDeadline deadline) {
                                 }
@@ -471,6 +432,130 @@ class MigrateAggregateDeadlineHandlerTest implements RewriteTest {
                                 // TODO(axon4to5): replace this @DeadlineHandler with a @CommandHandler per deadline it handles. It names neither a deadline nor a payload type, so it handled every deadline of the aggregate. A fired aggregate deadline now arrives as a command named after its payload class, or after the deadline name when it has no payload.
                                 @DeadlineHandler
                                 void onAnyDeadline() {
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+    }
+
+    @Nested
+    class MemberEntities {
+
+        private static final String ORDER = """
+                package com.example;
+
+                import org.axonframework.modelling.command.AggregateIdentifier;
+                import org.axonframework.modelling.command.AggregateMember;
+
+                import java.util.List;
+
+                class Order {
+                    @AggregateIdentifier
+                    private String orderId;
+                    @AggregateMember
+                    private List<OrderLine> lines;
+                }
+                """;
+
+        @Test
+        void marksDeadlineHandlerOfMemberEntityAndKeepsIt() {
+            rewriteRun(
+                    java(PAYLOAD),
+                    java(ORDER),
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.modelling.command.EntityId;
+
+                            class OrderLine {
+                                @EntityId
+                                private String lineId;
+
+                                @DeadlineHandler(deadlineName = "paymentDeadline")
+                                void on(PaymentDeadline deadline) {
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.modelling.command.EntityId;
+
+                            class OrderLine {
+                                @EntityId
+                                private String lineId;
+
+                                // TODO(axon4to5): replace this @DeadlineHandler with a @CommandHandler on the aggregate root, or one this entity receives through its routing key. Axon Framework 4 delivered a fired deadline to the aggregate root and to every member entity, while the command it now arrives as reaches an entity in a collection only through a routing key.
+                                @DeadlineHandler(deadlineName = "paymentDeadline")
+                                void on(PaymentDeadline deadline) {
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void marksRootHandlerWhosePayloadTypeAMemberEntityHandlerReceives() {
+            rewriteRun(
+                    java(PAYLOAD),
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.modelling.command.AggregateIdentifier;
+                            import org.axonframework.modelling.command.AggregateMember;
+
+                            import java.util.List;
+
+                            class Order {
+                                @AggregateIdentifier
+                                private String orderId;
+                                @AggregateMember
+                                private List<OrderLine> lines;
+
+                                @DeadlineHandler(deadlineName = "paymentDeadline")
+                                void on(PaymentDeadline deadline) {
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.commandhandling.CommandHandler;
+                            import org.axonframework.modelling.command.AggregateIdentifier;
+                            import org.axonframework.modelling.command.AggregateMember;
+
+                            import java.util.List;
+
+                            class Order {
+                                @AggregateIdentifier
+                                private String orderId;
+                                @AggregateMember
+                                private List<OrderLine> lines;
+
+                                // TODO(axon4to5): give each deadline handled here a payload class of its own. Another handler of this aggregate or of its member entities receives the same payload type, which Axon Framework 4 told apart by deadline name or message type. A fired aggregate deadline now arrives as a command named after its payload class, or after the deadline name when it has no payload.
+                                @CommandHandler
+                                void on(PaymentDeadline deadline) {
+                                }
+                            }
+                            """
+                    ),
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.commandhandling.CommandHandler;
+
+                            class OrderLine {
+                                @CommandHandler
+                                void handle(PaymentDeadline command) {
                                 }
                             }
                             """

@@ -45,8 +45,8 @@ import static org.axonframework.migration.SagaClasses.isAnnotation;
 import static org.axonframework.migration.SagaClasses.resolvedName;
 
 /**
- * Replaces the Axon Framework 4 {@code @DeadlineHandler} of an aggregate, or of one of its member entities, with the
- * Axon Framework 4 {@code @CommandHandler} that receives the deadline once it fires.
+ * Replaces the Axon Framework 4 {@code @DeadlineHandler} of an aggregate with the Axon Framework 4
+ * {@code @CommandHandler} that receives the deadline once it fires.
  * <p>
  * On the Axoniq Framework legacy module, a deadline scheduled for an aggregate scope fires as a command: a deadline
  * with a payload becomes a command named after its payload class, and a deadline without a payload becomes a command
@@ -69,8 +69,11 @@ import static org.axonframework.migration.SagaClasses.resolvedName;
  *     <li>a handler that names neither a deadline nor a payload type handled every deadline of the aggregate, and an
  *     {@code Object}, interface or abstract payload parameter names no command. These keep their
  *     {@code @DeadlineHandler};</li>
- *     <li>two handlers of one class that receive the same payload type, which Axon Framework 4 told apart by deadline
- *     name or message type, now receive the same command;</li>
+ *     <li>a handler of a member entity keeps its {@code @DeadlineHandler}: Axon Framework 4 delivered a fired
+ *     deadline to the aggregate root and to every member entity, while a command reaches an entity in a collection
+ *     only through a routing key;</li>
+ *     <li>two handlers of one aggregate, its root and member entities included, that receive the same payload type,
+ *     which Axon Framework 4 told apart by deadline name or message type, now receive the same command;</li>
  *     <li>a {@code DeadlineMessage} parameter does not match the command message that now arrives.</li>
  * </ul>
  * Saga classes, which keep their {@code @DeadlineHandler} on the legacy module, are left alone. The recipe is
@@ -79,7 +82,7 @@ import static org.axonframework.migration.SagaClasses.resolvedName;
  * @author Mateusz Nowak
  * @since 5.4.0
  */
-public class MigrateAggregateDeadlineHandler extends ScanningRecipe<SagaClasses> {
+public class MigrateAggregateDeadlineHandler extends ScanningRecipe<MigrateAggregateDeadlineHandler.Accumulator> {
 
     private static final String DEADLINE_HANDLER_FQN = "org.axonframework.deadline.annotation.DeadlineHandler";
     private static final String COMMAND_HANDLER_AF4_FQN = "org.axonframework.commandhandling.CommandHandler";
@@ -111,8 +114,12 @@ public class MigrateAggregateDeadlineHandler extends ScanningRecipe<SagaClasses>
     private static final String SHARED_PAYLOAD_MARKER =
             "TODO(axon4to5): give each deadline handled here a payload class of its own.";
     private static final String SHARED_PAYLOAD_TODO = " " + SHARED_PAYLOAD_MARKER
-            + " Another handler of this class receives the same payload type, which Axon Framework 4 told apart by"
-            + " deadline name or message type." + FIRED_AS_COMMAND;
+            + " Another handler of this aggregate or of its member entities receives the same payload type, which"
+            + " Axon Framework 4 told apart by deadline name or message type." + FIRED_AS_COMMAND;
+    private static final String MEMBER_TODO = " " + REPLACE_MARKER + " on the aggregate root, or one this entity"
+            + " receives through its routing key. Axon Framework 4 delivered a fired deadline to the aggregate root and"
+            + " to every member entity, while the command it now arrives as reaches an entity in a collection only"
+            + " through a routing key.";
     private static final String DEADLINE_MESSAGE_MARKER = "TODO(axon4to5): replace the DeadlineMessage parameter";
     private static final String DEADLINE_MESSAGE_TODO = " " + DEADLINE_MESSAGE_MARKER
             + " with the payload or metadata this handler needs."
@@ -127,33 +134,70 @@ public class MigrateAggregateDeadlineHandler extends ScanningRecipe<SagaClasses>
     public String getDescription() {
         return "On the Axoniq Framework legacy module, a deadline scheduled for an aggregate fires as a command, "
                 + "named after its payload class, or after the deadline name when it has no payload. Replaces the "
-                + "`@DeadlineHandler` of an aggregate, or of a member entity, with the Axon Framework 4 "
-                + "`@CommandHandler` that receives that command: a handler with a payload parameter becomes a plain "
-                + "`@CommandHandler`, and a handler without one becomes `@CommandHandler(commandName = "
-                + "<deadlineName>)`. Leaves a `// TODO(axon4to5):` marker where no command can reach the handler, "
-                + "where two handlers now receive the same command, and on `DeadlineMessage` parameters. Saga "
+                + "`@DeadlineHandler` of an aggregate with the Axon Framework 4 `@CommandHandler` that receives "
+                + "that command: a handler with a payload parameter becomes a plain `@CommandHandler`, and a handler "
+                + "without one becomes `@CommandHandler(commandName = <deadlineName>)`. Leaves a "
+                + "`// TODO(axon4to5):` marker where no command can reach the handler, on the handlers of member "
+                + "entities, where two handlers of an aggregate now receive the same command, and on "
+                + "`DeadlineMessage` parameters. Saga "
                 + "`@DeadlineHandler` methods are left alone. Idempotent.";
     }
 
-    @Override
-    public SagaClasses getInitialValue(ExecutionContext ctx) {
-        return new SagaClasses();
+    /**
+     * What the scanning phase learns about the source classes.
+     */
+    public static class Accumulator {
+
+        final SagaClasses sagaClasses = new SagaClasses();
+        final MemberEntities memberEntities = new MemberEntities();
+        final Map<String, List<String>> handledPayloadTypes = new HashMap<>();
+
+        /**
+         * Counts the handlers per payload type over the aggregate the class belongs to: its root and all member
+         * entities, as one command reaches only one of them.
+         */
+        Map<String, Integer> handlersPerPayloadType(String className) {
+            String root = memberEntities.rootOf(className);
+            List<String> payloadTypes = new ArrayList<>();
+            handledPayloadTypes.forEach((type, handled) -> {
+                if (root.equals(memberEntities.rootOf(type))) {
+                    payloadTypes.addAll(handled);
+                }
+            });
+            return count(payloadTypes);
+        }
+    }
+
+    private static Map<String, Integer> count(List<String> payloadTypes) {
+        Map<String, Integer> counts = new HashMap<>();
+        payloadTypes.forEach(payloadType -> counts.merge(payloadType, 1, Integer::sum));
+        return counts;
     }
 
     @Override
-    public TreeVisitor<?, ExecutionContext> getScanner(SagaClasses sagaClasses) {
+    public Accumulator getInitialValue(ExecutionContext ctx) {
+        return new Accumulator();
+    }
+
+    @Override
+    public TreeVisitor<?, ExecutionContext> getScanner(Accumulator acc) {
         return new JavaIsoVisitor<>() {
             @Override
             public J.ClassDeclaration visitClassDeclaration(J.ClassDeclaration classDeclaration,
                                                              ExecutionContext ctx) {
-                sagaClasses.collect(classDeclaration);
+                acc.sagaClasses.collect(classDeclaration);
+                acc.memberEntities.collect(classDeclaration);
+                JavaType.FullyQualified type = classDeclaration.getType();
+                if (type != null && !(type instanceof JavaType.Unknown)) {
+                    acc.handledPayloadTypes.put(type.getFullyQualifiedName(), handledPayloadTypes(classDeclaration));
+                }
                 return super.visitClassDeclaration(classDeclaration, ctx);
             }
         };
     }
 
     @Override
-    public TreeVisitor<?, ExecutionContext> getVisitor(SagaClasses sagaClasses) {
+    public TreeVisitor<?, ExecutionContext> getVisitor(Accumulator acc) {
         return new JavaIsoVisitor<>() {
             @Override
             public boolean isAcceptable(SourceFile sourceFile, ExecutionContext ctx) {
@@ -165,32 +209,32 @@ public class MigrateAggregateDeadlineHandler extends ScanningRecipe<SagaClasses>
                                                              ExecutionContext ctx) {
                 // Nested classes are handled by the recursive call, before their enclosing class.
                 J.ClassDeclaration visited = super.visitClassDeclaration(classDeclaration, ctx);
-                if (sagaClasses.isSaga(visited)) {
+                if (acc.sagaClasses.isSaga(visited)) {
                     return visited;
                 }
+                JavaType.FullyQualified type = visited.getType();
+                String className = type == null || type instanceof JavaType.Unknown
+                        ? null
+                        : type.getFullyQualifiedName();
+                boolean memberEntity = className != null && acc.memberEntities.ownerOf(className) != null;
                 Map<J.MethodDeclaration, Migration> migrations = new HashMap<>();
-                Map<String, Integer> handlersPerPayloadType = new HashMap<>();
                 for (Statement statement : visited.getBody().getStatements()) {
-                    if (!(statement instanceof J.MethodDeclaration method)) {
-                        continue;
-                    }
-                    J.Annotation deadlineHandler = annotation(method, DEADLINE_HANDLER_FQN, "DeadlineHandler");
-                    if (deadlineHandler != null) {
-                        Migration migration = migrationOf(method, deadlineHandler);
-                        migrations.put(method, migration);
-                        if (migration.payloadType != null) {
-                            handlersPerPayloadType.merge(migration.payloadType, 1, Integer::sum);
-                        }
-                    } else {
-                        String commandPayloadType = commandPayloadType(method);
-                        if (commandPayloadType != null) {
-                            handlersPerPayloadType.merge(commandPayloadType, 1, Integer::sum);
+                    if (statement instanceof J.MethodDeclaration method) {
+                        J.Annotation deadlineHandler = annotation(method, DEADLINE_HANDLER_FQN, "DeadlineHandler");
+                        if (deadlineHandler != null) {
+                            migrations.put(method, memberEntity
+                                    ? Migration.mark(MEMBER_TODO)
+                                    : migrationOf(method, deadlineHandler));
                         }
                     }
                 }
                 if (migrations.isEmpty()) {
                     return visited;
                 }
+                Map<String, Integer> handlersPerPayloadType =
+                        className != null && acc.handledPayloadTypes.containsKey(className)
+                                ? acc.handlersPerPayloadType(className)
+                                : count(handledPayloadTypes(visited));
                 List<Statement> statements = ListUtils.map(visited.getBody().getStatements(), statement -> {
                     if (!(statement instanceof J.MethodDeclaration method) || !migrations.containsKey(method)) {
                         return statement;
@@ -210,6 +254,28 @@ public class MigrateAggregateDeadlineHandler extends ScanningRecipe<SagaClasses>
                 return visited.withBody(visited.getBody().withStatements(statements));
             }
         };
+    }
+
+    /**
+     * Returns the payload types the handlers of the class receive commands for once migrated: the payload type of
+     * each {@code @DeadlineHandler} that becomes a payload-routed command handler, and of each existing
+     * {@code @CommandHandler} without a {@code commandName}.
+     */
+    private static List<String> handledPayloadTypes(J.ClassDeclaration classDeclaration) {
+        List<String> payloadTypes = new ArrayList<>();
+        for (Statement statement : classDeclaration.getBody().getStatements()) {
+            if (!(statement instanceof J.MethodDeclaration method)) {
+                continue;
+            }
+            J.Annotation deadlineHandler = annotation(method, DEADLINE_HANDLER_FQN, "DeadlineHandler");
+            String payloadType = deadlineHandler != null
+                    ? migrationOf(method, deadlineHandler).payloadType
+                    : commandPayloadType(method);
+            if (payloadType != null) {
+                payloadTypes.add(payloadType);
+            }
+        }
+        return payloadTypes;
     }
 
     /**
