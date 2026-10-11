@@ -60,6 +60,11 @@ recipeList:
   - org.axonframework.migration.AddAxonTestFixtureTearDown:
       fixtureType: org.axonframework.test.saga.SagaTestFixture
 
+  # The ported fixture takes Axon Framework 5 interceptors, also for
+  # `registerEventHandlerInterceptor(..)`. Shared with the deadline recipe, which
+  # needs it for the deadline interceptors; running it twice is a no-op.
+  - org.axonframework.migration.MigrateLegacyFixtureInterceptorLambdas
+
   - org.axonframework.migration.MigrateSagaLifecycle
   - org.axonframework.migration.MigrateCommandGatewayInSagaEventHandler
   # Runs after the CommandGateway migration, which already turned that field into a

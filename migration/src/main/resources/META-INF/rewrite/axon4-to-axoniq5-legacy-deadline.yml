@@ -90,3 +90,11 @@ recipeList:
       fullyQualifiedTypeName: org.axonframework.deadline.DeadlineMessage
   - org.axonframework.migration.RemoveTypeArguments:
       fullyQualifiedTypeName: org.axonframework.deadline.GenericDeadlineMessage
+  # The ported SagaTestFixture and StubDeadlineManager take Axon Framework 5
+  # interceptors, so the Axon Framework 4 interceptor lambdas registered on them
+  # stop compiling. Runs here, on the Axon Framework 4 types, before the free leg
+  # renames the interceptor types; the rewritten lambdas keep the types of the
+  # message calls they hold, so the free leg's method renames (`getTimestamp()`,
+  # `andMetaData(..)`) still apply to them. The Saga recipe lists it too, for the
+  # Saga event handler interceptors; running it twice is a no-op.
+  - org.axonframework.migration.MigrateLegacyFixtureInterceptorLambdas
