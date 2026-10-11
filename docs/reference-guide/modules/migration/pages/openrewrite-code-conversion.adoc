@@ -29,12 +29,12 @@ Two top-level recipes are available depending on whether you are targeting the f
 | `org.axonframework.migration.UpgradeAxon4ToAxon5`
 | Migrates an Axon Framework 4 application to free Axon Framework 5.
 Renames packages and classes within the `org.axonframework.*` namespace and applies all core source rewrites.
-| You are targeting free Axon Framework 5 and your AF4 application does *not* use Axon Server connector, the sequenced dead-letter queue, `DistributedCommandBus`, or sagas.
+| You are targeting free Axon Framework 5 and your AF4 application does *not* use Axon Server connector, the sequenced dead-letter queue, `DistributedCommandBus`, sagas, or deadlines.
 *Warning:* if your application does use those features, this recipe alone leaves the codebase non-compiling—use `UpgradeAxon4ToAxoniq5` instead.
 
 | `io.axoniq.framework.migration.UpgradeAxon4ToAxoniq5`
 | Composes the free recipe, then layers commercial migrations on top and swaps the Spring Boot starter and BOM to the commercial coordinates.
-| Recommended for any AF4 application that uses Axon Server, the DLQ, distributed messaging, or sagas.
+| Recommended for any AF4 application that uses Axon Server, the DLQ, distributed messaging, sagas, or deadlines.
 |===
 
 == What gets converted
@@ -52,11 +52,15 @@ AF4's `@TargetAggregateIdentifier` was *both* the target-id and the command's ro
 * **Message API**:accessor method renames, `AggregateLifecycle.apply(...)` replaced with `EventAppender#append(...)`
 * **Command handling**:`@CommandHandler` constructors converted to static `handle(...)` methods, `CommandGateway` replaced with `CommandDispatcher`
 ifdef::advanced-framework[]
-* **Legacy sagas** (commercial recipe only):`axoniq-legacy` added when saga types are detected, static `SagaLifecycle` calls moved to an injected handler parameter, and injected `CommandGateway` fields replaced with `CommandDispatcher` handler parameters. Other injected saga dependencies must be moved to handler parameters manually; the recipe marks those fields, and any `ResourceInjector` usage, with a `TODO(axon4to5)` comment. See xref:migration:paths/sagas.adoc[Saga migration]. `CommandGateway.send(...)` remains fire-and-forget, while `CommandGateway.sendAndWait(...)` remains synchronous.
+* **Legacy sagas** (commercial recipe only):`axoniq-legacy` added when saga types are detected, static `SagaLifecycle` calls moved to an injected handler parameter, a closing `SagaLifecycle.end()` in a `@DeadlineHandler` replaced with `@EndSaga`, and injected `CommandGateway` fields replaced with `CommandDispatcher` handler parameters. Other injected saga dependencies must be moved to handler parameters manually; the recipe marks those fields, and any `ResourceInjector` usage, with a `TODO(axon4to5)` comment. Other static `SagaLifecycle` calls outside a `@SagaEventHandler`, such as a conditional end in a deadline handler, are marked the same way, because the legacy module injects `SagaLifecycle` into `@SagaEventHandler` methods only. See xref:migration:paths/sagas.adoc[Saga migration]. `CommandGateway.send(...)` remains fire-and-forget, while `CommandGateway.sendAndWait(...)` remains synchronous.
+* **Legacy deadlines** (commercial recipe only, `Axon4ToAxoniq5LegacyDeadline`):`axoniq-legacy` added when deadline types are detected, with `DeadlineManager` and `@DeadlineHandler` kept in their Axon Framework 4 packages. An injected `DeadlineManager` field of a saga is moved to a parameter of the handlers that use it. A deadline scheduled for an aggregate fires as a command, so the aggregate's `@DeadlineHandler` becomes the `@CommandHandler` that receives it. Because only saga handlers run inside a scope, aggregate `DeadlineManager` calls that relied on the current scope receive an explicit `AggregateScopeDescriptor`. The deadline manager builders lose `spanFactory(..)` and `transactionManager(..)`, a default Jackson `serializer(..)` becomes `converter(..)`, and `ConfigurationScopeAwareProvider` and `Configuration#deadlineManager()` are replaced with component lookups. The recipe leaves a `TODO(axon4to5)` comment where the replacement is a decision of the application: the required `unitOfWorkFactory(..)`, a converter it cannot infer, `configureDeadlineManager(..)`, interceptors registered on the `DeadlineManager` interface, a `ScopeAwareProvider` registered by the application, aggregate deadline handlers no command can reach, and aggregate `DeadlineManager` calls in constructors, static methods, or member entities.
 endif::[]
 * **Query API**:`ResponseTypes.instanceOf(X.class)` unwrapped to a direct class argument, `query()` renamed to `queryMany()` when used with `multipleInstancesOf`
 * **Spring configuration**:`axon.serializer.*` properties renamed to `axon.converter.*`
 * **Test fixtures**:`AggregateTestFixture` replaced with `AxonTestFixture`, Given-When-Then chain rewritten
+ifdef::advanced-framework[]
+* **Legacy test fixtures** (commercial recipe only):`SagaTestFixture` and `StubDeadlineManager` kept through `axoniq-legacy-test`, interceptor lambdas registered on them rewritten to the Axon Framework 5 signature, and fixture calls the ported `SagaTestFixture` no longer supports, such as the scheduled event assertions, marked with a `TODO(axon4to5)` comment
+endif::[]
 
 === Migration markers
 
@@ -133,4 +137,9 @@ The following are explicitly out of scope for code conversion:
 
 * **No data migration**:event store contents, token tables, dead-letter queue entries, and saga state are never touched.
 * **No compile guarantee**:a non-compiling project after the run is the expected outcome, not an error.
+ifndef::advanced-framework[]
 * **Some Axon Framework 4 features have no Axon Framework 5 equivalent yet**:Sagas and Deadlines are not available in Axon Framework 5.0. See xref:migration:paths/index.adoc#_what_is_not_yet_there[what is not yet there] for the full list.
+endif::[]
+ifdef::advanced-framework[]
+* **Some Axon Framework 4 features have no Axon Framework 5 equivalent yet**:Sagas and Deadlines are not available in free Axon Framework 5. The commercial recipe keeps them running on `axoniq-legacy`, as described in <<_what_gets_converted,What gets converted>>. See xref:migration:paths/index.adoc#_what_is_not_yet_there[what is not yet there] for the full list.
+endif::[]

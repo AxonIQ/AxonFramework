@@ -19,10 +19,26 @@
 # module (`io.axoniq.framework:axoniq-legacy`) and its test fixtures
 # (`io.axoniq.framework:axoniq-legacy-test`). The deadline types keep their
 # Axon Framework 4 packages there, so the recipe changes call sites only where
-# Axon Framework 5 forces it. Free Axon Framework 5 has no deadline support, so
+# Axon Framework 5 forces it:
+#
+# - Sagas: a `DeadlineManager` field, which the legacy module does not inject,
+#   moves into a parameter of the handlers that use it.
+# - Aggregates: a deadline fires as a command, so `@DeadlineHandler` becomes the
+#   `@CommandHandler` receiving it, and `DeadlineManager` calls that relied on
+#   the aggregate's scope get an explicit `AggregateScopeDescriptor`.
+# - Deadline manager configuration: the builders drop the parameters Axon
+#   Framework 5 has no counterpart for, and `ConfigurationScopeAwareProvider`
+#   gives way to the `ScopeAwareProvider` component of the legacy module.
+# - Test fixtures: `DeadlineMessage` loses its type argument, and interceptor
+#   lambdas on `SagaTestFixture` and `StubDeadlineManager` take the Axon
+#   Framework 5 shape.
+#
+# What cannot be inferred at the call site is kept and marked with a
+# `TODO(axon4to5)` comment. Free Axon Framework 5 has no deadline support, so
 # this recipe only runs from `UpgradeAxon4ToAxoniq5`, through
-# `Axon4ToAxoniq5Legacy`. It adds the dependencies it needs itself, so it can
-# also run on its own.
+# `Axon4ToAxoniq5Legacy`, before the free leg renames the Axon Framework 4
+# types. It adds the dependencies it needs itself, so it can also run on its
+# own.
 
 ---
 type: specs.openrewrite.org/v1beta/recipe
@@ -32,7 +48,22 @@ description: >-
   Keeps Axon Framework 4 deadlines running on the Axoniq Framework legacy
   module. Adds `io.axoniq.framework:axoniq-legacy` when deadline types are used,
   and `io.axoniq.framework:axoniq-legacy-test` when the deadline test fixtures
-  are used.
+  are used. Moves a Saga's `DeadlineManager` field into a parameter of the
+  handlers that use it. Replaces an aggregate's `@DeadlineHandler` with the
+  `@CommandHandler` that receives the fired deadline, and passes the
+  `AggregateScopeDescriptor` to aggregate `DeadlineManager` calls that relied
+  on the current scope. Removes `spanFactory(..)` and `transactionManager(..)`
+  from the deadline manager builders and replaces a default Jackson
+  `serializer(..)` with `converter(..)`. Replaces `ConfigurationScopeAwareProvider`
+  and `Configuration#deadlineManager()` with component lookups. Drops the type
+  argument of `DeadlineMessage` and `GenericDeadlineMessage`, and rewrites
+  interceptor lambdas registered on `SagaTestFixture` and `StubDeadlineManager`
+  to the Axon Framework 5 signature. Leaves a `TODO(axon4to5)` marker where the
+  change depends on the application: the required `unitOfWorkFactory(..)`, a
+  converter it cannot infer, `configureDeadlineManager(..)`, interceptors
+  registered on the `DeadlineManager` interface, a `ScopeAwareProvider` the
+  application registers itself, aggregate deadline handlers no command can
+  reach, and aggregate `DeadlineManager` calls without an identifier in reach.
 recipeList:
   # `onlyIfUsing` evaluates the AF4-typed source model before source rewrites run.
   - org.openrewrite.java.dependencies.AddDependency:
