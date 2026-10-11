@@ -37,7 +37,7 @@ import java.util.stream.Stream;
 
 /**
  * Appends a parameter of a given type to a Java or Kotlin method declaration, leaving the existing parameters as they
- * are.
+ * are, or replaces one Java parameter by a parameter of another type in its place.
  * <p>
  * Only the new parameter is parsed, from a stub method importing its type. The existing parameter trees are kept, so
  * they retain their type attribution, their annotations and their layout. Re-printing and re-parsing them instead
@@ -53,8 +53,8 @@ import java.util.stream.Stream;
  * longer match the deadlines it handled before. {@link #appendToHandler(J.MethodDeclaration, boolean, String, String)}
  * guards against that.
  * <p>
- * Internal to the migration recipes that move a collaborator into a handler method parameter, which share it so they
- * add parameters the same way.
+ * Internal to the migration recipes that move a collaborator into a method parameter, which share it so they add
+ * parameters the same way.
  *
  * @author Mateusz Nowak
  * @since 5.4.0
@@ -169,6 +169,53 @@ final class MethodParameters {
         }
         JContainer<Statement> container = method.getPadding().getParameters().getPadding().withElements(parameters);
         return withParameterType(method.getPadding().withParameters(container), parameter);
+    }
+
+    /**
+     * Replaces the Java parameter of the given name by a parameter of the given type and name, without annotations,
+     * keeping its position and layout. A method without a parameter of that name is returned as is.
+     *
+     * @param method        the method declaration to change
+     * @param oldName       the name of the parameter to replace
+     * @param typeFqn       the fully qualified name of the new parameter type
+     * @param parameterName the name of the new parameter
+     * @return the method with the parameter replaced
+     * @throws IllegalStateException if the stub declaring the parameter cannot be parsed
+     */
+    static J.MethodDeclaration replace(J.MethodDeclaration method, String oldName, String typeFqn,
+                                       String parameterName) {
+        List<JRightPadded<Statement>> existing = method.getPadding().getParameters().getPadding().getElements();
+        List<JRightPadded<Statement>> parameters = new ArrayList<>();
+        int replaced = -1;
+        J.VariableDeclarations parameter = null;
+        for (JRightPadded<Statement> padded : existing) {
+            if (replaced < 0
+                    && padded.getElement() instanceof J.VariableDeclarations variables
+                    && variables.getVariables().size() == 1
+                    && oldName.equals(variables.getVariables().get(0).getSimpleName())) {
+                replaced = parameters.size();
+                parameter = javaParameter(typeFqn, parameterName).withPrefix(variables.getPrefix());
+                parameters.add(padded.withElement(parameter));
+            } else {
+                parameters.add(padded);
+            }
+        }
+        if (parameter == null) {
+            return method;
+        }
+        JContainer<Statement> container = method.getPadding().getParameters().getPadding().withElements(parameters);
+        J.MethodDeclaration changed = method.getPadding().withParameters(container);
+        JavaType.Method methodType = changed.getMethodType();
+        if (methodType == null || parameter.getType() == null
+                || methodType.getParameterTypes().size() != parameters.size()) {
+            return changed;
+        }
+        List<String> names = new ArrayList<>(methodType.getParameterNames());
+        names.set(replaced, parameterName);
+        List<JavaType> types = new ArrayList<>(methodType.getParameterTypes());
+        types.set(replaced, parameter.getType());
+        JavaType.Method updated = methodType.withParameterNames(names).withParameterTypes(types);
+        return changed.withMethodType(updated).withName(changed.getName().withType(updated));
     }
 
     /**

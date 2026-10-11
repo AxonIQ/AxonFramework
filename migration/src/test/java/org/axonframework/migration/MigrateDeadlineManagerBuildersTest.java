@@ -45,6 +45,10 @@ class MigrateDeadlineManagerBuildersTest implements RewriteTest {
             "// TODO(axon4to5): add converter(..) to this deadline manager builder. Axon Framework 4 defaulted the"
                     + " Quartz deadline manager to an XStreamSerializer; pass an XStreamConverter allowing your"
                     + " payload and scope types to read the jobs it stored.";
+    private static final String STORED_DEADLINES_TODO =
+            "// TODO(axon4to5): check that this converter reads the deadlines already stored. Axon Framework 4"
+                    + " Spring Boot serialized them with XStream unless axon.serializer.* was set; those need an"
+                    + " XStreamConverter allowing your payload and scope types.";
 
     @Override
     public void defaults(RecipeSpec spec) {
@@ -862,6 +866,263 @@ class MigrateDeadlineManagerBuildersTest implements RewriteTest {
                                 }
                             }
                             """.formatted(UNIT_OF_WORK_FACTORY_TODO, QUARTZ_CONVERTER_TODO)
+                    )
+            );
+        }
+    }
+
+    @Nested
+    class SerializerBeanParameter {
+
+        @Test
+        void replacesEventSerializerParameterWithEventConverter() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.deadline.quartz.QuartzDeadlineManager;
+                            import org.axonframework.messaging.ScopeAwareProvider;
+                            import org.axonframework.serialization.Serializer;
+                            import org.quartz.Scheduler;
+                            import org.springframework.beans.factory.annotation.Qualifier;
+                            import org.springframework.context.annotation.Bean;
+
+                            class DeadlineConfig {
+                                @Bean
+                                DeadlineManager deadlineManager(Scheduler scheduler,
+                                                                ScopeAwareProvider provider,
+                                                                @Qualifier("eventSerializer") Serializer serializer) {
+                                    return QuartzDeadlineManager.builder()
+                                                                .scheduler(scheduler)
+                                                                .scopeAwareProvider(provider)
+                                                                .serializer(serializer)
+                                                                .build();
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.deadline.quartz.QuartzDeadlineManager;
+                            import org.axonframework.messaging.ScopeAwareProvider;
+                            import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
+                            import org.axonframework.messaging.eventhandling.conversion.EventConverter;
+                            import org.quartz.Scheduler;
+                            import org.springframework.context.annotation.Bean;
+
+                            class DeadlineConfig {
+                                @Bean
+                                DeadlineManager deadlineManager(Scheduler scheduler,
+                                                                ScopeAwareProvider provider,
+                                                                EventConverter eventConverter,
+                                                                UnitOfWorkFactory unitOfWorkFactory) {
+                                    %s
+                                    return QuartzDeadlineManager.builder()
+                                                                .unitOfWorkFactory(unitOfWorkFactory)
+                                                                .scheduler(scheduler)
+                                                                .scopeAwareProvider(provider)
+                                                                .converter(eventConverter)
+                                                                .build();
+                                }
+                            }
+                            """.formatted(STORED_DEADLINES_TODO)
+                    )
+            );
+        }
+
+        @Test
+        void replacesMessageSerializerParameterWithMessageConverter() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.deadline.jobrunr.JobRunrDeadlineManager;
+                            import org.axonframework.serialization.Serializer;
+                            import org.jobrunr.scheduling.JobScheduler;
+                            import org.springframework.beans.factory.annotation.Qualifier;
+                            import org.springframework.context.annotation.Bean;
+
+                            class DeadlineConfig {
+                                @Bean
+                                DeadlineManager deadlineManager(JobScheduler jobScheduler,
+                                                                @Qualifier(value = "messageSerializer") Serializer serializer) {
+                                    return JobRunrDeadlineManager.builder()
+                                                                 .jobScheduler(jobScheduler)
+                                                                 .serializer(serializer)
+                                                                 .build();
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.deadline.jobrunr.JobRunrDeadlineManager;
+                            import org.axonframework.messaging.core.conversion.MessageConverter;
+                            import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
+                            import org.jobrunr.scheduling.JobScheduler;
+                            import org.springframework.context.annotation.Bean;
+
+                            class DeadlineConfig {
+                                @Bean
+                                DeadlineManager deadlineManager(JobScheduler jobScheduler,
+                                                                MessageConverter messageConverter,
+                                                                UnitOfWorkFactory unitOfWorkFactory) {
+                                    %s
+                                    return JobRunrDeadlineManager.builder()
+                                                                 .unitOfWorkFactory(unitOfWorkFactory)
+                                                                 .jobScheduler(jobScheduler)
+                                                                 .converter(messageConverter)
+                                                                 .build();
+                                }
+                            }
+                            """.formatted(STORED_DEADLINES_TODO)
+                    )
+            );
+        }
+
+        @Test
+        void replacesGeneralSerializerParameterWithGeneralConverter() {
+            // An unqualified Serializer was Axon Framework 4's primary, general serializer. GeneralConverter is the
+            // one converter type Spring resolves without ambiguity: Converter also matches the message and event
+            // converters.
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.deadline.dbscheduler.DbSchedulerDeadlineManager;
+                            import org.axonframework.serialization.Serializer;
+                            import org.springframework.beans.factory.annotation.Qualifier;
+                            import org.springframework.context.annotation.Bean;
+
+                            class DeadlineConfig {
+                                @Bean
+                                DeadlineManager unqualified(Serializer serializer) {
+                                    return DbSchedulerDeadlineManager.builder().serializer(serializer).build();
+                                }
+
+                                @Bean
+                                DeadlineManager qualified(@Qualifier("serializer") Serializer generalSerializer) {
+                                    return DbSchedulerDeadlineManager.builder().serializer(generalSerializer).build();
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.conversion.GeneralConverter;
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.deadline.dbscheduler.DbSchedulerDeadlineManager;
+                            import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
+                            import org.springframework.context.annotation.Bean;
+
+                            class DeadlineConfig {
+                                @Bean
+                                DeadlineManager unqualified(GeneralConverter generalConverter, UnitOfWorkFactory unitOfWorkFactory) {
+                                    %s
+                                    return DbSchedulerDeadlineManager.builder().unitOfWorkFactory(unitOfWorkFactory).converter(generalConverter).build();
+                                }
+
+                                @Bean
+                                DeadlineManager qualified(GeneralConverter generalConverter, UnitOfWorkFactory unitOfWorkFactory) {
+                                    %s
+                                    return DbSchedulerDeadlineManager.builder().unitOfWorkFactory(unitOfWorkFactory).converter(generalConverter).build();
+                                }
+                            }
+                            """.formatted(STORED_DEADLINES_TODO, STORED_DEADLINES_TODO)
+                    )
+            );
+        }
+
+        @Test
+        void marksSerializerParameterUsedElsewhere() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.deadline.jobrunr.JobRunrDeadlineManager;
+                            import org.axonframework.serialization.Serializer;
+                            import org.springframework.beans.factory.annotation.Qualifier;
+                            import org.springframework.context.annotation.Bean;
+
+                            class DeadlineConfig {
+                                @Bean
+                                DeadlineManager deadlineManager(@Qualifier("eventSerializer") Serializer serializer) {
+                                    System.out.println(serializer);
+                                    return JobRunrDeadlineManager.builder().serializer(serializer).build();
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.deadline.jobrunr.JobRunrDeadlineManager;
+                            import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
+                            import org.axonframework.serialization.Serializer;
+                            import org.springframework.beans.factory.annotation.Qualifier;
+                            import org.springframework.context.annotation.Bean;
+
+                            class DeadlineConfig {
+                                @Bean
+                                DeadlineManager deadlineManager(@Qualifier("eventSerializer") Serializer serializer, UnitOfWorkFactory unitOfWorkFactory) {
+                                    System.out.println(serializer);
+                                    %s
+                                    return JobRunrDeadlineManager.builder().unitOfWorkFactory(unitOfWorkFactory).serializer(serializer).build();
+                                }
+                            }
+                            """.formatted(SERIALIZER_TODO)
+                    )
+            );
+        }
+
+        @Test
+        void marksSerializerParameterWithUnknownQualifier() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.deadline.jobrunr.JobRunrDeadlineManager;
+                            import org.axonframework.serialization.Serializer;
+                            import org.springframework.beans.factory.annotation.Qualifier;
+                            import org.springframework.context.annotation.Bean;
+
+                            class DeadlineConfig {
+                                @Bean
+                                DeadlineManager deadlineManager(@Qualifier("deadlineSerializer") Serializer serializer) {
+                                    return JobRunrDeadlineManager.builder().serializer(serializer).build();
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.deadline.jobrunr.JobRunrDeadlineManager;
+                            import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
+                            import org.axonframework.serialization.Serializer;
+                            import org.springframework.beans.factory.annotation.Qualifier;
+                            import org.springframework.context.annotation.Bean;
+
+                            class DeadlineConfig {
+                                @Bean
+                                DeadlineManager deadlineManager(@Qualifier("deadlineSerializer") Serializer serializer, UnitOfWorkFactory unitOfWorkFactory) {
+                                    %s
+                                    return JobRunrDeadlineManager.builder().unitOfWorkFactory(unitOfWorkFactory).serializer(serializer).build();
+                                }
+                            }
+                            """.formatted(SERIALIZER_TODO)
                     )
             );
         }

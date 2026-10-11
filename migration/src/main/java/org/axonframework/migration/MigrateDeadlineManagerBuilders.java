@@ -41,11 +41,13 @@ import org.openrewrite.java.tree.TypeUtils;
 import org.openrewrite.marker.Markers;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * Migrates the builder calls of the Axon Framework 4 deadline managers to the builders of the Axoniq Framework legacy
@@ -64,6 +66,12 @@ import java.util.Set;
  * </ul>
  * The recipe removes the first two calls, and replaces {@code serializer(..)} with {@code converter(..)} when the
  * serializer is a default {@code JacksonSerializer}, whose stored deadlines a default {@code JacksonConverter} reads.
+ * A serializer that a Spring {@code @Bean} method receives as a parameter used for nothing else becomes the converter
+ * Axon Framework 5 Spring Boot provides in its place: the {@code "eventSerializer"} qualifier an
+ * {@code EventConverter}, {@code "messageSerializer"} a {@code MessageConverter}, and {@code "serializer"} or no
+ * qualifier a {@code GeneralConverter}, the one converter type Spring resolves without ambiguity. As Axon Framework 4
+ * Spring Boot serialized with XStream by default, that statement keeps a marker to check the converter against the
+ * deadlines already stored.
  * <p>
  * It inserts {@code unitOfWorkFactory(..)} right after {@code builder()} in a Java builder chain when a factory is in
  * reach: {@code configuration.getComponent(UnitOfWorkFactory.class)} on an Axon Framework 4 {@code Configuration}
@@ -105,6 +113,14 @@ public class MigrateDeadlineManagerBuilders extends Recipe {
             "org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory";
     private static final String SPRING_BEAN_FQN = "org.springframework.context.annotation.Bean";
 
+    private static final String CONVERTER_PARAMETERS_KEY = "converterParameters";
+    private static final String SERIALIZER_FQN = "org.axonframework.serialization.Serializer";
+    private static final String QUALIFIER_FQN = "org.springframework.beans.factory.annotation.Qualifier";
+    private static final String GENERAL_CONVERTER_FQN = "org.axonframework.conversion.GeneralConverter";
+    private static final String MESSAGE_CONVERTER_FQN = "org.axonframework.messaging.core.conversion.MessageConverter";
+    private static final String EVENT_CONVERTER_FQN =
+            "org.axonframework.messaging.eventhandling.conversion.EventConverter";
+
     private static final String JACKSON_SERIALIZER_FQN = "org.axonframework.serialization.json.JacksonSerializer";
     private static final String JACKSON_CONVERTER_FQN = "org.axonframework.conversion.jackson.JacksonConverter";
 
@@ -119,6 +135,11 @@ public class MigrateDeadlineManagerBuilders extends Recipe {
             + " readable: general serializer -> GeneralConverter, message serializer -> MessageConverter, event"
             + " serializer -> EventConverter, a JacksonSerializer with a customized ObjectMapper -> a JacksonConverter"
             + " configured the same way, XStreamSerializer -> XStreamConverter allowing your payload and scope types.";
+    private static final String STORED_DEADLINES_MARKER =
+            "TODO(axon4to5): check that this converter reads the deadlines already stored";
+    private static final String STORED_DEADLINES_TODO = " " + STORED_DEADLINES_MARKER
+            + ". Axon Framework 4 Spring Boot serialized them with XStream unless axon.serializer.* was set; those"
+            + " need an XStreamConverter allowing your payload and scope types.";
     private static final String CONVERTER_MARKER = "TODO(axon4to5): add converter(";
     private static final String QUARTZ_CONVERTER_TODO = " " + CONVERTER_MARKER
             + "..) to this deadline manager builder. Axon Framework 4 defaulted the Quartz deadline manager to an"
@@ -135,8 +156,11 @@ public class MigrateDeadlineManagerBuilders extends Recipe {
     @Override
     public String getDescription() {
         return "Removes the `spanFactory(..)` and `transactionManager(..)` calls from the builders of the Axon "
-                + "Framework 4 deadline managers, and replaces `serializer(JacksonSerializer.defaultSerializer())` "
-                + "with `converter(new JacksonConverter())`. Adds the required `unitOfWorkFactory(..)`, looked up "
+                + "Framework 4 deadline managers. Replaces `serializer(JacksonSerializer.defaultSerializer())` with "
+                + "`converter(new JacksonConverter())`, and `serializer(..)` on a Spring `@Bean` method parameter "
+                + "with `converter(..)` on the matching `EventConverter`, `MessageConverter` or `GeneralConverter` "
+                + "parameter, marking that statement to check the converter against the stored deadlines. Adds the "
+                + "required `unitOfWorkFactory(..)`, looked up "
                 + "on an Axon Framework 4 `Configuration` in scope or, in a Spring `@Bean` method, taken from a "
                 + "`UnitOfWorkFactory` parameter it adds. Leaves a `// TODO(axon4to5):` marker for a "
                 + "`unitOfWorkFactory(..)` with neither in reach, and for a `converter(..)` it cannot infer. "
@@ -146,15 +170,30 @@ public class MigrateDeadlineManagerBuilders extends Recipe {
     @Override
     public TreeVisitor<?, ExecutionContext> getVisitor() {
         return new JavaVisitor<ExecutionContext>() {
+            /**
+             * The converter(..) calls that replaced a serializer(..) call, whose statements get a marker.
+             */
+            private final Set<UUID> convertedSerializerCalls = new HashSet<>();
+
             @Override
             public J visitMethodDeclaration(J.MethodDeclaration method, ExecutionContext ctx) {
                 J visited = super.visitMethodDeclaration(method, ctx);
-                String parameter = getCursor().pollMessage(UNIT_OF_WORK_FACTORY_PARAMETER_KEY);
-                if (parameter == null || !(visited instanceof J.MethodDeclaration declaration)) {
+                if (!(visited instanceof J.MethodDeclaration declaration)) {
                     return visited;
                 }
-                maybeAddImport(UNIT_OF_WORK_FACTORY_FQN, null, false);
-                return MethodParameters.append(declaration, false, UNIT_OF_WORK_FACTORY_FQN, parameter);
+                Map<String, String[]> converters = getCursor().pollMessage(CONVERTER_PARAMETERS_KEY);
+                if (converters != null) {
+                    for (Map.Entry<String, String[]> converter : converters.entrySet()) {
+                        declaration = MethodParameters.replace(declaration, converter.getKey(),
+                                                               converter.getValue()[0], converter.getValue()[1]);
+                    }
+                }
+                String parameter = getCursor().pollMessage(UNIT_OF_WORK_FACTORY_PARAMETER_KEY);
+                if (parameter != null) {
+                    maybeAddImport(UNIT_OF_WORK_FACTORY_FQN, null, false);
+                    declaration = MethodParameters.append(declaration, false, UNIT_OF_WORK_FACTORY_FQN, parameter);
+                }
+                return declaration;
             }
 
             @Override
@@ -189,8 +228,8 @@ public class MigrateDeadlineManagerBuilders extends Recipe {
             @Override
             public J visitBlock(J.Block block, ExecutionContext ctx) {
                 J.Block visited = (J.Block) super.visitBlock(block, ctx);
-                return visited.withStatements(ListUtils.map(visited.getStatements(),
-                                                            MigrateDeadlineManagerBuilders::markBuilders));
+                return visited.withStatements(ListUtils.map(
+                        visited.getStatements(), statement -> markBuilders(statement, convertedSerializerCalls)));
             }
 
             private @Nullable J removeCall(J.MethodInvocation invocation) {
@@ -210,7 +249,9 @@ public class MigrateDeadlineManagerBuilders extends Recipe {
                 }
                 Expression serializer = invocation.getArguments().getFirst();
                 if (!isDefaultJacksonSerializer(serializer)) {
-                    return invocation;
+                    return serializer instanceof J.Identifier parameter
+                            ? convertBeanParameter(invocation, parameter)
+                            : invocation;
                 }
                 Expression converter = JavaTemplate.builder("new JacksonConverter()")
                                                    .imports(JACKSON_CONVERTER_FQN)
@@ -223,6 +264,45 @@ public class MigrateDeadlineManagerBuilders extends Recipe {
                 maybeRemoveImport(JACKSON_SERIALIZER_FQN);
                 return invocation.withName(invocation.getName().withSimpleName(CONVERTER_METHOD))
                                  .withArguments(List.of(converter.withPrefix(serializer.getPrefix())));
+            }
+
+            /**
+             * Replaces {@code serializer(serializer)}, where {@code serializer} is a Spring {@code @Bean} method
+             * parameter used for nothing else, with {@code converter(..)} on the parameter of the converter that
+             * succeeds the qualified serializer, asking {@link #visitMethodDeclaration} to retype the parameter. Any
+             * other serializer is left to the marker.
+             */
+            private J.MethodInvocation convertBeanParameter(J.MethodInvocation invocation, J.Identifier argument) {
+                J.MethodDeclaration declaration = getCursor().firstEnclosing(J.MethodDeclaration.class);
+                if (declaration == null
+                        || getCursor().firstEnclosing(J.CompilationUnit.class) == null
+                        || !isSpringBean(declaration)
+                        || identifierCount(declaration, argument.getSimpleName()) != 2) {
+                    return invocation;
+                }
+                J.VariableDeclarations parameter = serializerParameter(declaration, argument.getSimpleName());
+                String[] converter = parameter == null ? null : converterSucceeding(parameter);
+                if (converter == null) {
+                    return invocation;
+                }
+                Cursor methodCursor = getCursor().dropParentUntil(J.MethodDeclaration.class::isInstance);
+                Map<String, String[]> converters =
+                        methodCursor.computeMessageIfAbsent(CONVERTER_PARAMETERS_KEY, key -> new HashMap<>());
+                String[] replacement = converters.computeIfAbsent(
+                        argument.getSimpleName(),
+                        name -> new String[]{converter[0], unusedName(declaration, converter[1])}
+                );
+                maybeAddImport(replacement[0], null, false);
+                maybeRemoveImport(SERIALIZER_FQN);
+                maybeRemoveImport(QUALIFIER_FQN);
+                J.Identifier reference = new J.Identifier(Tree.randomId(), argument.getPrefix(), Markers.EMPTY,
+                                                          List.of(), replacement[1],
+                                                          JavaType.ShallowClass.build(replacement[0]), null);
+                J.MethodInvocation converted =
+                        invocation.withName(invocation.getName().withSimpleName(CONVERTER_METHOD))
+                                  .withArguments(List.of(reference));
+                convertedSerializerCalls.add(converted.getId());
+                return converted;
             }
 
             /**
@@ -316,7 +396,7 @@ public class MigrateDeadlineManagerBuilders extends Recipe {
                 Cursor methodCursor = getCursor().dropParentUntil(J.MethodDeclaration.class::isInstance);
                 String name = methodCursor.getMessage(UNIT_OF_WORK_FACTORY_PARAMETER_KEY);
                 if (name == null) {
-                    name = unusedName(declaration);
+                    name = unusedName(declaration, UNIT_OF_WORK_FACTORY_METHOD);
                     methodCursor.putMessage(UNIT_OF_WORK_FACTORY_PARAMETER_KEY, name);
                 }
                 maybeAddImport(UNIT_OF_WORK_FACTORY_FQN, null, false);
@@ -390,7 +470,7 @@ public class MigrateDeadlineManagerBuilders extends Recipe {
                 && "UnitOfWorkFactory".equals(fieldAccess.getSimpleName());
     }
 
-    private static String unusedName(J.MethodDeclaration declaration) {
+    private static String unusedName(J.MethodDeclaration declaration, String base) {
         Set<String> names = new HashSet<>();
         new JavaIsoVisitor<Integer>() {
             @Override
@@ -399,11 +479,100 @@ public class MigrateDeadlineManagerBuilders extends Recipe {
                 return identifier;
             }
         }.visit(declaration, 0);
-        String name = UNIT_OF_WORK_FACTORY_METHOD;
+        String name = base;
         for (int suffix = 2; names.contains(name); suffix++) {
-            name = UNIT_OF_WORK_FACTORY_METHOD + suffix;
+            name = base + suffix;
         }
         return name;
+    }
+
+    /**
+     * Counts the identifiers of the given name in the method, including its parameter declarations, so a parameter
+     * that is declared and used once counts two. A shadowing variable or a field of that name counts as well; the name
+     * of an invoked method, such as {@code serializer(..)} itself, does not.
+     */
+    private static int identifierCount(J.MethodDeclaration declaration, String name) {
+        int[] count = {0};
+        new JavaIsoVisitor<Integer>() {
+            @Override
+            public J.Identifier visitIdentifier(J.Identifier identifier, Integer p) {
+                boolean invokedMethod = getCursor().getParentTreeCursor().getValue() instanceof J.MethodInvocation call
+                        && call.getName() == identifier;
+                if (!invokedMethod && name.equals(identifier.getSimpleName())) {
+                    count[0]++;
+                }
+                return identifier;
+            }
+        }.visit(declaration, 0);
+        return count[0];
+    }
+
+    private static J.@Nullable VariableDeclarations serializerParameter(J.MethodDeclaration declaration,
+                                                                       String name) {
+        for (Statement parameter : declaration.getParameters()) {
+            if (parameter instanceof J.VariableDeclarations variables
+                    && variables.getVariables().size() == 1
+                    && name.equals(variables.getVariables().getFirst().getSimpleName())
+                    && variables.getTypeExpression() != null
+                    && isSerializerType(variables.getTypeExpression())) {
+                return variables;
+            }
+        }
+        return null;
+    }
+
+    private static boolean isSerializerType(TypeTree typeExpression) {
+        String type = resolvedName(typeExpression.getType());
+        if (type != null) {
+            return SERIALIZER_FQN.equals(type);
+        }
+        return typeExpression instanceof J.Identifier identifier
+                ? "Serializer".equals(identifier.getSimpleName())
+                : typeExpression instanceof J.FieldAccess fieldAccess
+                && "Serializer".equals(fieldAccess.getSimpleName());
+    }
+
+    /**
+     * Returns the fully qualified type and the base name of the parameter for the converter that succeeds the
+     * serializer bean the given parameter receives, or {@code null} when the parameter carries an annotation other
+     * than a {@code @Qualifier} naming one of the serializer beans of Axon Framework 4 Spring Boot. Without a
+     * qualifier, the parameter received the primary, general serializer.
+     */
+    private static String @Nullable [] converterSucceeding(J.VariableDeclarations parameter) {
+        List<J.Annotation> annotations = parameter.getLeadingAnnotations();
+        if (annotations.isEmpty()) {
+            return new String[]{GENERAL_CONVERTER_FQN, "generalConverter"};
+        }
+        if (annotations.size() != 1) {
+            return null;
+        }
+        String qualifier = qualifierValue(annotations.getFirst());
+        if (qualifier == null) {
+            return null;
+        }
+        return switch (qualifier) {
+            case "serializer" -> new String[]{GENERAL_CONVERTER_FQN, "generalConverter"};
+            case "messageSerializer" -> new String[]{MESSAGE_CONVERTER_FQN, "messageConverter"};
+            case "eventSerializer" -> new String[]{EVENT_CONVERTER_FQN, "eventConverter"};
+            default -> null;
+        };
+    }
+
+    private static @Nullable String qualifierValue(J.Annotation annotation) {
+        String type = resolvedName(annotation.getType());
+        boolean qualifier = type != null
+                ? QUALIFIER_FQN.equals(type)
+                : "Qualifier".equals(annotation.getSimpleName());
+        if (!qualifier || annotation.getArguments() == null || annotation.getArguments().size() != 1) {
+            return null;
+        }
+        Expression argument = annotation.getArguments().getFirst();
+        if (argument instanceof J.Assignment assignment
+                && assignment.getVariable() instanceof J.Identifier name
+                && "value".equals(name.getSimpleName())) {
+            argument = assignment.getAssignment();
+        }
+        return argument instanceof J.Literal literal && literal.getValue() instanceof String value ? value : null;
     }
 
     private static J.Identifier parameterReference(String name) {
@@ -553,9 +722,10 @@ public class MigrateDeadlineManagerBuilders extends Recipe {
 
     /**
      * Marks the statement for each deadline manager builder chain in it, not looking into nested blocks, which mark
-     * their own statements.
+     * their own statements. A statement holding a {@code converter(..)} call that replaced a {@code serializer(..)}
+     * call is marked to check the converter against the deadlines stored before.
      */
-    private static Statement markBuilders(Statement statement) {
+    private static Statement markBuilders(Statement statement, Set<UUID> convertedSerializerCalls) {
         Set<String> markers = new HashSet<>();
         Statement[] marked = {statement};
         new JavaIsoVisitor<Integer>() {
@@ -566,6 +736,14 @@ public class MigrateDeadlineManagerBuilders extends Recipe {
 
             @Override
             public J.MethodInvocation visitMethodInvocation(J.MethodInvocation invocation, Integer p) {
+                Expression call = invocation;
+                while (call instanceof J.MethodInvocation chained) {
+                    if (convertedSerializerCalls.contains(chained.getId())
+                            && markers.add(STORED_DEADLINES_MARKER)) {
+                        marked[0] = mark(marked[0], STORED_DEADLINES_MARKER, STORED_DEADLINES_TODO);
+                    }
+                    call = chained.getSelect();
+                }
                 String manager = rootDeadlineManager(invocation);
                 if (manager == null) {
                     if (SERIALIZER_METHOD.equals(invocation.getSimpleName())

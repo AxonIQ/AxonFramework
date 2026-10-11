@@ -67,8 +67,10 @@ After the migration run, search for every such location with:
   deadline handlers and those calls get a `TODO(axon4to5)` marker. Removes `spanFactory(..)` and `transactionManager(..)` from the
   deadline manager builders, adds the required `unitOfWorkFactory(..)` (looked up on an AF4 `Configuration` parameter
   or local in scope, or, in a Spring `@Bean` method, taken from a `UnitOfWorkFactory` parameter it adds), replaces
-  `serializer(JacksonSerializer.defaultSerializer())` with `converter(new JacksonConverter())`, and replaces
-  `ConfigurationScopeAwareProvider` and `Configuration#deadlineManager()` with component lookups. A `TODO(axon4to5)`
+  `serializer(JacksonSerializer.defaultSerializer())` with `converter(new JacksonConverter())` and a serializer
+  `@Bean` method parameter with the matching `EventConverter`, `MessageConverter` or `GeneralConverter` parameter
+  (marked to check it against the deadlines already stored, as AF4 Spring Boot serialized with XStream by default),
+  and replaces `ConfigurationScopeAwareProvider` and `Configuration#deadlineManager()` with component lookups. A `TODO(axon4to5)`
   marker is left on a `unitOfWorkFactory(..)` with neither in reach, a `converter(..)` the recipe cannot infer, `configureDeadlineManager(..)`,
   `deadlineManager()` lookups, interceptors registered on the `DeadlineManager` interface, a `ScopeAwareProvider` the
   application registers itself, aggregate deadline handlers no command can reach (or that now receive the same command,

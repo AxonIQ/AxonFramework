@@ -58,7 +58,9 @@ description: >-
   from the deadline manager builders, adds the required `unitOfWorkFactory(..)`
   from an Axon Framework 4 `Configuration` in scope or a `UnitOfWorkFactory`
   parameter of a Spring `@Bean` method, and replaces a default Jackson
-  `serializer(..)` with `converter(..)`. Replaces `ConfigurationScopeAwareProvider`
+  `serializer(..)` with `converter(..)`, as well as a serializer `@Bean`
+  method parameter with the matching converter parameter, marked to check it
+  against the deadlines already stored. Replaces `ConfigurationScopeAwareProvider`
   and `Configuration#deadlineManager()` with component lookups. Drops the type
   argument of `DeadlineMessage` and `GenericDeadlineMessage`, and rewrites
   interceptor lambdas registered on `SagaTestFixture` and `StubDeadlineManager`

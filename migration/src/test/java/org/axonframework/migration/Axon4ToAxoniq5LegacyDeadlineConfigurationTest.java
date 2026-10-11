@@ -31,12 +31,10 @@ import static org.openrewrite.java.Assertions.java;
  */
 class Axon4ToAxoniq5LegacyDeadlineConfigurationTest implements RewriteTest {
 
-    private static final String SERIALIZER_TODO =
-            "// TODO(axon4to5): replace serializer(..) with converter(..), passing the Converter matching the Axon"
-                    + " Framework 4 serializer, so stored deadlines stay readable: general serializer ->"
-                    + " GeneralConverter, message serializer -> MessageConverter, event serializer -> EventConverter,"
-                    + " a JacksonSerializer with a customized ObjectMapper -> a JacksonConverter configured the same"
-                    + " way, XStreamSerializer -> XStreamConverter allowing your payload and scope types.";
+    private static final String STORED_DEADLINES_TODO =
+            "// TODO(axon4to5): check that this converter reads the deadlines already stored. Axon Framework 4"
+                    + " Spring Boot serialized them with XStream unless axon.serializer.* was set; those need an"
+                    + " XStreamConverter allowing your payload and scope types.";
     private static final String PROVIDER_TODO =
             "// TODO(axon4to5): remove this ScopeAwareProvider registration. Axoniq Framework 5 registers its own"
                     + " ScopeAwareProvider component, with which the Saga managers register themselves; a provider"
@@ -108,9 +106,8 @@ class Axon4ToAxoniq5LegacyDeadlineConfigurationTest implements RewriteTest {
                         import org.axonframework.deadline.quartz.QuartzDeadlineManager;
                         import org.axonframework.messaging.ScopeAwareProvider;
                         import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
-                        import org.axonframework.conversion.Serializer;
+                        import org.axonframework.messaging.eventhandling.conversion.EventConverter;
                         import org.quartz.Scheduler;
-                        import org.springframework.beans.factory.annotation.Qualifier;
                         import org.springframework.context.annotation.Bean;
                         import org.springframework.context.annotation.Configuration;
 
@@ -127,23 +124,23 @@ class Axon4ToAxoniq5LegacyDeadlineConfigurationTest implements RewriteTest {
                             QuartzDeadlineManager deadlineManager(Scheduler scheduler,
                                                                   org.axonframework.common.configuration.Configuration config,
                                                                   TransactionManager transactionManager,
-                                                                  @Qualifier("eventSerializer") Serializer serializer) {
+                                                                  EventConverter eventConverter) {
                                 %s
                                 return QuartzDeadlineManager.builder()
                                                             .unitOfWorkFactory(config.getComponent(UnitOfWorkFactory.class))
                                                             .scheduler(scheduler)
                                                             .scopeAwareProvider(config.getComponent(ScopeAwareProvider.class))
-                                                            .serializer(serializer)
+                                                            .converter(eventConverter)
                                                             .build();
                             }
                         }
-                        """.formatted(PROVIDER_TODO, SERIALIZER_TODO)
+                        """.formatted(PROVIDER_TODO, STORED_DEADLINES_TODO)
                 )
         );
     }
 
     @Test
-    void addsUnitOfWorkFactoryParameterToSpringBeanWithoutConfiguration() {
+    void migratesSpringQuartzDeadlineManagerBeanWithoutConfiguration() {
         rewriteRun(
                 java(
                         """
@@ -185,10 +182,9 @@ class Axon4ToAxoniq5LegacyDeadlineConfigurationTest implements RewriteTest {
                         import org.axonframework.deadline.quartz.QuartzDeadlineManager;
                         import org.axonframework.messaging.ScopeAwareProvider;
                         import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
-                        import org.axonframework.conversion.Serializer;
+                        import org.axonframework.messaging.eventhandling.conversion.EventConverter;
                         import org.axonframework.extension.spring.config.SpringAxonConfiguration;
                         import org.quartz.Scheduler;
-                        import org.springframework.beans.factory.annotation.Qualifier;
                         import org.springframework.context.annotation.Bean;
                         import org.springframework.context.annotation.Configuration;
 
@@ -199,18 +195,18 @@ class Axon4ToAxoniq5LegacyDeadlineConfigurationTest implements RewriteTest {
                             DeadlineManager deadlineManager(Scheduler scheduler,
                                                             SpringAxonConfiguration axonConfiguration,
                                                             TransactionManager transactionManager,
-                                                            @Qualifier("eventSerializer") Serializer serializer,
+                                                            EventConverter eventConverter,
                                                             UnitOfWorkFactory unitOfWorkFactory) {
                                 %s
                                 return QuartzDeadlineManager.builder()
                                                             .unitOfWorkFactory(unitOfWorkFactory)
                                                             .scheduler(scheduler)
                                                             .scopeAwareProvider(axonConfiguration.getObject().getComponent(ScopeAwareProvider.class))
-                                                            .serializer(serializer)
+                                                            .converter(eventConverter)
                                                             .build();
                             }
                         }
-                        """.formatted(SERIALIZER_TODO)
+                        """.formatted(STORED_DEADLINES_TODO)
                 )
         );
     }
