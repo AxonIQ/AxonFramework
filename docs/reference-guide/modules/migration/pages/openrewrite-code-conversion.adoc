@@ -57,9 +57,9 @@ ifdef::advanced-framework[]
 endif::[]
 * **Query API**:`ResponseTypes.instanceOf(X.class)` unwrapped to a direct class argument, `query()` renamed to `queryMany()` when used with `multipleInstancesOf`
 * **Spring configuration**:`axon.serializer.*` properties renamed to `axon.converter.*`
-* **Test fixtures**:`AggregateTestFixture` replaced with `AxonTestFixture`, Given-When-Then chain rewritten
+* **Test fixtures**:`AggregateTestFixture` replaced with `AxonTestFixture`, Given-When-Then chain rewritten. `AxonTestFixture` has no deadline manager and no clock, so the aggregate fixture's deadline assertions, time calls such as `givenCurrentTime` and `whenTimeElapses`, and deadline interceptor registrations are kept and marked with a `TODO(axon4to5)` comment
 ifdef::advanced-framework[]
-* **Legacy test fixtures** (commercial recipe only):`SagaTestFixture` and `StubDeadlineManager` kept through `axoniq-legacy-test`, interceptor lambdas registered on them rewritten to the Axon Framework 5 signature, and fixture calls the ported `SagaTestFixture` no longer supports, such as the scheduled event assertions, marked with a `TODO(axon4to5)` comment
+* **Legacy test fixtures** (commercial recipe only):`SagaTestFixture` and `StubDeadlineManager` kept through `axoniq-legacy-test`, interceptor lambdas registered on them rewritten to the Axon Framework 5 signature, and fixture calls the ported `SagaTestFixture` no longer supports, such as the scheduled event assertions, marked with a `TODO(axon4to5)` comment. On aggregate tests, that comment explains how to test a deadline as the command it now fires as
 endif::[]
 
 === Migration markers

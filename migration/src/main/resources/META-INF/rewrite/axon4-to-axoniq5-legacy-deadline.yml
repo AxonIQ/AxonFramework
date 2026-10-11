@@ -31,7 +31,9 @@
 #   gives way to the `ScopeAwareProvider` component of the legacy module.
 # - Test fixtures: `DeadlineMessage` loses its type argument, and interceptor
 #   lambdas on `SagaTestFixture` and `StubDeadlineManager` take the Axon
-#   Framework 5 shape.
+#   Framework 5 shape. The deadline and time calls of the aggregate fixture,
+#   which `AxonTestFixture` lacks, are marked with how to test the deadline as
+#   the command it fires as.
 #
 # What cannot be inferred at the call site is kept and marked with a
 # `TODO(axon4to5)` comment. Free Axon Framework 5 has no deadline support, so
@@ -63,7 +65,9 @@ description: >-
   converter it cannot infer, `configureDeadlineManager(..)`, interceptors
   registered on the `DeadlineManager` interface, a `ScopeAwareProvider` the
   application registers itself, aggregate deadline handlers no command can
-  reach, and aggregate `DeadlineManager` calls without an identifier in reach.
+  reach, aggregate `DeadlineManager` calls without an identifier in reach, and
+  the deadline and time calls of `AggregateTestFixture`, which `AxonTestFixture`
+  does not have, saying how to test the deadline as the command it fires as.
 recipeList:
   # `onlyIfUsing` evaluates the AF4-typed source model before source rewrites run.
   - org.openrewrite.java.dependencies.AddDependency:
@@ -144,3 +148,12 @@ recipeList:
   # `andMetaData(..)`) still apply to them. The Saga recipe lists it too, for the
   # Saga event handler interceptors; running it twice is a no-op.
   - org.axonframework.migration.MigrateLegacyFixtureInterceptorLambdas
+  # The aggregate fixture becomes AxonTestFixture, which has no deadline manager
+  # and no clock, and axoniq-legacy-test ports deadline support for
+  # SagaTestFixture only. The aggregate's deadline arrives as a command here,
+  # so the marker on each deadline or time call says how to test it that way.
+  # The free leg runs the same recipe with wording for free Axon Framework 5;
+  # running here first, on the Axon Framework 4 types, makes this wording win,
+  # as both share the marker keys.
+  - org.axonframework.migration.MarkAggregateTestFixtureDeadlineCalls:
+      axoniqLegacy: true

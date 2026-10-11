@@ -31,7 +31,18 @@ description: >-
   test classes that declare an `AxonTestFixture` field but have no
   existing `@AfterEach`. Targets the `axon-test` Maven artifact. Hamcrest
   matcher conversions and Kotlin `@AfterEach` insertion remain manual.
+  `AxonTestFixture` has no deadline manager and no clock, so the aggregate
+  fixture's deadline assertions, time calls and deadline interceptor
+  registrations are kept and marked with a `TODO(axon4to5)` comment.
 recipeList:
+  # `AxonTestFixture` has no deadline manager and no clock, so the aggregate
+  # fixture's deadline assertions, time travel and deadline interceptors are kept
+  # and marked. Runs first, while the calls still resolve to the AF4
+  # `org.axonframework.test.aggregate` types, and before the fluent-API rewrite
+  # rebuilds their chains; the marker sits on the statement, which that rewrite
+  # keeps. The commercial `Axon4ToAxoniq5LegacyDeadline` runs the same recipe
+  # earlier with its own wording, which this step then leaves in place.
+  - org.axonframework.migration.MarkAggregateTestFixtureDeadlineCalls
   # Aggregate-fixture *setup* rewrite — must run BEFORE the
   # `AggregateTestFixture` → `AxonTestFixture` `ChangeType` below so the AF4
   # type is still on the constructor expression. SagaTestFixture constructor

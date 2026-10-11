@@ -78,7 +78,11 @@ After the migration run, search for every such location with:
   Custom implementations that cannot be inferred automatically receive a `// TODO(axon4to5):` comment instead.
 - **Test fixtures**: replaces `AggregateTestFixture` with `AxonTestFixture` (saga tests keep `SagaTestFixture`, from `axoniq-legacy-test`) and rewrites the fluent
   Given-When-Then chain to the new phase-aware API, skipping every file that uses the Saga fixture types. Moves
-  `CallbackBehavior` and `DefaultCallbackBehavior` to `org.axonframework.test.util`. With `UpgradeAxon4ToAxoniq5`, it
+  `CallbackBehavior` and `DefaultCallbackBehavior` to `org.axonframework.test.util`. `AxonTestFixture` has no deadline
+  manager and no clock, so the aggregate fixture's deadline assertions (`expectScheduledDeadline*`,
+  `expectTriggeredDeadlines*`, ...), time calls (`givenCurrentTime`, `whenTimeElapses`, ...) and deadline interceptor
+  registrations are kept and marked with a `TODO(axon4to5)`; with `UpgradeAxon4ToAxoniq5`, that marker explains how to
+  test the deadline as the command it fires as on `axoniq-legacy`. With `UpgradeAxon4ToAxoniq5`, it
   also adds `axoniq-legacy-test` for `SagaTestFixture` and `StubDeadlineManager`, drops the type argument of
   `DeadlineMessage`, rewrites interceptor lambdas registered on both fixtures to the AF5 signature, and leaves a
   `TODO(axon4to5)` marker on `SagaTestFixture` calls the ported fixture no longer supports (scheduled event
