@@ -149,4 +149,96 @@ class Axon4ToAxoniq5LegacyDeadlineSagaTest implements RewriteTest {
                 )
         );
     }
+
+    @Test
+    void marksProtectedDeadlineManagerFieldInsteadOfMovingItAwayFromSubclasses() {
+        // OrderSaga uses the inherited field, which the recipe cannot see when migrating BaseSaga. The field stays
+        // and gets the resource injection marker, like any other injected Saga field.
+        rewriteRun(
+                java(
+                        """
+                        package org.springframework.beans.factory.annotation;
+
+                        public @interface Autowired {
+                        }
+                        """
+                ),
+                java(
+                        """
+                        package com.example;
+
+                        import org.axonframework.deadline.DeadlineManager;
+                        import org.axonframework.modelling.saga.SagaEventHandler;
+                        import org.springframework.beans.factory.annotation.Autowired;
+
+                        public abstract class BaseSaga {
+                            @Autowired
+                            protected transient DeadlineManager deadlineManager;
+
+                            @SagaEventHandler(associationProperty = "orderId")
+                            public void on(String event) {
+                                deadlineManager.cancelAll("orderExpired");
+                            }
+                        }
+                        """,
+                        """
+                        package com.example;
+
+                        import org.axonframework.deadline.DeadlineManager;
+                        import org.axonframework.modelling.saga.SagaEventHandler;
+                        import org.springframework.beans.factory.annotation.Autowired;
+
+                        public abstract class BaseSaga {
+                            // TODO(axon4to5): add this dependency as a parameter of each @SagaEventHandler method \
+                        that uses it, then remove the field. Axon Framework 5 does not inject Saga fields.
+                            @Autowired
+                            protected transient DeadlineManager deadlineManager;
+
+                            @SagaEventHandler(associationProperty = "orderId")
+                            public void on(String event) {
+                                deadlineManager.cancelAll("orderExpired");
+                            }
+                        }
+                        """
+                ),
+                java(
+                        """
+                        package com.example;
+
+                        import org.axonframework.deadline.annotation.DeadlineHandler;
+
+                        public class OrderSaga extends BaseSaga {
+                            @DeadlineHandler(deadlineName = "orderExpired")
+                            public void onExpired() {
+                                deadlineManager.cancelAll("reminder");
+                            }
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
+    void leavesNonInjectedPackagePrivateDeadlineManagerFieldUnmarked() {
+        // Axon Framework 4 did not populate a field without an injection annotation either, so nothing changes.
+        rewriteRun(
+                java(
+                        """
+                        package com.example;
+
+                        import org.axonframework.deadline.DeadlineManager;
+                        import org.axonframework.modelling.saga.SagaEventHandler;
+
+                        public class OrderSaga {
+                            transient DeadlineManager deadlineManager;
+
+                            @SagaEventHandler(associationProperty = "orderId")
+                            public void on(String event) {
+                                deadlineManager.cancelAll("orderExpired");
+                            }
+                        }
+                        """
+                )
+        );
+    }
 }

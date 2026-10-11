@@ -147,7 +147,7 @@ class MoveSagaFieldToHandlerParameterTest implements RewriteTest {
 
                             public class RentalSaga {
                                 @Inject
-                                transient DeadlineManager deadlineManager;
+                                private transient DeadlineManager deadlineManager;
 
                                 @SagaEventHandler(associationProperty = "rentalId")
                                 public void on(String event) {
@@ -516,6 +516,75 @@ class MoveSagaFieldToHandlerParameterTest implements RewriteTest {
     class UnmigratableUses {
 
         @Test
+        void leavesProtectedFieldASubclassMayUseUntouched() {
+            // The subclass uses the inherited field, so removing it from the base Saga would break the subclass.
+            rewriteRun(
+                    AUTOWIRED,
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.springframework.beans.factory.annotation.Autowired;
+
+                            public abstract class BaseSaga {
+                                @Autowired
+                                protected transient DeadlineManager deadlineManager;
+
+                                @SagaEventHandler(associationProperty = "orderId")
+                                public void on(String event) {
+                                    deadlineManager.cancelAll("orderExpired");
+                                }
+                            }
+                            """
+                    ),
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+
+                            public class OrderSaga extends BaseSaga {
+                                @SagaEventHandler(associationProperty = "orderId")
+                                public void on(Integer event) {
+                                }
+
+                                @DeadlineHandler(deadlineName = "orderExpired")
+                                public void onExpired() {
+                                    deadlineManager.cancelAll("reminder");
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void leavesPackagePrivateFieldUntouched() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+
+                            public class RentalSaga {
+                                transient DeadlineManager deadlineManager;
+
+                                @SagaEventHandler(associationProperty = "rentalId")
+                                public void on(String event) {
+                                    deadlineManager.cancelAll("rentalExpired");
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
         void leavesFieldUsedInPublicNonHandlerMethodUntouched() {
             rewriteRun(
                     AUTOWIRED,
@@ -856,6 +925,125 @@ class MoveSagaFieldToHandlerParameterTest implements RewriteTest {
 
                                 private fun scheduleReminder(id: String, deadlineManager: DeadlineManager) {
                                     deadlineManager.schedule(Duration.ofHours(1), id)
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void movesPublicPropertyOfAFinalClass() {
+            // A Kotlin class is final unless declared open or abstract, so no subclass can use the property.
+            rewriteRun(
+                    kotlin(
+                            """
+                            package com.example
+
+                            import org.axonframework.deadline.DeadlineManager
+                            import org.axonframework.modelling.saga.SagaEventHandler
+                            import org.springframework.beans.factory.annotation.Autowired
+
+                            class RentalSaga {
+                                @Autowired
+                                lateinit var deadlineManager: DeadlineManager
+
+                                @SagaEventHandler(associationProperty = "rentalId")
+                                fun on(event: String) {
+                                    deadlineManager.cancelAll(event)
+                                }
+                            }
+                            """,
+                            """
+                            package com.example
+
+                            import org.axonframework.deadline.DeadlineManager
+                            import org.axonframework.modelling.saga.SagaEventHandler
+
+                            class RentalSaga {
+                                @SagaEventHandler(associationProperty = "rentalId")
+                                fun on(event: String, deadlineManager: DeadlineManager) {
+                                    deadlineManager.cancelAll(event)
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void leavesNonPrivatePropertyOfAnOpenOrAbstractClassUntouched() {
+            rewriteRun(
+                    kotlin(
+                            """
+                            package com.example
+
+                            import org.axonframework.deadline.DeadlineManager
+                            import org.axonframework.modelling.saga.SagaEventHandler
+                            import org.springframework.beans.factory.annotation.Autowired
+
+                            open class RentalSaga {
+                                @Autowired
+                                lateinit var deadlineManager: DeadlineManager
+
+                                @SagaEventHandler(associationProperty = "rentalId")
+                                fun on(event: String) {
+                                    deadlineManager.cancelAll(event)
+                                }
+                            }
+                            """
+                    ),
+                    kotlin(
+                            """
+                            package com.example
+
+                            import org.axonframework.deadline.DeadlineManager
+                            import org.axonframework.modelling.saga.SagaEventHandler
+                            import org.springframework.beans.factory.annotation.Autowired
+
+                            abstract class BaseSaga {
+                                @Autowired
+                                protected lateinit var deadlineManager: DeadlineManager
+
+                                @SagaEventHandler(associationProperty = "orderId")
+                                fun on(event: String) {
+                                    deadlineManager.cancelAll(event)
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void movesPrivatePropertyOfAnOpenClass() {
+            rewriteRun(
+                    kotlin(
+                            """
+                            package com.example
+
+                            import org.axonframework.deadline.DeadlineManager
+                            import org.axonframework.modelling.saga.SagaEventHandler
+
+                            open class RentalSaga {
+                                private lateinit var deadlineManager: DeadlineManager
+
+                                @SagaEventHandler(associationProperty = "rentalId")
+                                fun on(event: String) {
+                                    deadlineManager.cancelAll(event)
+                                }
+                            }
+                            """,
+                            """
+                            package com.example
+
+                            import org.axonframework.deadline.DeadlineManager
+                            import org.axonframework.modelling.saga.SagaEventHandler
+
+                            open class RentalSaga {
+                                @SagaEventHandler(associationProperty = "rentalId")
+                                fun on(event: String, deadlineManager: DeadlineManager) {
+                                    deadlineManager.cancelAll(event)
                                 }
                             }
                             """

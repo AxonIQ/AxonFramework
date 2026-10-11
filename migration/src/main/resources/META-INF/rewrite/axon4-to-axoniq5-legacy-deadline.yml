@@ -21,8 +21,8 @@
 # Axon Framework 4 packages there, so the recipe changes call sites only where
 # Axon Framework 5 forces it:
 #
-# - Sagas: a `DeadlineManager` field, which the legacy module does not inject,
-#   moves into a parameter of the handlers that use it.
+# - Sagas: a private `DeadlineManager` field, which the legacy module does not
+#   inject, moves into a parameter of the handlers that use it.
 # - Aggregates: a deadline fires as a command, so `@DeadlineHandler` becomes the
 #   `@CommandHandler` receiving it, and `DeadlineManager` calls that relied on
 #   the aggregate's scope get an explicit `AggregateScopeDescriptor`.
@@ -50,8 +50,8 @@ description: >-
   Keeps Axon Framework 4 deadlines running on the Axoniq Framework legacy
   module. Adds `io.axoniq.framework:axoniq-legacy` when deadline types are used,
   and `io.axoniq.framework:axoniq-legacy-test` when the deadline test fixtures
-  are used. Moves a Saga's `DeadlineManager` field into a parameter of the
-  handlers that use it. Replaces an aggregate's `@DeadlineHandler` with the
+  are used. Moves a Saga's private `DeadlineManager` field into a parameter of
+  the handlers that use it. Replaces an aggregate's `@DeadlineHandler` with the
   `@CommandHandler` that receives the fired deadline, and passes the
   `AggregateScopeDescriptor` to aggregate `DeadlineManager` calls that relied
   on the current scope. Removes `spanFactory(..)` and `transactionManager(..)`
@@ -87,8 +87,11 @@ recipeList:
   # The legacy module does not inject Saga fields, so an @Autowired or @Inject
   # DeadlineManager field would stay null. Every schedule and cancel overload is
   # kept, so only the collaborator moves: into a parameter of the handlers (and
-  # the private helpers they call) that use it. Runs before the Saga recipe, whose
-  # closing MarkSagaResourceInjection then only marks the fields left in place.
+  # the private helpers they call) that use it. Only a private field moves, or a
+  # property of a final Kotlin class: a subclass or another class of the package
+  # may use any other field, and the recipe cannot see or update that code. Runs
+  # before the Saga recipe, whose closing MarkSagaResourceInjection then only
+  # marks the injected fields left in place.
   - org.axonframework.migration.MoveSagaFieldToHandlerParameter:
       fullyQualifiedTypeName: org.axonframework.deadline.DeadlineManager
 

@@ -54,7 +54,8 @@ import java.util.UUID;
  * <p>
  * Axon Framework 4 populated {@code @Autowired} or {@code @Inject} fields of a Saga instance through a
  * {@code ResourceInjector}. The legacy module resolves Saga collaborators as handler method parameters instead, so an
- * injected field stays {@code null}. For the configured {@link #getFullyQualifiedTypeName() type}, this recipe:
+ * injected field stays {@code null}. For a private field of the configured {@link #getFullyQualifiedTypeName() type},
+ * this recipe:
  * <ul>
  *     <li>adds a parameter of that type, named after the field, to every {@code @SagaEventHandler} and
  *     {@code @DeadlineHandler} method that uses the field, directly or through private helper methods. A parameter of
@@ -70,8 +71,13 @@ import java.util.UUID;
  * static method, a non-private method that is not a handler (it may be called from outside the class), a field
  * initializer or initializer block, a nested, local or anonymous class, a method reference to an affected method, an
  * assignment to the field, or an access through another instance. The same applies when the class declares more than
- * one such field. Uses in other classes, such as subclasses, are not visible to the recipe. A field left in place is
- * marked by {@link MarkSagaResourceInjection} when it is injected.
+ * one such field.
+ * <p>
+ * Uses in other classes, such as subclasses, are not visible to the recipe, so only a field no other class can use is
+ * moved: a private field, or in Kotlin, where properties are public by default, any property of a final class. A
+ * Kotlin class is final unless declared {@code open}, {@code abstract} or {@code sealed}. A protected, package-private
+ * or public field stays where it is. A field left in place is marked by {@link MarkSagaResourceInjection} when it is
+ * injected; one that is not injected was never populated by Axon Framework 4 either, and needs no marker.
  * <p>
  * Only Sagas are changed: classes annotated with the Spring {@code @Saga} stereotype or declaring a
  * {@code @SagaEventHandler} method. Other components, such as aggregates or Spring services, keep their fields, because
@@ -123,10 +129,11 @@ public class MoveSagaFieldToHandlerParameter extends Recipe {
 
     @Override
     public String getDescription() {
-        return "Replaces a Saga field of the configured type with a parameter of each `@SagaEventHandler` and "
-                + "`@DeadlineHandler` method that uses it, passing it on to the private helper methods that need it, "
-                + "and removes the field. The Axoniq Framework legacy module does not inject Saga fields. A field "
-                + "with a use that cannot become a handler parameter is left untouched entirely.";
+        return "Replaces a private Saga field of the configured type, or a property of a final Kotlin Saga, with a "
+                + "parameter of each `@SagaEventHandler` and `@DeadlineHandler` method that uses it, passing it on to "
+                + "the private helper methods that need it, and removes the field. The Axoniq Framework legacy module "
+                + "does not inject Saga fields. A field other classes may use, or with a use that cannot become a "
+                + "handler parameter, is left untouched entirely.";
     }
 
     @Override
@@ -135,7 +142,8 @@ public class MoveSagaFieldToHandlerParameter extends Recipe {
             @Override
             public J.ClassDeclaration visitClassDeclaration(J.ClassDeclaration classDeclaration,
                                                              ExecutionContext ctx) {
-                Plan plan = isSaga(classDeclaration) ? planFor(classDeclaration) : null;
+                boolean kotlin = getCursor().firstEnclosing(SourceFile.class) instanceof K.CompilationUnit;
+                Plan plan = isSaga(classDeclaration) ? planFor(classDeclaration, kotlin) : null;
                 if (plan == null) {
                     return super.visitClassDeclaration(classDeclaration, ctx);
                 }
@@ -233,8 +241,8 @@ public class MoveSagaFieldToHandlerParameter extends Recipe {
      * Analyses the class for the single field of the configured type and returns how to move it, or {@code null} when
      * the class has no such field or the field has a use that cannot become a handler parameter.
      */
-    private @Nullable Plan planFor(J.ClassDeclaration classDeclaration) {
-        J.VariableDeclarations field = candidateField(classDeclaration);
+    private @Nullable Plan planFor(J.ClassDeclaration classDeclaration, boolean kotlin) {
+        J.VariableDeclarations field = candidateField(classDeclaration, kotlin);
         if (field == null) {
             return null;
         }
@@ -314,10 +322,10 @@ public class MoveSagaFieldToHandlerParameter extends Recipe {
     }
 
     /**
-     * Returns the one instance field of the configured type without an initializer, or {@code null} when there is none
-     * or more than one.
+     * Returns the one instance field of the configured type without an initializer, or {@code null} when there is none,
+     * more than one, or when code outside the class may use it.
      */
-    private J.@Nullable VariableDeclarations candidateField(J.ClassDeclaration classDeclaration) {
+    private J.@Nullable VariableDeclarations candidateField(J.ClassDeclaration classDeclaration, boolean kotlin) {
         J.VariableDeclarations candidate = null;
         for (Statement statement : classDeclaration.getBody().getStatements()) {
             if (statement instanceof J.VariableDeclarations declarations
@@ -330,7 +338,24 @@ public class MoveSagaFieldToHandlerParameter extends Recipe {
                 candidate = declarations;
             }
         }
-        return candidate;
+        return candidate == null || isVisibleOutsideTheClass(candidate, classDeclaration, kotlin) ? null : candidate;
+    }
+
+    /**
+     * Whether code outside the class, such as a subclass or another class of the package, may use the field. The
+     * recipe only sees the Saga class itself, so removing such a field could break code it cannot update. A private
+     * field is never visible outside. A Kotlin property is not either when its class is final, which a Kotlin class is
+     * unless declared {@code open}, {@code abstract} or {@code sealed}: Kotlin properties are public by default, and
+     * moving the injected property of a final Kotlin Saga is the common case.
+     */
+    private static boolean isVisibleOutsideTheClass(J.VariableDeclarations field, J.ClassDeclaration classDeclaration,
+                                                    boolean kotlin) {
+        if (field.hasModifier(J.Modifier.Type.Private)) {
+            return false;
+        }
+        return !kotlin || classDeclaration.hasModifier(J.Modifier.Type.Abstract)
+                || classDeclaration.hasModifier(J.Modifier.Type.Sealed)
+                || classDeclaration.getModifiers().stream().anyMatch(modifier -> "open".equals(modifier.getKeyword()));
     }
 
     /**
