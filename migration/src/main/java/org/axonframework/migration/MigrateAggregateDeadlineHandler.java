@@ -37,6 +37,7 @@ import org.openrewrite.marker.Markers;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -57,7 +58,9 @@ import static org.axonframework.migration.SagaClasses.resolvedName;
  *     attribute is dropped, as the command is routed by its payload type only;</li>
  *     <li>a handler without a payload parameter but with a {@code payloadType} keeps that {@code payloadType};</li>
  *     <li>a handler without a payload parameter and with a {@code deadlineName} becomes
- *     {@code @CommandHandler(commandName = <deadlineName>)}, which accepts the deadline name payload.</li>
+ *     {@code @CommandHandler(commandName = <deadlineName>)}, which accepts the deadline name payload. This only holds
+ *     when every {@code DeadlineManager#schedule} call of that deadline passes no payload, so the scanning phase
+ *     collects these calls over all sources, resolving deadline names given as string literals or constants.</li>
  * </ul>
  * The recipe uses the Axon Framework 4 {@code @CommandHandler} on purpose: the Axon Framework 5 upgrade that runs
  * afterwards moves it to the Axon Framework 5 package and migrates the handler like any other aggregate command
@@ -69,6 +72,11 @@ import static org.axonframework.migration.SagaClasses.resolvedName;
  *     <li>a handler that names neither a deadline nor a payload type handled every deadline of the aggregate, and an
  *     {@code Object}, interface or abstract payload parameter names no command. These keep their
  *     {@code @DeadlineHandler};</li>
+ *     <li>a handler that matched its deadline by name alone keeps its {@code @DeadlineHandler} when that deadline is
+ *     scheduled with a payload, which Axon Framework 4 matched as the payload type defaulted to {@code Object}, but
+ *     which now arrives as a command named after the payload class. It is kept as well when the recipe cannot tell:
+ *     no schedule call of that name is in the sources, for example as another module schedules it, or a deadline
+ *     with a payload is scheduled under a name that is no literal or constant;</li>
  *     <li>a handler of a member entity keeps its {@code @DeadlineHandler}: Axon Framework 4 delivered a fired
  *     deadline to the aggregate root and to every member entity, while a command reaches an entity in a collection
  *     only through a routing key;</li>
@@ -85,6 +93,7 @@ import static org.axonframework.migration.SagaClasses.resolvedName;
 public class MigrateAggregateDeadlineHandler extends ScanningRecipe<MigrateAggregateDeadlineHandler.Accumulator> {
 
     private static final String DEADLINE_HANDLER_FQN = "org.axonframework.deadline.annotation.DeadlineHandler";
+    private static final String DEADLINE_MANAGER_FQN = "org.axonframework.deadline.DeadlineManager";
     private static final String COMMAND_HANDLER_AF4_FQN = "org.axonframework.commandhandling.CommandHandler";
     private static final String COMMAND_HANDLER_AF5_FQN =
             "org.axonframework.messaging.commandhandling.annotation.CommandHandler";
@@ -111,6 +120,12 @@ public class MigrateAggregateDeadlineHandler extends ScanningRecipe<MigrateAggre
             + FIRED_AS_COMMAND;
     private static final String GENERIC_PAYLOAD_TODO = " " + REPLACE_MARKER + " for a concrete payload class."
             + " Its payload type names no command." + FIRED_AS_COMMAND;
+    private static final String SCHEDULED_WITH_PAYLOAD_TODO = " " + REPLACE_MARKER + " for the payload class this"
+            + " deadline is scheduled with. Axon Framework 4 matched it by deadline name alone, but a deadline"
+            + " scheduled with a payload now arrives as a command named after its payload class.";
+    private static final String UNVERIFIED_NAME_TODO = " " + REPLACE_MARKER + "(commandName = <deadline name>) when"
+            + " this deadline is always scheduled without a payload, or with one for its payload class otherwise."
+            + " The recipe could not tell how this deadline is scheduled." + FIRED_AS_COMMAND;
     private static final String SHARED_PAYLOAD_MARKER =
             "TODO(axon4to5): give each deadline handled here a payload class of its own.";
     private static final String SHARED_PAYLOAD_TODO = " " + SHARED_PAYLOAD_MARKER
@@ -136,7 +151,8 @@ public class MigrateAggregateDeadlineHandler extends ScanningRecipe<MigrateAggre
                 + "named after its payload class, or after the deadline name when it has no payload. Replaces the "
                 + "`@DeadlineHandler` of an aggregate with the Axon Framework 4 `@CommandHandler` that receives "
                 + "that command: a handler with a payload parameter becomes a plain `@CommandHandler`, and a handler "
-                + "without one becomes `@CommandHandler(commandName = <deadlineName>)`. Leaves a "
+                + "without one becomes `@CommandHandler(commandName = <deadlineName>)` when every schedule call "
+                + "of that deadline passes no payload. Leaves a "
                 + "`// TODO(axon4to5):` marker where no command can reach the handler, on the handlers of member "
                 + "entities, where two handlers of an aggregate now receive the same command, and on "
                 + "`DeadlineMessage` parameters. Saga "
@@ -151,6 +167,8 @@ public class MigrateAggregateDeadlineHandler extends ScanningRecipe<MigrateAggre
         final SagaClasses sagaClasses = new SagaClasses();
         final MemberEntities memberEntities = new MemberEntities();
         final Map<String, List<String>> handledPayloadTypes = new HashMap<>();
+        final Map<String, String> constants = new HashMap<>();
+        final List<ScheduledDeadline> scheduledDeadlines = new ArrayList<>();
 
         /**
          * Counts the handlers per payload type over the aggregate the class belongs to: its root and all member
@@ -193,11 +211,44 @@ public class MigrateAggregateDeadlineHandler extends ScanningRecipe<MigrateAggre
                 }
                 return super.visitClassDeclaration(classDeclaration, ctx);
             }
+
+            @Override
+            public J.VariableDeclarations visitVariableDeclarations(J.VariableDeclarations declarations,
+                                                                    ExecutionContext ctx) {
+                for (J.VariableDeclarations.NamedVariable variable : declarations.getVariables()) {
+                    JavaType.Variable field = variable.getVariableType();
+                    if (field != null && field.hasFlags(Flag.Final)
+                            && field.getOwner() instanceof JavaType.FullyQualified owner
+                            && variable.getInitializer() instanceof J.Literal literal
+                            && literal.getValue() instanceof String value) {
+                        acc.constants.put(constantKey(owner, field.getName()), value);
+                    }
+                }
+                return super.visitVariableDeclarations(declarations, ctx);
+            }
+
+            @Override
+            public J.MethodInvocation visitMethodInvocation(J.MethodInvocation invocation, ExecutionContext ctx) {
+                List<Expression> arguments = invocation.getArguments().stream()
+                                                       .filter(argument -> !(argument instanceof J.Empty))
+                                                       .toList();
+                JavaType.Method method = invocation.getMethodType();
+                if ("schedule".equals(invocation.getSimpleName())
+                        && method != null
+                        && TypeUtils.isAssignableTo(DEADLINE_MANAGER_FQN, method.getDeclaringType())
+                        && arguments.size() >= 2) {
+                    boolean withPayload = arguments.size() > 2
+                            && !(arguments.get(2) instanceof J.Literal literal && literal.getValue() == null);
+                    acc.scheduledDeadlines.add(new ScheduledDeadline(nameKey(arguments.get(1)), withPayload));
+                }
+                return super.visitMethodInvocation(invocation, ctx);
+            }
         };
     }
 
     @Override
     public TreeVisitor<?, ExecutionContext> getVisitor(Accumulator acc) {
+        Schedules schedules = Schedules.of(acc);
         return new JavaIsoVisitor<>() {
             @Override
             public boolean isAcceptable(SourceFile sourceFile, ExecutionContext ctx) {
@@ -222,9 +273,14 @@ public class MigrateAggregateDeadlineHandler extends ScanningRecipe<MigrateAggre
                     if (statement instanceof J.MethodDeclaration method) {
                         J.Annotation deadlineHandler = annotation(method, DEADLINE_HANDLER_FQN, "DeadlineHandler");
                         if (deadlineHandler != null) {
-                            migrations.put(method, memberEntity
+                            Migration migration = memberEntity
                                     ? Migration.mark(MEMBER_TODO)
-                                    : migrationOf(method, deadlineHandler));
+                                    : migrationOf(method, deadlineHandler);
+                            if (migration.routedByDeadlineName()) {
+                                String todo = schedules.todoFor(attribute(deadlineHandler, "deadlineName"));
+                                migration = todo == null ? migration : Migration.mark(todo);
+                            }
+                            migrations.put(method, migration);
                         }
                     }
                 }
@@ -254,6 +310,92 @@ public class MigrateAggregateDeadlineHandler extends ScanningRecipe<MigrateAggre
                 return visited.withBody(visited.getBody().withStatements(statements));
             }
         };
+    }
+
+    /**
+     * Returns the key a deadline name expression is resolved with: the value of a string literal, or the field of a
+     * constant, or {@code null} for any other expression.
+     */
+    private static @Nullable String nameKey(@Nullable Expression expression) {
+        if (expression instanceof J.Literal literal && literal.getValue() instanceof String value) {
+            return "=" + value;
+        }
+        JavaType.Variable field = expression instanceof J.Identifier identifier
+                ? identifier.getFieldType()
+                : expression instanceof J.FieldAccess fieldAccess ? fieldAccess.getName().getFieldType() : null;
+        return field != null && field.getOwner() instanceof JavaType.FullyQualified owner
+                ? constantKey(owner, field.getName())
+                : null;
+    }
+
+    private static String constantKey(JavaType.FullyQualified owner, String name) {
+        return owner.getFullyQualifiedName() + "#" + name;
+    }
+
+    /**
+     * A {@code DeadlineManager#schedule} call found in the sources.
+     *
+     * @param nameKey     the key of its deadline name, see {@link #nameKey(Expression)}, or {@code null} when the
+     *                    name is no literal or constant
+     * @param withPayload whether it passes a payload other than a {@code null} literal
+     */
+    record ScheduledDeadline(@Nullable String nameKey, boolean withPayload) {
+
+    }
+
+    /**
+     * How the deadlines found in the sources are scheduled, which decides whether a handler matching a deadline by
+     * name alone can become a command handler for that name. Only a deadline without a payload arrives as a command
+     * named after the deadline; with a payload, the command is named after the payload class.
+     *
+     * @param withPayload           the names scheduled with a payload at least once
+     * @param withoutPayload        the names scheduled without a payload at least once
+     * @param unresolvedWithPayload whether a deadline with a payload is scheduled under a name that is no literal or
+     *                              resolvable constant, which may be any name
+     * @param constants             the values of the string constants found in the sources, by field
+     */
+    private record Schedules(Set<String> withPayload,
+                             Set<String> withoutPayload,
+                             boolean unresolvedWithPayload,
+                             Map<String, String> constants) {
+
+        static Schedules of(Accumulator acc) {
+            Set<String> withPayload = new HashSet<>();
+            Set<String> withoutPayload = new HashSet<>();
+            boolean unresolvedWithPayload = false;
+            for (ScheduledDeadline deadline : acc.scheduledDeadlines) {
+                String name = resolve(deadline.nameKey(), acc.constants);
+                if (name == null) {
+                    unresolvedWithPayload |= deadline.withPayload();
+                } else {
+                    (deadline.withPayload() ? withPayload : withoutPayload).add(name);
+                }
+            }
+            return new Schedules(withPayload, withoutPayload, unresolvedWithPayload, acc.constants);
+        }
+
+        private static @Nullable String resolve(@Nullable String nameKey, Map<String, String> constants) {
+            if (nameKey == null) {
+                return null;
+            }
+            return nameKey.startsWith("=") ? nameKey.substring(1) : constants.get(nameKey);
+        }
+
+        /**
+         * Returns the marker for a handler matching the given deadline name alone, or {@code null} when every
+         * schedule call of that name passes no payload, so the command named after the deadline reaches it. A name
+         * scheduled nowhere in the sources, for example by another module, is marked as well.
+         */
+        @Nullable String todoFor(@Nullable Expression deadlineName) {
+            String name = resolve(nameKey(deadlineName), constants);
+            if (name != null && withPayload.contains(name)) {
+                return SCHEDULED_WITH_PAYLOAD_TODO;
+            }
+            if (name == null || unresolvedWithPayload || !withoutPayload.contains(name)) {
+                return UNVERIFIED_NAME_TODO;
+            }
+            return null;
+        }
     }
 
     /**
@@ -530,6 +672,14 @@ public class MigrateAggregateDeadlineHandler extends ScanningRecipe<MigrateAggre
 
         static Migration mark(String todo) {
             return new Migration(null, null, false, todo);
+        }
+
+        /**
+         * Returns whether the migrated handler receives the command named after the deadline, rather than one
+         * named after a payload class.
+         */
+        boolean routedByDeadlineName() {
+            return replacement != null && payloadType == null;
         }
 
         J.MethodDeclaration apply(J.MethodDeclaration method) {

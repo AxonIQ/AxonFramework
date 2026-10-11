@@ -42,6 +42,21 @@ class MigrateAggregateDeadlineHandlerTest implements RewriteTest {
             }
             """;
 
+    private static final String PAYMENT_SCHEDULER = """
+            package com.example;
+
+            import org.axonframework.deadline.DeadlineManager;
+
+            import java.time.Duration;
+
+            class PaymentScheduler {
+                void schedule(DeadlineManager deadlineManager) {
+                    deadlineManager.schedule(Duration.ofDays(1), "paymentDeadline");
+                    deadlineManager.schedule(Duration.ofDays(2), "paymentDeadline", null);
+                }
+            }
+            """;
+
     @Override
     public void defaults(RecipeSpec spec) {
         spec.recipe(new MigrateAggregateDeadlineHandler())
@@ -312,8 +327,9 @@ class MigrateAggregateDeadlineHandlerTest implements RewriteTest {
     class HandlerWithoutPayload {
 
         @Test
-        void routesHandlerByDeadlineNameAsCommandName() {
+        void routesHandlerByDeadlineNameAsCommandNameWhenEveryScheduleHasNoPayload() {
             rewriteRun(
+                    java(PAYMENT_SCHEDULER),
                     java(
                             """
                             package com.example;
@@ -348,6 +364,21 @@ class MigrateAggregateDeadlineHandlerTest implements RewriteTest {
                             """
                             package com.example;
 
+                            import org.axonframework.deadline.DeadlineManager;
+
+                            import java.time.Duration;
+
+                            class PaymentScheduler {
+                                void schedule(DeadlineManager deadlineManager) {
+                                    deadlineManager.schedule(Duration.ofDays(1), Order.PAYMENT_DEADLINE);
+                                }
+                            }
+                            """
+                    ),
+                    java(
+                            """
+                            package com.example;
+
                             import org.axonframework.deadline.annotation.DeadlineHandler;
                             import org.axonframework.messaging.annotation.MetaDataValue;
 
@@ -370,6 +401,132 @@ class MigrateAggregateDeadlineHandlerTest implements RewriteTest {
 
                                 @CommandHandler(commandName = PAYMENT_DEADLINE)
                                 void on(@MetaDataValue("origin") String origin) {
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void marksHandlerOfDeadlineScheduledWithPayloadAndKeepsDeadlineHandler() {
+            rewriteRun(
+                    java(PAYLOAD),
+                    java(PAYMENT_SCHEDULER),
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.DeadlineManager;
+
+                            import java.time.Duration;
+
+                            class ReminderScheduler {
+                                void schedule(DeadlineManager deadlineManager) {
+                                    deadlineManager.schedule(Duration.ofDays(1), "paymentDeadline", new PaymentDeadline("o"));
+                                }
+                            }
+                            """
+                    ),
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+
+                            class Order {
+                                @DeadlineHandler(deadlineName = "paymentDeadline")
+                                void on() {
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+
+                            class Order {
+                                // TODO(axon4to5): replace this @DeadlineHandler with a @CommandHandler for the payload class this deadline is scheduled with. Axon Framework 4 matched it by deadline name alone, but a deadline scheduled with a payload now arrives as a command named after its payload class.
+                                @DeadlineHandler(deadlineName = "paymentDeadline")
+                                void on() {
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void marksHandlerWhenAnyDeadlineWithPayloadIsScheduledUnderNameRecipeCannotResolve() {
+            rewriteRun(
+                    java(PAYMENT_SCHEDULER),
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.DeadlineManager;
+
+                            import java.time.Duration;
+
+                            class GenericScheduler {
+                                void schedule(DeadlineManager deadlineManager, String deadlineName, Object payload) {
+                                    deadlineManager.schedule(Duration.ofDays(1), deadlineName, payload);
+                                }
+                            }
+                            """
+                    ),
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+
+                            class Order {
+                                @DeadlineHandler(deadlineName = "paymentDeadline")
+                                void on() {
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+
+                            class Order {
+                                // TODO(axon4to5): replace this @DeadlineHandler with a @CommandHandler(commandName = <deadline name>) when this deadline is always scheduled without a payload, or with one for its payload class otherwise. The recipe could not tell how this deadline is scheduled. A fired aggregate deadline now arrives as a command named after its payload class, or after the deadline name when it has no payload.
+                                @DeadlineHandler(deadlineName = "paymentDeadline")
+                                void on() {
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void marksHandlerOfDeadlineWithoutScheduleCallInSources() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+
+                            class Order {
+                                @DeadlineHandler(deadlineName = "paymentDeadline")
+                                void on() {
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+
+                            class Order {
+                                // TODO(axon4to5): replace this @DeadlineHandler with a @CommandHandler(commandName = <deadline name>) when this deadline is always scheduled without a payload, or with one for its payload class otherwise. The recipe could not tell how this deadline is scheduled. A fired aggregate deadline now arrives as a command named after its payload class, or after the deadline name when it has no payload.
+                                @DeadlineHandler(deadlineName = "paymentDeadline")
+                                void on() {
                                 }
                             }
                             """
@@ -661,6 +818,7 @@ class MigrateAggregateDeadlineHandlerTest implements RewriteTest {
         @Test
         void replacesHandlerOfAggregateThatSharesSuperclassWithSaga() {
             rewriteRun(
+                    java(PAYMENT_SCHEDULER),
                     java(
                             """
                             package com.example;
