@@ -46,10 +46,10 @@
         <c3p0.version>0.9.1.2</c3p0.version>
         <hikari.version>7.1.0</hikari.version>
         <hsqldb.version>2.7.4</hsqldb.version>
-        <hibernate-core.version>7.4.11.Final</hibernate-core.version>
+        <hibernate-core.version>7.4.12.Final</hibernate-core.version>
         <mongo.driver.version>5.13.0</mongo.driver.version>
         <mysql-connector-java.version>26.7.0</mysql-connector-java.version>
-        <postgresql.version>42.7.13</postgresql.version>
+        <postgresql.version>42.7.14</postgresql.version>
         <ojdbc.version>23.26.3.0.0</ojdbc.version>
         <!-- Jakarta -->
         <jakarta.annotation.version>3.0.0</jakarta.annotation.version>
