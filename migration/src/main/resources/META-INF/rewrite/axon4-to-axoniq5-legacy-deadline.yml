@@ -79,3 +79,14 @@ recipeList:
       newFullyQualifiedTypeName: org.axonframework.messaging.ScopeAwareProvider
 
   # ── Test fixtures ──────────────────────────────────────────────────────────
+  # The legacy DeadlineMessage and GenericDeadlineMessage keep their Axon Framework 4
+  # package but dropped the payload type parameter, like every Axon Framework 5
+  # message. Production code is affected as much as tests (a `DeadlineMessage<?>`
+  # handler parameter, a `new GenericDeadlineMessage<>(..)`); the step sits here
+  # because the fixture matchers and interceptors are where the type arguments
+  # cluster, e.g. `Matcher<? super DeadlineMessage<?>>`. Matched on the unchanged
+  # Axon Framework 4 type names, so the position in the leg does not matter.
+  - org.axonframework.migration.RemoveTypeArguments:
+      fullyQualifiedTypeName: org.axonframework.deadline.DeadlineMessage
+  - org.axonframework.migration.RemoveTypeArguments:
+      fullyQualifiedTypeName: org.axonframework.deadline.GenericDeadlineMessage
