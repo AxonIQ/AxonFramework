@@ -18,11 +18,15 @@ package org.axonframework.migration;
 
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.openrewrite.PrintOutputCapture;
+import org.openrewrite.config.Environment;
 import org.openrewrite.test.RecipeSpec;
 import org.openrewrite.test.RewriteTest;
 import org.openrewrite.test.TypeValidation;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.openrewrite.java.Assertions.java;
+import static org.openrewrite.java.Assertions.srcTestJava;
 
 /**
  * Verifies {@link MarkUnsupportedSagaTestFixtureCalls}.
@@ -228,6 +232,136 @@ class MarkUnsupportedSagaTestFixtureCallsTest implements RewriteTest {
                             }
                             """
                     )
+            );
+        }
+    }
+
+    @Nested
+    class MetadataArguments {
+
+        private static final String METADATA_TODO =
+                "// TODO(axon4to5): pass this metadata as a Map<String, String>. The axoniq-legacy-test fixture takes"
+                        + " Axon Framework 5 metadata, whose values are Strings, where Axon Framework 4 took any"
+                        + " Map<String, ?>.";
+
+        @Test
+        void marksACallPassingADeclaredMapWithNonStringValues() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.test.saga.SagaTestFixture;
+
+                            import java.util.Map;
+
+                            class PaymentSagaTest {
+                                SagaTestFixture<Object> fixture;
+                                Map<String, ?> correlation;
+
+                                void publishes(Map<String, Object> metaData) {
+                                    fixture.givenAPublished("started", metaData)
+                                           .andThenAPublished("confirmed", correlation)
+                                           .whenAggregate("p-1")
+                                           .publishes("paid", metaData);
+                                    fixture.whenPublishingA("paid", this.correlation);
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.test.saga.SagaTestFixture;
+
+                            import java.util.Map;
+
+                            class PaymentSagaTest {
+                                SagaTestFixture<Object> fixture;
+                                Map<String, ?> correlation;
+
+                                void publishes(Map<String, Object> metaData) {
+                                    %s
+                                    fixture.givenAPublished("started", metaData)
+                                           .andThenAPublished("confirmed", correlation)
+                                           .whenAggregate("p-1")
+                                           .publishes("paid", metaData);
+                                    %s
+                                    fixture.whenPublishingA("paid", this.correlation);
+                                }
+                            }
+                            """.formatted(METADATA_TODO, METADATA_TODO)
+                    )
+            );
+        }
+
+        @Test
+        void leavesMetadataTheAxonFramework5FixtureAcceptsAlone() {
+            // MetaData becomes the Axon Framework 5 Metadata, a Map<String, String>, and a map built in place
+            // infers String values from its String arguments.
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.messaging.MetaData;
+                            import org.axonframework.test.saga.SagaTestFixture;
+
+                            import java.util.Collections;
+                            import java.util.Map;
+
+                            class PaymentSagaTest {
+                                SagaTestFixture<Object> fixture;
+
+                                void publishes(Map<String, String> strings, MetaData metaData) {
+                                    fixture.givenAPublished("started", MetaData.with("traceId", "t-1"))
+                                           .andThenAPublished("confirmed", Collections.singletonMap("traceId", "t-1"))
+                                           .andThenAPublished("reminded", Map.of("traceId", "t-1"))
+                                           .andThenAPublished("charged", strings)
+                                           .whenPublishingA("paid", metaData);
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void commercialUpgradeKeepsTheMarkerAndRenamesMetaData() {
+            rewriteRun(
+                    spec -> spec.recipe(Environment.builder()
+                                                   .scanRuntimeClasspath("org.axonframework.migration")
+                                                   .build()
+                                                   .activateRecipes("io.axoniq.framework.migration.UpgradeAxon4ToAxoniq5"))
+                                .markerPrinter(PrintOutputCapture.MarkerPrinter.SEARCH_MARKERS_ONLY),
+                    srcTestJava(java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.messaging.MetaData;
+                            import org.axonframework.test.saga.SagaTestFixture;
+
+                            import java.util.Map;
+
+                            class PaymentSagaTest {
+                                SagaTestFixture<Object> fixture;
+
+                                void publishes(Map<String, Object> extra) {
+                                    fixture.givenAPublished("started", MetaData.with("traceId", "t-1"))
+                                           .whenPublishingA("paid", extra);
+                                }
+                            }
+                            """,
+                            source -> source.after(actual -> {
+                                assertThat(actual)
+                                        .contains("""
+                                                          void publishes(Map<String, Object> extra) {
+                                                                  %s
+                                                                  fixture.givenAPublished("started", Metadata.with("traceId", "t-1"))
+                                                                         .whenPublishingA("paid", extra);
+                                                          """.formatted(METADATA_TODO));
+                                return actual;
+                            })
+                    ))
             );
         }
     }

@@ -23,6 +23,7 @@ import org.openrewrite.SourceFile;
 import org.openrewrite.TreeVisitor;
 import org.openrewrite.internal.ListUtils;
 import org.openrewrite.java.JavaIsoVisitor;
+import org.openrewrite.java.tree.Expression;
 import org.openrewrite.java.tree.J;
 import org.openrewrite.java.tree.JavaType;
 import org.openrewrite.java.tree.TypeUtils;
@@ -44,7 +45,10 @@ import java.util.Set;
  *     <li>{@code registerCommandGateway(..)} and {@code registerListenerInvocationErrorHandler(..)} are removed, as
  *     Axon Framework 5 has neither a gateway factory nor a listener invocation error handler;</li>
  *     <li>a variable declared as the Saga {@code FixtureConfiguration} cannot be stopped, while the ported fixture runs
- *     a started configuration that must be stopped after each test.</li>
+ *     a started configuration that must be stopped after each test;</li>
+ *     <li>{@code givenAPublished}, {@code andThenAPublished}, {@code whenPublishingA} and {@code publishes} take
+ *     metadata as a {@code Map<String, String>} instead of a {@code Map<String, ?>}, so passing a variable declared
+ *     with other values, such as a {@code Map<String, Object>}, no longer compiles.</li>
  * </ul>
  * {@code registerResourceInjector(..)} is not handled here: {@link MarkSagaResourceInjection} marks it. The marker goes
  * on the enclosing statement, so a call inside a multi-line fixture chain is flagged above the chain. Java sources
@@ -68,6 +72,12 @@ public class MarkUnsupportedSagaTestFixtureCalls extends Recipe {
             "expectNoScheduledEvent", "expectNoScheduledEventOfType", "expectNoScheduledEventMatching",
             "expectNoScheduledEvents"
     );
+
+    private static final Set<String> METADATA_PUBLICATIONS = Set.of(
+            "givenAPublished", "andThenAPublished", "whenPublishingA", "publishes"
+    );
+    private static final String MAP_FQN = "java.util.Map";
+    private static final String STRING_FQN = "java.lang.String";
 
     private static final StatementTodoMarker.Todo TRANSIENCE_CHECK_TODO = new StatementTodoMarker.Todo(
             "TODO(axon4to5): delete this withTransienceCheckDisabled() call",
@@ -101,6 +111,13 @@ public class MarkUnsupportedSagaTestFixtureCalls extends Recipe {
                     + " stop()."
     );
 
+    private static final StatementTodoMarker.Todo METADATA_TODO = new StatementTodoMarker.Todo(
+            "TODO(axon4to5): pass this metadata as a Map<String, String>",
+            " TODO(axon4to5): pass this metadata as a Map<String, String>. The axoniq-legacy-test fixture takes"
+                    + " Axon Framework 5 metadata, whose values are Strings, where Axon Framework 4 took any"
+                    + " Map<String, ?>."
+    );
+
     @Override
     public String getDisplayName() {
         return "Mark unsupported SagaTestFixture calls";
@@ -111,8 +128,10 @@ public class MarkUnsupportedSagaTestFixtureCalls extends Recipe {
         return "Leaves a `// TODO(axon4to5):` marker, keeping the code in place, on `SagaTestFixture` usage the "
                 + "`axoniq-legacy-test` fixture no longer supports: the no-op `withTransienceCheckDisabled()`, the "
                 + "scheduled event assertions that throw `UnsupportedOperationException`, the removed "
-                + "`registerCommandGateway(..)` and `registerListenerInvocationErrorHandler(..)`, and variables "
-                + "declared as the Saga `FixtureConfiguration`, which cannot be stopped. Java sources only. "
+                + "`registerCommandGateway(..)` and `registerListenerInvocationErrorHandler(..)`, variables "
+                + "declared as the Saga `FixtureConfiguration`, which cannot be stopped, and event publications "
+                + "passing metadata declared as a map with non-String values, such as a `Map<String, Object>`, "
+                + "where the ported fixture takes a `Map<String, String>`. Java sources only. "
                 + "Idempotent.";
     }
 
@@ -140,11 +159,19 @@ public class MarkUnsupportedSagaTestFixtureCalls extends Recipe {
 
     private static StatementTodoMarker.@Nullable Todo todoFor(J.MethodInvocation invocation) {
         JavaType.Method methodType = invocation.getMethodType();
-        if (methodType == null || !SAGA_FIXTURE_TYPES.contains(methodType.getDeclaringType()
-                                                                         .getFullyQualifiedName())) {
+        if (methodType == null) {
             return null;
         }
         String name = invocation.getSimpleName();
+        if (METADATA_PUBLICATIONS.contains(name)
+                && SAGA_FIXTURE_PACKAGE.equals(methodType.getDeclaringType().getPackageName())
+                && invocation.getArguments().size() == 2
+                && declaresNonStringMapValues(invocation.getArguments().get(1))) {
+            return METADATA_TODO;
+        }
+        if (!SAGA_FIXTURE_TYPES.contains(methodType.getDeclaringType().getFullyQualifiedName())) {
+            return null;
+        }
         if (SCHEDULED_EVENT_ASSERTIONS.contains(name)) {
             return SCHEDULED_EVENT_TODO;
         }
@@ -154,5 +181,26 @@ public class MarkUnsupportedSagaTestFixtureCalls extends Recipe {
             case "registerListenerInvocationErrorHandler" -> ERROR_HANDLER_TODO;
             default -> null;
         };
+    }
+
+    /**
+     * Whether the metadata argument is a variable declared as a {@link java.util.Map} whose value type is not
+     * {@link String}, such as {@code Map<String, Object>} or {@code Map<String, ?>}. Only a declared variable proves
+     * the argument no longer fits; a map built in place, such as {@code Map.of("key", "value")}, infers its value type
+     * from the parameter it is passed to, and {@code MetaData} becomes the Axon Framework 5 {@code Metadata}, whose
+     * values are Strings.
+     */
+    private static boolean declaresNonStringMapValues(Expression argument) {
+        JavaType.Variable variable = argument instanceof J.Identifier identifier
+                ? identifier.getFieldType()
+                : argument instanceof J.FieldAccess fieldAccess ? fieldAccess.getName().getFieldType() : null;
+        if (variable == null
+                || !(variable.getType() instanceof JavaType.Parameterized declared)
+                || !TypeUtils.isAssignableTo(MAP_FQN, declared)
+                || declared.getTypeParameters().size() != 2) {
+            return false;
+        }
+        JavaType valueType = declared.getTypeParameters().get(1);
+        return !(valueType instanceof JavaType.Unknown) && !TypeUtils.isOfClassType(valueType, STRING_FQN);
     }
 }

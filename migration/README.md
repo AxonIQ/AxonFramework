@@ -87,7 +87,8 @@ After the migration run, search for every such location with:
   `DeadlineMessage`, rewrites interceptor lambdas registered on both fixtures to the AF5 signature, and leaves a
   `TODO(axon4to5)` marker on `SagaTestFixture` calls the ported fixture no longer supports (scheduled event
   assertions, `withTransienceCheckDisabled()`, `registerCommandGateway(..)`,
-  `registerListenerInvocationErrorHandler(..)`) and on interceptors it cannot rewrite.
+  `registerListenerInvocationErrorHandler(..)`, metadata passed as a variable declared with non-String values such as
+  `Map<String, Object>`) and on interceptors it cannot rewrite.
 - **Commercial path** (`UpgradeAxon4ToAxoniq5` only): additionally re-namespaces Axon Server connector, DLQ,
   distributed-messaging, and Testcontainer classes from `org.axonframework.*` to `io.axoniq.framework.*` and swaps the
   Spring Boot starter to `axoniq-spring-boot-starter`.
