@@ -48,6 +48,14 @@ recipeList:
   # ── 1. Run the free-AF5 migration ───────────────────────────────────────
   - org.axonframework.migration.UpgradeAxon4ToAxon5
 
+  # The free leg moves the whole `org.axonframework.modelling.command` package
+  # to `modelling.entity`. `axoniq-legacy` keeps `AggregateScopeDescriptor`,
+  # which aggregates pass to the `DeadlineManager`, in its Axon Framework 4
+  # package, so that one type moves back.
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.modelling.entity.AggregateScopeDescriptor
+      newFullyQualifiedTypeName: org.axonframework.modelling.command.AggregateScopeDescriptor
+
   # ── 2. Swap the BOM to the Axoniq commercial BOM (and pin to AF5 line) ──
   - io.axoniq.framework.migration.Axon4ToAxoniq5Bom
 
