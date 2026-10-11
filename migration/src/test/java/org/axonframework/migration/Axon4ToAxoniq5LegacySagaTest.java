@@ -174,9 +174,8 @@ class Axon4ToAxoniq5LegacySagaTest implements RewriteTest {
 
         private static final String TODO = "// TODO(axon4to5): replace this static SagaLifecycle call."
                 + " axoniq-legacy has no static SagaLifecycle methods and injects a SagaLifecycle parameter into"
-                + " @SagaEventHandler methods only. End the Saga unconditionally with @EndSaga on the handler, or"
-                + " declare a ProcessingContext handler parameter and call"
-                + " SagaLifecycle.forContext(processingContext).";
+                + " @SagaEventHandler methods only. Declare a ProcessingContext parameter, pass it on from every"
+                + " handler calling this method, and call SagaLifecycle.forContext(processingContext).";
 
         @Test
         void replacesAClosingUnconditionalEndInADeadlineHandlerWithEndSaga() {
@@ -316,7 +315,8 @@ class Axon4ToAxoniq5LegacySagaTest implements RewriteTest {
         }
 
         @Test
-        void marksAConditionalEndInADeadlineHandler() {
+        void callsAConditionalEndInADeadlineHandlerThroughTheProcessingContext() {
+            // The ProcessingContext resolver ranks below the payload resolver, so a DeadlineMessage goes first.
             rewriteRun(
                     java(
                             """
@@ -344,7 +344,9 @@ class Axon4ToAxoniq5LegacySagaTest implements RewriteTest {
                             """
                             package com.example;
 
+                            import org.axonframework.deadline.DeadlineMessage;
                             import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.messaging.core.unitofwork.ProcessingContext;
                             import org.axonframework.modelling.saga.SagaEventHandler;
                             import org.axonframework.modelling.saga.SagaLifecycle;
 
@@ -356,20 +358,19 @@ class Axon4ToAxoniq5LegacySagaTest implements RewriteTest {
                                 }
 
                                 @DeadlineHandler(deadlineName = "paymentReminder")
-                                void onReminder() {
+                                void onReminder(DeadlineMessage deadlineMessage, ProcessingContext processingContext) {
                                     if (++reminders > 3) {
-                                        %s
-                                        SagaLifecycle.end();
+                                        SagaLifecycle.forContext(processingContext).end();
                                     }
                                 }
                             }
-                            """.formatted(TODO)
+                            """
                     )
             );
         }
 
         @Test
-        void marksAnEndThatIsNotTheLastStatementOfTheDeadlineHandler() {
+        void callsAnEndThatIsNotTheLastStatementOfTheDeadlineHandlerThroughTheProcessingContext() {
             rewriteRun(
                     java(
                             """
@@ -396,7 +397,9 @@ class Axon4ToAxoniq5LegacySagaTest implements RewriteTest {
                             """
                             package com.example;
 
+                            import org.axonframework.deadline.DeadlineMessage;
                             import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.messaging.core.unitofwork.ProcessingContext;
                             import org.axonframework.modelling.saga.SagaEventHandler;
                             import org.axonframework.modelling.saga.SagaLifecycle;
 
@@ -408,19 +411,19 @@ class Axon4ToAxoniq5LegacySagaTest implements RewriteTest {
                                 }
 
                                 @DeadlineHandler(deadlineName = "paymentOverdue")
-                                void onOverdue() {
-                                    %s
-                                    SagaLifecycle.end();
+                                void onOverdue(DeadlineMessage deadlineMessage, ProcessingContext processingContext) {
+                                    SagaLifecycle.forContext(processingContext).end();
                                     overdue = true;
                                 }
                             }
-                            """.formatted(TODO)
+                            """
                     )
             );
         }
 
         @Test
-        void marksEveryLifecycleCallOfADeadlineHandlerThatAlsoChangesAssociations() {
+        void callsEveryLifecycleMethodOfADeadlineHandlerThroughTheProcessingContext() {
+            // A handler with a payload parameter keeps it first, so it needs no DeadlineMessage.
             rewriteRun(
                     java(
                             """
@@ -436,8 +439,11 @@ class Axon4ToAxoniq5LegacySagaTest implements RewriteTest {
                                 }
 
                                 @DeadlineHandler(deadlineName = "paymentOverdue")
-                                void onOverdue(String paymentId) {
-                                    SagaLifecycle.removeAssociationWith("paymentId", paymentId);
+                                void onOverdue(String id) {
+                                    SagaLifecycle.removeAssociationWith("paymentId", id);
+                                    if (SagaLifecycle.associationValues().size() == 1) {
+                                        SagaLifecycle.associateWith("retryId", id);
+                                    }
                                     SagaLifecycle.end();
                                 }
                             }
@@ -446,6 +452,7 @@ class Axon4ToAxoniq5LegacySagaTest implements RewriteTest {
                             package com.example;
 
                             import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.messaging.core.unitofwork.ProcessingContext;
                             import org.axonframework.modelling.saga.SagaEventHandler;
                             import org.axonframework.modelling.saga.SagaLifecycle;
 
@@ -455,26 +462,36 @@ class Axon4ToAxoniq5LegacySagaTest implements RewriteTest {
                                 }
 
                                 @DeadlineHandler(deadlineName = "paymentOverdue")
-                                void onOverdue(String paymentId) {
-                                    %1$s
-                                    SagaLifecycle.removeAssociationWith("paymentId", paymentId);
-                                    %1$s
-                                    SagaLifecycle.end();
+                                void onOverdue(String id, ProcessingContext processingContext) {
+                                    SagaLifecycle.forContext(processingContext).removeAssociationWith("paymentId", id);
+                                    if (SagaLifecycle.forContext(processingContext).associationValues().size() == 1) {
+                                        SagaLifecycle.forContext(processingContext).associateWith("retryId", id);
+                                    }
+                                    SagaLifecycle.forContext(processingContext).end();
                                 }
                             }
-                            """.formatted(TODO)
+                            """
                     )
             );
         }
 
         @Test
-        void marksAnAssociationInADeadlineHandler() {
+        void reusesAnExistingProcessingContextParameterOfADeadlineHandler() {
             rewriteRun(
+                    java(
+                            """
+                            package org.axonframework.messaging.core.unitofwork;
+
+                            public interface ProcessingContext {
+                            }
+                            """
+                    ),
                     java(
                             """
                             package com.example;
 
                             import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.messaging.core.unitofwork.ProcessingContext;
                             import org.axonframework.modelling.saga.SagaEventHandler;
                             import org.axonframework.modelling.saga.SagaLifecycle;
 
@@ -484,7 +501,7 @@ class Axon4ToAxoniq5LegacySagaTest implements RewriteTest {
                                 }
 
                                 @DeadlineHandler(deadlineName = "paymentRetry")
-                                void onRetry(String paymentId) {
+                                void onRetry(String paymentId, ProcessingContext context) {
                                     SagaLifecycle.associateWith("paymentId", paymentId);
                                 }
                             }
@@ -493,6 +510,7 @@ class Axon4ToAxoniq5LegacySagaTest implements RewriteTest {
                             package com.example;
 
                             import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.messaging.core.unitofwork.ProcessingContext;
                             import org.axonframework.modelling.saga.SagaEventHandler;
                             import org.axonframework.modelling.saga.SagaLifecycle;
 
@@ -502,12 +520,59 @@ class Axon4ToAxoniq5LegacySagaTest implements RewriteTest {
                                 }
 
                                 @DeadlineHandler(deadlineName = "paymentRetry")
-                                void onRetry(String paymentId) {
-                                    %s
-                                    SagaLifecycle.associateWith("paymentId", paymentId);
+                                void onRetry(String paymentId, ProcessingContext context) {
+                                    SagaLifecycle.forContext(context).associateWith("paymentId", paymentId);
                                 }
                             }
-                            """.formatted(TODO)
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void callsAStaticallyImportedLifecycleMethodOfADeadlineHandlerThroughTheProcessingContext() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+
+                            import static org.axonframework.modelling.saga.SagaLifecycle.associateWith;
+
+                            class PaymentSaga {
+                                @SagaEventHandler(associationProperty = "orderId")
+                                void on(Object event) {
+                                }
+
+                                @DeadlineHandler(deadlineName = "paymentRetry")
+                                void onRetry(String processingContext) {
+                                    String retryId = "retry-" + processingContext;
+                                    associateWith("paymentId", retryId);
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.axonframework.modelling.saga.SagaLifecycle;
+
+                            class PaymentSaga {
+                                @SagaEventHandler(associationProperty = "orderId")
+                                void on(Object event) {
+                                }
+
+                                @DeadlineHandler(deadlineName = "paymentRetry")
+                                void onRetry(String processingContext, ProcessingContext processingContext1) {
+                                    String retryId = "retry-" + processingContext;
+                                    SagaLifecycle.forContext(processingContext1).associateWith("paymentId", retryId);
+                                }
+                            }
+                            """
                     )
             );
         }
@@ -575,6 +640,10 @@ class Axon4ToAxoniq5LegacySagaTest implements RewriteTest {
 
                                 @DeadlineHandler(deadlineName = "paymentRetry")
                                 void onRetry(String paymentId) {
+                                    retry(paymentId);
+                                }
+
+                                private void retry(String paymentId) {
                                     %s
                                     SagaLifecycle.associateWith("paymentId", paymentId);
                                 }
@@ -610,7 +679,7 @@ class Axon4ToAxoniq5LegacySagaTest implements RewriteTest {
         }
 
         @Test
-        void replacesAClosingEndInAKotlinDeadlineHandlerAndMarksAConditionalOne() {
+        void replacesAClosingEndInAKotlinDeadlineHandlerAndCallsAConditionalOneThroughTheProcessingContext() {
             rewriteRun(
                     kotlin(
                             """
@@ -644,7 +713,9 @@ class Axon4ToAxoniq5LegacySagaTest implements RewriteTest {
                             """
                             package com.example
 
+                            import org.axonframework.deadline.DeadlineMessage
                             import org.axonframework.deadline.annotation.DeadlineHandler
+                            import org.axonframework.messaging.core.unitofwork.ProcessingContext
                             import org.axonframework.modelling.saga.EndSaga
                             import org.axonframework.modelling.saga.SagaEventHandler
                             import org.axonframework.modelling.saga.SagaLifecycle
@@ -663,20 +734,19 @@ class Axon4ToAxoniq5LegacySagaTest implements RewriteTest {
                                 }
 
                                 @DeadlineHandler(deadlineName = "paymentReminder")
-                                fun onReminder() {
+                                fun onReminder(deadlineMessage: DeadlineMessage, processingContext: ProcessingContext) {
                                     if (++reminders > 3) {
-                                        %s
-                                        SagaLifecycle.end()
+                                        SagaLifecycle.forContext(processingContext).end()
                                     }
                                 }
                             }
-                            """.formatted(TODO)
+                            """
                     )
             );
         }
 
         @Test
-        void marksAClosingEndThatAnEarlyReturnCanSkip() {
+        void callsAClosingEndThatAnEarlyReturnCanSkipThroughTheProcessingContext() {
             // The paid path never reached the end in Axon Framework 4, while @EndSaga would end the Saga there too.
             rewriteRun(
                     java(
@@ -706,7 +776,9 @@ class Axon4ToAxoniq5LegacySagaTest implements RewriteTest {
                             """
                             package com.example;
 
+                            import org.axonframework.deadline.DeadlineMessage;
                             import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.messaging.core.unitofwork.ProcessingContext;
                             import org.axonframework.modelling.saga.SagaEventHandler;
                             import org.axonframework.modelling.saga.SagaLifecycle;
 
@@ -718,15 +790,14 @@ class Axon4ToAxoniq5LegacySagaTest implements RewriteTest {
                                 }
 
                                 @DeadlineHandler(deadlineName = "paymentOverdue")
-                                void onOverdue() {
+                                void onOverdue(DeadlineMessage deadlineMessage, ProcessingContext processingContext) {
                                     if (paid) {
                                         return;
                                     }
-                                    %s
-                                    SagaLifecycle.end();
+                                    SagaLifecycle.forContext(processingContext).end();
                                 }
                             }
-                            """.formatted(TODO)
+                            """
                     )
             );
         }
@@ -867,7 +938,7 @@ class Axon4ToAxoniq5LegacySagaTest implements RewriteTest {
         }
 
         @Test
-        void marksAClosingEndInAKotlinDeadlineHandlerThatAnEarlyReturnCanSkip() {
+        void callsAClosingEndInAKotlinDeadlineHandlerThatAnEarlyReturnCanSkipThroughTheProcessingContext() {
             // A bare return in an inline lambda returns from the handler, unlike a labelled one.
             rewriteRun(
                     kotlin(
@@ -910,7 +981,9 @@ class Axon4ToAxoniq5LegacySagaTest implements RewriteTest {
                             """
                             package com.example
 
+                            import org.axonframework.deadline.DeadlineMessage
                             import org.axonframework.deadline.annotation.DeadlineHandler
+                            import org.axonframework.messaging.core.unitofwork.ProcessingContext
                             import org.axonframework.modelling.saga.EndSaga
                             import org.axonframework.modelling.saga.SagaEventHandler
                             import org.axonframework.modelling.saga.SagaLifecycle
@@ -924,19 +997,17 @@ class Axon4ToAxoniq5LegacySagaTest implements RewriteTest {
                                 }
 
                                 @DeadlineHandler(deadlineName = "paymentOverdue")
-                                fun onOverdue() {
+                                fun onOverdue(deadlineMessage: DeadlineMessage, processingContext: ProcessingContext) {
                                     if (paid) {
                                         return
                                     }
-                                    %1$s
-                                    SagaLifecycle.end()
+                                    SagaLifecycle.forContext(processingContext).end()
                                 }
 
                                 @DeadlineHandler(deadlineName = "paymentChecked")
-                                fun onChecked() {
+                                fun onChecked(deadlineMessage: DeadlineMessage, processingContext: ProcessingContext) {
                                     payments.forEach { if (it > 0) return }
-                                    %1$s
-                                    SagaLifecycle.end()
+                                    SagaLifecycle.forContext(processingContext).end()
                                 }
 
                                 @EndSaga

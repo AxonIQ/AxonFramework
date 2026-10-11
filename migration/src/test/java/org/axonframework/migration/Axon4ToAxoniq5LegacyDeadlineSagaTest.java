@@ -151,6 +151,89 @@ class Axon4ToAxoniq5LegacyDeadlineSagaTest implements RewriteTest {
     }
 
     @Test
+    void keepsTheDeadlineMessageFirstWhenBothLegsAddParametersToAParameterlessDeadlineHandler() {
+        // The deadline recipe adds the DeadlineMessage with the DeadlineManager, so the ProcessingContext the Saga
+        // recipe appends for the conditional end follows them, and neither resolver-ranked parameter is the payload.
+        rewriteRun(
+                java(
+                        """
+                        package org.springframework.beans.factory.annotation;
+
+                        public @interface Autowired {
+                        }
+                        """
+                ),
+                java(
+                        """
+                        package com.example;
+
+                        import java.time.Duration;
+
+                        import org.axonframework.deadline.DeadlineManager;
+                        import org.axonframework.deadline.annotation.DeadlineHandler;
+                        import org.axonframework.modelling.saga.SagaEventHandler;
+                        import org.axonframework.modelling.saga.SagaLifecycle;
+                        import org.axonframework.modelling.saga.StartSaga;
+                        import org.springframework.beans.factory.annotation.Autowired;
+
+                        public class ShipmentSaga {
+                            @Autowired
+                            private transient DeadlineManager deadlineManager;
+                            private int checks;
+
+                            @StartSaga
+                            @SagaEventHandler(associationProperty = "orderId")
+                            public void on(String orderId) {
+                                deadlineManager.schedule(Duration.ofDays(1), "deliveryCheck");
+                            }
+
+                            @DeadlineHandler(deadlineName = "deliveryCheck")
+                            public void onDeliveryCheck() {
+                                if (++checks >= 3) {
+                                    SagaLifecycle.end();
+                                } else {
+                                    deadlineManager.schedule(Duration.ofDays(1), "deliveryCheck");
+                                }
+                            }
+                        }
+                        """,
+                        """
+                        package com.example;
+
+                        import java.time.Duration;
+
+                        import org.axonframework.deadline.DeadlineManager;
+                        import org.axonframework.deadline.DeadlineMessage;
+                        import org.axonframework.deadline.annotation.DeadlineHandler;
+                        import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+                        import org.axonframework.modelling.saga.SagaEventHandler;
+                        import org.axonframework.modelling.saga.SagaLifecycle;
+                        import org.axonframework.modelling.saga.StartSaga;
+
+                        public class ShipmentSaga {
+                            private int checks;
+
+                            @StartSaga
+                            @SagaEventHandler(associationProperty = "orderId")
+                            public void on(String orderId, DeadlineManager deadlineManager) {
+                                deadlineManager.schedule(Duration.ofDays(1), "deliveryCheck");
+                            }
+
+                            @DeadlineHandler(deadlineName = "deliveryCheck")
+                            public void onDeliveryCheck(DeadlineMessage deadlineMessage, DeadlineManager deadlineManager, ProcessingContext processingContext) {
+                                if (++checks >= 3) {
+                                    SagaLifecycle.forContext(processingContext).end();
+                                } else {
+                                    deadlineManager.schedule(Duration.ofDays(1), "deliveryCheck");
+                                }
+                            }
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
     void marksProtectedDeadlineManagerFieldInsteadOfMovingItAwayFromSubclasses() {
         // OrderSaga uses the inherited field, which the recipe cannot see when migrating BaseSaga. The field stays
         // and gets the resource injection marker, like any other injected Saga field.

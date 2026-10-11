@@ -35,10 +35,12 @@ description: >-
   supports, such as the scheduled event assertions. Replaces static
   `SagaLifecycle` calls with an injected `SagaLifecycle` handler parameter, a
   closing `SagaLifecycle.end()` of a `@DeadlineHandler` without an early
-  `return` with `@EndSaga`, and
+  `return` with `@EndSaga`, the other static `SagaLifecycle` calls of a
+  `@DeadlineHandler` with `SagaLifecycle.forContext(processingContext)` calls on
+  a `ProcessingContext` handler parameter, and
   a `CommandGateway` field with a `CommandDispatcher` handler parameter. Leaves a
-  `TODO(axon4to5)` marker on the other static `SagaLifecycle` calls outside a
-  `@SagaEventHandler`, which the legacy module cannot inject into. Leaves a
+  `TODO(axon4to5)` marker on static `SagaLifecycle` calls in other Saga methods,
+  such as private helpers, which the legacy module cannot inject into. Leaves a
   `TODO(axon4to5)` marker on the other `@Autowired` or `@Inject` Saga fields
   and on `ResourceInjector` usage, because Axon Framework 5 resolves Saga
   collaborators as handler parameters instead of injecting fields.
@@ -79,7 +81,8 @@ recipeList:
   - org.axonframework.migration.MarkUnsupportedSagaTestFixtureCalls
 
   # Also covers static `SagaLifecycle` calls in `@DeadlineHandler` methods and
-  # helpers, which the legacy module injects no `SagaLifecycle` into.
+  # helpers, which the legacy module injects no `SagaLifecycle` into: a deadline
+  # handler reaches it through its `ProcessingContext` instead, a helper is marked.
   - org.axonframework.migration.MigrateSagaLifecycle
   - org.axonframework.migration.MigrateCommandGatewayInSagaEventHandler
   # Runs after the CommandGateway migration, which already turned that field into a

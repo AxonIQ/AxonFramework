@@ -29,6 +29,8 @@ import org.openrewrite.java.JavaIsoVisitor;
 import org.openrewrite.java.tree.Comment;
 import org.openrewrite.java.tree.Expression;
 import org.openrewrite.java.tree.J;
+import org.openrewrite.java.tree.JContainer;
+import org.openrewrite.java.tree.JRightPadded;
 import org.openrewrite.java.tree.JavaType;
 import org.openrewrite.java.tree.Space;
 import org.openrewrite.java.tree.Statement;
@@ -51,10 +53,15 @@ import java.util.Set;
  * The legacy module injects that parameter into {@code @SagaEventHandler} methods only, so other Saga methods calling
  * the static {@code SagaLifecycle} need a different shape. A {@code @DeadlineHandler} whose only lifecycle call is a
  * closing {@code SagaLifecycle.end()} statement, and which has no {@code return} that could skip it, is annotated with
- * {@code @EndSaga} instead, which ends the Saga once the handler completes, exactly like that last statement did. Every
- * other static call outside a {@code @SagaEventHandler} of a Saga, such as a conditional end, an end an early
- * {@code return} can skip, an association change in a deadline handler, or a call in a private helper, is kept and
- * marked with a {@code // TODO(axon4to5):} comment for a manual migration.
+ * {@code @EndSaga} instead, which ends the Saga once the handler completes, exactly like that last statement did. Any
+ * other {@code @DeadlineHandler} of a Saga, such as one with a conditional end, an end an early {@code return} can
+ * skip, or an association change, receives a {@code ProcessingContext} parameter, and each static call becomes
+ * {@code SagaLifecycle.forContext(processingContext).<call>(..)} in place. The Saga registers itself as the
+ * {@code SagaLifecycle} of the context it handles a deadline in. A {@code @DeadlineHandler} without parameters first
+ * gets a {@code DeadlineMessage} parameter, because the {@code ProcessingContext} resolver ranks below the payload
+ * resolver and would otherwise turn that parameter into the payload. A static call in any other Saga method, such as a
+ * private helper, is kept and marked with a {@code // TODO(axon4to5):} comment for a manual migration, as each of its
+ * callers would have to pass the context on.
  *
  * @author Mateusz Nowak
  * @since 5.4.0
@@ -66,12 +73,13 @@ public class MigrateSagaLifecycle extends Recipe {
     private static final String SAGA_STEREOTYPE_FQN = "org.axonframework.spring.stereotype.Saga";
     private static final String DEADLINE_HANDLER_FQN = "org.axonframework.deadline.annotation.DeadlineHandler";
     private static final String END_SAGA_FQN = "org.axonframework.modelling.saga.EndSaga";
+    private static final String PROCESSING_CONTEXT_FQN = "org.axonframework.messaging.core.unitofwork.ProcessingContext";
     private static final StatementTodoMarker.Todo STATIC_LIFECYCLE_TODO = new StatementTodoMarker.Todo(
             "TODO(axon4to5): replace this static SagaLifecycle call",
             " TODO(axon4to5): replace this static SagaLifecycle call. axoniq-legacy has no static SagaLifecycle"
-                    + " methods and injects a SagaLifecycle parameter into @SagaEventHandler methods only. End the"
-                    + " Saga unconditionally with @EndSaga on the handler, or declare a ProcessingContext handler"
-                    + " parameter and call SagaLifecycle.forContext(processingContext)."
+                    + " methods and injects a SagaLifecycle parameter into @SagaEventHandler methods only. Declare a"
+                    + " ProcessingContext parameter, pass it on from every handler calling this method, and call"
+                    + " SagaLifecycle.forContext(processingContext)."
     );
     private static final Set<String> LIFECYCLE_METHODS = Set.of(
             "associateWith", "removeAssociationWith", "end", "associationValues"
@@ -87,9 +95,11 @@ public class MigrateSagaLifecycle extends Recipe {
         return "Replaces static Axon Framework 4 `SagaLifecycle` calls in `@SagaEventHandler` methods with calls on "
                 + "an injected `SagaLifecycle` method parameter. A Saga `@DeadlineHandler` ending with an "
                 + "unconditional `SagaLifecycle.end()` that no early `return` can skip gets `@EndSaga` instead. "
-                + "Other static calls outside a "
-                + "`@SagaEventHandler` of a Saga are marked with a `// TODO(axon4to5):` comment, because the legacy "
-                + "module injects `SagaLifecycle` into `@SagaEventHandler` methods only.";
+                + "Other static calls in a Saga `@DeadlineHandler` become "
+                + "`SagaLifecycle.forContext(processingContext)` calls on a `ProcessingContext` handler parameter. "
+                + "Static calls in other Saga methods, such as private helpers, are marked with a "
+                + "`// TODO(axon4to5):` comment, because the legacy module injects `SagaLifecycle` into "
+                + "`@SagaEventHandler` methods only.";
     }
 
     @Override
@@ -173,16 +183,18 @@ public class MigrateSagaLifecycle extends Recipe {
 
             /**
              * Migrates a Saga method that is not a {@code @SagaEventHandler}, so the legacy module will not inject a
-             * {@code SagaLifecycle} into it. Only the closing unconditional end of a deadline handler has a 1:1
-             * replacement: {@code @EndSaga}, which Axon Framework 4 and the legacy module both apply to any Saga
-             * handler and which ends the Saga after the handler completes, just like a last statement does.
+             * {@code SagaLifecycle} into it. The closing unconditional end of a deadline handler becomes
+             * {@code @EndSaga}, which Axon Framework 4 and the legacy module both apply to any Saga handler and which
+             * ends the Saga after the handler completes, just like a last statement does. Any other lifecycle call of
+             * a deadline handler goes through the lifecycle the Saga registers on the handler's
+             * {@code ProcessingContext}. A call in any other method is marked, since its callers would have to pass
+             * that context on.
              */
             private J.MethodDeclaration migrateOutsideSagaEventHandler(J.MethodDeclaration method) {
-                if (isAnnotatedWith(method, DEADLINE_HANDLER_FQN, "DeadlineHandler")
-                        && lifecycleCallCount(method) == 1
-                        && endsWithLifecycleEnd(method)
-                        && !canReturnEarly(method)) {
-                    return replaceClosingEndWithAnnotation(method);
+                if (isAnnotatedWith(method, DEADLINE_HANDLER_FQN, "DeadlineHandler")) {
+                    return lifecycleCallCount(method) == 1 && endsWithLifecycleEnd(method) && !canReturnEarly(method)
+                            ? replaceClosingEndWithAnnotation(method)
+                            : callThroughProcessingContext(method);
                 }
                 return (J.MethodDeclaration) new JavaIsoVisitor<Integer>() {
                     @Override
@@ -193,6 +205,91 @@ public class MigrateSagaLifecycle extends Recipe {
                         );
                     }
                 }.visitNonNull(method, 0, getCursor().getParentOrThrow());
+            }
+
+            /**
+             * Replaces every static lifecycle call of the deadline handler with
+             * {@code SagaLifecycle.forContext(processingContext).<call>}, on a {@code ProcessingContext} parameter the
+             * handler declares or receives. While a Saga handles a deadline, it registers itself as the
+             * {@code SagaLifecycle} of that context, which is what the static methods found in Axon Framework 4.
+             * Each call is replaced where it is, so conditions and early returns keep deciding whether it runs.
+             */
+            private J.MethodDeclaration callThroughProcessingContext(J.MethodDeclaration method) {
+                String existing = processingContextParameterName(method);
+                String contextName = existing != null ? existing : availableName(method, "processingContext");
+                J.MethodDeclaration migrated = method;
+                if (existing == null) {
+                    migrated = MethodParameters.appendToHandler(method, isKotlinSource(), PROCESSING_CONTEXT_FQN,
+                                                                contextName);
+                    maybeAddImport(PROCESSING_CONTEXT_FQN, null, false);
+                    if (MethodParameters.needsMessageParameter(method)) {
+                        maybeAddImport(MethodParameters.DEADLINE_MESSAGE_FQN, null, false);
+                    }
+                }
+                migrated = (J.MethodDeclaration) new JavaIsoVisitor<Integer>() {
+                    @Override
+                    public J.MethodInvocation visitMethodInvocation(J.MethodInvocation invocation, Integer p) {
+                        J.MethodInvocation visited = super.visitMethodInvocation(invocation, p);
+                        if (!isLifecycleCall(visited)) {
+                            return visited;
+                        }
+                        Space prefix = visited.getSelect() == null ? Space.EMPTY : visited.getSelect().getPrefix();
+                        // The attributed type is the static Axon Framework 4 method, which this call no longer
+                        // invokes. Dropping it also lets a static import of that method be removed as unused.
+                        return visited.withSelect(forContext(prefix, contextName))
+                                      .withMethodType(null)
+                                      .withName(visited.getName().withType(null));
+                    }
+                }.visitNonNull(migrated, 0, getCursor().getParentOrThrow());
+                maybeAddImport(SAGA_LIFECYCLE_FQN, null, false);
+                for (String methodName : LIFECYCLE_METHODS) {
+                    maybeRemoveImport(SAGA_LIFECYCLE_FQN + "." + methodName);
+                }
+                return migrated;
+            }
+
+            /**
+             * Builds {@code SagaLifecycle.forContext(contextName)} directly instead of through a template, so the
+             * same tree serves Java and Kotlin sources.
+             */
+            private J.MethodInvocation forContext(Space prefix, String contextName) {
+                J.Identifier lifecycle = new J.Identifier(Tree.randomId(), Space.EMPTY, Markers.EMPTY,
+                                                          Collections.emptyList(), "SagaLifecycle",
+                                                          JavaType.ShallowClass.build(SAGA_LIFECYCLE_FQN), null);
+                J.Identifier name = new J.Identifier(Tree.randomId(), Space.EMPTY, Markers.EMPTY,
+                                                     Collections.emptyList(), "forContext", null, null);
+                J.Identifier context = new J.Identifier(Tree.randomId(), Space.EMPTY, Markers.EMPTY,
+                                                        Collections.emptyList(), contextName, null, null);
+                return new J.MethodInvocation(Tree.randomId(), prefix, Markers.EMPTY,
+                                              JRightPadded.build(lifecycle), null, name,
+                                              JContainer.build(List.of(JRightPadded.<Expression>build(context))),
+                                              null);
+            }
+
+            private @Nullable String processingContextParameterName(J.MethodDeclaration method) {
+                for (Statement parameter : method.getParameters()) {
+                    if (parameter instanceof J.VariableDeclarations declarations
+                            && declarations.getTypeExpression() != null
+                            && declarations.getVariables().size() == 1) {
+                        String type = resolvedName(declarations.getTypeExpression().getType());
+                        String source = declarations.getTypeExpression().toString().trim();
+                        if (type != null ? PROCESSING_CONTEXT_FQN.equals(type)
+                                : source.equals("ProcessingContext") || source.equals(PROCESSING_CONTEXT_FQN)) {
+                            return declarations.getVariables().get(0).getSimpleName();
+                        }
+                    }
+                }
+                return null;
+            }
+
+            /** A name no parameter or local variable of the method uses, so the new parameter shadows nothing. */
+            private String availableName(J.MethodDeclaration method, String baseName) {
+                Set<String> taken = MethodParameters.declaredNames(method);
+                String candidate = baseName;
+                for (int suffix = 1; taken.contains(candidate); suffix++) {
+                    candidate = baseName + suffix;
+                }
+                return candidate;
             }
 
             private boolean endsWithLifecycleEnd(J.MethodDeclaration method) {

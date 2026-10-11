@@ -48,13 +48,15 @@ After the migration run, search for every such location with:
   in-handler `CommandGateway` fields for injected `CommandDispatcher` parameters.
 - **Legacy sagas** (`UpgradeAxon4ToAxoniq5` only): adds `io.axoniq.framework:axoniq-legacy` when Saga source types are
   present, replaces static `SagaLifecycle` calls with an injected lifecycle parameter, replaces a closing
-  `SagaLifecycle.end()` of a `@DeadlineHandler` without an early `return` with `@EndSaga`, and replaces Saga
-  `CommandGateway` fields with `CommandDispatcher` handler parameters. Saga handlers stay synchronous; `send` remains fire-and-forget and `sendAndWait` keeps waiting.
+  `SagaLifecycle.end()` of a `@DeadlineHandler` without an early `return` with `@EndSaga`, calls the other static
+  `SagaLifecycle` methods of a `@DeadlineHandler` (a conditional end, one an early `return` can skip, association
+  changes) through `SagaLifecycle.forContext(processingContext)` on a `ProcessingContext` handler parameter, and replaces
+  Saga `CommandGateway` fields with `CommandDispatcher` handler parameters. Saga handlers stay synchronous; `send` remains fire-and-forget and `sendAndWait` keeps waiting.
   Other `@Autowired` or `@Inject` Saga fields, and any `ResourceInjector` usage, get a `TODO(axon4to5)` marker: Axon
   Framework 5 does not inject Saga fields, so move each dependency to a parameter of the `@SagaEventHandler` methods
-  that use it. Other static `SagaLifecycle` calls outside a `@SagaEventHandler`, such as a conditional end in a
-  deadline handler or one an early `return` can skip, get a `TODO(axon4to5)` marker too, because the legacy module injects `SagaLifecycle` into
-  `@SagaEventHandler` methods only.
+  that use it. Static `SagaLifecycle` calls in other Saga methods, such as private helpers,
+  get a `TODO(axon4to5)` marker too, because the legacy module injects `SagaLifecycle` into `@SagaEventHandler` methods
+  only and each caller would have to pass its `ProcessingContext` on.
 - **Legacy deadlines** (`UpgradeAxon4ToAxoniq5` only): adds `io.axoniq.framework:axoniq-legacy` when deadline types are
   used, keeping `DeadlineManager` and `@DeadlineHandler` in their AF4 packages. Moves a Saga's private `DeadlineManager`
   field into a parameter of the `@SagaEventHandler` and `@DeadlineHandler` methods that use it; a `@DeadlineHandler`
