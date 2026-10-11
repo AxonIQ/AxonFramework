@@ -21,18 +21,21 @@ import org.openrewrite.java.tree.J;
 import org.openrewrite.java.tree.JavaType;
 import org.openrewrite.java.tree.TypeUtils;
 
+import java.util.HashSet;
 import java.util.Set;
 
 /**
  * Tells Axon Framework 4 Saga classes apart from the other classes that declare deadline handlers.
  * <p>
- * A class is a Saga when it carries the Spring {@code @Saga} stereotype or declares a {@code @SagaEventHandler}
+ * A class declares a Saga when it carries the Spring {@code @Saga} stereotype or declares a {@code @SagaEventHandler}
  * method. A Saga's {@code @DeadlineHandler} keeps working on the Axoniq Framework legacy module, while an aggregate's
- * one does not, so the deadline recipes skip Sagas. Since a Saga may split its handlers over a class hierarchy, the
- * scanning phase records every Saga together with its supertypes, and a class counts as a Saga when it, or one of its
- * supertypes, was recorded.
+ * one does not, so the deadline recipes skip Sagas. Since a Saga may split its handlers over a class hierarchy, a class
+ * counts as a Saga when it, or one of its supertypes, declares a Saga, and also when it is a supertype of a class that
+ * declares one. Another subclass of such a supertype does not count: an aggregate may share a base class with a Saga.
  * <p>
- * Package-private, as it only shares this detection between the deadline recipes of this module.
+ * The scanning phase of a recipe {@link #collect(J.ClassDeclaration) collects} every class, after which
+ * {@link #isSaga(J.ClassDeclaration)} answers for any class. Package-private, as it only shares this detection between
+ * the deadline recipes of this module.
  *
  * @author Mateusz Nowak
  * @since 5.4.0
@@ -42,45 +45,52 @@ final class SagaClasses {
     private static final String SAGA_EVENT_HANDLER_FQN = "org.axonframework.modelling.saga.SagaEventHandler";
     private static final String SAGA_STEREOTYPE_FQN = "org.axonframework.spring.stereotype.Saga";
 
-    private SagaClasses() {
-    }
+    private final Set<String> sagas = new HashSet<>();
+    private final Set<String> sagaSupertypes = new HashSet<>();
 
     /**
-     * Records the given class and all its supertypes in {@code sagaTypes} when it declares a Saga.
+     * Records the given class when it declares a Saga, together with its supertypes.
      *
      * @param classDeclaration the class to inspect
-     * @param sagaTypes        the fully qualified names of the Saga classes and their supertypes found so far
      */
-    static void collect(J.ClassDeclaration classDeclaration, Set<String> sagaTypes) {
-        if (!declaresSaga(classDeclaration)) {
+    void collect(J.ClassDeclaration classDeclaration) {
+        JavaType.FullyQualified type = classDeclaration.getType();
+        if (type == null || !declaresSaga(classDeclaration)) {
             return;
         }
-        JavaType.FullyQualified type = classDeclaration.getType();
-        while (type != null && !"java.lang.Object".equals(type.getFullyQualifiedName())) {
-            sagaTypes.add(type.getFullyQualifiedName());
-            type = type.getSupertype();
+        sagas.add(type.getFullyQualifiedName());
+        for (type = type.getSupertype(); isBelowObject(type); type = type.getSupertype()) {
+            sagaSupertypes.add(type.getFullyQualifiedName());
         }
     }
 
     /**
-     * Returns whether the given class is a Saga, a supertype of one, or a subtype of one.
+     * Returns whether the given class is a Saga: it or one of its supertypes declares a Saga, or it is a supertype of
+     * a class declaring one.
      *
      * @param classDeclaration the class to inspect
-     * @param sagaTypes        the fully qualified names recorded by {@link #collect(J.ClassDeclaration, Set)}
      * @return {@code true} when the class takes part in a Saga
      */
-    static boolean isSaga(J.ClassDeclaration classDeclaration, Set<String> sagaTypes) {
+    boolean isSaga(J.ClassDeclaration classDeclaration) {
         if (declaresSaga(classDeclaration)) {
             return true;
         }
         JavaType.FullyQualified type = classDeclaration.getType();
-        while (type != null && !(type instanceof JavaType.Unknown)) {
-            if (sagaTypes.contains(type.getFullyQualifiedName())) {
+        if (type != null && sagaSupertypes.contains(type.getFullyQualifiedName())) {
+            return true;
+        }
+        for (; isBelowObject(type); type = type.getSupertype()) {
+            if (sagas.contains(type.getFullyQualifiedName())) {
                 return true;
             }
-            type = type.getSupertype();
         }
         return false;
+    }
+
+    private static boolean isBelowObject(JavaType.@Nullable FullyQualified type) {
+        return type != null
+                && !(type instanceof JavaType.Unknown)
+                && !"java.lang.Object".equals(type.getFullyQualifiedName());
     }
 
     private static boolean declaresSaga(J.ClassDeclaration classDeclaration) {

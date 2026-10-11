@@ -572,6 +572,57 @@ class MigrateAggregateDeadlineHandlerTest implements RewriteTest {
                     )
             );
         }
+
+        @Test
+        void replacesHandlerOfAggregateThatSharesSuperclassWithSaga() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            abstract class BaseComponent {
+                            }
+                            """
+                    ),
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+
+                            class OrderSaga extends BaseComponent {
+                                @SagaEventHandler(associationProperty = "orderId")
+                                void on(String event) {
+                                }
+                            }
+                            """
+                    ),
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+
+                            class Order extends BaseComponent {
+                                @DeadlineHandler(deadlineName = "paymentDeadline")
+                                void on() {
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.commandhandling.CommandHandler;
+
+                            class Order extends BaseComponent {
+                                @CommandHandler(commandName = "paymentDeadline")
+                                void on() {
+                                }
+                            }
+                            """
+                    )
+            );
+        }
     }
 
     @Nested

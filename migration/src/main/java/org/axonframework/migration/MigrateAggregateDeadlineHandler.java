@@ -37,7 +37,6 @@ import org.openrewrite.marker.Markers;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -80,7 +79,7 @@ import static org.axonframework.migration.SagaClasses.resolvedName;
  * @author Mateusz Nowak
  * @since 5.4.0
  */
-public class MigrateAggregateDeadlineHandler extends ScanningRecipe<Set<String>> {
+public class MigrateAggregateDeadlineHandler extends ScanningRecipe<SagaClasses> {
 
     private static final String DEADLINE_HANDLER_FQN = "org.axonframework.deadline.annotation.DeadlineHandler";
     private static final String COMMAND_HANDLER_AF4_FQN = "org.axonframework.commandhandling.CommandHandler";
@@ -137,24 +136,24 @@ public class MigrateAggregateDeadlineHandler extends ScanningRecipe<Set<String>>
     }
 
     @Override
-    public Set<String> getInitialValue(ExecutionContext ctx) {
-        return new HashSet<>();
+    public SagaClasses getInitialValue(ExecutionContext ctx) {
+        return new SagaClasses();
     }
 
     @Override
-    public TreeVisitor<?, ExecutionContext> getScanner(Set<String> sagaTypes) {
+    public TreeVisitor<?, ExecutionContext> getScanner(SagaClasses sagaClasses) {
         return new JavaIsoVisitor<>() {
             @Override
             public J.ClassDeclaration visitClassDeclaration(J.ClassDeclaration classDeclaration,
                                                              ExecutionContext ctx) {
-                SagaClasses.collect(classDeclaration, sagaTypes);
+                sagaClasses.collect(classDeclaration);
                 return super.visitClassDeclaration(classDeclaration, ctx);
             }
         };
     }
 
     @Override
-    public TreeVisitor<?, ExecutionContext> getVisitor(Set<String> sagaTypes) {
+    public TreeVisitor<?, ExecutionContext> getVisitor(SagaClasses sagaClasses) {
         return new JavaIsoVisitor<>() {
             @Override
             public boolean isAcceptable(SourceFile sourceFile, ExecutionContext ctx) {
@@ -166,7 +165,7 @@ public class MigrateAggregateDeadlineHandler extends ScanningRecipe<Set<String>>
                                                              ExecutionContext ctx) {
                 // Nested classes are handled by the recursive call, before their enclosing class.
                 J.ClassDeclaration visited = super.visitClassDeclaration(classDeclaration, ctx);
-                if (SagaClasses.isSaga(visited, sagaTypes)) {
+                if (sagaClasses.isSaga(visited)) {
                     return visited;
                 }
                 Map<J.MethodDeclaration, Migration> migrations = new HashMap<>();

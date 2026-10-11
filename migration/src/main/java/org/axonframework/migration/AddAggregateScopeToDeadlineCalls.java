@@ -138,7 +138,7 @@ public class AddAggregateScopeToDeadlineCalls extends ScanningRecipe<AddAggregat
      */
     public static class Accumulator {
 
-        final Set<String> sagaTypes = new HashSet<>();
+        final SagaClasses sagaClasses = new SagaClasses();
         final Map<String, ClassInfo> classes = new HashMap<>();
         final Map<String, String> memberEntityOwners = new HashMap<>();
     }
@@ -202,7 +202,7 @@ public class AddAggregateScopeToDeadlineCalls extends ScanningRecipe<AddAggregat
             @Override
             public J.ClassDeclaration visitClassDeclaration(J.ClassDeclaration classDeclaration,
                                                              ExecutionContext ctx) {
-                SagaClasses.collect(classDeclaration, acc.sagaTypes);
+                acc.sagaClasses.collect(classDeclaration);
                 JavaType.FullyQualified type = classDeclaration.getType();
                 if (type != null && !(type instanceof JavaType.Unknown)) {
                     JavaType.FullyQualified supertype = type.getSupertype();
@@ -251,7 +251,7 @@ public class AddAggregateScopeToDeadlineCalls extends ScanningRecipe<AddAggregat
                 J.ClassDeclaration enclosingClass = getCursor().firstEnclosing(J.ClassDeclaration.class);
                 if (enclosingClass == null
                         || enclosingClass.getType() == null
-                        || SagaClasses.isSaga(enclosingClass, acc.sagaTypes)) {
+                        || acc.sagaClasses.isSaga(enclosingClass)) {
                     return visited;
                 }
                 String className = enclosingClass.getType().getFullyQualifiedName();
