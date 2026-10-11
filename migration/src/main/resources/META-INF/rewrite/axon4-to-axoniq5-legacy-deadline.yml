@@ -108,8 +108,8 @@ recipeList:
   # AggregateScopeDescriptor Axon Framework 4 described. It must run before
   # the free leg removes @AggregateIdentifier, which names the identifier,
   # and turns creation constructors into static methods. The free leg's
-  # modelling.command package move is undone for AggregateScopeDescriptor
-  # in UpgradeAxon4ToAxoniq5, as axoniq-legacy keeps it in that package.
+  # modelling.command package move excludes AggregateScopeDescriptor, as
+  # axoniq-legacy keeps it in that package.
   - org.axonframework.migration.AddAggregateScopeToDeadlineCalls
 
   # ── Deadline manager configuration ─────────────────────────────────────────

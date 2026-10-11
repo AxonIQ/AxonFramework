@@ -129,10 +129,6 @@ class Axon4ToAxoniq5LegacyDeadlineAggregateTest implements RewriteTest {
         @Test
         void migratesDeadlineHandlersAndScopelessCallsOfEventSourcedAggregate() {
             rewriteRun(
-                    // The free leg moves org.axonframework.modelling.command to modelling.entity in every cycle, and
-                    // UpgradeAxon4ToAxoniq5 moves AggregateScopeDescriptor back each time, so a second cycle
-                    // rewrites that import again to the same result.
-                    spec -> spec.expectedCyclesThatMakeChanges(2),
                     mavenProject(
                             "order",
                             pomXml(POM, pom -> pom.after(actual -> {
