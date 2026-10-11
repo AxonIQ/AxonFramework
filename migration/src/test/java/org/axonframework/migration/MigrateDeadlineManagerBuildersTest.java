@@ -341,13 +341,15 @@ class MigrateDeadlineManagerBuildersTest implements RewriteTest {
         }
 
         @Test
-        void marksBuilderInLambdaOnItsEnclosingStatement() {
+        void marksBuilderInLambdaOnItsEnclosingStatementAndDropsImportsLeftUnused() {
             rewriteRun(
                     java(
                             """
                             package com.example;
 
+                            import org.axonframework.common.transaction.TransactionManager;
                             import org.axonframework.config.Configurer;
+                            import org.axonframework.deadline.DeadlineManagerSpanFactory;
                             import org.axonframework.deadline.SimpleDeadlineManager;
                             import org.axonframework.messaging.ScopeAwareProvider;
 
@@ -357,7 +359,8 @@ class MigrateDeadlineManagerBuildersTest implements RewriteTest {
                                             SimpleDeadlineManager.class,
                                             config -> SimpleDeadlineManager.builder()
                                                                            .scopeAwareProvider(config.getComponent(ScopeAwareProvider.class))
-                                                                           .transactionManager(config.getComponent(org.axonframework.common.transaction.TransactionManager.class))
+                                                                           .transactionManager(config.getComponent(TransactionManager.class))
+                                                                           .spanFactory(config.getComponent(DeadlineManagerSpanFactory.class))
                                                                            .build()
                                     );
                                 }

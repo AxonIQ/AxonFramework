@@ -77,6 +77,11 @@ public class MigrateDeadlineManagerBuilders extends Recipe {
             "DbSchedulerDeadlineManager", "org.axonframework.deadline.dbscheduler.DbSchedulerDeadlineManager"
     );
     private static final Set<String> REMOVED_METHODS = Set.of("spanFactory", "transactionManager");
+    private static final Set<String> REMOVED_ARGUMENT_TYPE_FQNS = Set.of(
+            "org.axonframework.deadline.DeadlineManagerSpanFactory",
+            "org.axonframework.tracing.SpanFactory",
+            "org.axonframework.common.transaction.TransactionManager"
+    );
     private static final String SERIALIZER_METHOD = "serializer";
     private static final String CONVERTER_METHOD = "converter";
     private static final String UNIT_OF_WORK_FACTORY_METHOD = "unitOfWorkFactory";
@@ -148,6 +153,8 @@ public class MigrateDeadlineManagerBuilders extends Recipe {
             }
 
             private @Nullable J removeCall(J.MethodInvocation invocation) {
+                // The span factory types are not ported, so an import left unused would no longer compile.
+                REMOVED_ARGUMENT_TYPE_FQNS.forEach(this::maybeRemoveImport);
                 if (getCursor().getParentTreeCursor().getValue() instanceof J.Block) {
                     // A call on a builder held in a variable is a statement of its own.
                     return null;
