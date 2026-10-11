@@ -133,6 +133,40 @@ class Axon4ToAxoniq5LegacySagaTest implements RewriteTest {
                     )
             );
         }
+
+        @Test
+        void appendsTheLifecycleParameterAfterSeveralExistingParameters() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.axonframework.modelling.saga.SagaLifecycle;
+
+                            class PaymentSaga {
+                                @SagaEventHandler(associationProperty = "rentalId")
+                                void on(Object event, String rentalId) {
+                                    SagaLifecycle.associateWith("rentalId", rentalId);
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.axonframework.modelling.saga.SagaLifecycle;
+
+                            class PaymentSaga {
+                                @SagaEventHandler(associationProperty = "rentalId")
+                                void on(Object event, String rentalId, SagaLifecycle sagaLifecycle) {
+                                    sagaLifecycle.associateWith("rentalId", rentalId);
+                                }
+                            }
+                            """
+                    )
+            );
+        }
     }
 
     @Nested

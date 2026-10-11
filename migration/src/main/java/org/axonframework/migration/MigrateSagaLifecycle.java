@@ -242,7 +242,8 @@ public class MigrateSagaLifecycle extends Recipe {
                             template.append(", ");
                         }
                         template.append("#{}");
-                        templateArguments.add(existing.get(i).print(getCursor()));
+                        // trim: the printed parameter carries its own leading space, the template adds ", "
+                        templateArguments.add(existing.get(i).print(getCursor()).trim());
                     }
                     template.append(", ");
                 }
