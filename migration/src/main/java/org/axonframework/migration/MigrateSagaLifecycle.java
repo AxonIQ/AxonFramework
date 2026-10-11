@@ -50,10 +50,11 @@ import java.util.Set;
  * <p>
  * The legacy module injects that parameter into {@code @SagaEventHandler} methods only, so other Saga methods calling
  * the static {@code SagaLifecycle} need a different shape. A {@code @DeadlineHandler} whose only lifecycle call is a
- * closing {@code SagaLifecycle.end()} statement is annotated with {@code @EndSaga} instead, which ends the Saga once
- * the handler completes, exactly like that last statement did. Every other static call outside a
- * {@code @SagaEventHandler} of a Saga, such as a conditional end, an association change in a deadline handler, or a
- * call in a private helper, is kept and marked with a {@code // TODO(axon4to5):} comment for a manual migration.
+ * closing {@code SagaLifecycle.end()} statement, and which has no {@code return} that could skip it, is annotated with
+ * {@code @EndSaga} instead, which ends the Saga once the handler completes, exactly like that last statement did. Every
+ * other static call outside a {@code @SagaEventHandler} of a Saga, such as a conditional end, an end an early
+ * {@code return} can skip, an association change in a deadline handler, or a call in a private helper, is kept and
+ * marked with a {@code // TODO(axon4to5):} comment for a manual migration.
  *
  * @author Mateusz Nowak
  * @since 5.4.0
@@ -85,7 +86,8 @@ public class MigrateSagaLifecycle extends Recipe {
     public String getDescription() {
         return "Replaces static Axon Framework 4 `SagaLifecycle` calls in `@SagaEventHandler` methods with calls on "
                 + "an injected `SagaLifecycle` method parameter. A Saga `@DeadlineHandler` ending with an "
-                + "unconditional `SagaLifecycle.end()` gets `@EndSaga` instead. Other static calls outside a "
+                + "unconditional `SagaLifecycle.end()` that no early `return` can skip gets `@EndSaga` instead. "
+                + "Other static calls outside a "
                 + "`@SagaEventHandler` of a Saga are marked with a `// TODO(axon4to5):` comment, because the legacy "
                 + "module injects `SagaLifecycle` into `@SagaEventHandler` methods only.";
     }
@@ -178,7 +180,8 @@ public class MigrateSagaLifecycle extends Recipe {
             private J.MethodDeclaration migrateOutsideSagaEventHandler(J.MethodDeclaration method) {
                 if (isAnnotatedWith(method, DEADLINE_HANDLER_FQN, "DeadlineHandler")
                         && lifecycleCallCount(method) == 1
-                        && endsWithLifecycleEnd(method)) {
+                        && endsWithLifecycleEnd(method)
+                        && !canReturnEarly(method)) {
                     return replaceClosingEndWithAnnotation(method);
                 }
                 return (J.MethodDeclaration) new JavaIsoVisitor<Integer>() {
@@ -199,6 +202,51 @@ public class MigrateSagaLifecycle extends Recipe {
                         && "end".equals(last.getSimpleName())
                         && last.getArguments().stream().allMatch(J.Empty.class::isInstance)
                         && isLifecycleCall(last);
+            }
+
+            /**
+             * Whether a {@code return} can leave the handler before its closing {@code SagaLifecycle.end()}, which
+             * {@code @EndSaga} would not skip. A return in a lambda, an anonymous class, a local class or a local
+             * function only leaves that nested code, except for a Kotlin return without a label in a lambda: that one
+             * returns from the handler. A {@code throw} needs no such check: Axon Framework 4 did not end the Saga
+             * on that path, and although {@code @EndSaga} ends it in memory, the failed deadline rolls the unit of
+             * work back before the Saga is written, so the Saga stays active in both.
+             */
+            private boolean canReturnEarly(J.MethodDeclaration method) {
+                boolean kotlin = isKotlinSource();
+                boolean[] found = {false};
+                new JavaIsoVisitor<Integer>() {
+                    @Override
+                    public J.Lambda visitLambda(J.Lambda lambda, Integer p) {
+                        return kotlin ? super.visitLambda(lambda, p) : lambda;
+                    }
+
+                    @Override
+                    public J.NewClass visitNewClass(J.NewClass newClass, Integer p) {
+                        super.visitNewClass(newClass.withBody(null), p);
+                        return newClass;
+                    }
+
+                    @Override
+                    public J.ClassDeclaration visitClassDeclaration(J.ClassDeclaration classDeclaration, Integer p) {
+                        return classDeclaration;
+                    }
+
+                    @Override
+                    public J.MethodDeclaration visitMethodDeclaration(J.MethodDeclaration nested, Integer p) {
+                        return nested;
+                    }
+
+                    @Override
+                    public J.Return visitReturn(J.Return aReturn, Integer p) {
+                        boolean lambdaLocal = getCursor().getParentTreeCursor().getValue() instanceof K.Return
+                                && ((K.Return) getCursor().getParentTreeCursor().getValue()).getLabel() != null
+                                && getCursor().firstEnclosing(J.Lambda.class) != null;
+                        found[0] |= !lambdaLocal;
+                        return aReturn;
+                    }
+                }.visit(requireBody(method), 0);
+                return found[0];
             }
 
             private J.MethodDeclaration replaceClosingEndWithAnnotation(J.MethodDeclaration method) {
