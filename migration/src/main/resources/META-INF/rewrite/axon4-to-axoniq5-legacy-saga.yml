@@ -33,8 +33,11 @@ description: >-
   lambdas registered on the fixture to the Axon Framework 5 signature, and
   leaves a `TODO(axon4to5)` marker on fixture calls the ported fixture no longer
   supports, such as the scheduled event assertions. Replaces static
-  `SagaLifecycle` calls with an injected `SagaLifecycle` handler parameter, and
+  `SagaLifecycle` calls with an injected `SagaLifecycle` handler parameter, a
+  closing `SagaLifecycle.end()` of a `@DeadlineHandler` with `@EndSaga`, and
   a `CommandGateway` field with a `CommandDispatcher` handler parameter. Leaves a
+  `TODO(axon4to5)` marker on the other static `SagaLifecycle` calls outside a
+  `@SagaEventHandler`, which the legacy module cannot inject into. Leaves a
   `TODO(axon4to5)` marker on the other `@Autowired` or `@Inject` Saga fields
   and on `ResourceInjector` usage, because Axon Framework 5 resolves Saga
   collaborators as handler parameters instead of injecting fields.
@@ -74,6 +77,8 @@ recipeList:
   # `MarkSagaResourceInjection` below.
   - org.axonframework.migration.MarkUnsupportedSagaTestFixtureCalls
 
+  # Also covers static `SagaLifecycle` calls in `@DeadlineHandler` methods and
+  # helpers, which the legacy module injects no `SagaLifecycle` into.
   - org.axonframework.migration.MigrateSagaLifecycle
   - org.axonframework.migration.MigrateCommandGatewayInSagaEventHandler
   # Runs after the CommandGateway migration, which already turned that field into a
