@@ -30,10 +30,207 @@ import static org.openrewrite.java.Assertions.java;
  */
 class MigrateDeadlineManagerConfigurationTest implements RewriteTest {
 
+    private static final String COMPONENT_TODO =
+            "// TODO(axon4to5): register a DeadlineManager component or Spring bean, unless the application already"
+                    + " does. Axon Framework 4 registered a SimpleDeadlineManager by default; Axoniq Framework 5"
+                    + " registers none, except the JobRunr and db-scheduler deadline managers of its Spring Boot"
+                    + " auto-configuration.";
+    private static final String CONFIGURER_TODO =
+            "// TODO(axon4to5): register the DeadlineManager as a component instead, with componentRegistry(registry"
+                    + " -> registry.registerComponent(DeadlineManager.class, configuration -> ...)) on the Axon"
+                    + " Framework 5 configurer, or as a Spring bean. Axon Framework 5 configurers have no"
+                    + " configureDeadlineManager(..); Axon Framework 4 also registered a SimpleDeadlineManager by"
+                    + " default, Axoniq Framework 5 registers none.";
+    private static final String INTERCEPTOR_TODO =
+            "// TODO(axon4to5): register this interceptor on the concrete deadline manager instance, such as the"
+                    + " SimpleDeadlineManager you build, before registering it as a component. The DeadlineManager"
+                    + " interface no longer declares registerDispatchInterceptor(..) and registerHandlerInterceptor(..);"
+                    + " AbstractDeadlineManager does, with Axon Framework 5 interceptor types.";
+
     @Override
     public void defaults(RecipeSpec spec) {
         spec.recipe(new MigrateDeadlineManagerConfiguration())
             .typeValidationOptions(TypeValidation.none());
+    }
+
+    @Nested
+    class RemovedConfigurationApi {
+
+        @Test
+        void marksConfigureDeadlineManagerOnAFluentConfigurer() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.config.Configuration;
+                            import org.axonframework.config.DefaultConfigurer;
+                            import org.axonframework.deadline.SimpleDeadlineManager;
+
+                            class Application {
+                                Configuration configuration() {
+                                    return DefaultConfigurer.defaultConfiguration()
+                                                            .configureDeadlineManager(config -> SimpleDeadlineManager.builder()
+                                                                                                                     .scopeAwareProvider(config.scopeAwareProvider())
+                                                                                                                     .build())
+                                                            .buildConfiguration();
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.config.Configuration;
+                            import org.axonframework.config.DefaultConfigurer;
+                            import org.axonframework.deadline.SimpleDeadlineManager;
+
+                            class Application {
+                                Configuration configuration() {
+                                    %s
+                                    return DefaultConfigurer.defaultConfiguration()
+                                                            .configureDeadlineManager(config -> SimpleDeadlineManager.builder()
+                                                                                                                     .scopeAwareProvider(config.scopeAwareProvider())
+                                                                                                                     .build())
+                                                            .buildConfiguration();
+                                }
+                            }
+                            """.formatted(CONFIGURER_TODO)
+                    )
+            );
+        }
+
+        @Test
+        void replacesDeadlineManagerLookupAndMarksInterceptorRegisteredOnIt() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.config.Configuration;
+                            import org.axonframework.deadline.DeadlineMessage;
+                            import org.axonframework.messaging.MessageHandlerInterceptor;
+
+                            class Application {
+                                void start(Configuration configuration,
+                                           MessageHandlerInterceptor<? super DeadlineMessage<?>> interceptor) {
+                                    configuration.deadlineManager().registerHandlerInterceptor(interceptor);
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.config.Configuration;
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.deadline.DeadlineMessage;
+                            import org.axonframework.messaging.MessageHandlerInterceptor;
+
+                            class Application {
+                                void start(Configuration configuration,
+                                           MessageHandlerInterceptor<? super DeadlineMessage<?>> interceptor) {
+                                    %s
+                                    %s
+                                    configuration.getComponent(DeadlineManager.class).registerHandlerInterceptor(interceptor);
+                                }
+                            }
+                            """.formatted(INTERCEPTOR_TODO, COMPONENT_TODO)
+                    )
+            );
+        }
+
+        @Test
+        void marksDispatchInterceptorRegisteredOnInjectedDeadlineManager() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.deadline.DeadlineMessage;
+                            import org.axonframework.messaging.MessageDispatchInterceptor;
+
+                            class DeadlineInterceptors {
+                                private final DeadlineManager deadlineManager;
+
+                                DeadlineInterceptors(DeadlineManager deadlineManager) {
+                                    this.deadlineManager = deadlineManager;
+                                }
+
+                                void register(MessageDispatchInterceptor<? super DeadlineMessage<?>> interceptor) {
+                                    deadlineManager.registerDispatchInterceptor(interceptor);
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.deadline.DeadlineMessage;
+                            import org.axonframework.messaging.MessageDispatchInterceptor;
+
+                            class DeadlineInterceptors {
+                                private final DeadlineManager deadlineManager;
+
+                                DeadlineInterceptors(DeadlineManager deadlineManager) {
+                                    this.deadlineManager = deadlineManager;
+                                }
+
+                                void register(MessageDispatchInterceptor<? super DeadlineMessage<?>> interceptor) {
+                                    %s
+                                    deadlineManager.registerDispatchInterceptor(interceptor);
+                                }
+                            }
+                            """.formatted(INTERCEPTOR_TODO)
+                    )
+            );
+        }
+
+        @Test
+        void leavesInterceptorRegisteredOnConcreteDeadlineManagerAlone() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.DeadlineMessage;
+                            import org.axonframework.deadline.SimpleDeadlineManager;
+                            import org.axonframework.messaging.MessageHandlerInterceptor;
+
+                            class DeadlineInterceptors {
+                                void register(SimpleDeadlineManager deadlineManager,
+                                              MessageHandlerInterceptor<? super DeadlineMessage<?>> interceptor) {
+                                    deadlineManager.registerHandlerInterceptor(interceptor);
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void leavesUserMethodNamedDeadlineManagerAlone() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.DeadlineManager;
+
+                            class DeadlineConfig {
+                                private final DeadlineConfig delegate = new DeadlineConfig();
+
+                                DeadlineManager deadlineManager() {
+                                    return null;
+                                }
+
+                                DeadlineManager scheduler() {
+                                    return delegate.deadlineManager();
+                                }
+                            }
+                            """
+                    )
+            );
+        }
     }
 
     @Nested

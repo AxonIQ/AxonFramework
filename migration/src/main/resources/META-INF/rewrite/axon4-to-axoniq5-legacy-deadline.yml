@@ -68,7 +68,9 @@ recipeList:
   - org.axonframework.migration.MigrateDeadlineManagerBuilders
 
   # ConfigurationScopeAwareProvider is not ported; the legacy module registers its own
-  # ScopeAwareProvider component. Runs before the free leg moves org.axonframework.config.
+  # ScopeAwareProvider component. Configuration#deadlineManager(), configureDeadlineManager(..)
+  # and interceptor registration on the DeadlineManager interface are gone too. Runs before
+  # the free leg moves org.axonframework.config, while the AF4 types still resolve.
   - org.axonframework.migration.MigrateDeadlineManagerConfiguration
   # Retypes what still names the removed class, such as a variable or @Bean return type,
   # after the step above replaced its construction.
