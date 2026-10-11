@@ -31,7 +31,6 @@ import org.openrewrite.java.tree.JavaType;
 import org.openrewrite.java.tree.Space;
 import org.openrewrite.java.tree.Statement;
 import org.openrewrite.java.tree.TypeUtils;
-import org.openrewrite.kotlin.KotlinParser;
 import org.openrewrite.kotlin.tree.K;
 import org.openrewrite.marker.Markers;
 
@@ -445,70 +444,7 @@ public class MigrateCommandGatewayInSagaEventHandler extends Recipe {
             }
 
             private J.MethodDeclaration addDispatcherParameter(J.MethodDeclaration method, String parameterName) {
-                if (isKotlinSource()) {
-                    return addKotlinDispatcherParameter(method, parameterName);
-                }
-                List<Object> templateArguments = new ArrayList<>();
-                StringBuilder template = new StringBuilder();
-                List<Statement> existing = method.getParameters();
-                boolean hasExisting = !(existing.size() == 1 && existing.get(0) instanceof J.Empty);
-                if (hasExisting) {
-                    for (int i = 0; i < existing.size(); i++) {
-                        if (i > 0) {
-                            template.append(", ");
-                        }
-                        template.append("#{}");
-                        // trim: the printed parameter carries its own leading space, the template adds ", "
-                        templateArguments.add(existing.get(i).print(getCursor()).trim());
-                    }
-                    template.append(", ");
-                }
-                template.append("CommandDispatcher ").append(parameterName);
-                return JavaTemplate.builder(template.toString())
-                        .imports(COMMAND_DISPATCHER_FQN)
-                        .javaParser(JavaParser.fromJavaVersion().classpath(JavaParser.runtimeClasspath()))
-                        .build()
-                        .apply(getCursor(), method.getCoordinates().replaceParameters(), templateArguments.toArray());
-            }
-
-            private J.MethodDeclaration addKotlinDispatcherParameter(J.MethodDeclaration method,
-                                                                      String parameterName) {
-                List<Statement> existing = method.getParameters();
-                boolean hasExisting = !(existing.size() == 1 && existing.get(0) instanceof J.Empty);
-                StringBuilder parameters = new StringBuilder();
-                if (hasExisting) {
-                    for (int i = 0; i < existing.size(); i++) {
-                        if (i > 0) {
-                            parameters.append(", ");
-                        }
-                        parameters.append(existing.get(i).print(getCursor()).trim());
-                    }
-                    parameters.append(", ");
-                }
-                parameters.append(parameterName).append(": CommandDispatcher");
-
-                String snippet = "package _temp\n\nimport " + COMMAND_DISPATCHER_FQN + "\n\nfun _f("
-                        + parameters + ") {}\n";
-                List<SourceFile> parsed;
-                try {
-                    parsed = KotlinParser.builder().build().parse(snippet)
-                                         .filter(source -> source instanceof K.CompilationUnit)
-                                         .toList();
-                } catch (RuntimeException exception) {
-                    return method;
-                }
-                if (parsed.isEmpty()) {
-                    return method;
-                }
-                K.CompilationUnit compilationUnit = (K.CompilationUnit) parsed.get(0);
-                for (Statement statement : compilationUnit.getStatements()) {
-                    if (statement instanceof J.MethodDeclaration) {
-                        return method.getPadding().withParameters(
-                                ((J.MethodDeclaration) statement).getPadding().getParameters()
-                        );
-                    }
-                }
-                return method;
+                return MethodParameters.append(method, isKotlinSource(), COMMAND_DISPATCHER_FQN, parameterName);
             }
 
             private boolean isKotlinSource() {

@@ -1335,6 +1335,64 @@ class Axon4ToAxoniq5LegacySagaTest implements RewriteTest {
             );
         }
 
+        @Test
+        void commercialUpgradeKeepsTheTypesOfTheParametersTheCommandDispatcherIsAppendedTo() {
+            rewriteRun(
+                    spec -> spec.recipe(topLevelRecipe("io.axoniq.framework.migration.UpgradeAxon4ToAxoniq5"))
+                                .markerPrinter(PrintOutputCapture.MarkerPrinter.SEARCH_MARKERS_ONLY),
+                    mavenProject(
+                            "rental",
+                            pomXml(SAGA_POM, pom -> pom.after(actual -> actual)),
+                            srcMainJava(java(
+                                    """
+                                    package org.springframework.beans.factory.annotation;
+
+                                    public @interface Autowired {
+                                    }
+                                    """
+                            )),
+                            srcMainJava(java(
+                                    """
+                                    package com.example;
+
+                                    import org.axonframework.commandhandling.gateway.CommandGateway;
+                                    import org.axonframework.eventhandling.EventMessage;
+                                    import org.axonframework.messaging.MetaData;
+                                    import org.axonframework.messaging.annotation.MetaDataValue;
+                                    import org.axonframework.modelling.saga.SagaEventHandler;
+                                    import org.springframework.beans.factory.annotation.Autowired;
+
+                                    class PaymentSaga {
+                                        @Autowired
+                                        private transient CommandGateway commandGateway;
+
+                                        @SagaEventHandler(associationProperty = "rentalId")
+                                        void on(String event, MetaData metaData, @MetaDataValue("k") String k,
+                                                EventMessage<?> message) {
+                                            commandGateway.send(event);
+                                        }
+                                    }
+                                    """,
+                                    source -> source.after(actual -> {
+                                        assertThat(actual)
+                                                .contains("import org.axonframework.messaging.core.Metadata;")
+                                                .contains("import org.axonframework.messaging.core.annotation"
+                                                                  + ".MetadataValue;")
+                                                .contains("import org.axonframework.messaging.eventhandling"
+                                                                  + ".EventMessage;")
+                                                .contains("void on(String event, Metadata metaData, "
+                                                                  + "@MetadataValue(\"k\") String k,\n"
+                                                                  + "            EventMessage message, "
+                                                                  + "CommandDispatcher commandDispatcher) {")
+                                                .doesNotContain("MetaData ")
+                                                .doesNotContain("<?>");
+                                        return actual;
+                                    })
+                            ))
+                    )
+            );
+        }
+
         private static Recipe topLevelRecipe(String name) {
             return Environment.builder()
                               .scanRuntimeClasspath("org.axonframework.migration")
