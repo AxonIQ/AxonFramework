@@ -59,6 +59,13 @@ recipeList:
 
   # ── Aggregates ─────────────────────────────────────────────────────────────
 
+  # An aggregate deadline fires as a command on the legacy module, so its
+  # @DeadlineHandler becomes the Axon Framework 4 @CommandHandler receiving
+  # that command. It must run before the free leg, which then moves that
+  # annotation to the Axon Framework 5 package and migrates the handler like
+  # any other aggregate command handler.
+  - org.axonframework.migration.MigrateAggregateDeadlineHandler
+
   # ── Deadline manager configuration ─────────────────────────────────────────
 
   # The legacy deadline manager builders dropped spanFactory(..), transactionManager(..)
