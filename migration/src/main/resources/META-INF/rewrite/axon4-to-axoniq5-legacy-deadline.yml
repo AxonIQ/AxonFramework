@@ -49,6 +49,14 @@ recipeList:
 
   # ── Sagas ──────────────────────────────────────────────────────────────────
 
+  # The legacy module does not inject Saga fields, so an @Autowired or @Inject
+  # DeadlineManager field would stay null. Every schedule and cancel overload is
+  # kept, so only the collaborator moves: into a parameter of the handlers (and
+  # the private helpers they call) that use it. Runs before the Saga recipe, whose
+  # closing MarkSagaResourceInjection then only marks the fields left in place.
+  - org.axonframework.migration.MoveSagaFieldToHandlerParameter:
+      fullyQualifiedTypeName: org.axonframework.deadline.DeadlineManager
+
   # ── Aggregates ─────────────────────────────────────────────────────────────
 
   # ── Deadline manager configuration ─────────────────────────────────────────
