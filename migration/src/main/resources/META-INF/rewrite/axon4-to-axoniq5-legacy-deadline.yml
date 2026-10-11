@@ -61,4 +61,10 @@ recipeList:
 
   # ── Deadline manager configuration ─────────────────────────────────────────
 
+  # The legacy deadline manager builders dropped spanFactory(..), transactionManager(..)
+  # and serializer(..), and require unitOfWorkFactory(..) and, when persistent,
+  # converter(..). Runs before the free leg renames org.axonframework.serialization,
+  # so the AF4 JacksonSerializer it maps is still recognizable.
+  - org.axonframework.migration.MigrateDeadlineManagerBuilders
+
   # ── Test fixtures ──────────────────────────────────────────────────────────
