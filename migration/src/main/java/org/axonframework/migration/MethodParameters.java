@@ -17,6 +17,7 @@
 package org.axonframework.migration;
 
 import org.openrewrite.SourceFile;
+import org.openrewrite.java.JavaIsoVisitor;
 import org.openrewrite.java.JavaParser;
 import org.openrewrite.java.tree.J;
 import org.openrewrite.java.tree.JContainer;
@@ -29,7 +30,9 @@ import org.openrewrite.kotlin.tree.K;
 import org.openrewrite.marker.Markers;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Stream;
 
 /**
@@ -44,6 +47,12 @@ import java.util.stream.Stream;
  * The new parameter starts on its own line when the existing parameters are laid out one per line, and follows the
  * last parameter on the same line otherwise.
  * <p>
+ * A handler method takes its first parameter as the payload, unless a parameter resolver of a higher priority than the
+ * payload resolver claims it. A collaborator resolved from the configuration, or a {@code ProcessingContext}, ranks
+ * lower, so as the only parameter of a {@code @DeadlineHandler} it would become the payload, and the handler would no
+ * longer match the deadlines it handled before. {@link #appendToHandler(J.MethodDeclaration, boolean, String, String)}
+ * guards against that.
+ * <p>
  * Internal to the migration recipes that move a collaborator into a handler method parameter, which share it so they
  * add parameters the same way.
  *
@@ -52,7 +61,81 @@ import java.util.stream.Stream;
  */
 final class MethodParameters {
 
+    /**
+     * The fully qualified name of the deadline message type, which the legacy module keeps in its Axon Framework 4
+     * package.
+     */
+    static final String DEADLINE_MESSAGE_FQN = "org.axonframework.deadline.DeadlineMessage";
+    private static final String DEADLINE_HANDLER_FQN = "org.axonframework.deadline.annotation.DeadlineHandler";
+    private static final String DEADLINE_MESSAGE_NAME = "deadlineMessage";
+
     private MethodParameters() {
+    }
+
+    /**
+     * Appends a parameter of the given type and name to the given handler method, for a type whose parameter resolver
+     * ranks below the payload resolver.
+     * <p>
+     * A {@code @DeadlineHandler} without parameters first gets a {@code DeadlineMessage} parameter, which keeps the new
+     * parameter from becoming the payload. The message parameter matches any payload, so the handler keeps matching
+     * every deadline it matched without parameters. Any other method gets the parameter as
+     * {@link #append(J.MethodDeclaration, boolean, String, String)} adds it. The caller imports
+     * {@link #DEADLINE_MESSAGE_FQN} when {@link #needsMessageParameter(J.MethodDeclaration)} held for the method.
+     *
+     * @param method        the handler method declaration to extend
+     * @param kotlin        whether the method is declared in a Kotlin source
+     * @param typeFqn       the fully qualified name of the parameter type
+     * @param parameterName the name of the new parameter
+     * @return the method with the new parameter as its last parameter
+     * @throws IllegalStateException if the stub declaring a parameter cannot be parsed
+     */
+    static J.MethodDeclaration appendToHandler(J.MethodDeclaration method, boolean kotlin, String typeFqn,
+                                               String parameterName) {
+        if (!needsMessageParameter(method)) {
+            return append(method, kotlin, typeFqn, parameterName);
+        }
+        Set<String> taken = declaredNames(method);
+        taken.add(parameterName);
+        String messageName = DEADLINE_MESSAGE_NAME;
+        for (int suffix = 1; taken.contains(messageName); suffix++) {
+            messageName = DEADLINE_MESSAGE_NAME + suffix;
+        }
+        return append(append(method, kotlin, DEADLINE_MESSAGE_FQN, messageName), kotlin, typeFqn, parameterName);
+    }
+
+    /**
+     * Returns whether {@link #appendToHandler(J.MethodDeclaration, boolean, String, String)} adds a
+     * {@code DeadlineMessage} parameter to the given method, being a {@code @DeadlineHandler} without parameters.
+     *
+     * @param method the method declaration to inspect
+     * @return {@code true} when the method is a {@code @DeadlineHandler} declaring no parameters
+     */
+    static boolean needsMessageParameter(J.MethodDeclaration method) {
+        List<Statement> parameters = method.getParameters();
+        return parameters.size() == 1
+                && parameters.get(0) instanceof J.Empty
+                && method.getLeadingAnnotations().stream().anyMatch(
+                annotation -> SagaClasses.isAnnotation(annotation, DEADLINE_HANDLER_FQN, "DeadlineHandler")
+        );
+    }
+
+    /**
+     * Returns the names of the parameters and local variables the given method declares, lambda parameters included.
+     *
+     * @param method the method declaration to inspect
+     * @return the declared names, as a modifiable set
+     */
+    static Set<String> declaredNames(J.MethodDeclaration method) {
+        Set<String> names = new HashSet<>();
+        new JavaIsoVisitor<Integer>() {
+            @Override
+            public J.VariableDeclarations.NamedVariable visitVariable(J.VariableDeclarations.NamedVariable variable,
+                                                                      Integer p) {
+                names.add(variable.getSimpleName());
+                return super.visitVariable(variable, p);
+            }
+        }.visit(method, 0);
+        return names;
     }
 
     /**

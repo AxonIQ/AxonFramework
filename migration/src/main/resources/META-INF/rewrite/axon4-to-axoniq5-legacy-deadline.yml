@@ -91,7 +91,10 @@ recipeList:
   # property of a final Kotlin class: a subclass or another class of the package
   # may use any other field, and the recipe cannot see or update that code. Runs
   # before the Saga recipe, whose closing MarkSagaResourceInjection then only
-  # marks the injected fields left in place.
+  # marks the injected fields left in place. A @DeadlineHandler without
+  # parameters first gets a DeadlineMessage parameter: the DeadlineManager
+  # resolves from the configuration, which ranks below the payload resolver,
+  # so as the first parameter it would become the payload.
   - org.axonframework.migration.MoveSagaFieldToHandlerParameter:
       fullyQualifiedTypeName: org.axonframework.deadline.DeadlineManager
 

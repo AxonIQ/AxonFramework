@@ -57,7 +57,8 @@ After the migration run, search for every such location with:
   `@SagaEventHandler` methods only.
 - **Legacy deadlines** (`UpgradeAxon4ToAxoniq5` only): adds `io.axoniq.framework:axoniq-legacy` when deadline types are
   used, keeping `DeadlineManager` and `@DeadlineHandler` in their AF4 packages. Moves a Saga's private `DeadlineManager`
-  field into a parameter of the `@SagaEventHandler` and `@DeadlineHandler` methods that use it. A deadline scheduled for an
+  field into a parameter of the `@SagaEventHandler` and `@DeadlineHandler` methods that use it; a `@DeadlineHandler`
+  without parameters first gets a `DeadlineMessage` parameter, so the `DeadlineManager` does not become its payload. A deadline scheduled for an
   aggregate fires as a command, so an aggregate's `@DeadlineHandler` becomes the `@CommandHandler` receiving it, and
   `DeadlineManager` calls that relied on the aggregate's scope get an explicit `AggregateScopeDescriptor`, as Axon
   Framework 5 runs no scope around an entity handler. Both aggregate rewrites are Java only; in Kotlin aggregates the

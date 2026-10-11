@@ -59,7 +59,10 @@ import java.util.UUID;
  * <ul>
  *     <li>adds a parameter of that type, named after the field, to every {@code @SagaEventHandler} and
  *     {@code @DeadlineHandler} method that uses the field, directly or through private helper methods. A parameter of
- *     that type the method already declares is reused instead;</li>
+ *     that type the method already declares is reused instead. A {@code @DeadlineHandler} without parameters first
+ *     gets a {@code DeadlineMessage} parameter: the collaborator resolves from the configuration, which ranks below
+ *     the payload, so as the first parameter it would become the payload and the handler would stop matching its
+ *     deadlines;</li>
  *     <li>adds the same parameter to those private helper methods, and passes it along at their call sites;</li>
  *     <li>removes the field, together with its annotations and leading comments, once nothing refers to it.</li>
  * </ul>
@@ -70,8 +73,9 @@ import java.util.UUID;
  * every one of its uses untouched, rather than producing a half-migrated Saga. Such a use is one in a constructor, a
  * static method, a non-private method that is not a handler (it may be called from outside the class), a field
  * initializer or initializer block, a nested, local or anonymous class, a method reference to an affected method, an
- * assignment to the field, or an access through another instance. The same applies when the class declares more than
- * one such field.
+ * assignment to the field, an access through another instance, or a call of a {@code @DeadlineHandler} without
+ * parameters, which could not pass on its new {@code DeadlineMessage} parameter. The same applies when the class
+ * declares more than one such field.
  * <p>
  * Uses in other classes, such as subclasses, are not visible to the recipe, so only a field no other class can use is
  * moved: a private field, or in Kotlin, where properties are public by default, any property of a final class. A
@@ -132,8 +136,9 @@ public class MoveSagaFieldToHandlerParameter extends Recipe {
         return "Replaces a private Saga field of the configured type, or a property of a final Kotlin Saga, with a "
                 + "parameter of each `@SagaEventHandler` and `@DeadlineHandler` method that uses it, passing it on to "
                 + "the private helper methods that need it, and removes the field. The Axoniq Framework legacy module "
-                + "does not inject Saga fields. A field other classes may use, or with a use that cannot become a "
-                + "handler parameter, is left untouched entirely.";
+                + "does not inject Saga fields. A `@DeadlineHandler` without parameters first gets a "
+                + "`DeadlineMessage` parameter, so the collaborator does not become its payload. A field other "
+                + "classes may use, or with a use that cannot become a handler parameter, is left untouched entirely.";
     }
 
     @Override
@@ -192,13 +197,21 @@ public class MoveSagaFieldToHandlerParameter extends Recipe {
                 }.visitNonNull(migrated, ctx, getCursor().getParentOrThrow());
                 if (methodPlan.addsParameter()) {
                     maybeAddImport(fullyQualifiedTypeName, null, false);
+                    if (MethodParameters.needsMessageParameter(method)) {
+                        maybeAddImport(MethodParameters.DEADLINE_MESSAGE_FQN, null, false);
+                    }
                 }
                 return migrated;
             }
 
+            /**
+             * Adds the parameter behind a {@code DeadlineMessage} one on a deadline handler without parameters: the
+             * collaborator is resolved from the configuration, which ranks below the payload resolver, so as the
+             * only parameter it would become the payload.
+             */
             private J.MethodDeclaration addParameter(J.MethodDeclaration method, String parameterName) {
                 boolean kotlin = getCursor().firstEnclosing(SourceFile.class) instanceof K.CompilationUnit;
-                return MethodParameters.append(method, kotlin, fullyQualifiedTypeName, parameterName);
+                return MethodParameters.appendToHandler(method, kotlin, fullyQualifiedTypeName, parameterName);
             }
 
             private J.MethodInvocation withArgument(J.MethodInvocation invocation, String name) {
@@ -304,7 +317,7 @@ public class MoveSagaFieldToHandlerParameter extends Recipe {
             String existing = parameterOfType(method);
             methodPlans.put(id, existing != null
                     ? new MethodPlan(existing, false)
-                    : new MethodPlan(availableName(fieldName, declaredNames(method)), true));
+                    : new MethodPlan(availableName(fieldName, MethodParameters.declaredNames(method)), true));
         }
         Set<UUID> references = new HashSet<>();
         for (Site reference : usages.references) {
@@ -315,6 +328,10 @@ public class MoveSagaFieldToHandlerParameter extends Recipe {
             Set<UUID> targets = callTargets.get(call.site().id());
             if (targets.size() == 1 && methodPlans.containsKey(targets.iterator().next())
                     && methodPlans.get(targets.iterator().next()).addsParameter()) {
+                if (MethodParameters.needsMessageParameter(methods.get(targets.iterator().next()))) {
+                    // The deadline handler also gets a DeadlineMessage parameter, which its caller cannot pass on.
+                    return null;
+                }
                 calls.add(call.site().id());
             }
         }
@@ -440,20 +457,6 @@ public class MoveSagaFieldToHandlerParameter extends Recipe {
         return candidate;
     }
 
-    /** Names of the parameters and local variables a method declares, lambda parameters included. */
-    private static Set<String> declaredNames(J.MethodDeclaration method) {
-        Set<String> names = new HashSet<>();
-        new JavaIsoVisitor<Integer>() {
-            @Override
-            public J.VariableDeclarations.NamedVariable visitVariable(J.VariableDeclarations.NamedVariable variable,
-                                                                      Integer p) {
-                names.add(variable.getSimpleName());
-                return super.visitVariable(variable, p);
-            }
-        }.visit(method, 0);
-        return names;
-    }
-
     private static Set<String> annotationNames(Tree tree, @Nullable UUID skippedClass) {
         Set<String> names = new HashSet<>();
         new JavaIsoVisitor<Integer>() {
@@ -560,7 +563,7 @@ public class MoveSagaFieldToHandlerParameter extends Recipe {
             this.saga = saga;
             this.fieldName = fieldName;
             this.method = method;
-            this.shadowingNames = method == null ? Set.of() : declaredNames(method);
+            this.shadowingNames = method == null ? Set.of() : MethodParameters.declaredNames(method);
             this.usages = usages;
         }
 

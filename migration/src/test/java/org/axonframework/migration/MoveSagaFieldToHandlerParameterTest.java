@@ -107,6 +107,7 @@ class MoveSagaFieldToHandlerParameterTest implements RewriteTest {
                             import java.time.Duration;
 
                             import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.deadline.DeadlineMessage;
                             import org.axonframework.deadline.annotation.DeadlineHandler;
                             import org.axonframework.modelling.saga.EndSaga;
                             import org.axonframework.modelling.saga.SagaEventHandler;
@@ -123,7 +124,7 @@ class MoveSagaFieldToHandlerParameterTest implements RewriteTest {
 
                                 @EndSaga
                                 @DeadlineHandler(deadlineName = "rentalExpired")
-                                public void onExpired(DeadlineManager deadlineManager) {
+                                public void onExpired(DeadlineMessage deadlineMessage, DeadlineManager deadlineManager) {
                                     deadlineManager.cancelAll("reminder");
                                 }
                             }
@@ -201,13 +202,14 @@ class MoveSagaFieldToHandlerParameterTest implements RewriteTest {
                             package com.example;
 
                             import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.deadline.DeadlineMessage;
                             import org.axonframework.deadline.annotation.DeadlineHandler;
                             import org.axonframework.spring.stereotype.Saga;
 
                             @Saga
                             public class RentalSaga {
                                 @DeadlineHandler(deadlineName = "rentalExpired")
-                                public void onExpired(DeadlineManager deadlineManager) {
+                                public void onExpired(DeadlineMessage deadlineMessage, DeadlineManager deadlineManager) {
                                     deadlineManager.cancelSchedule("reminder", "r-1");
                                 }
                             }
@@ -382,6 +384,208 @@ class MoveSagaFieldToHandlerParameterTest implements RewriteTest {
                                 @SagaEventHandler(associationProperty = "rentalId")
                                 public void on(String deadlineManager, DeadlineManager deadlineManager1) {
                                     deadlineManager1.cancelAll(deadlineManager);
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+    }
+
+    @Nested
+    class ParameterlessDeadlineHandlers {
+
+        @Test
+        void prependsDeadlineMessageSoTheMovedParameterDoesNotBecomeThePayload() {
+            // The first parameter of a handler is its payload unless a resolver of a higher priority claims it. The
+            // configuration resolver ranks lower, so a lone DeadlineManager parameter would only match deadlines
+            // carrying a DeadlineManager payload. DeadlineMessage keeps matching any deadline, as no parameter did.
+            rewriteRun(
+                    AUTOWIRED,
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.springframework.beans.factory.annotation.Autowired;
+
+                            public class RentalSaga {
+                                @Autowired
+                                private transient DeadlineManager deadlineManager;
+
+                                @SagaEventHandler(associationProperty = "rentalId")
+                                public void on(String event) {
+                                }
+
+                                @DeadlineHandler(deadlineName = "rentalExpired")
+                                public void onExpired() {
+                                    deadlineManager.cancelAll("reminder");
+                                }
+
+                                @DeadlineHandler(deadlineName = "reminder")
+                                public void onReminder(String reminder) {
+                                    deadlineManager.cancelAll("rentalExpired");
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.deadline.DeadlineMessage;
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+
+                            public class RentalSaga {
+                                @SagaEventHandler(associationProperty = "rentalId")
+                                public void on(String event) {
+                                }
+
+                                @DeadlineHandler(deadlineName = "rentalExpired")
+                                public void onExpired(DeadlineMessage deadlineMessage, DeadlineManager deadlineManager) {
+                                    deadlineManager.cancelAll("reminder");
+                                }
+
+                                @DeadlineHandler(deadlineName = "reminder")
+                                public void onReminder(String reminder, DeadlineManager deadlineManager) {
+                                    deadlineManager.cancelAll("rentalExpired");
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void suffixesTheDeadlineMessageParameterWhenItsNameIsTaken() {
+            rewriteRun(
+                    AUTOWIRED,
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.springframework.beans.factory.annotation.Autowired;
+
+                            public class RentalSaga {
+                                @Autowired
+                                private transient DeadlineManager deadlineManager;
+
+                                @SagaEventHandler(associationProperty = "rentalId")
+                                public void on(String event) {
+                                }
+
+                                @DeadlineHandler(deadlineName = "rentalExpired")
+                                public void onExpired() {
+                                    String deadlineMessage = "expired";
+                                    deadlineManager.cancelAll(deadlineMessage);
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.deadline.DeadlineMessage;
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+
+                            public class RentalSaga {
+                                @SagaEventHandler(associationProperty = "rentalId")
+                                public void on(String event) {
+                                }
+
+                                @DeadlineHandler(deadlineName = "rentalExpired")
+                                public void onExpired(DeadlineMessage deadlineMessage1, DeadlineManager deadlineManager) {
+                                    String deadlineMessage = "expired";
+                                    deadlineManager.cancelAll(deadlineMessage);
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void leavesFieldUntouchedWhenAnotherMethodCallsTheParameterlessDeadlineHandler() {
+            // The handler would gain two parameters, while its call site can only pass the moved one along.
+            rewriteRun(
+                    AUTOWIRED,
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.springframework.beans.factory.annotation.Autowired;
+
+                            public class RentalSaga {
+                                @Autowired
+                                private transient DeadlineManager deadlineManager;
+
+                                @SagaEventHandler(associationProperty = "rentalId")
+                                public void on(String event) {
+                                    onExpired();
+                                }
+
+                                @DeadlineHandler(deadlineName = "rentalExpired")
+                                public void onExpired() {
+                                    deadlineManager.cancelAll("reminder");
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void prependsDeadlineMessageInKotlin() {
+            rewriteRun(
+                    kotlin(
+                            """
+                            package com.example
+
+                            import org.axonframework.deadline.DeadlineManager
+                            import org.axonframework.deadline.annotation.DeadlineHandler
+                            import org.axonframework.modelling.saga.SagaEventHandler
+                            import org.springframework.beans.factory.annotation.Autowired
+
+                            class RentalSaga {
+                                @Autowired
+                                @Transient
+                                private lateinit var deadlineManager: DeadlineManager
+
+                                @SagaEventHandler(associationProperty = "rentalId")
+                                fun on(event: String) {
+                                }
+
+                                @DeadlineHandler(deadlineName = "rentalExpired")
+                                fun onExpired() {
+                                    deadlineManager.cancelAll("reminder")
+                                }
+                            }
+                            """,
+                            """
+                            package com.example
+
+                            import org.axonframework.deadline.DeadlineManager
+                            import org.axonframework.deadline.DeadlineMessage
+                            import org.axonframework.deadline.annotation.DeadlineHandler
+                            import org.axonframework.modelling.saga.SagaEventHandler
+
+                            class RentalSaga {
+                                @SagaEventHandler(associationProperty = "rentalId")
+                                fun on(event: String) {
+                                }
+
+                                @DeadlineHandler(deadlineName = "rentalExpired")
+                                fun onExpired(deadlineMessage: DeadlineMessage, deadlineManager: DeadlineManager) {
+                                    deadlineManager.cancelAll("reminder")
                                 }
                             }
                             """
@@ -909,6 +1113,7 @@ class MoveSagaFieldToHandlerParameterTest implements RewriteTest {
 
                             import java.time.Duration
                             import org.axonframework.deadline.DeadlineManager
+                            import org.axonframework.deadline.DeadlineMessage
                             import org.axonframework.deadline.annotation.DeadlineHandler
                             import org.axonframework.modelling.saga.SagaEventHandler
 
@@ -919,7 +1124,7 @@ class MoveSagaFieldToHandlerParameterTest implements RewriteTest {
                                 }
 
                                 @DeadlineHandler(deadlineName = "reminder")
-                                fun onReminder(deadlineManager: DeadlineManager) {
+                                fun onReminder(deadlineMessage: DeadlineMessage, deadlineManager: DeadlineManager) {
                                     deadlineManager.cancelAll("rentalExpired")
                                 }
 
