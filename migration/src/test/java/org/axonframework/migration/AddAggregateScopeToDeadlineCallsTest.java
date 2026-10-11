@@ -297,6 +297,122 @@ class AddAggregateScopeToDeadlineCallsTest implements RewriteTest {
                     )
             );
         }
+
+        @Test
+        void usesTypeOfConfiguredRootForUnannotatedPolymorphicAggregate() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.config.AggregateConfigurer;
+                            import org.axonframework.config.Configurer;
+
+                            class AccountConfiguration {
+                                void configure(Configurer configurer) {
+                                    configurer.configureAggregate(
+                                            AggregateConfigurer.defaultConfiguration(Account.class)
+                                                               .withSubtypes(SavingsAccount.class)
+                                    );
+                                }
+                            }
+                            """
+                    ),
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.modelling.command.AggregateIdentifier;
+
+                            abstract class Account {
+                                @AggregateIdentifier
+                                protected String accountId;
+                            }
+                            """
+                    ),
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.commandhandling.CommandHandler;
+                            import org.axonframework.deadline.DeadlineManager;
+
+                            class SavingsAccount extends Account {
+                                @CommandHandler
+                                void handle(String command, DeadlineManager deadlineManager) {
+                                    deadlineManager.cancelAllWithinScope("interest");
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.commandhandling.CommandHandler;
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.modelling.command.AggregateScopeDescriptor;
+
+                            class SavingsAccount extends Account {
+                                @CommandHandler
+                                void handle(String command, DeadlineManager deadlineManager) {
+                                    deadlineManager.cancelAllWithinScope("interest", new AggregateScopeDescriptor("Account", accountId));
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void usesTypeOfTopmostSpringAggregateWhenRootIsUnannotated() {
+            // Spring registers the topmost @Aggregate class as the root, so an unannotated superclass takes no part.
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.modelling.command.AggregateIdentifier;
+
+                            abstract class Account {
+                                @AggregateIdentifier
+                                protected String accountId;
+                            }
+                            """
+                    ),
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.commandhandling.CommandHandler;
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.spring.stereotype.Aggregate;
+
+                            @Aggregate
+                            class SavingsAccount extends Account {
+                                @CommandHandler
+                                void handle(String command, DeadlineManager deadlineManager) {
+                                    deadlineManager.cancelAllWithinScope("interest");
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.commandhandling.CommandHandler;
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.modelling.command.AggregateScopeDescriptor;
+                            import org.axonframework.spring.stereotype.Aggregate;
+
+                            @Aggregate
+                            class SavingsAccount extends Account {
+                                @CommandHandler
+                                void handle(String command, DeadlineManager deadlineManager) {
+                                    deadlineManager.cancelAllWithinScope("interest", new AggregateScopeDescriptor("SavingsAccount", accountId));
+                                }
+                            }
+                            """
+                    )
+            );
+        }
     }
 
     @Nested

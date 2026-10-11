@@ -58,9 +58,13 @@ import static org.axonframework.migration.SagaClasses.resolvedName;
  * {@code IllegalStateException}. The recipe rewrites them to the overloads taking a {@code ScopeDescriptor}, passing
  * the descriptor Axon Framework 4 built:
  * <ul>
- *     <li>the type is the {@code type} of the {@code @Aggregate} or {@code @AggregateRoot} annotation, or the simple
- *     name of the aggregate class when it declares none. For a polymorphic aggregate it is the one of the topmost
- *     annotated class, which Axon Framework 4 used for every subtype;</li>
+ *     <li>the type is the declared type of the class the aggregate's repository was configured for: the {@code type}
+ *     of its {@code @Aggregate} or {@code @AggregateRoot} annotation, or its simple name when it declares none. Axon
+ *     Framework 4 used that type for every subtype of a polymorphic aggregate. As the configuration is not always in
+ *     the sources, the recipe approximates that class: the topmost class of the hierarchy that a configuration call
+ *     in the sources registers ({@code configureAggregate(..)}, {@code AggregateConfigurer.defaultConfiguration(..)}
+ *     or {@code jpaMappedConfiguration(..)}, or a repository {@code builder(..)}); else the topmost annotated class,
+ *     which Spring registers as the root; else the class itself, unless it is abstract;</li>
  *     <li>the identifier is the member annotated with {@code @AggregateIdentifier}, or with {@code @EntityId} or a
  *     persistence {@code @Id} on an annotated aggregate.</li>
  * </ul>
@@ -95,6 +99,12 @@ public class AddAggregateScopeToDeadlineCalls extends ScanningRecipe<AddAggregat
     private static final String ENTITY_ID_FQN = "org.axonframework.modelling.command.EntityId";
     private static final String AGGREGATE_MEMBER_FQN = "org.axonframework.modelling.command.AggregateMember";
     private static final String CREATION_POLICY_FQN = "org.axonframework.modelling.command.CreationPolicy";
+    /**
+     * The Axon Framework 4 methods taking the class an aggregate's repository is configured for: the aggregate
+     * configuration factories, {@code Configurer#configureAggregate(Class)} and the repository builders.
+     */
+    private static final Set<String> ROOT_CONFIGURING_METHODS =
+            Set.of("configureAggregate", "defaultConfiguration", "jpaMappedConfiguration", "builder");
     private static final Set<String> PERSISTENCE_ID_FQNS = Set.of("jakarta.persistence.Id", "javax.persistence.Id");
     private static final Set<String> AGGREGATE_HANDLER_FQNS = Set.of(
             "org.axonframework.commandhandling.CommandHandler",
@@ -149,6 +159,7 @@ public class AddAggregateScopeToDeadlineCalls extends ScanningRecipe<AddAggregat
         final SagaClasses sagaClasses = new SagaClasses();
         final Map<String, ClassInfo> classes = new HashMap<>();
         final Map<String, String> memberEntityOwners = new HashMap<>();
+        final Set<String> configuredRoots = new HashSet<>();
     }
 
     /**
@@ -226,6 +237,15 @@ public class AddAggregateScopeToDeadlineCalls extends ScanningRecipe<AddAggregat
                 }
                 collectMemberEntityTypes(classDeclaration, acc.memberEntityOwners);
                 return super.visitClassDeclaration(classDeclaration, ctx);
+            }
+
+            @Override
+            public J.MethodInvocation visitMethodInvocation(J.MethodInvocation invocation, ExecutionContext ctx) {
+                String root = configuredRoot(invocation);
+                if (root != null) {
+                    acc.configuredRoots.add(root);
+                }
+                return super.visitMethodInvocation(invocation, ctx);
             }
         };
     }
@@ -412,6 +432,23 @@ public class AddAggregateScopeToDeadlineCalls extends ScanningRecipe<AddAggregat
         return declared.contains(identifier.name()) ? "this." + identifier.name() : identifier.name();
     }
 
+    /**
+     * Returns the aggregate class the call configures a repository for, when it is an Axon Framework 4 configuration
+     * call taking that class as a class literal, or {@code null} otherwise.
+     */
+    private static @Nullable String configuredRoot(J.MethodInvocation invocation) {
+        JavaType.Method method = invocation.getMethodType();
+        if (!ROOT_CONFIGURING_METHODS.contains(invocation.getSimpleName())
+                || method == null
+                || !method.getDeclaringType().getFullyQualifiedName().startsWith("org.axonframework.")
+                || invocation.getArguments().isEmpty()
+                || !(invocation.getArguments().getFirst() instanceof J.FieldAccess classLiteral)
+                || !"class".equals(classLiteral.getSimpleName())) {
+            return null;
+        }
+        return resolvedName(classLiteral.getTarget().getType());
+    }
+
     private static @Nullable String declaredType(J.ClassDeclaration classDeclaration, Cursor cursor) {
         for (J.Annotation annotation : classDeclaration.getLeadingAnnotations()) {
             if (isAnnotation(annotation, AGGREGATE_STEREOTYPE_FQN, "Aggregate")
@@ -566,6 +603,7 @@ public class AddAggregateScopeToDeadlineCalls extends ScanningRecipe<AddAggregat
             }
             boolean recognised = acc.memberEntityOwners.containsKey(className);
             String declaredType = null;
+            String configuredType = null;
             Identifier identifier = null;
             boolean annotated = false;
             Set<String> visited = new HashSet<>();
@@ -574,9 +612,15 @@ public class AddAggregateScopeToDeadlineCalls extends ScanningRecipe<AddAggregat
             while (current != null && visited.add(currentName)) {
                 recognised |= current.declaredType() != null || current.identifier() != null || current.hasHandlers();
                 if (current.declaredType() != null) {
-                    // The topmost annotated class is the root of a polymorphic aggregate.
+                    // Spring registers the topmost annotated class as the root of a polymorphic aggregate.
                     declaredType = current.declaredType();
                     annotated = true;
+                }
+                if (acc.configuredRoots.contains(currentName)) {
+                    // A configuration naming the root explicitly decides over the annotations.
+                    configuredType = current.declaredType() != null
+                            ? current.declaredType()
+                            : quoted(current.simpleName());
                 }
                 if (identifier == null && current.identifier() != null
                         && (current == self || !current.identifier().isPrivate())) {
@@ -589,7 +633,9 @@ public class AddAggregateScopeToDeadlineCalls extends ScanningRecipe<AddAggregat
                 // An @EntityId or @Id outside an annotated aggregate most likely identifies a member entity.
                 identifier = null;
             }
-            String type = declaredType != null ? declaredType : self.isAbstract() ? null : quoted(self.simpleName());
+            String type = configuredType != null
+                    ? configuredType
+                    : declaredType != null ? declaredType : self.isAbstract() ? null : quoted(self.simpleName());
             return new Aggregate(recognised, type, identifier);
         }
     }
