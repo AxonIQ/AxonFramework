@@ -65,10 +65,11 @@ After the migration run, search for every such location with:
   `DeadlineManager` calls that relied on the aggregate's scope get an explicit `AggregateScopeDescriptor`, as Axon
   Framework 5 runs no scope around an entity handler. Both aggregate rewrites are Java only; in Kotlin aggregates the
   deadline handlers and those calls get a `TODO(axon4to5)` marker. Removes `spanFactory(..)` and `transactionManager(..)` from the
-  deadline manager builders, replaces `serializer(JacksonSerializer.defaultSerializer())` with
-  `converter(new JacksonConverter())`, and replaces `ConfigurationScopeAwareProvider` and
-  `Configuration#deadlineManager()` with component lookups. A `TODO(axon4to5)` marker is left on the required
-  `unitOfWorkFactory(..)`, a `converter(..)` the recipe cannot infer, `configureDeadlineManager(..)`,
+  deadline manager builders, adds the required `unitOfWorkFactory(..)` (looked up on an AF4 `Configuration` parameter
+  or local in scope, or, in a Spring `@Bean` method, taken from a `UnitOfWorkFactory` parameter it adds), replaces
+  `serializer(JacksonSerializer.defaultSerializer())` with `converter(new JacksonConverter())`, and replaces
+  `ConfigurationScopeAwareProvider` and `Configuration#deadlineManager()` with component lookups. A `TODO(axon4to5)`
+  marker is left on a `unitOfWorkFactory(..)` with neither in reach, a `converter(..)` the recipe cannot infer, `configureDeadlineManager(..)`,
   `deadlineManager()` lookups, interceptors registered on the `DeadlineManager` interface, a `ScopeAwareProvider` the
   application registers itself, aggregate deadline handlers no command can reach (or that now receive the same command,
   belong to a member entity, or match by deadline name a deadline not always scheduled without a payload),

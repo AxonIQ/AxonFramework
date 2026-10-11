@@ -341,7 +341,7 @@ class MigrateDeadlineManagerBuildersTest implements RewriteTest {
         }
 
         @Test
-        void marksBuilderInLambdaOnItsEnclosingStatementAndDropsImportsLeftUnused() {
+        void takesUnitOfWorkFactoryFromLambdaConfigurationAndDropsImportsLeftUnused() {
             rewriteRun(
                     java(
                             """
@@ -372,16 +372,322 @@ class MigrateDeadlineManagerBuildersTest implements RewriteTest {
                             import org.axonframework.config.Configurer;
                             import org.axonframework.deadline.SimpleDeadlineManager;
                             import org.axonframework.messaging.ScopeAwareProvider;
+                            import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
 
                             class DeadlineConfig {
                                 void configure(Configurer configurer) {
-                                    %s
                                     configurer.registerComponent(
                                             SimpleDeadlineManager.class,
                                             config -> SimpleDeadlineManager.builder()
+                                                                           .unitOfWorkFactory(config.getComponent(UnitOfWorkFactory.class))
                                                                            .scopeAwareProvider(config.getComponent(ScopeAwareProvider.class))
                                                                            .build()
                                     );
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+    }
+
+    @Nested
+    class UnitOfWorkFactoryFromScope {
+
+        @Test
+        void takesUnitOfWorkFactoryFromConfigurationParameter() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.common.transaction.TransactionManager;
+                            import org.axonframework.config.Configuration;
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.deadline.SimpleDeadlineManager;
+                            import org.axonframework.messaging.ScopeAwareProvider;
+
+                            class DeadlineConfig {
+                                DeadlineManager deadlineManager(Configuration config) {
+                                    return SimpleDeadlineManager.builder()
+                                                                .scopeAwareProvider(config.getComponent(ScopeAwareProvider.class))
+                                                                .transactionManager(config.getComponent(TransactionManager.class))
+                                                                .build();
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.config.Configuration;
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.deadline.SimpleDeadlineManager;
+                            import org.axonframework.messaging.ScopeAwareProvider;
+                            import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
+
+                            class DeadlineConfig {
+                                DeadlineManager deadlineManager(Configuration config) {
+                                    return SimpleDeadlineManager.builder()
+                                                                .unitOfWorkFactory(config.getComponent(UnitOfWorkFactory.class))
+                                                                .scopeAwareProvider(config.getComponent(ScopeAwareProvider.class))
+                                                                .build();
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void takesUnitOfWorkFactoryFromLocalConfigurationForBuilderHeldInVariable() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.config.Configuration;
+                            import org.axonframework.config.Configurer;
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.deadline.SimpleDeadlineManager;
+
+                            class DeadlineConfig {
+                                DeadlineManager deadlineManager(Configurer configurer) {
+                                    Configuration configuration = configurer.buildConfiguration();
+                                    SimpleDeadlineManager.Builder builder = SimpleDeadlineManager.builder();
+                                    return builder.build();
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.config.Configuration;
+                            import org.axonframework.config.Configurer;
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.deadline.SimpleDeadlineManager;
+                            import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
+
+                            class DeadlineConfig {
+                                DeadlineManager deadlineManager(Configurer configurer) {
+                                    Configuration configuration = configurer.buildConfiguration();
+                                    SimpleDeadlineManager.Builder builder = SimpleDeadlineManager.builder().unitOfWorkFactory(configuration.getComponent(UnitOfWorkFactory.class));
+                                    return builder.build();
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void addsUnitOfWorkFactoryParameterToSpringBeanMethod() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.deadline.quartz.QuartzDeadlineManager;
+                            import org.axonframework.messaging.ScopeAwareProvider;
+                            import org.axonframework.serialization.json.JacksonSerializer;
+                            import org.quartz.Scheduler;
+                            import org.springframework.context.annotation.Bean;
+
+                            class DeadlineConfig {
+                                @Bean
+                                DeadlineManager deadlineManager(Scheduler scheduler,
+                                                                ScopeAwareProvider provider) {
+                                    return QuartzDeadlineManager.builder()
+                                                                .scheduler(scheduler)
+                                                                .scopeAwareProvider(provider)
+                                                                .serializer(JacksonSerializer.defaultSerializer())
+                                                                .build();
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.conversion.jackson.JacksonConverter;
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.deadline.quartz.QuartzDeadlineManager;
+                            import org.axonframework.messaging.ScopeAwareProvider;
+                            import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
+                            import org.quartz.Scheduler;
+                            import org.springframework.context.annotation.Bean;
+
+                            class DeadlineConfig {
+                                @Bean
+                                DeadlineManager deadlineManager(Scheduler scheduler,
+                                                                ScopeAwareProvider provider,
+                                                                UnitOfWorkFactory unitOfWorkFactory) {
+                                    return QuartzDeadlineManager.builder()
+                                                                .unitOfWorkFactory(unitOfWorkFactory)
+                                                                .scheduler(scheduler)
+                                                                .scopeAwareProvider(provider)
+                                                                .converter(new JacksonConverter())
+                                                                .build();
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void sharesOneUniquelyNamedParameterBetweenBuildersOfOneSpringBeanMethod() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.deadline.SimpleDeadlineManager;
+                            import org.springframework.context.annotation.Bean;
+
+                            class DeadlineConfig {
+                                @Bean
+                                DeadlineManager deadlineManager(boolean primary, String unitOfWorkFactory) {
+                                    if (primary) {
+                                        return SimpleDeadlineManager.builder().build();
+                                    }
+                                    return SimpleDeadlineManager.builder().build();
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.deadline.SimpleDeadlineManager;
+                            import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
+                            import org.springframework.context.annotation.Bean;
+
+                            class DeadlineConfig {
+                                @Bean
+                                DeadlineManager deadlineManager(boolean primary, String unitOfWorkFactory, UnitOfWorkFactory unitOfWorkFactory2) {
+                                    if (primary) {
+                                        return SimpleDeadlineManager.builder().unitOfWorkFactory(unitOfWorkFactory2).build();
+                                    }
+                                    return SimpleDeadlineManager.builder().unitOfWorkFactory(unitOfWorkFactory2).build();
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void prefersConfigurationInScopeOverSpringBeanParameter() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.config.Configuration;
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.deadline.SimpleDeadlineManager;
+                            import org.springframework.context.annotation.Bean;
+
+                            class DeadlineConfig {
+                                @Bean
+                                DeadlineManager deadlineManager(Configuration configuration) {
+                                    return SimpleDeadlineManager.builder().build();
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.config.Configuration;
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.deadline.SimpleDeadlineManager;
+                            import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
+                            import org.springframework.context.annotation.Bean;
+
+                            class DeadlineConfig {
+                                @Bean
+                                DeadlineManager deadlineManager(Configuration configuration) {
+                                    return SimpleDeadlineManager.builder().unitOfWorkFactory(configuration.getComponent(UnitOfWorkFactory.class)).build();
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void marksBuilderWhenConfigurationIsOnlyDeclaredAfterIt() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.config.Configuration;
+                            import org.axonframework.config.Configurer;
+                            import org.axonframework.deadline.SimpleDeadlineManager;
+
+                            class DeadlineConfig {
+                                Configuration configure(Configurer configurer) {
+                                    SimpleDeadlineManager.Builder builder = SimpleDeadlineManager.builder();
+                                    Configuration configuration = configurer.buildConfiguration();
+                                    return configuration;
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.config.Configuration;
+                            import org.axonframework.config.Configurer;
+                            import org.axonframework.deadline.SimpleDeadlineManager;
+
+                            class DeadlineConfig {
+                                Configuration configure(Configurer configurer) {
+                                    %s
+                                    SimpleDeadlineManager.Builder builder = SimpleDeadlineManager.builder();
+                                    Configuration configuration = configurer.buildConfiguration();
+                                    return configuration;
+                                }
+                            }
+                            """.formatted(UNIT_OF_WORK_FACTORY_TODO)
+                    )
+            );
+        }
+
+        @Test
+        void marksBuilderOfMethodThatIsNoSpringBeanAndHasNoConfigurationInScope() {
+            // A field is not used: the recipe cannot tell whether it is set by the time the builder runs.
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.config.Configuration;
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.deadline.SimpleDeadlineManager;
+
+                            class DeadlineConfig {
+                                private Configuration configuration;
+
+                                DeadlineManager deadlineManager() {
+                                    return SimpleDeadlineManager.builder().build();
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.config.Configuration;
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.deadline.SimpleDeadlineManager;
+
+                            class DeadlineConfig {
+                                private Configuration configuration;
+
+                                DeadlineManager deadlineManager() {
+                                    %s
+                                    return SimpleDeadlineManager.builder().build();
                                 }
                             }
                             """.formatted(UNIT_OF_WORK_FACTORY_TODO)

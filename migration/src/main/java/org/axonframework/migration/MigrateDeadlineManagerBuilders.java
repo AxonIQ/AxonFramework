@@ -20,6 +20,7 @@ import org.jspecify.annotations.Nullable;
 import org.openrewrite.Cursor;
 import org.openrewrite.ExecutionContext;
 import org.openrewrite.Recipe;
+import org.openrewrite.Tree;
 import org.openrewrite.TreeVisitor;
 import org.openrewrite.internal.ListUtils;
 import org.openrewrite.java.JavaIsoVisitor;
@@ -29,14 +30,19 @@ import org.openrewrite.java.JavaVisitor;
 import org.openrewrite.java.tree.Comment;
 import org.openrewrite.java.tree.Expression;
 import org.openrewrite.java.tree.J;
+import org.openrewrite.java.tree.JContainer;
+import org.openrewrite.java.tree.JRightPadded;
 import org.openrewrite.java.tree.JavaType;
 import org.openrewrite.java.tree.Space;
 import org.openrewrite.java.tree.Statement;
 import org.openrewrite.java.tree.TextComment;
+import org.openrewrite.java.tree.TypeTree;
 import org.openrewrite.java.tree.TypeUtils;
 import org.openrewrite.marker.Markers;
 
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -58,10 +64,17 @@ import java.util.Set;
  * </ul>
  * The recipe removes the first two calls, and replaces {@code serializer(..)} with {@code converter(..)} when the
  * serializer is a default {@code JacksonSerializer}, whose stored deadlines a default {@code JacksonConverter} reads.
- * Which {@code UnitOfWorkFactory} to use, and which converter reads what any other serializer stored, cannot be
- * inferred at the call site, so the recipe leaves a {@code // TODO(axon4to5):} marker on the statement that builds
- * the manager for those. Builder calls of other components with the same method names are left alone. The recipe is
- * idempotent: a statement that already carries a marker is not marked again.
+ * <p>
+ * It inserts {@code unitOfWorkFactory(..)} right after {@code builder()} in a Java builder chain when a factory is in
+ * reach: {@code configuration.getComponent(UnitOfWorkFactory.class)} on an Axon Framework 4 {@code Configuration}
+ * lambda parameter, method parameter or preceding local, which Axon Framework 5's {@code Configuration} answers too,
+ * or, in a Spring {@code @Bean} method, a {@code UnitOfWorkFactory} parameter it adds to the method, which Spring
+ * resolves from the Axon configuration.
+ * <p>
+ * Which {@code UnitOfWorkFactory} to use elsewhere, and which converter reads what any other serializer stored,
+ * cannot be inferred at the call site, so the recipe leaves a {@code // TODO(axon4to5):} marker on the statement that
+ * builds the manager for those. Builder calls of other components with the same method names are left alone. The
+ * recipe is idempotent: a statement that already carries a marker is not marked again.
  *
  * @author Mateusz Nowak
  * @since 5.4.0
@@ -85,6 +98,12 @@ public class MigrateDeadlineManagerBuilders extends Recipe {
     private static final String SERIALIZER_METHOD = "serializer";
     private static final String CONVERTER_METHOD = "converter";
     private static final String UNIT_OF_WORK_FACTORY_METHOD = "unitOfWorkFactory";
+    private static final String UNIT_OF_WORK_FACTORY_PARAMETER_KEY = "unitOfWorkFactoryParameter";
+
+    private static final String CONFIGURATION_FQN = "org.axonframework.config.Configuration";
+    private static final String UNIT_OF_WORK_FACTORY_FQN =
+            "org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory";
+    private static final String SPRING_BEAN_FQN = "org.springframework.context.annotation.Bean";
 
     private static final String JACKSON_SERIALIZER_FQN = "org.axonframework.serialization.json.JacksonSerializer";
     private static final String JACKSON_CONVERTER_FQN = "org.axonframework.conversion.jackson.JacksonConverter";
@@ -117,19 +136,41 @@ public class MigrateDeadlineManagerBuilders extends Recipe {
     public String getDescription() {
         return "Removes the `spanFactory(..)` and `transactionManager(..)` calls from the builders of the Axon "
                 + "Framework 4 deadline managers, and replaces `serializer(JacksonSerializer.defaultSerializer())` "
-                + "with `converter(new JacksonConverter())`. Leaves a `// TODO(axon4to5):` marker for the required "
-                + "`unitOfWorkFactory(..)`, and for a `converter(..)` it cannot infer. Idempotent.";
+                + "with `converter(new JacksonConverter())`. Adds the required `unitOfWorkFactory(..)`, looked up "
+                + "on an Axon Framework 4 `Configuration` in scope or, in a Spring `@Bean` method, taken from a "
+                + "`UnitOfWorkFactory` parameter it adds. Leaves a `// TODO(axon4to5):` marker for a "
+                + "`unitOfWorkFactory(..)` with neither in reach, and for a `converter(..)` it cannot infer. "
+                + "Idempotent.";
     }
 
     @Override
     public TreeVisitor<?, ExecutionContext> getVisitor() {
         return new JavaVisitor<ExecutionContext>() {
             @Override
+            public J visitMethodDeclaration(J.MethodDeclaration method, ExecutionContext ctx) {
+                J visited = super.visitMethodDeclaration(method, ctx);
+                String parameter = getCursor().pollMessage(UNIT_OF_WORK_FACTORY_PARAMETER_KEY);
+                if (parameter == null || !(visited instanceof J.MethodDeclaration declaration)) {
+                    return visited;
+                }
+                maybeAddImport(UNIT_OF_WORK_FACTORY_FQN, null, false);
+                return MethodParameters.append(declaration, false, UNIT_OF_WORK_FACTORY_FQN, parameter);
+            }
+
+            @Override
             public @Nullable J visitMethodInvocation(J.MethodInvocation method, ExecutionContext ctx) {
                 J visited = super.visitMethodInvocation(method, ctx);
                 if (!(visited instanceof J.MethodInvocation invocation)) {
                     return visited;
                 }
+                J migrated = migrateCall(invocation);
+                if (migrated instanceof J.MethodInvocation chain && isChainTop(method)) {
+                    return addUnitOfWorkFactory(chain);
+                }
+                return migrated;
+            }
+
+            private @Nullable J migrateCall(J.MethodInvocation invocation) {
                 String name = invocation.getSimpleName();
                 boolean removed = REMOVED_METHODS.contains(name);
                 if (!removed && !SERIALIZER_METHOD.equals(name)) {
@@ -183,7 +224,226 @@ public class MigrateDeadlineManagerBuilders extends Recipe {
                 return invocation.withName(invocation.getName().withSimpleName(CONVERTER_METHOD))
                                  .withArguments(List.of(converter.withPrefix(serializer.getPrefix())));
             }
+
+            /**
+             * Whether the given call is the last call of its chain, so the chain is complete when it is visited.
+             */
+            private boolean isChainTop(J.MethodInvocation original) {
+                Object parent = getCursor().getParentTreeCursor().getValue();
+                return !(parent instanceof J.MethodInvocation outer
+                        && outer.getSelect() != null
+                        && outer.getSelect().getId().equals(original.getId()));
+            }
+
+            /**
+             * Inserts {@code unitOfWorkFactory(..)} right after {@code <Manager>.builder()} in a Java builder chain
+             * lacking it, when a factory is in reach. Without one, {@link #markBuilders(Statement)} marks the chain.
+             */
+            private J.MethodInvocation addUnitOfWorkFactory(J.MethodInvocation chain) {
+                if (rootDeadlineManager(chain) == null
+                        || chainedMethodNames(chain).contains(UNIT_OF_WORK_FACTORY_METHOD)
+                        || getCursor().firstEnclosing(J.CompilationUnit.class) == null) {
+                    return chain;
+                }
+                Expression factory = unitOfWorkFactoryInScope();
+                return factory == null ? chain : insertAfterBuilder(chain, factory);
+            }
+
+            /**
+             * Finds the {@code UnitOfWorkFactory} the builder can use, from the innermost scope outwards: an Axon
+             * Framework 4 {@code Configuration} that is a lambda or method parameter, or a local declared before
+             * the statement holding the builder; otherwise, in a Spring {@code @Bean} method, a
+             * {@code UnitOfWorkFactory} parameter, added when missing. A field, or a class boundary, ends the search,
+             * as the recipe cannot tell whether a field is set by the time the builder runs.
+             */
+            private @Nullable Expression unitOfWorkFactoryInScope() {
+                J child = null;
+                for (Iterator<Object> path = getCursor().getPath(); path.hasNext(); ) {
+                    Object value = path.next();
+                    if (!(value instanceof J tree)) {
+                        continue;
+                    }
+                    if (tree instanceof J.Lambda lambda) {
+                        J.Identifier configuration = configurationVariable(lambda.getParameters().getParameters());
+                        if (configuration != null) {
+                            return componentLookup(configuration);
+                        }
+                    } else if (tree instanceof J.Block block && child != null) {
+                        J.Identifier configuration = configurationDeclaredBefore(block, child);
+                        if (configuration != null) {
+                            return componentLookup(configuration);
+                        }
+                    } else if (tree instanceof J.MethodDeclaration declaration) {
+                        J.Identifier configuration = configurationVariable(declaration.getParameters());
+                        if (configuration != null) {
+                            return componentLookup(configuration);
+                        }
+                        return isSpringBean(declaration) ? beanParameter(declaration) : null;
+                    } else if (tree instanceof J.ClassDeclaration
+                            || tree instanceof J.NewClass created && created.getBody() == child) {
+                        return null;
+                    }
+                    child = tree;
+                }
+                return null;
+            }
+
+            private Expression componentLookup(J.Identifier configuration) {
+                maybeAddImport(UNIT_OF_WORK_FACTORY_FQN, null, false);
+                return JavaTemplate.builder("#{any(" + CONFIGURATION_FQN + ")}.getComponent(UnitOfWorkFactory.class)")
+                                   .imports(UNIT_OF_WORK_FACTORY_FQN)
+                                   .javaParser(JavaParser.fromJavaVersion()
+                                                         .classpath(JavaParser.runtimeClasspath()))
+                                   .build()
+                                   .apply(new Cursor(getCursor(), configuration),
+                                          configuration.getCoordinates().replace(),
+                                          configuration);
+            }
+
+            /**
+             * Returns the {@code UnitOfWorkFactory} parameter of the given Spring {@code @Bean} method, asking
+             * {@link #visitMethodDeclaration} to add one, under a name no other variable of the method uses, when
+             * it has none. All builders of the method share the parameter.
+             */
+            private J.Identifier beanParameter(J.MethodDeclaration declaration) {
+                for (Statement parameter : declaration.getParameters()) {
+                    if (parameter instanceof J.VariableDeclarations variables
+                            && variables.getTypeExpression() != null
+                            && isUnitOfWorkFactoryType(variables.getTypeExpression())) {
+                        return parameterReference(variables.getVariables().getFirst().getSimpleName());
+                    }
+                }
+                Cursor methodCursor = getCursor().dropParentUntil(J.MethodDeclaration.class::isInstance);
+                String name = methodCursor.getMessage(UNIT_OF_WORK_FACTORY_PARAMETER_KEY);
+                if (name == null) {
+                    name = unusedName(declaration);
+                    methodCursor.putMessage(UNIT_OF_WORK_FACTORY_PARAMETER_KEY, name);
+                }
+                maybeAddImport(UNIT_OF_WORK_FACTORY_FQN, null, false);
+                return parameterReference(name);
+            }
         };
+    }
+
+    private static J.@Nullable Identifier configurationVariable(List<? extends J> declarations) {
+        J.Identifier found = null;
+        for (J declaration : declarations) {
+            if (declaration instanceof J.VariableDeclarations variables) {
+                for (J.VariableDeclarations.NamedVariable variable : variables.getVariables()) {
+                    if (TypeUtils.isOfClassType(variable.getType(), CONFIGURATION_FQN)) {
+                        found = variable.getName();
+                    }
+                }
+            }
+        }
+        return found == null ? null : found.withId(Tree.randomId()).withPrefix(Space.EMPTY);
+    }
+
+    /**
+     * Returns the last {@code Configuration} local declared in the given block before the given statement, unless it
+     * is assigned again, which would keep a lambda holding the builder from capturing it.
+     */
+    private static J.@Nullable Identifier configurationDeclaredBefore(J.Block block, J child) {
+        List<Statement> preceding = new ArrayList<>();
+        for (Statement statement : block.getStatements()) {
+            if (statement.getId().equals(child.getId())) {
+                J.Identifier configuration = configurationVariable(preceding);
+                return configuration == null || isAssigned(block, configuration.getSimpleName())
+                        ? null
+                        : configuration;
+            }
+            preceding.add(statement);
+        }
+        return null;
+    }
+
+    private static boolean isAssigned(J.Block block, String name) {
+        boolean[] assigned = {false};
+        new JavaIsoVisitor<Integer>() {
+            @Override
+            public J.Assignment visitAssignment(J.Assignment assignment, Integer p) {
+                if (assignment.getVariable() instanceof J.Identifier variable
+                        && name.equals(variable.getSimpleName())) {
+                    assigned[0] = true;
+                }
+                return super.visitAssignment(assignment, p);
+            }
+        }.visit(block, 0);
+        return assigned[0];
+    }
+
+    private static boolean isSpringBean(J.MethodDeclaration declaration) {
+        return declaration.getLeadingAnnotations().stream().anyMatch(annotation -> {
+            String type = resolvedName(annotation.getType());
+            return type != null ? SPRING_BEAN_FQN.equals(type) : "Bean".equals(annotation.getSimpleName());
+        });
+    }
+
+    private static boolean isUnitOfWorkFactoryType(TypeTree typeExpression) {
+        String type = resolvedName(typeExpression.getType());
+        if (type != null) {
+            return UNIT_OF_WORK_FACTORY_FQN.equals(type);
+        }
+        return typeExpression instanceof J.Identifier identifier
+                ? "UnitOfWorkFactory".equals(identifier.getSimpleName())
+                : typeExpression instanceof J.FieldAccess fieldAccess
+                && "UnitOfWorkFactory".equals(fieldAccess.getSimpleName());
+    }
+
+    private static String unusedName(J.MethodDeclaration declaration) {
+        Set<String> names = new HashSet<>();
+        new JavaIsoVisitor<Integer>() {
+            @Override
+            public J.Identifier visitIdentifier(J.Identifier identifier, Integer p) {
+                names.add(identifier.getSimpleName());
+                return identifier;
+            }
+        }.visit(declaration, 0);
+        String name = UNIT_OF_WORK_FACTORY_METHOD;
+        for (int suffix = 2; names.contains(name); suffix++) {
+            name = UNIT_OF_WORK_FACTORY_METHOD + suffix;
+        }
+        return name;
+    }
+
+    private static J.Identifier parameterReference(String name) {
+        return new J.Identifier(Tree.randomId(), Space.EMPTY, Markers.EMPTY, List.of(), name,
+                                JavaType.ShallowClass.build(UNIT_OF_WORK_FACTORY_FQN), null);
+    }
+
+    /**
+     * Wraps the {@code <Manager>.builder()} call of the given chain in {@code .unitOfWorkFactory(factory)}, laid out
+     * like the call that follows it.
+     */
+    private static J.MethodInvocation insertAfterBuilder(J.MethodInvocation invocation, Expression factory) {
+        if (isBuilderCall(invocation)) {
+            return unitOfWorkFactoryCall(invocation, Space.EMPTY, factory);
+        }
+        JRightPadded<Expression> select = invocation.getPadding().getSelect();
+        if (select == null || !(select.getElement() instanceof J.MethodInvocation inner)) {
+            return invocation;
+        }
+        J.MethodInvocation replaced = isBuilderCall(inner)
+                ? unitOfWorkFactoryCall(inner, select.getAfter(), factory)
+                : insertAfterBuilder(inner, factory);
+        return invocation.getPadding().withSelect(select.withElement(replaced));
+    }
+
+    private static boolean isBuilderCall(J.MethodInvocation invocation) {
+        return "builder".equals(invocation.getSimpleName())
+                && invocation.getSelect() != null
+                && managerOfTypeReference(invocation.getSelect()) != null;
+    }
+
+    private static J.MethodInvocation unitOfWorkFactoryCall(J.MethodInvocation builder, Space before,
+                                                            Expression factory) {
+        J.Identifier name = new J.Identifier(Tree.randomId(), Space.EMPTY, Markers.EMPTY, List.of(),
+                                             UNIT_OF_WORK_FACTORY_METHOD, null, null);
+        JContainer<Expression> arguments = JContainer.build(
+                Space.EMPTY, List.of(JRightPadded.build(factory.withPrefix(Space.EMPTY))), Markers.EMPTY);
+        return new J.MethodInvocation(Tree.randomId(), builder.getPrefix(), Markers.EMPTY,
+                                      new JRightPadded<>(builder.withPrefix(Space.EMPTY), before, Markers.EMPTY),
+                                      null, name, arguments, null);
     }
 
     /**

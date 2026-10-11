@@ -31,11 +31,6 @@ import static org.openrewrite.java.Assertions.java;
  */
 class Axon4ToAxoniq5LegacyDeadlineConfigurationTest implements RewriteTest {
 
-    private static final String UNIT_OF_WORK_FACTORY_TODO =
-            "// TODO(axon4to5): add unitOfWorkFactory(..) to this deadline manager builder, for example"
-                    + " configuration.getComponent(UnitOfWorkFactory.class) or the UnitOfWorkFactory Spring bean."
-                    + " The legacy deadline managers require it in place of transactionManager(..): a fired deadline"
-                    + " runs in a unit of work, and transaction, of that factory.";
     private static final String SERIALIZER_TODO =
             "// TODO(axon4to5): replace serializer(..) with converter(..), passing the Converter matching the Axon"
                     + " Framework 4 serializer, so stored deadlines stay readable: general serializer ->"
@@ -112,6 +107,7 @@ class Axon4ToAxoniq5LegacyDeadlineConfigurationTest implements RewriteTest {
                         import org.axonframework.common.transaction.TransactionManager;
                         import org.axonframework.deadline.quartz.QuartzDeadlineManager;
                         import org.axonframework.messaging.ScopeAwareProvider;
+                        import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
                         import org.axonframework.conversion.Serializer;
                         import org.quartz.Scheduler;
                         import org.springframework.beans.factory.annotation.Qualifier;
@@ -133,15 +129,88 @@ class Axon4ToAxoniq5LegacyDeadlineConfigurationTest implements RewriteTest {
                                                                   TransactionManager transactionManager,
                                                                   @Qualifier("eventSerializer") Serializer serializer) {
                                 %s
-                                %s
                                 return QuartzDeadlineManager.builder()
+                                                            .unitOfWorkFactory(config.getComponent(UnitOfWorkFactory.class))
                                                             .scheduler(scheduler)
                                                             .scopeAwareProvider(config.getComponent(ScopeAwareProvider.class))
                                                             .serializer(serializer)
                                                             .build();
                             }
                         }
-                        """.formatted(PROVIDER_TODO, UNIT_OF_WORK_FACTORY_TODO, SERIALIZER_TODO)
+                        """.formatted(PROVIDER_TODO, SERIALIZER_TODO)
+                )
+        );
+    }
+
+    @Test
+    void addsUnitOfWorkFactoryParameterToSpringBeanWithoutConfiguration() {
+        rewriteRun(
+                java(
+                        """
+                        package com.example;
+
+                        import org.axonframework.common.transaction.TransactionManager;
+                        import org.axonframework.config.ConfigurationScopeAwareProvider;
+                        import org.axonframework.deadline.DeadlineManager;
+                        import org.axonframework.deadline.quartz.QuartzDeadlineManager;
+                        import org.axonframework.serialization.Serializer;
+                        import org.axonframework.spring.config.SpringAxonConfiguration;
+                        import org.quartz.Scheduler;
+                        import org.springframework.beans.factory.annotation.Qualifier;
+                        import org.springframework.context.annotation.Bean;
+                        import org.springframework.context.annotation.Configuration;
+
+                        @Configuration
+                        class SpringDeadlineConfig {
+
+                            @Bean
+                            DeadlineManager deadlineManager(Scheduler scheduler,
+                                                            SpringAxonConfiguration axonConfiguration,
+                                                            TransactionManager transactionManager,
+                                                            @Qualifier("eventSerializer") Serializer serializer) {
+                                return QuartzDeadlineManager.builder()
+                                                            .scheduler(scheduler)
+                                                            .scopeAwareProvider(new ConfigurationScopeAwareProvider(axonConfiguration.getObject()))
+                                                            .transactionManager(transactionManager)
+                                                            .serializer(serializer)
+                                                            .build();
+                            }
+                        }
+                        """,
+                        """
+                        package com.example;
+
+                        import org.axonframework.common.transaction.TransactionManager;
+                        import org.axonframework.deadline.DeadlineManager;
+                        import org.axonframework.deadline.quartz.QuartzDeadlineManager;
+                        import org.axonframework.messaging.ScopeAwareProvider;
+                        import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
+                        import org.axonframework.conversion.Serializer;
+                        import org.axonframework.extension.spring.config.SpringAxonConfiguration;
+                        import org.quartz.Scheduler;
+                        import org.springframework.beans.factory.annotation.Qualifier;
+                        import org.springframework.context.annotation.Bean;
+                        import org.springframework.context.annotation.Configuration;
+
+                        @Configuration
+                        class SpringDeadlineConfig {
+
+                            @Bean
+                            DeadlineManager deadlineManager(Scheduler scheduler,
+                                                            SpringAxonConfiguration axonConfiguration,
+                                                            TransactionManager transactionManager,
+                                                            @Qualifier("eventSerializer") Serializer serializer,
+                                                            UnitOfWorkFactory unitOfWorkFactory) {
+                                %s
+                                return QuartzDeadlineManager.builder()
+                                                            .unitOfWorkFactory(unitOfWorkFactory)
+                                                            .scheduler(scheduler)
+                                                            .scopeAwareProvider(axonConfiguration.getObject().getComponent(ScopeAwareProvider.class))
+                                                            .serializer(serializer)
+                                                            .build();
+                            }
+                        }
+                        """.formatted(SERIALIZER_TODO)
                 )
         );
     }
@@ -190,16 +259,17 @@ class Axon4ToAxoniq5LegacyDeadlineConfigurationTest implements RewriteTest {
                         import org.axonframework.deadline.DeadlineManager;
                         import org.axonframework.deadline.jobrunr.JobRunrDeadlineManager;
                         import org.axonframework.messaging.ScopeAwareProvider;
+                        import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
                         import org.jobrunr.scheduling.JobScheduler;
 
                         class Application {
 
                             Configuration configuration(JobScheduler jobScheduler) {
                                 %s
-                                %s
                                 Configuration configuration =
                                         DefaultConfigurer.defaultConfiguration()
                                                          .configureDeadlineManager(config -> JobRunrDeadlineManager.builder()
+                                                                                                                   .unitOfWorkFactory(config.getComponent(UnitOfWorkFactory.class))
                                                                                                                    .jobScheduler(jobScheduler)
                                                                                                                    .scopeAwareProvider(config.getComponent(ScopeAwareProvider.class))
                                                                                                                    .converter(new JacksonConverter())
@@ -211,7 +281,7 @@ class Axon4ToAxoniq5LegacyDeadlineConfigurationTest implements RewriteTest {
                                 return configuration;
                             }
                         }
-                        """.formatted(UNIT_OF_WORK_FACTORY_TODO, CONFIGURER_TODO, COMPONENT_TODO)
+                        """.formatted(CONFIGURER_TODO, COMPONENT_TODO)
                 )
         );
     }
