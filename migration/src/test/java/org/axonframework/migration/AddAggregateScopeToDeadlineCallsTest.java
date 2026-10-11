@@ -23,6 +23,7 @@ import org.openrewrite.test.RewriteTest;
 import org.openrewrite.test.TypeValidation;
 
 import static org.openrewrite.java.Assertions.java;
+import static org.openrewrite.kotlin.Assertions.kotlin;
 
 /**
  * Verifies {@link AddAggregateScopeToDeadlineCalls}: the {@code DeadlineManager} calls of an aggregate that relied on
@@ -635,6 +636,51 @@ class AddAggregateScopeToDeadlineCallsTest implements RewriteTest {
                                 void handle(String command, DeadlineManager deadlineManager) {
                                     // TODO(axon4to5): pass the aggregate scope to this DeadlineManager call, as in new AggregateScopeDescriptor("Order", <aggregate identifier>). Axon Framework 5 runs no aggregate scope around an entity handler, so this call fails without one. Axon Framework 4 used the scope of the aggregate this entity belongs to.
                                     deadlineManager.cancelAllWithinScope("lineExpiry");
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void marksCallInKotlinAggregate() {
+            rewriteRun(
+                    kotlin(
+                            """
+                            package com.example
+
+                            import org.axonframework.commandhandling.CommandHandler
+                            import org.axonframework.deadline.DeadlineManager
+                            import org.axonframework.modelling.command.AggregateIdentifier
+                            import java.time.Duration
+
+                            class Order {
+                                @AggregateIdentifier
+                                private lateinit var orderId: String
+
+                                @CommandHandler
+                                fun handle(command: String, deadlineManager: DeadlineManager) {
+                                    deadlineManager.schedule(Duration.ofDays(1), "reminder")
+                                }
+                            }
+                            """,
+                            """
+                            package com.example
+
+                            import org.axonframework.commandhandling.CommandHandler
+                            import org.axonframework.deadline.DeadlineManager
+                            import org.axonframework.modelling.command.AggregateIdentifier
+                            import java.time.Duration
+
+                            class Order {
+                                @AggregateIdentifier
+                                private lateinit var orderId: String
+
+                                @CommandHandler
+                                fun handle(command: String, deadlineManager: DeadlineManager) {
+                                    // TODO(axon4to5): pass the aggregate scope to this DeadlineManager call, as in AggregateScopeDescriptor("Order", <aggregate identifier>). Axon Framework 5 runs no aggregate scope around an entity handler, so this call fails without one. The recipe rewrites Java aggregates only.
+                                    deadlineManager.schedule(Duration.ofDays(1), "reminder")
                                 }
                             }
                             """

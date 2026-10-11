@@ -60,7 +60,8 @@ After the migration run, search for every such location with:
   field into a parameter of the `@SagaEventHandler` and `@DeadlineHandler` methods that use it. A deadline scheduled for an
   aggregate fires as a command, so an aggregate's `@DeadlineHandler` becomes the `@CommandHandler` receiving it, and
   `DeadlineManager` calls that relied on the aggregate's scope get an explicit `AggregateScopeDescriptor`, as Axon
-  Framework 5 runs no scope around an entity handler. Removes `spanFactory(..)` and `transactionManager(..)` from the
+  Framework 5 runs no scope around an entity handler. Both aggregate rewrites are Java only; in Kotlin aggregates the
+  deadline handlers and those calls get a `TODO(axon4to5)` marker. Removes `spanFactory(..)` and `transactionManager(..)` from the
   deadline manager builders, replaces `serializer(JacksonSerializer.defaultSerializer())` with
   `converter(new JacksonConverter())`, and replaces `ConfigurationScopeAwareProvider` and
   `Configuration#deadlineManager()` with component lookups. A `TODO(axon4to5)` marker is left on the required

@@ -28,6 +28,7 @@ import org.openrewrite.java.tree.Comment;
 import org.openrewrite.java.tree.Expression;
 import org.openrewrite.java.tree.Flag;
 import org.openrewrite.java.tree.J;
+import org.openrewrite.java.tree.JavaSourceFile;
 import org.openrewrite.java.tree.JavaType;
 import org.openrewrite.java.tree.Space;
 import org.openrewrite.java.tree.Statement;
@@ -84,8 +85,9 @@ import static org.axonframework.migration.SagaClasses.resolvedName;
  *     which Axon Framework 4 told apart by deadline name or message type, now receive the same command;</li>
  *     <li>a {@code DeadlineMessage} parameter does not match the command message that now arrives.</li>
  * </ul>
- * Saga classes, which keep their {@code @DeadlineHandler} on the legacy module, are left alone. The recipe is
- * idempotent.
+ * The recipe rewrites Java sources only: in an aggregate written in another JVM language, such as Kotlin, it marks
+ * every {@code @DeadlineHandler} instead. Saga classes, which keep their {@code @DeadlineHandler} on the legacy
+ * module, are left alone. The recipe is idempotent.
  *
  * @author Mateusz Nowak
  * @since 5.4.0
@@ -135,6 +137,8 @@ public class MigrateAggregateDeadlineHandler extends ScanningRecipe<MigrateAggre
             + " receives through its routing key. Axon Framework 4 delivered a fired deadline to the aggregate root and"
             + " to every member entity, while the command it now arrives as reaches an entity in a collection only"
             + " through a routing key.";
+    private static final String KOTLIN_TODO = " " + REPLACE_MARKER + " for the command the deadline fires as."
+            + FIRED_AS_COMMAND + " The recipe rewrites Java aggregates only.";
     private static final String DEADLINE_MESSAGE_MARKER = "TODO(axon4to5): replace the DeadlineMessage parameter";
     private static final String DEADLINE_MESSAGE_TODO = " " + DEADLINE_MESSAGE_MARKER
             + " with the payload or metadata this handler needs."
@@ -156,7 +160,8 @@ public class MigrateAggregateDeadlineHandler extends ScanningRecipe<MigrateAggre
                 + "`// TODO(axon4to5):` marker where no command can reach the handler, on the handlers of member "
                 + "entities, where two handlers of an aggregate now receive the same command, and on "
                 + "`DeadlineMessage` parameters. Saga "
-                + "`@DeadlineHandler` methods are left alone. Idempotent.";
+                + "`@DeadlineHandler` methods are left alone. Java only: in Kotlin aggregates the "
+                + "`@DeadlineHandler` methods are marked instead. Idempotent.";
     }
 
     /**
@@ -252,7 +257,7 @@ public class MigrateAggregateDeadlineHandler extends ScanningRecipe<MigrateAggre
         return new JavaIsoVisitor<>() {
             @Override
             public boolean isAcceptable(SourceFile sourceFile, ExecutionContext ctx) {
-                return sourceFile instanceof J.CompilationUnit;
+                return sourceFile instanceof JavaSourceFile;
             }
 
             @Override
@@ -268,14 +273,18 @@ public class MigrateAggregateDeadlineHandler extends ScanningRecipe<MigrateAggre
                         ? null
                         : type.getFullyQualifiedName();
                 boolean memberEntity = className != null && acc.memberEntities.ownerOf(className) != null;
+                // Other JVM languages, such as Kotlin, are only marked: the rewrite targets Java syntax.
+                boolean java = getCursor().firstEnclosing(J.CompilationUnit.class) != null;
                 Map<J.MethodDeclaration, Migration> migrations = new HashMap<>();
                 for (Statement statement : visited.getBody().getStatements()) {
                     if (statement instanceof J.MethodDeclaration method) {
                         J.Annotation deadlineHandler = annotation(method, DEADLINE_HANDLER_FQN, "DeadlineHandler");
                         if (deadlineHandler != null) {
-                            Migration migration = memberEntity
-                                    ? Migration.mark(MEMBER_TODO)
-                                    : migrationOf(method, deadlineHandler);
+                            Migration migration = !java
+                                    ? Migration.mark(KOTLIN_TODO)
+                                    : memberEntity
+                                            ? Migration.mark(MEMBER_TODO)
+                                            : migrationOf(method, deadlineHandler);
                             if (migration.routedByDeadlineName()) {
                                 String todo = schedules.todoFor(attribute(deadlineHandler, "deadlineName"));
                                 migration = todo == null ? migration : Migration.mark(todo);

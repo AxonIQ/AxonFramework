@@ -23,6 +23,7 @@ import org.openrewrite.test.RewriteTest;
 import org.openrewrite.test.TypeValidation;
 
 import static org.openrewrite.java.Assertions.java;
+import static org.openrewrite.kotlin.Assertions.kotlin;
 
 /**
  * Verifies {@link MigrateAggregateDeadlineHandler}: an aggregate's {@code @DeadlineHandler} becomes the
@@ -860,6 +861,73 @@ class MigrateAggregateDeadlineHandlerTest implements RewriteTest {
                             class Order extends BaseComponent {
                                 @CommandHandler(commandName = "paymentDeadline")
                                 void on() {
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+    }
+
+    @Nested
+    class KotlinClasses {
+
+        @Test
+        void marksDeadlineHandlerOfKotlinAggregateAndKeepsIt() {
+            rewriteRun(
+                    kotlin(
+                            """
+                            package com.example
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler
+                            import org.axonframework.modelling.command.AggregateIdentifier
+
+                            class Order {
+                                @AggregateIdentifier
+                                private lateinit var orderId: String
+
+                                @DeadlineHandler(deadlineName = "paymentDeadline")
+                                fun on(deadline: String) {
+                                }
+                            }
+                            """,
+                            """
+                            package com.example
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler
+                            import org.axonframework.modelling.command.AggregateIdentifier
+
+                            class Order {
+                                @AggregateIdentifier
+                                private lateinit var orderId: String
+
+                                // TODO(axon4to5): replace this @DeadlineHandler with a @CommandHandler for the command the deadline fires as. A fired aggregate deadline now arrives as a command named after its payload class, or after the deadline name when it has no payload. The recipe rewrites Java aggregates only.
+                                @DeadlineHandler(deadlineName = "paymentDeadline")
+                                fun on(deadline: String) {
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void leavesDeadlineHandlerOfKotlinSagaAlone() {
+            rewriteRun(
+                    kotlin(
+                            """
+                            package com.example
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler
+                            import org.axonframework.modelling.saga.SagaEventHandler
+
+                            class PaymentSaga {
+                                @SagaEventHandler(associationProperty = "orderId")
+                                fun on(event: String) {
+                                }
+
+                                @DeadlineHandler(deadlineName = "paymentDeadline")
+                                fun onDeadline() {
                                 }
                             }
                             """

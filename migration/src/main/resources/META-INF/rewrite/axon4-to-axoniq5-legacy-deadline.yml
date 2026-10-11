@@ -54,7 +54,7 @@ description: >-
   the handlers that use it. Replaces an aggregate's `@DeadlineHandler` with the
   `@CommandHandler` that receives the fired deadline, and passes the
   `AggregateScopeDescriptor` to aggregate `DeadlineManager` calls that relied
-  on the current scope. Removes `spanFactory(..)` and `transactionManager(..)`
+  on the current scope (Java only; Kotlin aggregates get a marker). Removes `spanFactory(..)` and `transactionManager(..)`
   from the deadline manager builders and replaces a default Jackson
   `serializer(..)` with `converter(..)`. Replaces `ConfigurationScopeAwareProvider`
   and `Configuration#deadlineManager()` with component lookups. Drops the type

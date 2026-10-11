@@ -29,6 +29,7 @@ import org.openrewrite.java.JavaTemplate;
 import org.openrewrite.java.tree.Comment;
 import org.openrewrite.java.tree.Expression;
 import org.openrewrite.java.tree.J;
+import org.openrewrite.java.tree.JavaSourceFile;
 import org.openrewrite.java.tree.JavaType;
 import org.openrewrite.java.tree.Space;
 import org.openrewrite.java.tree.Statement;
@@ -79,9 +80,10 @@ import static org.axonframework.migration.SagaClasses.resolvedName;
  * a constructor or static method, which has no aggregate instance to read the identifier from (a creation command
  * handler becomes a static method in Axon Framework 5), in a {@code @CreationPolicy} handler that may create the
  * aggregate, whose identifier is only set once it applied its first event, in a member entity of an aggregate, and
- * in an aggregate whose identifier or type the recipe cannot find. Calls with an explicit scope, {@code cancelSchedule} and
- * {@code cancelAll}, Sagas, and classes that are neither an aggregate nor one of its entities are left alone. The
- * recipe is idempotent.
+ * in an aggregate whose identifier or type the recipe cannot find. The recipe rewrites Java sources only: in an
+ * aggregate written in another JVM language, such as Kotlin, it marks every such call instead. Calls with an explicit
+ * scope, {@code cancelSchedule} and {@code cancelAll}, Sagas, and classes that are neither an aggregate nor one of
+ * its entities are left alone. The recipe is idempotent.
  *
  * @author Mateusz Nowak
  * @since 5.4.0
@@ -146,6 +148,7 @@ public class AddAggregateScopeToDeadlineCalls extends ScanningRecipe<AddAggregat
             + " may not be set yet. Take it from the command.";
     private static final String MEMBER_REASON = ". Axon Framework 4 used the scope of the aggregate this entity"
             + " belongs to.";
+    private static final String OTHER_LANGUAGE_REASON = ". The recipe rewrites Java aggregates only.";
     private static final String UNKNOWN_REASON = ", and the recipe found no aggregate identifier or type here.";
     private static final String UNKNOWN_TYPE = "<aggregate type>";
     private static final String MARKS_MESSAGE = "axon4to5.aggregateScopeMarks";
@@ -207,7 +210,7 @@ public class AddAggregateScopeToDeadlineCalls extends ScanningRecipe<AddAggregat
                 + "`new AggregateScopeDescriptor(<type>, <identifier>)`, the scope Axon Framework 4 described. "
                 + "Leaves a `// TODO(axon4to5):` marker where the identifier is not available: in constructors, "
                 + "static methods, `@CreationPolicy` handlers that may create the aggregate, and member entities. "
-                + "Idempotent.";
+                + "Java only: in Kotlin aggregates these calls are marked instead. Idempotent.";
     }
 
     @Override
@@ -254,7 +257,7 @@ public class AddAggregateScopeToDeadlineCalls extends ScanningRecipe<AddAggregat
         return new JavaIsoVisitor<>() {
             @Override
             public boolean isAcceptable(SourceFile sourceFile, ExecutionContext ctx) {
-                return sourceFile instanceof J.CompilationUnit;
+                return sourceFile instanceof JavaSourceFile;
             }
 
             @Override
@@ -288,6 +291,12 @@ public class AddAggregateScopeToDeadlineCalls extends ScanningRecipe<AddAggregat
                     return visited;
                 }
                 String type = aggregate.type;
+                String owner = acc.memberEntities.ownerOf(className);
+                if (getCursor().firstEnclosing(J.CompilationUnit.class) == null) {
+                    // Other JVM languages, such as Kotlin, are only marked: the rewrite targets Java syntax.
+                    String scopeType = owner != null ? Aggregate.of(owner, acc).type : type;
+                    return markStatement(visited, todo("", scopeType, OTHER_LANGUAGE_REASON));
+                }
                 J.MethodDeclaration enclosingMethod = getCursor().firstEnclosing(J.MethodDeclaration.class);
                 if (enclosingMethod == null
                         || enclosingMethod.isConstructor()
@@ -297,7 +306,6 @@ public class AddAggregateScopeToDeadlineCalls extends ScanningRecipe<AddAggregat
                 if (mayCreateAggregate(enclosingMethod)) {
                     return markStatement(visited, todo(type, CREATION_REASON));
                 }
-                String owner = acc.memberEntities.ownerOf(className);
                 if (owner != null) {
                     return markStatement(visited, todo(Aggregate.of(owner, acc).type, MEMBER_REASON));
                 }
@@ -407,8 +415,12 @@ public class AddAggregateScopeToDeadlineCalls extends ScanningRecipe<AddAggregat
     }
 
     private static String todo(@Nullable String type, String reason) {
-        return " " + MARKER + ", as in new AggregateScopeDescriptor(" + (type == null ? UNKNOWN_TYPE : type)
-                + ", <aggregate identifier>)" + NO_SCOPE + reason;
+        return todo("new ", type, reason);
+    }
+
+    private static String todo(String constructorCall, @Nullable String type, String reason) {
+        return " " + MARKER + ", as in " + constructorCall + "AggregateScopeDescriptor("
+                + (type == null ? UNKNOWN_TYPE : type) + ", <aggregate identifier>)" + NO_SCOPE + reason;
     }
 
     /**
