@@ -146,6 +146,55 @@ class AddAggregateScopeToDeadlineCallsTest implements RewriteTest {
         }
 
         @Test
+        void passesScopeInHandlerWithNeverCreationPolicy() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.commandhandling.CommandHandler;
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.modelling.command.AggregateCreationPolicy;
+                            import org.axonframework.modelling.command.AggregateIdentifier;
+                            import org.axonframework.modelling.command.CreationPolicy;
+
+                            class Order {
+                                @AggregateIdentifier
+                                private String orderId;
+
+                                @CommandHandler
+                                @CreationPolicy(AggregateCreationPolicy.NEVER)
+                                void handle(String command, DeadlineManager deadlineManager) {
+                                    deadlineManager.cancelAllWithinScope("expiry");
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.commandhandling.CommandHandler;
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.modelling.command.AggregateCreationPolicy;
+                            import org.axonframework.modelling.command.AggregateIdentifier;
+                            import org.axonframework.modelling.command.AggregateScopeDescriptor;
+                            import org.axonframework.modelling.command.CreationPolicy;
+
+                            class Order {
+                                @AggregateIdentifier
+                                private String orderId;
+
+                                @CommandHandler
+                                @CreationPolicy(AggregateCreationPolicy.NEVER)
+                                void handle(String command, DeadlineManager deadlineManager) {
+                                    deadlineManager.cancelAllWithinScope("expiry", new AggregateScopeDescriptor("Order", orderId));
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
         void usesEntityIdOfAnnotatedAggregate() {
             rewriteRun(
                     java(
@@ -293,6 +342,76 @@ class AddAggregateScopeToDeadlineCallsTest implements RewriteTest {
                                 Order(String command, DeadlineManager deadlineManager) {
                                     // TODO(axon4to5): pass the aggregate scope to this DeadlineManager call, as in new AggregateScopeDescriptor("Order", <aggregate identifier>). Axon Framework 5 runs no aggregate scope around an entity handler, so this call fails without one, and this handler has no aggregate instance to read the identifier from. Take it from the command.
                                     deadlineManager.schedule(Duration.ofDays(1), "reminder");
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void marksCallInCreationPolicyHandlerThatMayRunBeforeIdentifierIsSet() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.commandhandling.CommandHandler;
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.modelling.command.AggregateCreationPolicy;
+                            import org.axonframework.modelling.command.AggregateIdentifier;
+                            import org.axonframework.modelling.command.CreationPolicy;
+
+                            import java.time.Duration;
+
+                            import static org.axonframework.modelling.command.AggregateCreationPolicy.CREATE_IF_MISSING;
+
+                            class Order {
+                                @AggregateIdentifier
+                                private String orderId;
+
+                                @CommandHandler
+                                @CreationPolicy(AggregateCreationPolicy.ALWAYS)
+                                void handle(String command, DeadlineManager deadlineManager) {
+                                    deadlineManager.schedule(Duration.ofDays(1), "expiry");
+                                }
+
+                                @CommandHandler
+                                @CreationPolicy(value = CREATE_IF_MISSING)
+                                void handle(Integer command, DeadlineManager deadlineManager) {
+                                    deadlineManager.cancelAllWithinScope("expiry");
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.commandhandling.CommandHandler;
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.modelling.command.AggregateCreationPolicy;
+                            import org.axonframework.modelling.command.AggregateIdentifier;
+                            import org.axonframework.modelling.command.CreationPolicy;
+
+                            import java.time.Duration;
+
+                            import static org.axonframework.modelling.command.AggregateCreationPolicy.CREATE_IF_MISSING;
+
+                            class Order {
+                                @AggregateIdentifier
+                                private String orderId;
+
+                                @CommandHandler
+                                @CreationPolicy(AggregateCreationPolicy.ALWAYS)
+                                void handle(String command, DeadlineManager deadlineManager) {
+                                    // TODO(axon4to5): pass the aggregate scope to this DeadlineManager call, as in new AggregateScopeDescriptor("Order", <aggregate identifier>). Axon Framework 5 runs no aggregate scope around an entity handler, so this call fails without one, and this handler may create the aggregate, so its identifier may not be set yet. Take it from the command.
+                                    deadlineManager.schedule(Duration.ofDays(1), "expiry");
+                                }
+
+                                @CommandHandler
+                                @CreationPolicy(value = CREATE_IF_MISSING)
+                                void handle(Integer command, DeadlineManager deadlineManager) {
+                                    // TODO(axon4to5): pass the aggregate scope to this DeadlineManager call, as in new AggregateScopeDescriptor("Order", <aggregate identifier>). Axon Framework 5 runs no aggregate scope around an entity handler, so this call fails without one, and this handler may create the aggregate, so its identifier may not be set yet. Take it from the command.
+                                    deadlineManager.cancelAllWithinScope("expiry");
                                 }
                             }
                             """

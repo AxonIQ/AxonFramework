@@ -67,10 +67,15 @@ import static org.axonframework.migration.SagaClasses.resolvedName;
  * Keeping Axon Framework 4's type matters beyond the call itself: {@code cancelAllWithinScope} only cancels deadlines
  * whose scope equals the given one, including deadlines a not yet upgraded node scheduled.
  * <p>
+ * The identifier is read when the call is made. Axon Framework 4 resolved it lazily, when the unit of work prepared
+ * its commit, but the legacy module runs a call made outside a Saga immediately, so a lazy identifier would be read
+ * at the same moment.
+ * <p>
  * Where the recipe cannot build the descriptor, it leaves a {@code // TODO(axon4to5):} marker on the statement: in
  * a constructor or static method, which has no aggregate instance to read the identifier from (a creation command
- * handler becomes a static method in Axon Framework 5), in a member entity of an aggregate, and in an aggregate whose
- * identifier or type the recipe cannot find. Calls with an explicit scope, {@code cancelSchedule} and
+ * handler becomes a static method in Axon Framework 5), in a {@code @CreationPolicy} handler that may create the
+ * aggregate, whose identifier is only set once it applied its first event, in a member entity of an aggregate, and
+ * in an aggregate whose identifier or type the recipe cannot find. Calls with an explicit scope, {@code cancelSchedule} and
  * {@code cancelAll}, Sagas, and classes that are neither an aggregate nor one of its entities are left alone. The
  * recipe is idempotent.
  *
@@ -89,6 +94,7 @@ public class AddAggregateScopeToDeadlineCalls extends ScanningRecipe<AddAggregat
     private static final String AGGREGATE_IDENTIFIER_FQN = "org.axonframework.modelling.command.AggregateIdentifier";
     private static final String ENTITY_ID_FQN = "org.axonframework.modelling.command.EntityId";
     private static final String AGGREGATE_MEMBER_FQN = "org.axonframework.modelling.command.AggregateMember";
+    private static final String CREATION_POLICY_FQN = "org.axonframework.modelling.command.CreationPolicy";
     private static final Set<String> PERSISTENCE_ID_FQNS = Set.of("jakarta.persistence.Id", "javax.persistence.Id");
     private static final Set<String> AGGREGATE_HANDLER_FQNS = Set.of(
             "org.axonframework.commandhandling.CommandHandler",
@@ -127,6 +133,8 @@ public class AddAggregateScopeToDeadlineCalls extends ScanningRecipe<AddAggregat
             + " this call fails without one";
     private static final String NO_INSTANCE_REASON = ", and this handler has no aggregate instance to read the"
             + " identifier from. Take it from the command.";
+    private static final String CREATION_REASON = ", and this handler may create the aggregate, so its identifier"
+            + " may not be set yet. Take it from the command.";
     private static final String MEMBER_REASON = ". Axon Framework 4 used the scope of the aggregate this entity"
             + " belongs to.";
     private static final String UNKNOWN_REASON = ", and the recipe found no aggregate identifier or type here.";
@@ -188,7 +196,8 @@ public class AddAggregateScopeToDeadlineCalls extends ScanningRecipe<AddAggregat
                 + "handler, so these calls fail. Rewrites them in aggregates to pass "
                 + "`new AggregateScopeDescriptor(<type>, <identifier>)`, the scope Axon Framework 4 described. "
                 + "Leaves a `// TODO(axon4to5):` marker where the identifier is not available: in constructors, "
-                + "static methods and member entities. Idempotent.";
+                + "static methods, `@CreationPolicy` handlers that may create the aggregate, and member entities. "
+                + "Idempotent.";
     }
 
     @Override
@@ -265,6 +274,9 @@ public class AddAggregateScopeToDeadlineCalls extends ScanningRecipe<AddAggregat
                         || enclosingMethod.isConstructor()
                         || enclosingMethod.hasModifier(J.Modifier.Type.Static)) {
                     return markStatement(visited, todo(type, NO_INSTANCE_REASON));
+                }
+                if (mayCreateAggregate(enclosingMethod)) {
+                    return markStatement(visited, todo(type, CREATION_REASON));
                 }
                 String owner = acc.memberEntityOwners.get(className);
                 if (owner != null) {
@@ -347,6 +359,32 @@ public class AddAggregateScopeToDeadlineCalls extends ScanningRecipe<AddAggregat
                                .anyMatch(parameter -> TypeUtils.isAssignableTo(SCOPE_DESCRIPTOR_FQN, parameter));
         int arguments = (int) invocation.getArguments().stream().filter(arg -> !(arg instanceof J.Empty)).count();
         return !scoped && ("schedule".equals(name) ? arguments == 2 || arguments == 3 : arguments == 1);
+    }
+
+    /**
+     * Returns whether the method is a {@code @CreationPolicy} handler that may run on a new aggregate instance, whose
+     * identifier is only set once the handler applied its first event. Axon Framework 4 described the scope with a
+     * lazily resolved identifier and ran the {@code DeadlineManager} call when the unit of work prepared its commit,
+     * after that event. The legacy module runs a call made outside a Saga immediately, so the identifier would be
+     * read, and stored with the deadline, before it is set.
+     */
+    private static boolean mayCreateAggregate(J.MethodDeclaration method) {
+        return method.getLeadingAnnotations().stream()
+                     .filter(annotation -> isAnnotation(annotation, CREATION_POLICY_FQN, "CreationPolicy"))
+                     .anyMatch(annotation -> {
+                         List<Expression> arguments = annotation.getArguments();
+                         if (arguments == null || arguments.isEmpty() || arguments.getFirst() instanceof J.Empty) {
+                             // NEVER is the default policy.
+                             return false;
+                         }
+                         Expression policy = arguments.getFirst() instanceof J.Assignment assignment
+                                 ? assignment.getAssignment()
+                                 : arguments.getFirst();
+                         String name = policy instanceof J.FieldAccess fieldAccess
+                                 ? fieldAccess.getSimpleName()
+                                 : policy instanceof J.Identifier identifier ? identifier.getSimpleName() : null;
+                         return !"NEVER".equals(name);
+                     });
     }
 
     private static String todo(@Nullable String type, String reason) {
