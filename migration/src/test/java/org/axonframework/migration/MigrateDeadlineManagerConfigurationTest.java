@@ -47,6 +47,11 @@ class MigrateDeadlineManagerConfigurationTest implements RewriteTest {
                     + " interface no longer declares registerDispatchInterceptor(..) and registerHandlerInterceptor(..);"
                     + " AbstractDeadlineManager does, with Axon Framework 5 interceptor types.";
 
+    private static final String PROVIDER_TODO =
+            "// TODO(axon4to5): remove this ScopeAwareProvider registration. Axoniq Framework 5 registers its own"
+                    + " ScopeAwareProvider component, with which the Saga managers register themselves; a provider"
+                    + " registered here replaces it, and would look itself up.";
+
     @Override
     public void defaults(RecipeSpec spec) {
         spec.recipe(new MigrateDeadlineManagerConfiguration())
@@ -309,6 +314,80 @@ class MigrateDeadlineManagerConfigurationTest implements RewriteTest {
                                 }
                             }
                             """
+                    )
+            );
+        }
+
+        @Test
+        void marksScopeAwareProviderSpringBean() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.config.Configuration;
+                            import org.axonframework.config.ConfigurationScopeAwareProvider;
+                            import org.springframework.context.annotation.Bean;
+
+                            class AxonConfig {
+                                @Bean
+                                ConfigurationScopeAwareProvider scopeAwareProvider(Configuration configuration) {
+                                    return new ConfigurationScopeAwareProvider(configuration);
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.config.Configuration;
+                            import org.axonframework.config.ConfigurationScopeAwareProvider;
+                            import org.axonframework.messaging.ScopeAwareProvider;
+                            import org.springframework.context.annotation.Bean;
+
+                            class AxonConfig {
+                                %s
+                                @Bean
+                                ConfigurationScopeAwareProvider scopeAwareProvider(Configuration configuration) {
+                                    return configuration.getComponent(ScopeAwareProvider.class);
+                                }
+                            }
+                            """.formatted(PROVIDER_TODO)
+                    )
+            );
+        }
+
+        @Test
+        void marksScopeAwareProviderComponentRegistration() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.config.ConfigurationScopeAwareProvider;
+                            import org.axonframework.config.Configurer;
+                            import org.axonframework.messaging.ScopeAwareProvider;
+
+                            class Application {
+                                void configure(Configurer configurer) {
+                                    configurer.registerComponent(ScopeAwareProvider.class,
+                                                                 config -> new ConfigurationScopeAwareProvider(config));
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.config.Configurer;
+                            import org.axonframework.messaging.ScopeAwareProvider;
+
+                            class Application {
+                                void configure(Configurer configurer) {
+                                    %s
+                                    configurer.registerComponent(ScopeAwareProvider.class,
+                                                                 config -> config.getComponent(ScopeAwareProvider.class));
+                                }
+                            }
+                            """.formatted(PROVIDER_TODO)
                     )
             );
         }
