@@ -27,8 +27,6 @@ import org.openrewrite.SourceFile;
 import org.openrewrite.Tree;
 import org.openrewrite.TreeVisitor;
 import org.openrewrite.java.JavaIsoVisitor;
-import org.openrewrite.java.JavaParser;
-import org.openrewrite.java.JavaTemplate;
 import org.openrewrite.java.JavaVisitor;
 import org.openrewrite.java.tree.Expression;
 import org.openrewrite.java.tree.J;
@@ -37,7 +35,6 @@ import org.openrewrite.java.tree.Space;
 import org.openrewrite.java.tree.Statement;
 import org.openrewrite.java.tree.TypeTree;
 import org.openrewrite.java.tree.TypeUtils;
-import org.openrewrite.kotlin.KotlinParser;
 import org.openrewrite.kotlin.tree.K;
 
 import java.util.ArrayList;
@@ -192,61 +189,8 @@ public class MoveSagaFieldToHandlerParameter extends Recipe {
             }
 
             private J.MethodDeclaration addParameter(J.MethodDeclaration method, String parameterName) {
-                List<Statement> existing = method.getParameters();
-                boolean hasExisting = !(existing.size() == 1 && existing.get(0) instanceof J.Empty);
-                StringBuilder parameters = new StringBuilder();
-                List<Object> templateArguments = new ArrayList<>();
                 boolean kotlin = getCursor().firstEnclosing(SourceFile.class) instanceof K.CompilationUnit;
-                if (hasExisting) {
-                    for (Statement parameter : existing) {
-                        // trim: the printed parameter carries its own leading space, the separator adds one
-                        String printed = parameter.print(getCursor()).trim();
-                        if (kotlin) {
-                            parameters.append(printed);
-                        } else {
-                            parameters.append("#{}");
-                            templateArguments.add(printed);
-                        }
-                        parameters.append(", ");
-                    }
-                }
-                if (kotlin) {
-                    parameters.append(parameterName).append(": ").append(simpleTypeName());
-                    return addKotlinParameters(method, parameters.toString());
-                }
-                parameters.append(simpleTypeName()).append(' ').append(parameterName);
-                return JavaTemplate.builder(parameters.toString())
-                                   .imports(fullyQualifiedTypeName)
-                                   .javaParser(JavaParser.fromJavaVersion().classpath(JavaParser.runtimeClasspath()))
-                                   .build()
-                                   .apply(getCursor(), method.getCoordinates().replaceParameters(),
-                                          templateArguments.toArray());
-            }
-
-            /**
-             * Kotlin has no {@code JavaTemplate}: the parameter list is parsed from a stub function and grafted onto
-             * the method, as {@link MigrateSagaLifecycle} does.
-             */
-            private J.MethodDeclaration addKotlinParameters(J.MethodDeclaration method, String parameters) {
-                String snippet = "package _temp\n\nimport " + fullyQualifiedTypeName + "\n\nfun _f("
-                        + parameters + ") {}\n";
-                List<SourceFile> parsed;
-                try {
-                    parsed = KotlinParser.builder().build().parse(snippet)
-                                         .filter(source -> source instanceof K.CompilationUnit)
-                                         .toList();
-                } catch (RuntimeException exception) {
-                    return method;
-                }
-                if (parsed.isEmpty()) {
-                    return method;
-                }
-                for (Statement statement : ((K.CompilationUnit) parsed.get(0)).getStatements()) {
-                    if (statement instanceof J.MethodDeclaration stub) {
-                        return method.getPadding().withParameters(stub.getPadding().getParameters());
-                    }
-                }
-                return method;
+                return MethodParameters.append(method, kotlin, fullyQualifiedTypeName, parameterName);
             }
 
             private J.MethodInvocation withArgument(J.MethodInvocation invocation, String name) {

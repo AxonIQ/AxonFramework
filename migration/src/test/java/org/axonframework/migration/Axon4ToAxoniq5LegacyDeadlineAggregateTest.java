@@ -28,6 +28,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.openrewrite.java.Assertions.java;
 import static org.openrewrite.java.Assertions.mavenProject;
 import static org.openrewrite.java.Assertions.srcMainJava;
+import static org.openrewrite.kotlin.Assertions.kotlin;
+import static org.openrewrite.kotlin.Assertions.srcMainKotlin;
 import static org.openrewrite.maven.Assertions.pomXml;
 
 /**
@@ -270,6 +272,113 @@ class Axon4ToAxoniq5LegacyDeadlineAggregateTest implements RewriteTest {
                                         }
                                     }
                                     """
+                            ))
+                    )
+            );
+        }
+
+        @Test
+        void existingHandlerParametersKeepTheirTypesWhenTheDeadlineManagerFieldMovesIntoThem() {
+            // The moved field is appended after the existing parameters. Those must stay attributed, so the free
+            // leg still renames MetaData, moves EventMessage, and drops the DeadlineMessage type argument.
+            rewriteRun(
+                    mavenProject(
+                            "order",
+                            pomXml(POM, pom -> pom.after(actual -> actual)),
+                            srcMainJava(java(
+                                    """
+                                    package org.springframework.beans.factory.annotation;
+
+                                    public @interface Autowired {
+                                    }
+                                    """
+                            )),
+                            srcMainJava(java(
+                                    """
+                                    package com.example;
+
+                                    import org.axonframework.deadline.DeadlineManager;
+                                    import org.axonframework.deadline.DeadlineMessage;
+                                    import org.axonframework.deadline.annotation.DeadlineHandler;
+                                    import org.axonframework.eventhandling.EventMessage;
+                                    import org.axonframework.messaging.MetaData;
+                                    import org.axonframework.messaging.annotation.MetaDataValue;
+                                    import org.axonframework.modelling.saga.SagaEventHandler;
+                                    import org.springframework.beans.factory.annotation.Autowired;
+
+                                    import java.time.Duration;
+
+                                    public class PaymentSaga {
+
+                                        @Autowired
+                                        private transient DeadlineManager deadlineManager;
+
+                                        @SagaEventHandler(associationProperty = "orderId")
+                                        public void on(String event, MetaData metaData, @MetaDataValue("k") String k,
+                                                       EventMessage<?> message) {
+                                            deadlineManager.schedule(Duration.ofDays(1), "payment");
+                                        }
+
+                                        @DeadlineHandler(deadlineName = "payment")
+                                        public void onDeadline(DeadlineMessage<?> msg) {
+                                            deadlineManager.cancelAll("payment");
+                                        }
+                                    }
+                                    """,
+                                    source -> source.after(actual -> {
+                                        assertThat(actual)
+                                                .contains("import org.axonframework.messaging.core.Metadata;")
+                                                .contains("import org.axonframework.messaging.core.annotation"
+                                                                  + ".MetadataValue;")
+                                                .contains("import org.axonframework.messaging.eventhandling"
+                                                                  + ".EventMessage;")
+                                                .contains("public void on(String event, Metadata metaData, "
+                                                                  + "@MetadataValue(\"k\") String k,\n"
+                                                                  + "                   EventMessage message, "
+                                                                  + "DeadlineManager deadlineManager) {")
+                                                .contains("public void onDeadline(DeadlineMessage msg, "
+                                                                  + "DeadlineManager deadlineManager) {")
+                                                .doesNotContain("MetaData ")
+                                                .doesNotContain("<?>");
+                                        return actual;
+                                    })
+                            ))
+                    )
+            );
+        }
+
+        @Test
+        void existingKotlinHandlerParametersKeepTheirTypesWhenTheDeadlineManagerPropertyMovesIntoThem() {
+            rewriteRun(
+                    mavenProject(
+                            "order",
+                            pomXml(POM, pom -> pom.after(actual -> actual)),
+                            srcMainKotlin(kotlin(
+                                    """
+                                    package com.example
+
+                                    import org.axonframework.deadline.DeadlineManager
+                                    import org.axonframework.messaging.MetaData
+                                    import org.axonframework.modelling.saga.SagaEventHandler
+
+                                    class PaymentSaga {
+
+                                        private lateinit var deadlineManager: DeadlineManager
+
+                                        @SagaEventHandler(associationProperty = "orderId")
+                                        fun on(event: String, metaData: MetaData) {
+                                            deadlineManager.cancelAll(event)
+                                        }
+                                    }
+                                    """,
+                                    source -> source.after(actual -> {
+                                        assertThat(actual)
+                                                .contains("import org.axonframework.messaging.core.Metadata")
+                                                .contains("fun on(event: String, metaData: Metadata, "
+                                                                  + "deadlineManager: DeadlineManager) {")
+                                                .doesNotContain("MetaData");
+                                        return actual;
+                                    })
                             ))
                     )
             );

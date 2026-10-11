@@ -26,8 +26,6 @@ import org.openrewrite.TreeVisitor;
 import org.openrewrite.internal.ListUtils;
 import org.openrewrite.marker.Markers;
 import org.openrewrite.java.JavaIsoVisitor;
-import org.openrewrite.java.JavaParser;
-import org.openrewrite.java.JavaTemplate;
 import org.openrewrite.java.tree.Comment;
 import org.openrewrite.java.tree.Expression;
 import org.openrewrite.java.tree.J;
@@ -35,7 +33,6 @@ import org.openrewrite.java.tree.JavaType;
 import org.openrewrite.java.tree.Space;
 import org.openrewrite.java.tree.Statement;
 import org.openrewrite.java.tree.TypeUtils;
-import org.openrewrite.kotlin.KotlinParser;
 import org.openrewrite.kotlin.tree.K;
 
 import java.util.ArrayList;
@@ -380,74 +377,7 @@ public class MigrateSagaLifecycle extends Recipe {
             }
 
             private J.MethodDeclaration addLifecycleParameter(J.MethodDeclaration method, String parameterName) {
-                if (isKotlinSource()) {
-                    return addKotlinLifecycleParameter(method, parameterName);
-                }
-                List<Object> templateArguments = new ArrayList<>();
-                StringBuilder template = new StringBuilder();
-                List<Statement> existing = method.getParameters();
-                boolean hasExisting = !(existing.size() == 1 && existing.get(0) instanceof J.Empty);
-                if (hasExisting) {
-                    for (int i = 0; i < existing.size(); i++) {
-                        if (i > 0) {
-                            template.append(", ");
-                        }
-                        template.append("#{}");
-                        // trim: the printed parameter carries its own leading space, the template adds ", "
-                        templateArguments.add(existing.get(i).print(getCursor()).trim());
-                    }
-                    template.append(", ");
-                }
-                template.append("SagaLifecycle ").append(parameterName);
-                return JavaTemplate.builder(template.toString())
-                        .imports(SAGA_LIFECYCLE_FQN)
-                        .javaParser(JavaParser.fromJavaVersion().classpath(JavaParser.runtimeClasspath()))
-                        .build()
-                        .apply(getCursor(), method.getCoordinates().replaceParameters(), templateArguments.toArray());
-            }
-
-            private J.MethodDeclaration addKotlinLifecycleParameter(J.MethodDeclaration method, String parameterName) {
-                return addKotlinParameter(method, parameterName + ": SagaLifecycle", SAGA_LIFECYCLE_FQN);
-            }
-
-            private J.MethodDeclaration addKotlinParameter(J.MethodDeclaration method,
-                                                            String newParameter,
-                                                            String parameterType) {
-                List<Statement> existing = method.getParameters();
-                boolean hasExisting = !(existing.size() == 1 && existing.get(0) instanceof J.Empty);
-                StringBuilder parameters = new StringBuilder();
-                if (hasExisting) {
-                    for (int i = 0; i < existing.size(); i++) {
-                        if (i > 0) {
-                            parameters.append(", ");
-                        }
-                        parameters.append(existing.get(i).print(getCursor()).trim());
-                    }
-                    parameters.append(", ");
-                }
-                parameters.append(newParameter);
-
-                String snippet = "package _temp\n\nimport " + parameterType + "\n\nfun _f(" + parameters + ") {}\n";
-                List<SourceFile> parsed;
-                try {
-                    parsed = KotlinParser.builder().build().parse(snippet)
-                                         .filter(source -> source instanceof K.CompilationUnit)
-                                         .toList();
-                } catch (RuntimeException exception) {
-                    return method;
-                }
-                if (parsed.isEmpty()) {
-                    return method;
-                }
-                K.CompilationUnit compilationUnit = (K.CompilationUnit) parsed.get(0);
-                for (Statement statement : compilationUnit.getStatements()) {
-                    if (statement instanceof J.MethodDeclaration) {
-                        return method.getPadding().withParameters(
-                                ((J.MethodDeclaration) statement).getPadding().getParameters()
-                        );
-                    }
-                }
-                return method;
+                return MethodParameters.append(method, isKotlinSource(), SAGA_LIFECYCLE_FQN, parameterName);
             }
 
             private boolean isKotlinSource() {
