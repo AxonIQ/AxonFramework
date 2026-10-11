@@ -67,4 +67,13 @@ recipeList:
   # so the AF4 JacksonSerializer it maps is still recognizable.
   - org.axonframework.migration.MigrateDeadlineManagerBuilders
 
+  # ConfigurationScopeAwareProvider is not ported; the legacy module registers its own
+  # ScopeAwareProvider component. Runs before the free leg moves org.axonframework.config.
+  - org.axonframework.migration.MigrateDeadlineManagerConfiguration
+  # Retypes what still names the removed class, such as a variable or @Bean return type,
+  # after the step above replaced its construction.
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.config.ConfigurationScopeAwareProvider
+      newFullyQualifiedTypeName: org.axonframework.messaging.ScopeAwareProvider
+
   # ── Test fixtures ──────────────────────────────────────────────────────────
