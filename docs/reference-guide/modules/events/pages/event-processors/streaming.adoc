@@ -804,6 +804,33 @@ include::example$events/eventprocessors/streaming/sequencingpolicy/onhandler/Cus
 --
 ====
 
+[TIP]
+====
+You can also declare a sequencing policy through a custom annotation that is meta-annotated with `@SequencingPolicy`.
+Such an annotation works on both event handlers and Event Handling Component classes, and follows the same precedence rules: a policy on the event handler overrides the one on the class.
+This gives a commonly used policy a meaningful name:
+
+[source,java]
+----
+@Target({ElementType.METHOD, ElementType.TYPE, ElementType.ANNOTATION_TYPE})
+@Retention(RetentionPolicy.RUNTIME)
+@SequencingPolicy(type = MetadataSequencingPolicy.class, parameters = "userId")
+public @interface SequenceByUser {
+}
+
+@SequenceByUser
+class UserProjection {
+
+    @EventHandler
+    void on(UserRenamed event) {
+        // ...
+    }
+}
+----
+
+See the xref:meta-annotations-guide::index.adoc[meta-annotations guide] for more on custom annotations.
+====
+
 Consider the following snippets when configuring a (custom) `SequencingPolicy`:
 
 [tabs]
