@@ -53,7 +53,7 @@ ifdef::advanced-framework[]
 The above applies to general and event conversion; it does not apply to data an Axon Framework 4 node serialized with
 XStream for sagas, deadlines, or scheduled events. For that narrow case, the `axoniq-legacy` module ships a
 deprecated, opt-in `XStreamConverter` that wraps your own `XStream` instance to read (and, for sagas, keep writing)
-that data unchanged. See xref:paths/sagas.adoc[Saga Migration] and xref:ROOT:conversion.adoc#xstream_converter[XStreamConverter].
+that data unchanged. See xref:migration:paths/sagas.adoc[Saga upgrade] and xref:ROOT:conversion.adoc#xstream_converter[XStreamConverter].
 ====
 endif::[]
 

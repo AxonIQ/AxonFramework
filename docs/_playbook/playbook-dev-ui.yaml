@@ -29,6 +29,9 @@ antora:
     index_latest_only: true
   - id: atlas
     require: '@antora/atlas-extension'
+    import:
+      # Companion repositories provide additional pages in the same component.
+      merge: true
 
 runtime:
   fetch: true # fetch remote repos
