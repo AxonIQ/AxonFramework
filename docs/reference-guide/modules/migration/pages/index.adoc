@@ -53,14 +53,6 @@ For an application with sagas, complete the code upgrade and legacy saga adaptat
 Complete context conversion before deploying an application configured with a DCB event storage engine.
 Context conversion can also precede the code upgrade while a compatible Axon Framework 4 application is still running.
 
-[IMPORTANT]
-====
-Legacy sagas and workflows require a compatible Axoniq Framework release and its dependencies.
-The legacy compatibility route described here is available in the 5.4 release line; do not apply it to Axon Framework 5.0.
-Use version 5.4.0 for the legacy saga and workflow route.
-A successful code conversion does not verify persistent state or production cutover behavior.
-====
-
 [cols="1,2,2",options="header"]
 |===
 | Stage | Documentation | Agent skill or tooling
