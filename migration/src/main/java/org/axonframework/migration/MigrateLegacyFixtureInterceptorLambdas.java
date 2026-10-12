@@ -24,12 +24,14 @@ import org.openrewrite.SourceFile;
 import org.openrewrite.Tree;
 import org.openrewrite.TreeVisitor;
 import org.openrewrite.java.JavaIsoVisitor;
+import org.openrewrite.java.JavaVisitor;
 import org.openrewrite.java.tree.Expression;
 import org.openrewrite.java.tree.J;
 import org.openrewrite.java.tree.JContainer;
 import org.openrewrite.java.tree.JRightPadded;
 import org.openrewrite.java.tree.JavaType;
 import org.openrewrite.java.tree.Space;
+import org.openrewrite.java.tree.Statement;
 import org.openrewrite.marker.Markers;
 
 import java.util.ArrayList;
@@ -56,15 +58,20 @@ import java.util.UUID;
  *     <li>{@code StubDeadlineManager}: {@code registerDispatchInterceptor(..)} and
  *     {@code registerHandlerInterceptor(..)}.</li>
  * </ul>
- * Three shapes are rewritten, each to {@code (message, context, chain) -> chain.proceed(..., context)}:
+ * These shapes are rewritten, each to {@code (message, context, chain) -> chain.proceed(..., context)}:
  * <ul>
  *     <li>{@code messages -> (i, m) -> expression}, passing the expression with {@code m} renamed;</li>
+ *     <li>{@code messages -> (i, m) -> { statements; return expression; }}, keeping the statements and passing the
+ *     returned expression, with {@code m} renamed, when the block has no other {@code return};</li>
  *     <li>{@code (unitOfWork, chain) -> chain.proceed()}, passing the message unchanged;</li>
+ *     <li>{@code (unitOfWork, chain) -> { statements; return chain.proceed(); }}, keeping the statements and passing
+ *     the message unchanged, when the statements use the unit of work only to read {@code unitOfWork.getMessage()},
+ *     which becomes the message, and neither use the chain nor {@code return};</li>
  *     <li>{@code (unitOfWork, chain) -> { unitOfWork.transformMessage(m -> expression); return chain.proceed(); }},
  *     passing the expression with {@code m} renamed.</li>
  * </ul>
- * Any other interceptor written in place (a lambda of another shape, one whose expression still uses the batch, index,
- * unit of work or chain, a method reference, or an anonymous class) gets a {@code // TODO(axon4to5):} marker on its
+ * Any other interceptor written in place (a lambda of another shape, one that still uses the batch, index, unit of
+ * work or chain otherwise, a method reference, or an anonymous class) gets a {@code // TODO(axon4to5):} marker on its
  * statement describing the Axon Framework 5 signature. An interceptor passed as a variable or as an instance of a
  * named class is left alone: the class is migrated by {@link MigrateMessageInterceptorSignatures}. Lambda parameter
  * names that would clash with a name already in scope get a numeric suffix. Java sources only. Idempotent: a lambda
@@ -124,9 +131,10 @@ public class MigrateLegacyFixtureInterceptorLambdas extends Recipe {
                 + "(`registerDeadlineDispatchInterceptor`, `registerDeadlineHandlerInterceptor`, "
                 + "`registerEventHandlerInterceptor`) and on `StubDeadlineManager` (`registerDispatchInterceptor`, "
                 + "`registerHandlerInterceptor`) to the Axon Framework 5 `(message, context, chain) -> "
-                + "chain.proceed(message, context)` shape. Covers `messages -> (i, m) -> expression`, "
-                + "`(unitOfWork, chain) -> chain.proceed()` and a `unitOfWork.transformMessage(..)` followed by "
-                + "`chain.proceed()`. Leaves a `// TODO(axon4to5):` marker on any other interceptor written in place. "
+                + "chain.proceed(message, context)` shape. Covers `messages -> (i, m) -> expression`, also with a "
+                + "block body ending in `return expression`, `(unitOfWork, chain) -> chain.proceed()`, also after "
+                + "statements that only read `unitOfWork.getMessage()`, and a `unitOfWork.transformMessage(..)` "
+                + "followed by `chain.proceed()`. Leaves a `// TODO(axon4to5):` marker on any other interceptor written in place. "
                 + "Java sources only. Idempotent.";
     }
 
@@ -194,7 +202,8 @@ public class MigrateLegacyFixtureInterceptorLambdas extends Recipe {
     }
 
     /**
-     * Rewrites {@code messages -> (i, m) -> expression}, or the same with a block body returning the expression.
+     * Rewrites {@code messages -> (i, m) -> expression}, or the same with a block body ending in
+     * {@code return expression;}.
      */
     private static J.@Nullable Lambda rewriteDispatch(J.Lambda outer, Set<String> namesInScope) {
         List<String> outerParameters = parameterNames(outer);
@@ -202,16 +211,29 @@ public class MigrateLegacyFixtureInterceptorLambdas extends Recipe {
             return null;
         }
         List<String> innerParameters = parameterNames(inner);
-        Expression expression = returnedExpression(inner.getBody());
-        if (innerParameters.size() != 2 || expression == null) {
+        if (innerParameters.size() != 2) {
             return null;
         }
-        Set<String> references = referencedNames(expression);
+        Set<String> references = referencedNames(inner.getBody());
         if (references.contains(outerParameters.getFirst()) || references.contains(innerParameters.getFirst())) {
-            // The expression depends on the batch or the index, which Axon Framework 5 no longer hands over.
+            // The body depends on the batch or the index, which Axon Framework 5 no longer hands over.
             return null;
         }
-        return interceptorLambda(outer, expression, innerParameters.get(1), namesInScope);
+        String messageParameter = innerParameters.get(1);
+        Expression expression = returnedExpression(inner.getBody());
+        if (expression != null) {
+            return interceptorLambda(outer, null, expression, messageParameter, null, namesInScope);
+        }
+        if (!(inner.getBody() instanceof J.Block block) || !endsWithOnlyReturn(block)) {
+            return null;
+        }
+        List<Statement> statements = block.getStatements();
+        Expression returned = ((J.Return) statements.getLast()).getExpression();
+        if (returned == null) {
+            return null;
+        }
+        return interceptorLambda(outer, block.withStatements(statements.subList(0, statements.size() - 1)),
+                                 returned, messageParameter, null, namesInScope);
     }
 
     /**
@@ -226,7 +248,11 @@ public class MigrateLegacyFixtureInterceptorLambdas extends Recipe {
         String unitOfWork = parameters.get(0);
         String chain = parameters.get(1);
         if (isProceed(returnedExpression(lambda.getBody()), chain)) {
-            return interceptorLambda(lambda, null, null, namesInScope);
+            return interceptorLambda(lambda, null, null, null, null, namesInScope);
+        }
+        J.Lambda readingMessage = rewriteHandlerReadingMessage(lambda, unitOfWork, chain, namesInScope);
+        if (readingMessage != null) {
+            return readingMessage;
         }
         if (!(lambda.getBody() instanceof J.Block block) || block.getStatements().size() != 2
                 || !(block.getStatements().get(0) instanceof J.MethodInvocation transform)
@@ -247,7 +273,97 @@ public class MigrateLegacyFixtureInterceptorLambdas extends Recipe {
         if (references.contains(unitOfWork) || references.contains(chain)) {
             return null;
         }
-        return interceptorLambda(lambda, expression, transformerParameters.getFirst(), namesInScope);
+        return interceptorLambda(lambda, null, expression, transformerParameters.getFirst(), null, namesInScope);
+    }
+
+    /**
+     * Rewrites {@code (unitOfWork, chain) -> { statements; return chain.proceed(); }} when the statements only read
+     * the message through {@code unitOfWork.getMessage()}, which the Axon Framework 5 interceptor receives directly.
+     */
+    private static J.@Nullable Lambda rewriteHandlerReadingMessage(J.Lambda lambda,
+                                                                  String unitOfWork,
+                                                                  String chain,
+                                                                  Set<String> namesInScope) {
+        if (!(lambda.getBody() instanceof J.Block block) || block.getStatements().size() < 2
+                || !endsWithOnlyReturn(block)
+                || !isProceed(((J.Return) block.getStatements().getLast()).getExpression(), chain)) {
+            return null;
+        }
+        J.Block leading = block.withStatements(block.getStatements().subList(0, block.getStatements().size() - 1));
+        Set<String> references = referencedNames(leading);
+        if (references.contains(chain)) {
+            return null;
+        }
+        int[] messageReads = {0};
+        new JavaIsoVisitor<Integer>() {
+            @Override
+            public J.MethodInvocation visitMethodInvocation(J.MethodInvocation invocation, Integer p) {
+                if (isMessageRead(invocation, unitOfWork)) {
+                    messageReads[0]++;
+                    return invocation;
+                }
+                return super.visitMethodInvocation(invocation, p);
+            }
+        }.visit(leading, 0);
+        if (countReferences(leading, unitOfWork) != messageReads[0]) {
+            // The unit of work is used for more than reading the message, which Axon Framework 5 has no equivalent for.
+            return null;
+        }
+        return interceptorLambda(lambda, leading, null, null, unitOfWork, namesInScope);
+    }
+
+    private static boolean isMessageRead(J.MethodInvocation invocation, String unitOfWork) {
+        return "getMessage".equals(invocation.getSimpleName())
+                && isIdentifier(invocation.getSelect(), unitOfWork)
+                && invocation.getArguments().stream().allMatch(J.Empty.class::isInstance);
+    }
+
+    /**
+     * Whether the block ends with a {@code return} and has no other {@code return} outside nested lambdas and classes,
+     * so its statements always run up to that last one.
+     */
+    private static boolean endsWithOnlyReturn(J.Block block) {
+        if (block.getStatements().isEmpty() || !(block.getStatements().getLast() instanceof J.Return)) {
+            return false;
+        }
+        int[] returns = {0};
+        new JavaIsoVisitor<Integer>() {
+            @Override
+            public J.Return visitReturn(J.Return returned, Integer p) {
+                returns[0]++;
+                return super.visitReturn(returned, p);
+            }
+
+            @Override
+            public J.Lambda visitLambda(J.Lambda nested, Integer p) {
+                return nested;
+            }
+
+            @Override
+            public J.NewClass visitNewClass(J.NewClass newClass, Integer p) {
+                return newClass;
+            }
+
+            @Override
+            public J.ClassDeclaration visitClassDeclaration(J.ClassDeclaration classDeclaration, Integer p) {
+                return classDeclaration;
+            }
+        }.visit(block, 0);
+        return returns[0] == 1;
+    }
+
+    private static int countReferences(J tree, String name) {
+        int[] count = {0};
+        new JavaIsoVisitor<Integer>() {
+            @Override
+            public J.Identifier visitIdentifier(J.Identifier identifier, Integer p) {
+                if (name.equals(identifier.getSimpleName()) && isVariableReference(getCursor())) {
+                    count[0]++;
+                }
+                return identifier;
+            }
+        }.visit(tree, 0);
+        return count[0];
     }
 
     private static boolean isProceed(@Nullable Expression expression, String chain) {
@@ -279,17 +395,25 @@ public class MigrateLegacyFixtureInterceptorLambdas extends Recipe {
     /**
      * Builds {@code (message, context, chain) -> chain.proceed(passed, context)} from the {@code original} lambda,
      * where {@code passed} is the given {@code expression} with {@code messageParameter} renamed, or the message
-     * itself when there is no expression.
+     * itself when there is no expression. With {@code leading} statements, the body becomes a block running them
+     * first and returning that call; there, {@code messageParameter} is renamed too, and the
+     * {@code unitOfWork.getMessage()} reads become the message.
      */
     private static J.Lambda interceptorLambda(J.Lambda original,
+                                              J.@Nullable Block leading,
                                               @Nullable Expression expression,
                                               @Nullable String messageParameter,
+                                              @Nullable String unitOfWork,
                                               Set<String> namesInScope) {
         Set<String> taken = new HashSet<>(namesInScope);
         if (expression != null) {
             taken.addAll(referencedNames(expression));
-            taken.remove(messageParameter);
         }
+        if (leading != null) {
+            taken.addAll(referencedNames(leading));
+        }
+        taken.remove(messageParameter);
+        taken.remove(unitOfWork);
         String message = available("message", taken);
         taken.add(message);
         String context = available("context", taken);
@@ -298,7 +422,7 @@ public class MigrateLegacyFixtureInterceptorLambdas extends Recipe {
 
         Expression passed = expression == null
                 ? identifier(message, Space.EMPTY)
-                : rename(expression, messageParameter, message).withPrefix(Space.EMPTY);
+                : (Expression) rename(expression, messageParameter, message).withPrefix(Space.EMPTY);
         J.MethodInvocation proceed = new J.MethodInvocation(
                 Tree.randomId(),
                 Space.EMPTY,
@@ -318,12 +442,51 @@ public class MigrateLegacyFixtureInterceptorLambdas extends Recipe {
         for (String name : List.of(message, context, chain)) {
             parameters.add(JRightPadded.build(parameter(template, name, parameters.isEmpty())));
         }
+        J body = proceed.withPrefix(Space.SINGLE_SPACE);
+        if (leading != null) {
+            J.Block statements = (J.Block) rename(readMessageDirectly(leading, unitOfWork, message),
+                                                  messageParameter, message);
+            J.Return returned = new J.Return(Tree.randomId(),
+                                             returnPrefix(statements),
+                                             Markers.EMPTY,
+                                             proceed.withPrefix(Space.SINGLE_SPACE));
+            List<Statement> withReturn = new ArrayList<>(statements.getStatements());
+            withReturn.add(returned);
+            body = statements.withStatements(withReturn).withPrefix(Space.SINGLE_SPACE);
+        }
         return original.withParameters(original.getParameters()
                                                .withParenthesized(true)
                                                .getPadding()
                                                .withParameters(parameters))
                        .withArrow(Space.SINGLE_SPACE)
-                       .withBody(proceed.withPrefix(Space.SINGLE_SPACE));
+                       .withBody(body);
+    }
+
+    /**
+     * Replaces the {@code unitOfWork.getMessage()} reads in the given block with the message parameter, typed as the
+     * read was so the later Axon Framework 5 recipes still match the calls made on it.
+     */
+    private static J.Block readMessageDirectly(J.Block block, @Nullable String unitOfWork, String message) {
+        if (unitOfWork == null) {
+            return block;
+        }
+        return (J.Block) new JavaVisitor<Integer>() {
+            @Override
+            public J visitMethodInvocation(J.MethodInvocation invocation, Integer p) {
+                if (isMessageRead(invocation, unitOfWork)) {
+                    return new J.Identifier(Tree.randomId(), invocation.getPrefix(), Markers.EMPTY,
+                                            Collections.emptyList(), message, invocation.getType(), null);
+                }
+                return super.visitMethodInvocation(invocation, p);
+            }
+        }.visitNonNull(block, 0);
+    }
+
+    /**
+     * The prefix of a statement appended to the given block: the prefix of its last statement, so it lines up.
+     */
+    private static Space returnPrefix(J.Block block) {
+        return block.getStatements().isEmpty() ? Space.format("\n") : block.getStatements().getLast().getPrefix();
     }
 
     private static J parameter(J.VariableDeclarations template, String name, boolean first) {
@@ -353,14 +516,14 @@ public class MigrateLegacyFixtureInterceptorLambdas extends Recipe {
     }
 
     /**
-     * Renames the variable references named {@code from} in the given {@code expression}, keeping their types so the
+     * Renames the variable references named {@code from} in the given {@code tree}, keeping their types so the
      * method renames of the later Axon Framework 5 recipes still match the calls made on them.
      */
-    private static Expression rename(Expression expression, @Nullable String from, String to) {
+    private static J rename(J tree, @Nullable String from, String to) {
         if (from == null || from.equals(to)) {
-            return expression;
+            return tree;
         }
-        return (Expression) new JavaIsoVisitor<Integer>() {
+        return new JavaIsoVisitor<Integer>() {
             @Override
             public J.Identifier visitIdentifier(J.Identifier identifier, Integer p) {
                 if (!from.equals(identifier.getSimpleName()) || !isVariableReference(getCursor())) {
@@ -369,7 +532,7 @@ public class MigrateLegacyFixtureInterceptorLambdas extends Recipe {
                 JavaType.Variable fieldType = identifier.getFieldType();
                 return identifier.withSimpleName(to).withFieldType(fieldType == null ? null : fieldType.withName(to));
             }
-        }.visitNonNull(expression, 0);
+        }.visitNonNull(tree, 0);
     }
 
     /**

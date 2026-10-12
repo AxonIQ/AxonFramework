@@ -405,4 +405,186 @@ class MigrateLegacyFixtureInterceptorLambdasTest implements RewriteTest {
             );
         }
     }
+
+    @Nested
+    class BlockBodiedInterceptors {
+
+        @Test
+        void keepsTheStatementsOfADispatchInterceptorAndProceedsWithTheReturnedMessage() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import java.util.Collections;
+                            import java.util.List;
+
+                            import org.axonframework.test.saga.SagaTestFixture;
+
+                            class PaymentSagaTest {
+                                SagaTestFixture<Object> fixture;
+                                List<String> dispatched;
+
+                                void interceptsDispatch() {
+                                    fixture.registerDeadlineDispatchInterceptor(messages -> (i, m) -> {
+                                        dispatched.add(m.getDeadlineName());
+                                        return m.andMetaData(Collections.singletonMap("traced", "yes"));
+                                    });
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import java.util.Collections;
+                            import java.util.List;
+
+                            import org.axonframework.test.saga.SagaTestFixture;
+
+                            class PaymentSagaTest {
+                                SagaTestFixture<Object> fixture;
+                                List<String> dispatched;
+
+                                void interceptsDispatch() {
+                                    fixture.registerDeadlineDispatchInterceptor((message, context, chain) -> {
+                                        dispatched.add(message.getDeadlineName());
+                                        return chain.proceed(message.andMetaData(Collections.singletonMap("traced", "yes")), context);
+                                    });
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void readsTheMessageDirectlyInAHandlerInterceptorThatOnlyReadsItFromTheUnitOfWork() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import java.util.List;
+
+                            import org.axonframework.test.deadline.StubDeadlineManager;
+
+                            class DeadlineTest {
+                                List<String> handled;
+
+                                void intercepts(StubDeadlineManager manager) {
+                                    manager.registerHandlerInterceptor((uow, chain) -> {
+                                        handled.add(uow.getMessage().getDeadlineName());
+                                        return chain.proceed();
+                                    });
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import java.util.List;
+
+                            import org.axonframework.test.deadline.StubDeadlineManager;
+
+                            class DeadlineTest {
+                                List<String> handled;
+
+                                void intercepts(StubDeadlineManager manager) {
+                                    manager.registerHandlerInterceptor((message, context, chain) -> {
+                                        handled.add(message.getDeadlineName());
+                                        return chain.proceed(message, context);
+                                    });
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void marksADispatchInterceptorThatCanReturnEarly() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.test.saga.SagaTestFixture;
+
+                            class PaymentSagaTest {
+                                SagaTestFixture<Object> fixture;
+
+                                void interceptsDispatch() {
+                                    fixture.registerDeadlineDispatchInterceptor(messages -> (i, m) -> {
+                                        if (m.getPayload() == null) {
+                                            return null;
+                                        }
+                                        return m;
+                                    });
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.test.saga.SagaTestFixture;
+
+                            class PaymentSagaTest {
+                                SagaTestFixture<Object> fixture;
+
+                                void interceptsDispatch() {
+                                    // TODO(axon4to5): rewrite this dispatch interceptor as (message, context, chain) -> chain.proceed(message, context). Axon Framework 5 interceptors receive one message and hand it on through the chain, instead of returning a function over a message batch.
+                                    fixture.registerDeadlineDispatchInterceptor(messages -> (i, m) -> {
+                                        if (m.getPayload() == null) {
+                                            return null;
+                                        }
+                                        return m;
+                                    });
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void marksAHandlerInterceptorThatUsesTheChainBeforeProceeding() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.test.saga.SagaTestFixture;
+
+                            class PaymentSagaTest {
+                                SagaTestFixture<Object> fixture;
+
+                                void interceptsHandling() {
+                                    fixture.registerDeadlineHandlerInterceptor((uow, chain) -> {
+                                        System.out.println(chain);
+                                        return chain.proceed();
+                                    });
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.test.saga.SagaTestFixture;
+
+                            class PaymentSagaTest {
+                                SagaTestFixture<Object> fixture;
+
+                                void interceptsHandling() {
+                                    // TODO(axon4to5): rewrite this handler interceptor as (message, context, chain) -> chain.proceed(message, context). Axon Framework 5 has no unit of work to transform the message on; pass the changed message to chain.proceed(..) instead.
+                                    fixture.registerDeadlineHandlerInterceptor((uow, chain) -> {
+                                        System.out.println(chain);
+                                        return chain.proceed();
+                                    });
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+    }
 }
