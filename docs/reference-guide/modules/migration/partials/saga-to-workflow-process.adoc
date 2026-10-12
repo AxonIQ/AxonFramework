@@ -1,4 +1,3 @@
-// Diagram presentation; the corresponding flow is in attachments/sagas-to-workflows.mmd.
 ++++
 <style>
 .saga-process {
