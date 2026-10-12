@@ -17,7 +17,7 @@
 *** xref:migration:paths/event-store.adoc[]
 *** xref:migration:paths/snapshotting.adoc[[.advanced-framework]#Snapshotting#]
 ifdef::advanced-framework[]
-*** xref:migration:paths/sagas.adoc[]
+*** xref:migration:paths/sagas.adoc[[.advanced-framework]#Legacy Saga support#]
 endif::[]
 *** xref:migration:paths/sagas-to-workflows.adoc[]
 *** xref:migration:paths/test-fixtures.adoc[]
