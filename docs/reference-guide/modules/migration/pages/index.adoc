@@ -20,7 +20,7 @@ This section explores the transformative new capabilities available only in Axon
 
 xref:migration:prerequisites.adoc[Prerequisites & System Requirements]::
 Verify your infrastructure readiness.
-We cover Java version alignment, Spring Boot compatibility, and Axon Server requirements to ensure smooth upgrade.
+We cover Java version alignment, Spring Boot compatibility, and Axon Server requirements to ensure a smooth upgrade.
 
 xref:migration:openrewrite-code-conversion.adoc[Automated Code Conversion]::
 Get a head start with OpenRewrite-based recipes that mechanically rewrite the predictable parts of your Axon Framework 4 codebase.
