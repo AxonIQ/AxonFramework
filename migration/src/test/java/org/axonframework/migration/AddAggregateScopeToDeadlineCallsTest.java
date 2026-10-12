@@ -417,6 +417,283 @@ class AddAggregateScopeToDeadlineCallsTest implements RewriteTest {
     }
 
     @Nested
+    class CreationHandlersWithTargetIdentifier {
+
+        private static final String PLACE_ORDER = """
+                package com.example;
+
+                import org.axonframework.modelling.command.TargetAggregateIdentifier;
+
+                public class PlaceOrder {
+                    @TargetAggregateIdentifier
+                    private final String orderId;
+
+                    public PlaceOrder(String orderId) {
+                        this.orderId = orderId;
+                    }
+
+                    public String getOrderId() {
+                        return orderId;
+                    }
+                }
+                """;
+
+        @Test
+        void takesIdentifierFromTargetIdentifierGetterInCreationConstructor() {
+            rewriteRun(
+                    java(PLACE_ORDER),
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.commandhandling.CommandHandler;
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.modelling.command.AggregateIdentifier;
+
+                            import java.time.Duration;
+
+                            class Order {
+                                @AggregateIdentifier
+                                private String orderId;
+
+                                @CommandHandler
+                                Order(PlaceOrder command, DeadlineManager deadlineManager) {
+                                    deadlineManager.schedule(Duration.ofDays(1), "reminder");
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.commandhandling.CommandHandler;
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.modelling.command.AggregateIdentifier;
+                            import org.axonframework.modelling.command.AggregateScopeDescriptor;
+
+                            import java.time.Duration;
+
+                            class Order {
+                                @AggregateIdentifier
+                                private String orderId;
+
+                                @CommandHandler
+                                Order(PlaceOrder command, DeadlineManager deadlineManager) {
+                                    deadlineManager.schedule(Duration.ofDays(1), "reminder", null, new AggregateScopeDescriptor("Order", command.getOrderId()));
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void takesIdentifierFromRecordAccessorOrPublicFieldInCreationPolicyHandlers() {
+            // Axon Framework 4 loaded an existing aggregate by the command's target identifier, so for
+            // CREATE_IF_MISSING the command carries the identifier of the aggregate whether it exists or not.
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.modelling.command.TargetAggregateIdentifier;
+
+                            public record OpenOrder(@TargetAggregateIdentifier String orderId, String customer) {
+                            }
+                            """
+                    ),
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.modelling.command.TargetAggregateIdentifier;
+
+                            public class TouchOrder {
+                                @TargetAggregateIdentifier
+                                public String orderId;
+                            }
+                            """
+                    ),
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.commandhandling.CommandHandler;
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.modelling.command.AggregateCreationPolicy;
+                            import org.axonframework.modelling.command.AggregateIdentifier;
+                            import org.axonframework.modelling.command.CreationPolicy;
+
+                            import java.time.Duration;
+
+                            import static org.axonframework.modelling.command.AggregateCreationPolicy.CREATE_IF_MISSING;
+
+                            class Order {
+                                @AggregateIdentifier
+                                private String orderId;
+
+                                @CommandHandler
+                                @CreationPolicy(AggregateCreationPolicy.ALWAYS)
+                                void handle(OpenOrder command, DeadlineManager deadlineManager) {
+                                    deadlineManager.schedule(Duration.ofDays(1), "expiry");
+                                }
+
+                                @CommandHandler
+                                @CreationPolicy(value = CREATE_IF_MISSING)
+                                void handle(TouchOrder command, DeadlineManager deadlineManager) {
+                                    deadlineManager.cancelAllWithinScope("expiry");
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.commandhandling.CommandHandler;
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.modelling.command.AggregateCreationPolicy;
+                            import org.axonframework.modelling.command.AggregateIdentifier;
+                            import org.axonframework.modelling.command.AggregateScopeDescriptor;
+                            import org.axonframework.modelling.command.CreationPolicy;
+
+                            import java.time.Duration;
+
+                            import static org.axonframework.modelling.command.AggregateCreationPolicy.CREATE_IF_MISSING;
+
+                            class Order {
+                                @AggregateIdentifier
+                                private String orderId;
+
+                                @CommandHandler
+                                @CreationPolicy(AggregateCreationPolicy.ALWAYS)
+                                void handle(OpenOrder command, DeadlineManager deadlineManager) {
+                                    deadlineManager.schedule(Duration.ofDays(1), "expiry", null, new AggregateScopeDescriptor("Order", command.orderId()));
+                                }
+
+                                @CommandHandler
+                                @CreationPolicy(value = CREATE_IF_MISSING)
+                                void handle(TouchOrder command, DeadlineManager deadlineManager) {
+                                    deadlineManager.cancelAllWithinScope("expiry", new AggregateScopeDescriptor("Order", command.orderId));
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void marksCreationConstructorWhoseCommandHidesItsTargetIdentifier() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.modelling.command.TargetAggregateIdentifier;
+
+                            public class PlaceOrder {
+                                @TargetAggregateIdentifier
+                                private String orderId;
+                            }
+                            """
+                    ),
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.commandhandling.CommandHandler;
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.modelling.command.AggregateIdentifier;
+
+                            import java.time.Duration;
+
+                            class Order {
+                                @AggregateIdentifier
+                                private String orderId;
+
+                                @CommandHandler
+                                Order(PlaceOrder command, DeadlineManager deadlineManager) {
+                                    deadlineManager.schedule(Duration.ofDays(1), "reminder");
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.commandhandling.CommandHandler;
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.modelling.command.AggregateIdentifier;
+
+                            import java.time.Duration;
+
+                            class Order {
+                                @AggregateIdentifier
+                                private String orderId;
+
+                                @CommandHandler
+                                Order(PlaceOrder command, DeadlineManager deadlineManager) {
+                                    // TODO(axon4to5): pass the aggregate scope to this DeadlineManager call, as in new AggregateScopeDescriptor("Order", <aggregate identifier>). Axon Framework 5 runs no aggregate scope around an entity handler, so this call fails without one, and this handler has no aggregate instance to read the identifier from. Take it from the command.
+                                    deadlineManager.schedule(Duration.ofDays(1), "reminder");
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void marksConstructorThatIsNoCommandHandler() {
+            rewriteRun(
+                    java(PLACE_ORDER),
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.commandhandling.CommandHandler;
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.modelling.command.AggregateIdentifier;
+
+                            import java.time.Duration;
+
+                            class Order {
+                                @AggregateIdentifier
+                                private String orderId;
+
+                                Order(PlaceOrder command, DeadlineManager deadlineManager) {
+                                    deadlineManager.schedule(Duration.ofDays(1), "reminder");
+                                }
+
+                                @CommandHandler
+                                void handle(String command) {
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.commandhandling.CommandHandler;
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.modelling.command.AggregateIdentifier;
+
+                            import java.time.Duration;
+
+                            class Order {
+                                @AggregateIdentifier
+                                private String orderId;
+
+                                Order(PlaceOrder command, DeadlineManager deadlineManager) {
+                                    // TODO(axon4to5): pass the aggregate scope to this DeadlineManager call, as in new AggregateScopeDescriptor("Order", <aggregate identifier>). Axon Framework 5 runs no aggregate scope around an entity handler, so this call fails without one, and this handler has no aggregate instance to read the identifier from. Take it from the command.
+                                    deadlineManager.schedule(Duration.ofDays(1), "reminder");
+                                }
+
+                                @CommandHandler
+                                void handle(String command) {
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+    }
+
+    @Nested
     class CallsWithoutReachableIdentifier {
 
         @Test

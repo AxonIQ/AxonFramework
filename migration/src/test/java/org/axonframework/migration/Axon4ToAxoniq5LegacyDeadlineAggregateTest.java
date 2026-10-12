@@ -224,6 +224,105 @@ class Axon4ToAxoniq5LegacyDeadlineAggregateTest implements RewriteTest {
                     )
             );
         }
+
+        @Test
+        void passesCommandTargetIdentifierInCreationHandlers() {
+            rewriteRun(
+                    mavenProject(
+                            "order",
+                            pomXml(POM, pom -> pom.after(actual -> actual)),
+                            srcMainJava(java(
+                                    """
+                                    package com.example;
+
+                                    import org.axonframework.modelling.command.TargetAggregateIdentifier;
+
+                                    public class PlaceOrder {
+                                        @TargetAggregateIdentifier
+                                        private final String orderId;
+
+                                        public PlaceOrder(String orderId) {
+                                            this.orderId = orderId;
+                                        }
+
+                                        public String getOrderId() {
+                                            return orderId;
+                                        }
+                                    }
+                                    """,
+                                    source -> source.after(actual -> {
+                                        assertThat(actual).contains("@TargetEntityId");
+                                        return actual;
+                                    })
+                            )),
+                            srcMainJava(java(
+                                    """
+                                    package com.example;
+
+                                    import org.axonframework.modelling.command.TargetAggregateIdentifier;
+
+                                    public record ReopenOrder(@TargetAggregateIdentifier String orderId) {
+                                    }
+                                    """,
+                                    source -> source.after(actual -> actual)
+                            )),
+                            srcMainJava(java(record("OrderPlaced"), source -> source.after(actual -> actual))),
+                            srcMainJava(java(
+                                    """
+                                    package com.example;
+
+                                    import org.axonframework.commandhandling.CommandHandler;
+                                    import org.axonframework.deadline.DeadlineManager;
+                                    import org.axonframework.modelling.command.AggregateCreationPolicy;
+                                    import org.axonframework.modelling.command.AggregateIdentifier;
+                                    import org.axonframework.modelling.command.CreationPolicy;
+                                    import org.axonframework.spring.stereotype.Aggregate;
+
+                                    import java.time.Duration;
+
+                                    import static org.axonframework.modelling.command.AggregateLifecycle.apply;
+
+                                    @Aggregate
+                                    public class Order {
+
+                                        @AggregateIdentifier
+                                        private String orderId;
+
+                                        protected Order() {
+                                        }
+
+                                        @CommandHandler
+                                        public Order(PlaceOrder command, DeadlineManager deadlineManager) {
+                                            apply(new OrderPlaced(command.getOrderId()));
+                                            deadlineManager.schedule(Duration.ofDays(1), "paymentDeadline");
+                                        }
+
+                                        @CommandHandler
+                                        @CreationPolicy(AggregateCreationPolicy.CREATE_IF_MISSING)
+                                        public void handle(ReopenOrder command, DeadlineManager deadlineManager) {
+                                            deadlineManager.cancelAllWithinScope("paymentDeadline");
+                                        }
+                                    }
+                                    """,
+                                    source -> source.after(actual -> {
+                                        assertThat(actual)
+                                                .contains("public static void handle(PlaceOrder command,")
+                                                .contains("deadlineManager.schedule(Duration.ofDays(1), "
+                                                                  + "\"paymentDeadline\", null, "
+                                                                  + "new AggregateScopeDescriptor(\"Order\", "
+                                                                  + "command.getOrderId()));")
+                                                .contains("deadlineManager.cancelAllWithinScope(\"paymentDeadline\", "
+                                                                  + "new AggregateScopeDescriptor(\"Order\", "
+                                                                  + "command.orderId()));")
+                                                .contains("import org.axonframework.modelling.command."
+                                                                  + "AggregateScopeDescriptor;")
+                                                .doesNotContain("TODO(axon4to5)");
+                                        return actual;
+                                    })
+                            ))
+                    )
+            );
+        }
     }
 
     @Nested

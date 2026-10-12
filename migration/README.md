@@ -78,7 +78,10 @@ After the migration run, search for every such location with:
   application registers itself, aggregate deadline handlers no command can reach (or that now receive the same command,
   belong to a member entity, or match by deadline name a deadline not always scheduled without a payload),
   `DeadlineMessage` handler parameters on aggregates, and aggregate `DeadlineManager` calls without an identifier in
-  reach (constructors, static methods, `@CreationPolicy` handlers that may create the aggregate, member entities).
+  reach (static methods and constructors other than creation command handlers, creation command handlers and
+  `@CreationPolicy` handlers that may create the aggregate whose command has no single `@TargetAggregateIdentifier`
+  readable through a record accessor, getter or public field, member entities). In a creation handler with such a
+  command, the call gets that target identifier.
 - **Spring config**: renames `axon.serializer.*` properties to `axon.converter.*` in `application.properties`/YAML, and
   adds advisory TODOs above obsolete `sequencing-policy` settings. Also **migrates Spring Boot snapshotting
   configuration** from the AF4 two-step pattern (`@Bean SnapshotTriggerDefinition` + `@Aggregate(snapshotTriggerDefinition

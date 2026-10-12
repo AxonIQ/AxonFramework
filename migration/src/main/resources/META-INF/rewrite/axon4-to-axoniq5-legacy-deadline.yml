@@ -54,7 +54,9 @@ description: >-
   the handlers that use it. Replaces an aggregate's `@DeadlineHandler` with the
   `@CommandHandler` that receives the fired deadline, and passes the
   `AggregateScopeDescriptor` to aggregate `DeadlineManager` calls that relied
-  on the current scope (Java only; Kotlin aggregates get a marker). Removes `spanFactory(..)` and `transactionManager(..)`
+  on the current scope, reading a creation handler's identifier from the
+  command's `@TargetAggregateIdentifier` (Java only; Kotlin aggregates get a
+  marker). Removes `spanFactory(..)` and `transactionManager(..)`
   from the deadline manager builders, adds the required `unitOfWorkFactory(..)`
   from an Axon Framework 4 `Configuration` in scope or a `UnitOfWorkFactory`
   parameter of a Spring `@Bean` method, and replaces a default Jackson
@@ -114,7 +116,8 @@ recipeList:
   # DeadlineManager calls of an aggregate that relied on its scope get the
   # AggregateScopeDescriptor Axon Framework 4 described. It must run before
   # the free leg removes @AggregateIdentifier, which names the identifier,
-  # and turns creation constructors into static methods. The free leg's
+  # renames @TargetAggregateIdentifier, which names a creation command's
+  # identifier, and turns creation constructors into static methods. The free leg's
   # modelling.command package move excludes AggregateScopeDescriptor, as
   # axoniq-legacy keeps it in that package.
   - org.axonframework.migration.AddAggregateScopeToDeadlineCalls

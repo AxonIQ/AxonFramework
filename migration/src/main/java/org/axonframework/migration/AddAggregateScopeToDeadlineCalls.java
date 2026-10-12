@@ -26,6 +26,7 @@ import org.openrewrite.internal.ListUtils;
 import org.openrewrite.java.JavaIsoVisitor;
 import org.openrewrite.java.JavaParser;
 import org.openrewrite.java.JavaTemplate;
+import org.openrewrite.java.marker.JavaSourceSet;
 import org.openrewrite.java.tree.Comment;
 import org.openrewrite.java.tree.Expression;
 import org.openrewrite.java.tree.J;
@@ -37,11 +38,13 @@ import org.openrewrite.java.tree.TextComment;
 import org.openrewrite.java.tree.TypeUtils;
 import org.openrewrite.marker.Markers;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
@@ -76,10 +79,17 @@ import static org.axonframework.migration.SagaClasses.resolvedName;
  * its commit, but the legacy module runs a call made outside a Saga immediately, so a lazy identifier would be read
  * at the same moment.
  * <p>
+ * A creation command handler, a {@code @CommandHandler} constructor or a {@code @CreationPolicy(ALWAYS)} or
+ * {@code CREATE_IF_MISSING} handler, has no identifier to read yet: the aggregate sets it once it applied its first
+ * event. There the recipe reads the command's target identifier instead, when the command class in the aggregate's
+ * source set declares exactly one {@code @TargetAggregateIdentifier} field, readable as a record accessor, a getter or
+ * a public field. Axon Framework 4 routed the command to the aggregate of that identifier, and loaded an existing one
+ * by it for {@code CREATE_IF_MISSING}.
+ * <p>
  * Where the recipe cannot build the descriptor, it leaves a {@code // TODO(axon4to5):} marker on the statement: in
- * a constructor or static method, which has no aggregate instance to read the identifier from (a creation command
- * handler becomes a static method in Axon Framework 5), in a {@code @CreationPolicy} handler that may create the
- * aggregate, whose identifier is only set once it applied its first event, in a member entity of an aggregate, and
+ * any other constructor or static method, which has no aggregate instance to read the identifier from (a creation
+ * command handler becomes a static method in Axon Framework 5), in a creation handler whose command offers no such
+ * target identifier, in a member entity of an aggregate, and
  * in an aggregate whose identifier or type the recipe cannot find. The recipe rewrites Java sources only: in an
  * aggregate written in another JVM language, such as Kotlin, it marks every such call instead. Calls with an explicit
  * scope, {@code cancelSchedule} and {@code cancelAll}, Sagas, and classes that are neither an aggregate nor one of
@@ -100,6 +110,9 @@ public class AddAggregateScopeToDeadlineCalls extends ScanningRecipe<AddAggregat
     private static final String AGGREGATE_IDENTIFIER_FQN = "org.axonframework.modelling.command.AggregateIdentifier";
     private static final String ENTITY_ID_FQN = "org.axonframework.modelling.command.EntityId";
     private static final String CREATION_POLICY_FQN = "org.axonframework.modelling.command.CreationPolicy";
+    private static final String COMMAND_HANDLER_FQN = "org.axonframework.commandhandling.CommandHandler";
+    private static final String TARGET_AGGREGATE_IDENTIFIER_FQN =
+            "org.axonframework.modelling.command.TargetAggregateIdentifier";
     /**
      * The Axon Framework 4 methods taking the class an aggregate's repository is configured for: the aggregate
      * configuration factories, {@code Configurer#configureAggregate(Class)} and the repository builders.
@@ -162,6 +175,36 @@ public class AddAggregateScopeToDeadlineCalls extends ScanningRecipe<AddAggregat
         final Map<String, ClassInfo> classes = new HashMap<>();
         final MemberEntities memberEntities = new MemberEntities();
         final Set<String> configuredRoots = new HashSet<>();
+        final Map<String, SourceClass> sourceClasses = new HashMap<>();
+    }
+
+    /**
+     * What a Java source class offers to read a command's target identifier from.
+     *
+     * @param superclass   the fully qualified name of its superclass, or {@code null}
+     * @param packageName  its package
+     * @param sourceSet    the name of its source set, or {@code null} when unknown
+     * @param record       whether it is a record
+     * @param targetFields its fields, or record components, annotated with {@code @TargetAggregateIdentifier}
+     * @param getters      its non-private methods without parameters, by name, mapped to whether they are public
+     */
+    record SourceClass(@Nullable String superclass,
+                       String packageName,
+                       @Nullable String sourceSet,
+                       boolean record,
+                       List<TargetField> targetFields,
+                       Map<String, Boolean> getters) {
+
+    }
+
+    /**
+     * A field annotated with {@code @TargetAggregateIdentifier}.
+     *
+     * @param name     the field name
+     * @param isPublic whether the field is public
+     */
+    record TargetField(String name, boolean isPublic) {
+
     }
 
     /**
@@ -207,9 +250,11 @@ public class AddAggregateScopeToDeadlineCalls extends ScanningRecipe<AddAggregat
         return "Axon Framework 4 ran aggregate handlers inside the aggregate's scope, which the `DeadlineManager` "
                 + "overloads without a `ScopeDescriptor` used. Axon Framework 5 runs no scope around an entity "
                 + "handler, so these calls fail. Rewrites them in aggregates to pass "
-                + "`new AggregateScopeDescriptor(<type>, <identifier>)`, the scope Axon Framework 4 described. "
-                + "Leaves a `// TODO(axon4to5):` marker where the identifier is not available: in constructors, "
-                + "static methods, `@CreationPolicy` handlers that may create the aggregate, and member entities. "
+                + "`new AggregateScopeDescriptor(<type>, <identifier>)`, the scope Axon Framework 4 described. In a "
+                + "creation command handler, the identifier is the command's `@TargetAggregateIdentifier`. Leaves a "
+                + "`// TODO(axon4to5):` marker where the identifier is not available: in other constructors and "
+                + "static methods, creation handlers whose command offers no readable target identifier, and member "
+                + "entities. "
                 + "Java only: in Kotlin aggregates these calls are marked instead. Idempotent.";
     }
 
@@ -236,6 +281,17 @@ public class AddAggregateScopeToDeadlineCalls extends ScanningRecipe<AddAggregat
                             classDeclaration.hasModifier(J.Modifier.Type.Abstract),
                             hasAggregateHandler(classDeclaration)
                     ));
+                    if (getCursor().firstEnclosing(J.CompilationUnit.class) != null) {
+                        acc.sourceClasses.put(type.getFullyQualifiedName(), sourceClass(
+                                classDeclaration,
+                                type,
+                                getCursor().firstEnclosingOrThrow(JavaSourceFile.class)
+                                           .getMarkers()
+                                           .findFirst(JavaSourceSet.class)
+                                           .map(JavaSourceSet::getName)
+                                           .orElse(null)
+                        ));
+                    }
                 }
                 acc.memberEntities.collect(classDeclaration);
                 return super.visitClassDeclaration(classDeclaration, ctx);
@@ -298,12 +354,27 @@ public class AddAggregateScopeToDeadlineCalls extends ScanningRecipe<AddAggregat
                     return markStatement(visited, todo("", scopeType, OTHER_LANGUAGE_REASON));
                 }
                 J.MethodDeclaration enclosingMethod = getCursor().firstEnclosing(J.MethodDeclaration.class);
+                boolean creationConstructor = enclosingMethod != null
+                        && enclosingMethod.isConstructor()
+                        && isCommandHandler(enclosingMethod);
+                boolean creationPolicy = enclosingMethod != null
+                        && !enclosingMethod.isConstructor()
+                        && !enclosingMethod.hasModifier(J.Modifier.Type.Static)
+                        && mayCreateAggregate(enclosingMethod);
+                if ((creationConstructor || creationPolicy) && owner == null && type != null) {
+                    String commandIdentifier = commandIdentifier(enclosingMethod, className, acc);
+                    if (commandIdentifier != null) {
+                        maybeAddImport(AGGREGATE_SCOPE_DESCRIPTOR_FQN, null, false);
+                        return withScope(visited,
+                                         "new AggregateScopeDescriptor(" + type + ", " + commandIdentifier + ")");
+                    }
+                }
                 if (enclosingMethod == null
                         || enclosingMethod.isConstructor()
                         || enclosingMethod.hasModifier(J.Modifier.Type.Static)) {
                     return markStatement(visited, todo(type, NO_INSTANCE_REASON));
                 }
-                if (mayCreateAggregate(enclosingMethod)) {
+                if (creationPolicy) {
                     return markStatement(visited, todo(type, CREATION_REASON));
                 }
                 if (owner != null) {
@@ -412,6 +483,98 @@ public class AddAggregateScopeToDeadlineCalls extends ScanningRecipe<AddAggregat
                                  : policy instanceof J.Identifier identifier ? identifier.getSimpleName() : null;
                          return !"NEVER".equals(name);
                      });
+    }
+
+    private static SourceClass sourceClass(J.ClassDeclaration classDeclaration, JavaType.FullyQualified type,
+                                           @Nullable String sourceSet) {
+        List<TargetField> targetFields = new ArrayList<>();
+        Map<String, Boolean> getters = new HashMap<>();
+        List<Statement> members = new ArrayList<>();
+        if (classDeclaration.getPrimaryConstructor() != null) {
+            members.addAll(classDeclaration.getPrimaryConstructor());
+        }
+        members.addAll(classDeclaration.getBody().getStatements());
+        for (Statement member : members) {
+            if (member instanceof J.VariableDeclarations field
+                    && field.getVariables().size() == 1
+                    && field.getLeadingAnnotations().stream().anyMatch(annotation -> isAnnotation(
+                    annotation, TARGET_AGGREGATE_IDENTIFIER_FQN, "TargetAggregateIdentifier"))) {
+                targetFields.add(new TargetField(field.getVariables().getFirst().getSimpleName(),
+                                                 field.hasModifier(J.Modifier.Type.Public)));
+            } else if (member instanceof J.MethodDeclaration method
+                    && !method.isConstructor()
+                    && !method.hasModifier(J.Modifier.Type.Private)
+                    && method.getParameters().stream().allMatch(J.Empty.class::isInstance)) {
+                getters.put(method.getSimpleName(), method.hasModifier(J.Modifier.Type.Public));
+            }
+        }
+        JavaType.FullyQualified supertype = type.getSupertype();
+        return new SourceClass(supertype == null ? null : supertype.getFullyQualifiedName(),
+                               type.getPackageName(),
+                               sourceSet,
+                               classDeclaration.getKind() == J.ClassDeclaration.Kind.Type.Record,
+                               targetFields,
+                               getters);
+    }
+
+    private static boolean isCommandHandler(J.MethodDeclaration method) {
+        return method.getLeadingAnnotations().stream()
+                     .anyMatch(annotation -> isAnnotation(annotation, COMMAND_HANDLER_FQN, "CommandHandler"));
+    }
+
+    /**
+     * Returns the expression reading the target identifier from the command parameter of the given creation handler,
+     * or {@code null} when it cannot be read. The command is the handler's first parameter; its class, found in the
+     * sources of the aggregate's source set, must declare, itself or through its superclasses, exactly one field
+     * annotated with {@code @TargetAggregateIdentifier}, readable as a record accessor, a getter the aggregate can
+     * call, or a public field. Axon Framework 4 routed the command to, or loaded, the aggregate of that identifier.
+     */
+    private static @Nullable String commandIdentifier(J.MethodDeclaration handler, String aggregateClass,
+                                                      Accumulator acc) {
+        if (handler.getParameters().isEmpty()
+                || !(handler.getParameters().getFirst() instanceof J.VariableDeclarations parameter)
+                || parameter.getVariables().size() != 1) {
+            return null;
+        }
+        String commandClass = resolvedName(parameter.getType());
+        SourceClass command = commandClass == null ? null : acc.sourceClasses.get(commandClass);
+        ClassInfo aggregate = acc.classes.get(aggregateClass);
+        SourceClass aggregateSource = acc.sourceClasses.get(aggregateClass);
+        if (command == null || aggregate == null || aggregateSource == null
+                || !Objects.equals(command.sourceSet(), aggregateSource.sourceSet())) {
+            return null;
+        }
+        List<TargetField> targets = new ArrayList<>();
+        Map<String, SourceClass> getterOwners = new HashMap<>();
+        Set<String> visited = new HashSet<>();
+        String currentName = commandClass;
+        SourceClass current = command;
+        while (current != null && visited.add(currentName)) {
+            targets.addAll(current.targetFields());
+            for (String getter : current.getters().keySet()) {
+                getterOwners.putIfAbsent(getter, current);
+            }
+            currentName = current.superclass();
+            current = currentName == null ? null : acc.sourceClasses.get(currentName);
+        }
+        if (targets.size() != 1) {
+            return null;
+        }
+        TargetField target = targets.getFirst();
+        String accessor;
+        String getter = "get" + Character.toUpperCase(target.name().charAt(0)) + target.name().substring(1);
+        SourceClass getterOwner = getterOwners.get(getter);
+        if (command.record() && command.targetFields().contains(target)) {
+            accessor = target.name() + "()";
+        } else if (getterOwner != null && (getterOwner.getters().get(getter)
+                || getterOwner.packageName().equals(aggregateSource.packageName()))) {
+            accessor = getter + "()";
+        } else if (target.isPublic()) {
+            accessor = target.name();
+        } else {
+            return null;
+        }
+        return parameter.getVariables().getFirst().getSimpleName() + "." + accessor;
     }
 
     private static String todo(@Nullable String type, String reason) {
