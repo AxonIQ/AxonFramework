@@ -2,7 +2,7 @@
 :navtitle: OpenRewrite Code Conversion
 
 Automated code conversion gives you a running head start on the upgrade by mechanically rewriting the parts of your Axon Framework 4 codebase that follow a predictable pattern.
-It handles the bulk of the rename and reshape work, package moves, annotation rewrites, accessor renames, and more, so you can focus your attention on the design decisions that genuinely require human judgment.
+It handles the bulk of the rename and reshape work—package moves, annotation rewrites, accessor renames, and more—so you can focus your attention on the design decisions that genuinely require human judgment.
 
 [IMPORTANT]
 ====
@@ -30,7 +30,7 @@ Two top-level recipes are available depending on whether you are targeting the f
 | Upgrades an Axon Framework 4 application to free Axon Framework 5.
 Renames packages and classes within the `org.axonframework.*` namespace and applies all core source rewrites.
 | You are targeting free Axon Framework 5 and your AF4 application does *not* use Axon Server connector, the sequenced dead-letter queue, `DistributedCommandBus`, or sagas.
-*Warning:* if your application does use those features, this recipe alone leaves the codebase non-compiling; use `UpgradeAxon4ToAxoniq5` instead.
+*Warning:* if your application does use those features, this recipe alone leaves the codebase non-compiling—use `UpgradeAxon4ToAxoniq5` instead.
 
 | `io.axoniq.framework.migration.UpgradeAxon4ToAxoniq5`
 | Composes the free recipe, then layers commercial upgrades on top and swaps the Spring Boot starter and BOM to the commercial coordinates.
@@ -42,8 +42,8 @@ Renames packages and classes within the `org.axonframework.*` namespace and appl
 The recipes handle the following categories of changes automatically:
 
 * **Build files**:BOM rename, Java source/target version bump, Spring Boot upgrade to 3.5, removal of dependencies with no Axon Framework 5 equivalent
-* **Package and class renames**:handler annotations, `EventBus` -> `EventSink`, `ConfigurerModule` -> `ConfigurationEnhancer`, extension packages
-* **Annotation rewrites**:`@Aggregate` -> `@EventSourced`, `@AggregateRoot` -> `@EventSourcedEntity`, `@TargetAggregateIdentifier` -> `@TargetEntityId`, `@Revision` -> `@Event(version = ...)`, `@ProcessingGroup` -> `@Namespace`, `@EntityCreator` added to constructors
+* **Package and class renames**:handler annotations, `EventBus` → `EventSink`, `ConfigurerModule` → `ConfigurationEnhancer`, extension packages
+* **Annotation rewrites**:`@Aggregate` → `@EventSourced`, `@AggregateRoot` → `@EventSourcedEntity`, `@TargetAggregateIdentifier` → `@TargetEntityId`, `@Revision` → `@Event(version = …)`, `@ProcessingGroup` → `@Namespace`, `@EntityCreator` added to constructors
 +
 [NOTE]
 ====
@@ -109,7 +109,7 @@ For the free (Apache 2.0) path, replace the active recipe with `org.axonframewor
 
 [IMPORTANT]
 ====
-Do not combine the init script with a `rewrite { }` block in `build.gradle` or `build.gradle.kts`; the OpenRewrite Gradle plugin only supports one configuration source at a time.
+Do not combine the init script with a `rewrite { }` block in `build.gradle` or `build.gradle.kts`—the OpenRewrite Gradle plugin only supports one configuration source at a time.
 ====
 
 To override the recipe artifact version, add `-Drewrite.axonMigrationVersion=<version>` to the command.
@@ -119,8 +119,8 @@ For further background, see the link:https://docs.openrewrite.org/running-recipe
 
 Once the recipes complete, the project state will look like this:
 
-1. Build files are updated: dependency versions, BOM coordinates, and Spring Boot version are aligned with Axon Framework 5.
-2. Many Java (and Kotlin) source files have been rewritten: renames, annotation rewrites, and API changes applied mechanically.
+1. Build files are updated—dependency versions, BOM coordinates, and Spring Boot version are aligned with Axon Framework 5.
+2. Many Java (and Kotlin) source files have been rewritten—renames, annotation rewrites, and API changes applied mechanically.
 3. **The project does not compile.** The remaining compile errors identify exactly which API changes require manual attention.
 4. `TODO(axon4to5)` markers in the source point to the locations where the recipe left work intentionally unfinished.
 
