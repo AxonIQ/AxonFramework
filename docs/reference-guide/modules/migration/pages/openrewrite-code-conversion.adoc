@@ -27,7 +27,7 @@ Two top-level recipes are available depending on whether you are targeting the f
 | Recipe | Description | When to use
 
 | `org.axonframework.migration.UpgradeAxon4ToAxon5`
-| Upgrades an Axon Framework 4 application to free Axon Framework 5.
+| Upgrades an Axon Framework 4 application to Axon Framework 5.
 Renames packages and classes within the `org.axonframework.*` namespace and applies all core source rewrites.
 | You are targeting free Axon Framework 5 and your AF4 application does *not* use Axon Server connector, the sequenced dead-letter queue, `DistributedCommandBus`, or sagas.
 *Warning:* if your application does use those features, this recipe alone leaves the codebase non-compiling—use `UpgradeAxon4ToAxoniq5` instead.
