@@ -75,8 +75,8 @@ The `migration/paths/sagastoworkflows` examples use separate classpaths for AF4 
 and Axoniq Framework workflows. They are excluded from the OSS sample classpath. Run:
 
 ```bash
-mvn -f docs/reference-guide/modules/migration/examples/migration/paths/sagastoworkflows/pom.xml test
+mvn -f docs/reference-guide/modules/migration/examples/migration/paths/sagastoworkflows/pom.xml compile
 ```
 
-This compiles both sides and runs their behavior tests using Java 21 or newer.
+This compiles both sides using Java 21 or newer; it does not run behavior tests.
 The workflow examples target 5.4.0; they do not establish compatibility with other releases.

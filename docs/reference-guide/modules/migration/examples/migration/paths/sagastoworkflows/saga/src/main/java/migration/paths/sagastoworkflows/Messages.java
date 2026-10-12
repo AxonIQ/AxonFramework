@@ -29,6 +29,5 @@ public final class Messages {
         // Implement idempotently: orderId is the stable operation key across retries.
         void send(String orderId);
     }
-    public static class TemporaryFailure extends RuntimeException {}
 }
 // end::messages[]
