@@ -26,7 +26,9 @@ import org.openrewrite.java.JavaParser;
 import org.openrewrite.java.JavaTemplate;
 import org.openrewrite.java.tree.Expression;
 import org.openrewrite.java.tree.J;
+import org.openrewrite.java.tree.JavaSourceFile;
 import org.openrewrite.java.tree.Space;
+import org.openrewrite.java.tree.TypeUtils;
 import org.openrewrite.kotlin.tree.K;
 
 import java.util.ArrayList;
@@ -383,36 +385,53 @@ public class MigrateAxonTestFixtureFluentApi extends Recipe {
              * semantic identity is the bare keyword.
              */
 
-            private static final String SAGA_TEST_FIXTURE = "org.axonframework.test.saga.SagaTestFixture";
+            private static final String SAGA_FIXTURE_PACKAGE = "org.axonframework.test.saga";
+            private static final String SAGA_FIXTURE_MESSAGE = "usesSagaFixtureTypes";
 
+            /**
+             * Whether the source file uses any type of the Axon Framework 4 Saga fixture package, imported explicitly,
+             * through a wildcard, or written fully qualified. Any of them means the fixture calls in this file belong
+             * to {@code SagaTestFixture} or its {@code FixtureConfiguration}, never to an aggregate fixture.
+             */
             private boolean usesSagaTestFixture() {
                 SourceFile sourceFile = getCursor().firstEnclosing(SourceFile.class);
-                if (sourceFile == null) {
+                if (!(sourceFile instanceof JavaSourceFile javaSource)) {
                     return false;
                 }
-                Boolean cached = getCursor().getRoot().getMessage(SAGA_TEST_FIXTURE);
+                Boolean cached = getCursor().getRoot().getMessage(SAGA_FIXTURE_MESSAGE);
                 if (cached != null) {
                     return cached;
                 }
-                boolean uses = false;
-                if (sourceFile instanceof J.CompilationUnit cu) {
-                    for (J.Import anImport : cu.getImports()) {
-                        if (SAGA_TEST_FIXTURE.equals(anImport.getTypeName())) {
-                            uses = true;
-                            break;
-                        }
-                    }
-                } else if (sourceFile instanceof K.CompilationUnit kcu) {
-                    for (J.Import anImport : kcu.getImports()) {
-                        if (SAGA_TEST_FIXTURE.equals(anImport.getTypeName())) {
-                            uses = true;
-                            break;
-                        }
-                    }
-                }
-                getCursor().getRoot().putMessage(SAGA_TEST_FIXTURE, uses);
+                boolean uses = javaSource.getImports().stream()
+                                         .anyMatch(anImport -> SAGA_FIXTURE_PACKAGE.equals(anImport.getPackageName()))
+                        || javaSource.getTypesInUse().getTypesInUse().stream()
+                                     .map(TypeUtils::asFullyQualified)
+                                     .anyMatch(type -> type != null
+                                             && SAGA_FIXTURE_PACKAGE.equals(type.getPackageName()))
+                        || referencesSagaFixturePackage(javaSource);
+                getCursor().getRoot().putMessage(SAGA_FIXTURE_MESSAGE, uses);
                 return uses;
             }
+
+            /**
+             * Falls back on the source text of fully qualified references, for a source file whose types are not
+             * resolved.
+             */
+            private boolean referencesSagaFixturePackage(JavaSourceFile javaSource) {
+                boolean[] found = {false};
+                new JavaIsoVisitor<Integer>() {
+                    @Override
+                    public J.FieldAccess visitFieldAccess(J.FieldAccess fieldAccess, Integer p) {
+                        if (fieldAccess.toString().startsWith(SAGA_FIXTURE_PACKAGE + ".")) {
+                            found[0] = true;
+                            return fieldAccess;
+                        }
+                        return super.visitFieldAccess(fieldAccess, p);
+                    }
+                }.visit(javaSource, 0);
+                return found[0];
+            }
+
             private String unescapeBackticks(String name) {
                 if (name.length() >= 2 && name.charAt(0) == '`'
                         && name.charAt(name.length() - 1) == '`') {

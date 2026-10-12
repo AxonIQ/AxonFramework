@@ -31,7 +31,18 @@ description: >-
   test classes that declare an `AxonTestFixture` field but have no
   existing `@AfterEach`. Targets the `axon-test` Maven artifact. Hamcrest
   matcher conversions and Kotlin `@AfterEach` insertion remain manual.
+  `AxonTestFixture` has no deadline manager and no clock, so the aggregate
+  fixture's deadline assertions, time calls and deadline interceptor
+  registrations are kept and marked with a `TODO(axon4to5)` comment.
 recipeList:
+  # `AxonTestFixture` has no deadline manager and no clock, so the aggregate
+  # fixture's deadline assertions, time travel and deadline interceptors are kept
+  # and marked. Runs first, while the calls still resolve to the AF4
+  # `org.axonframework.test.aggregate` types, and before the fluent-API rewrite
+  # rebuilds their chains; the marker sits on the statement, which that rewrite
+  # keeps. The commercial `Axon4ToAxoniq5LegacyDeadline` runs the same recipe
+  # earlier with its own wording, which this step then leaves in place.
+  - org.axonframework.migration.MarkAggregateTestFixtureDeadlineCalls
   # Aggregate-fixture *setup* rewrite — must run BEFORE the
   # `AggregateTestFixture` → `AxonTestFixture` `ChangeType` below so the AF4
   # type is still on the constructor expression. SagaTestFixture constructor
@@ -49,6 +60,18 @@ recipeList:
   # keep running on `axoniq-legacy`. `Axon4ToAxoniq5LegacySaga`, run by the commercial
   # `UpgradeAxon4ToAxoniq5`, adds that dependency and the `@AfterEach` tear-down the
   # ported fixture needs.
+  # The command callback behaviour moved from `org.axonframework.test.utils` to
+  # `org.axonframework.test.util` with the same shape (its `MetaData` parameter
+  # follows the messaging rename). Only these two move one to one: the AF4
+  # `RecordingCommandBus` and `AutowiredResourceInjector` of that package have no
+  # same-shaped AF5 counterpart. `SagaTestFixture.setCallbackBehavior(..)`, ported
+  # by `axoniq-legacy-test`, takes the AF5 type.
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.test.utils.CallbackBehavior
+      newFullyQualifiedTypeName: org.axonframework.test.util.CallbackBehavior
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.test.utils.DefaultCallbackBehavior
+      newFullyQualifiedTypeName: org.axonframework.test.util.DefaultCallbackBehavior
   # FixtureConfiguration<T> is the interface type used as variable declarations
   # in many AF4 tests (e.g. `FixtureConfiguration<Dwelling> fixture`).
   # AF5 replaces it with the concrete AxonTestFixture — no type argument.

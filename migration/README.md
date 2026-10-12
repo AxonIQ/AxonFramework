@@ -47,11 +47,24 @@ After the migration run, search for every such location with:
 - **Command handling**: converts `@CommandHandler` constructors to `public static void handle(...)` methods, and swaps
   in-handler `CommandGateway` fields for injected `CommandDispatcher` parameters.
 - **Legacy sagas** (`UpgradeAxon4ToAxoniq5` only): adds `io.axoniq.framework:axoniq-legacy` when Saga source types are
-  present, replaces static `SagaLifecycle` calls with an injected lifecycle parameter, and replaces Saga
-  `CommandGateway` fields with `CommandDispatcher` handler parameters. Saga handlers stay synchronous; `send` remains fire-and-forget and `sendAndWait` keeps waiting.
+  present, replaces static `SagaLifecycle` calls with an injected lifecycle parameter, replaces a closing
+  `SagaLifecycle.end()` of a `@DeadlineHandler` without an early `return` with `@EndSaga`, calls the other static
+  `SagaLifecycle` methods of a `@DeadlineHandler` (a conditional end, one an early `return` can skip, association
+  changes) through `SagaLifecycle.forContext(processingContext)` on a `ProcessingContext` handler parameter, and replaces
+  Saga `CommandGateway` fields, also those only `@DeadlineHandler` methods use, with `CommandDispatcher` handler
+  parameters. Saga handlers stay synchronous; `send` remains fire-and-forget and `sendAndWait` keeps waiting.
   Other `@Autowired` or `@Inject` Saga fields, and any `ResourceInjector` usage, get a `TODO(axon4to5)` marker: Axon
-  Framework 5 does not inject Saga fields, so move each dependency to a parameter of the `@SagaEventHandler` methods
-  that use it.
+  Framework 5 does not inject Saga fields, so move each dependency to a parameter of the `@SagaEventHandler` and
+  `@DeadlineHandler` methods that use it, behind a `DeadlineMessage` first parameter on a `@DeadlineHandler` without
+  parameters. Static `SagaLifecycle` calls in other Saga methods, such as private helpers,
+  get a `TODO(axon4to5)` marker too, because the legacy module injects `SagaLifecycle` into `@SagaEventHandler` methods
+  only and each caller would have to pass its `ProcessingContext` on.
+- **Legacy deadlines** (`UpgradeAxon4ToAxoniq5` only): adds `axoniq-legacy`, moves `DeadlineManager` fields into handler
+  params, routes aggregate deadline handlers through `@CommandHandler` with explicit `AggregateScopeDescriptor`.
+  Java-only aggregate rewrites; Kotlin gets TODO(axon4to5). Swaps builder config (
+  spanFactory/transactionManager→unitOfWorkFactory, serializer→converter) and scope-aware lookups for component lookups.
+  Leaves TODO(axon4to5) markers on anything it can't safely infer (ambiguous aggregate identifiers, custom scope
+  providers, interceptors, unreachable handlers).
 - **Spring config**: renames `axon.serializer.*` properties to `axon.converter.*` in `application.properties`/YAML, and
   adds advisory TODOs above obsolete `sequencing-policy` settings. Also **migrates Spring Boot snapshotting
   configuration** from the AF4 two-step pattern (`@Bean SnapshotTriggerDefinition` + `@Aggregate(snapshotTriggerDefinition
@@ -60,7 +73,18 @@ After the migration run, search for every such location with:
   `AggregateLoadTimeSnapshotTriggerDefinition(snapshotter, millis)` → `@Snapshotting(afterSourcingTime = "PTxS")`.
   Custom implementations that cannot be inferred automatically receive a `// TODO(axon4to5):` comment instead.
 - **Test fixtures**: replaces `AggregateTestFixture` with `AxonTestFixture` (saga tests keep `SagaTestFixture`, from `axoniq-legacy-test`) and rewrites the fluent
-  Given-When-Then chain to the new phase-aware API.
+  Given-When-Then chain to the new phase-aware API, skipping every file that uses the Saga fixture types. Moves
+  `CallbackBehavior` and `DefaultCallbackBehavior` to `org.axonframework.test.util`. `AxonTestFixture` has no deadline
+  manager and no clock, so the aggregate fixture's deadline assertions (`expectScheduledDeadline*`,
+  `expectTriggeredDeadlines*`, ...), time calls (`givenCurrentTime`, `whenTimeElapses`, ...) and deadline interceptor
+  registrations are kept and marked with a `TODO(axon4to5)`; with `UpgradeAxon4ToAxoniq5`, that marker explains how to
+  test the deadline as the command it fires as on `axoniq-legacy`. With `UpgradeAxon4ToAxoniq5`, it
+  also adds `axoniq-legacy-test` for `SagaTestFixture` and `StubDeadlineManager`, drops the type argument of
+  `DeadlineMessage`, rewrites interceptor lambdas registered on both fixtures to the AF5 signature, and leaves a
+  `TODO(axon4to5)` marker on `SagaTestFixture` calls the ported fixture no longer supports (scheduled event
+  assertions, `withTransienceCheckDisabled()`, `registerCommandGateway(..)`,
+  `registerListenerInvocationErrorHandler(..)`, metadata passed as a variable declared with non-String values such as
+  `Map<String, Object>`) and on interceptors it cannot rewrite.
 - **Commercial path** (`UpgradeAxon4ToAxoniq5` only): additionally re-namespaces Axon Server connector, DLQ,
   distributed-messaging, and Testcontainer classes from `org.axonframework.*` to `io.axoniq.framework.*` and swaps the
   Spring Boot starter to `axoniq-spring-boot-starter`.
@@ -120,8 +144,8 @@ For background, see the upstream guide on
 
 | Recipe                                                | What it does                                                                                                                                                                                                                                                                            | When to use                                                                                                                                                                                                                                            |
 |-------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `org.axonframework.migration.UpgradeAxon4ToAxon5`     | Migrates AF4 to non-commercial AF5. Renames packages/classes and updates Maven coordinates within the `org.axonframework.*` namespace.                                                                                                                                                  | You want to land on non-commercial AF5. **Warning**: if your AF4 app uses Axon Server / distributed command bus / DLQ / Sagas, this recipe alone leaves your codebase non-compiling, because those features moved to commercial. Use `UpgradeAxon4ToAxoniq5` instead. |
-| `io.axoniq.framework.migration.UpgradeAxon4ToAxoniq5` | Composes `UpgradeAxon4ToAxon5` then layers commercial-only migrations on top: source rewrites for Sagas / Axon Server / DLQ / distributed-messaging, BOM swap to `axoniq-framework-bom`, Spring Boot starter swap to `axoniq-spring-boot-starter`, conditional `AddDependency` for Axoniq jars. | Recommended default for AF4 applications using Axon Server / DLQ / distributed messaging / Sagas.                                                                                                                                                      |
+| `org.axonframework.migration.UpgradeAxon4ToAxon5`     | Migrates AF4 to non-commercial AF5. Renames packages/classes and updates Maven coordinates within the `org.axonframework.*` namespace.                                                                                                                                                  | You want to land on non-commercial AF5. **Warning**: if your AF4 app uses Axon Server / distributed command bus / DLQ / Sagas / deadlines, this recipe alone leaves your codebase non-compiling, because those features moved to commercial. Use `UpgradeAxon4ToAxoniq5` instead. |
+| `io.axoniq.framework.migration.UpgradeAxon4ToAxoniq5` | Composes `UpgradeAxon4ToAxon5` then layers commercial-only migrations on top: source rewrites for Sagas / deadlines / Axon Server / DLQ / distributed-messaging, BOM swap to `axoniq-framework-bom`, Spring Boot starter swap to `axoniq-spring-boot-starter`, conditional `AddDependency` for Axoniq jars. | Recommended default for AF4 applications using Axon Server / DLQ / distributed messaging / Sagas / deadlines.                                                                                                                                                 |
 
 ### Per-module recipes
 
@@ -162,6 +186,7 @@ files; they're no-ops today.
 | Distributed messaging           | `Axon4ToAxoniq5DistributedMessaging` |
 | Legacy module (`axoniq-legacy`) | `Axon4ToAxoniq5Legacy`               |
 | Legacy module: Sagas            | `Axon4ToAxoniq5LegacySaga`           |
+| Legacy module: deadlines        | `Axon4ToAxoniq5LegacyDeadline`       |
 | Testcontainer (Axon Server)     | `Axon4ToAxoniq5Testcontainer`        |
 
 A placeholder for the Axoniq-only event-streaming module without finalized

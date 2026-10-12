@@ -72,6 +72,34 @@ class Axon4ToAxon5TestFixtureTest implements RewriteTest {
     }
 
     @Test
+    void movesTheCallbackBehaviourTypesToTheTestUtilPackage() {
+        rewriteRun(
+                java(
+                        """
+                        package com.example;
+
+                        import org.axonframework.test.utils.CallbackBehavior;
+                        import org.axonframework.test.utils.DefaultCallbackBehavior;
+
+                        class FooTest {
+                            CallbackBehavior behavior = new DefaultCallbackBehavior();
+                        }
+                        """,
+                        """
+                        package com.example;
+
+                        import org.axonframework.test.util.CallbackBehavior;
+                        import org.axonframework.test.util.DefaultCallbackBehavior;
+
+                        class FooTest {
+                            CallbackBehavior behavior = new DefaultCallbackBehavior();
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
     void rewritesGivenEventsWhenCommandExpectEvents() {
         rewriteRun(
                 java(

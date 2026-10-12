@@ -26,6 +26,10 @@ displayName: Migrate Axon Framework 4 legacy APIs to Axoniq Framework 5
 description: >-
   Migrates the Axon Framework 4 APIs that the Axoniq Framework legacy modules
   `io.axoniq.framework:axoniq-legacy` and `io.axoniq.framework:axoniq-legacy-test`
-  keep running. Today that covers Sagas.
+  keep running. Today that covers deadlines and Sagas.
 recipeList:
+  # Deadlines run first: they move a Saga's `DeadlineManager` field into a
+  # handler parameter, so the Saga recipe's closing `MarkSagaResourceInjection`
+  # does not mark that field as unmigrated.
+  - io.axoniq.framework.migration.Axon4ToAxoniq5LegacyDeadline
   - io.axoniq.framework.migration.Axon4ToAxoniq5LegacySaga
