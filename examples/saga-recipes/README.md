@@ -58,8 +58,10 @@ tested, next to the recipes rather than as a quotation.
 It is deliberately outside the shared contract. Four of those seven scenarios cover behaviour the original does not
 have, because it leaned on a payment timeout for all of it: cancelling an outstanding payment, handling
 `PaymentCancelled`, answering `CancelRentalPayment`, and the redelivery bug the recipes fix. Its own tests assert
-the part it does satisfy. Everything the original did with a `DeadlineManager` is left in place as commented-out
-Axon Framework 4 code, so porting deadlines later changes bodies rather than design.
+the part it does satisfy. The original's `DeadlineManager` is ported as well, wired by
+`LegacyDeadlineConfiguration`: a prepared payment nobody confirms within 30 seconds is rejected, a rejected request
+calls that timeout off, and a request for payment that could not be dispatched is made again five seconds later. Its
+`SagaTestFixture` test drives all of it with `whenTimeElapses(..)`.
 
 ## Running the tests
 
