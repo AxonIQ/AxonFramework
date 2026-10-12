@@ -59,29 +59,12 @@ After the migration run, search for every such location with:
   parameters. Static `SagaLifecycle` calls in other Saga methods, such as private helpers,
   get a `TODO(axon4to5)` marker too, because the legacy module injects `SagaLifecycle` into `@SagaEventHandler` methods
   only and each caller would have to pass its `ProcessingContext` on.
-- **Legacy deadlines** (`UpgradeAxon4ToAxoniq5` only): adds `io.axoniq.framework:axoniq-legacy` when deadline types are
-  used, keeping `DeadlineManager` and `@DeadlineHandler` in their AF4 packages. Moves a Saga's private `DeadlineManager`
-  field into a parameter of the `@SagaEventHandler` and `@DeadlineHandler` methods that use it; a `@DeadlineHandler`
-  without parameters first gets a `DeadlineMessage` parameter, so the `DeadlineManager` does not become its payload. A deadline scheduled for an
-  aggregate fires as a command, so an aggregate's `@DeadlineHandler` becomes the `@CommandHandler` receiving it, and
-  `DeadlineManager` calls that relied on the aggregate's scope get an explicit `AggregateScopeDescriptor`, as Axon
-  Framework 5 runs no scope around an entity handler. Both aggregate rewrites are Java only; in Kotlin aggregates the
-  deadline handlers and those calls get a `TODO(axon4to5)` marker. Removes `spanFactory(..)` and `transactionManager(..)` from the
-  deadline manager builders, adds the required `unitOfWorkFactory(..)` (looked up on an AF4 `Configuration` parameter
-  or local in scope, or, in a Spring `@Bean` method, taken from a `UnitOfWorkFactory` parameter it adds), replaces
-  `serializer(JacksonSerializer.defaultSerializer())` with `converter(new JacksonConverter())` and a serializer
-  `@Bean` method parameter with the matching `EventConverter`, `MessageConverter` or `GeneralConverter` parameter
-  (marked to check it against the deadlines the AF4 serializer already stored),
-  and replaces `ConfigurationScopeAwareProvider` and `Configuration#deadlineManager()` with component lookups. A `TODO(axon4to5)`
-  marker is left on a `unitOfWorkFactory(..)` with neither in reach, a `converter(..)` the recipe cannot infer, `configureDeadlineManager(..)`,
-  `deadlineManager()` lookups, interceptors registered on the `DeadlineManager` interface, a `ScopeAwareProvider` the
-  application registers itself, aggregate deadline handlers no command can reach (or that now receive the same command,
-  belong to a member entity, or match by deadline name a deadline not always scheduled without a payload),
-  `DeadlineMessage` handler parameters on aggregates, and aggregate `DeadlineManager` calls without an identifier in
-  reach (static methods and constructors other than creation command handlers, creation command handlers and
-  `@CreationPolicy` handlers that may create the aggregate whose command has no single `@TargetAggregateIdentifier`
-  readable through a record accessor, getter or public field, member entities). In a creation handler with such a
-  command, the call gets that target identifier.
+- **Legacy deadlines** (`UpgradeAxon4ToAxoniq5` only): adds `axoniq-legacy`, moves `DeadlineManager` fields into handler
+  params, routes aggregate deadline handlers through `@CommandHandler` with explicit `AggregateScopeDescriptor`.
+  Java-only aggregate rewrites; Kotlin gets TODO(axon4to5). Swaps builder config (
+  spanFactory/transactionManager→unitOfWorkFactory, serializer→converter) and scope-aware lookups for component lookups.
+  Leaves TODO(axon4to5) markers on anything it can't safely infer (ambiguous aggregate identifiers, custom scope
+  providers, interceptors, unreachable handlers).
 - **Spring config**: renames `axon.serializer.*` properties to `axon.converter.*` in `application.properties`/YAML, and
   adds advisory TODOs above obsolete `sequencing-policy` settings. Also **migrates Spring Boot snapshotting
   configuration** from the AF4 two-step pattern (`@Bean SnapshotTriggerDefinition` + `@Aggregate(snapshotTriggerDefinition
