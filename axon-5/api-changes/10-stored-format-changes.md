@@ -89,9 +89,14 @@ It has to match the `Serializer` the Axon Framework 4 deadline manager used, inc
 
 Further differences when reading a job:
 
-- A payload type name that does not resolve to a class, such as an XStream alias or a class that was renamed or
-  removed, fires the deadline with an `org.axonframework.deadline.UnknownDeadlinePayload`. It holds the stored type
-  name, revision and data.
+- With an `XStreamConverter`, also when it is wrapped in Axon Framework's delegating converters, stored payload and
+  scope descriptor type names resolve through the mapper of its `XStream` instance first, as Axon Framework 4's
+  `XStreamSerializer` did. A type Axon Framework 4 stored under an XStream alias, a built-in one such as `uuid` or
+  `int`, or one the application registered, therefore resolves, provided the `XStream` instance has the same aliases.
+- A payload type name that still does not resolve to a class, such as a class that was renamed or removed, fires the
+  deadline with an `org.axonframework.deadline.UnknownDeadlinePayload`, which holds the stored type name, revision and
+  data. The saga manager or the aggregate deadline translator logs a warning naming the deadline, the type and the
+  scope.
 - Metadata values become strings: numbers and booleans as `String.valueOf(...)`, nested maps and lists as JSON. An Axon
   Framework 4 node reading a job written by Axon Framework 5 sees every metadata value as a string.
 - The stored revision is read but not used. A deadline payload is not upcast.
