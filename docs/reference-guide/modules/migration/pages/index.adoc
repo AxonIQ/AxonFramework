@@ -78,7 +78,7 @@ A successful code conversion does not verify persistent state or production cuto
 | Axon Server upgrade UI or REST API; no OpenRewrite recipe
 
 | <<legacy-sagas,3. Axon 4 sagas to Axon 5 legacy sagas>>
-| link:https://docs.axoniq.io/axon-framework-reference/development/migration/paths/sagas/[Legacy saga upgrade]
+| xref:migration:paths/sagas.adoc[Legacy saga upgrade]
 | `axon4to5-migrate-code` saga recipe; `Axon4ToAxon5Legacy` within the OpenRewrite upgrade recipes
 
 | <<saga-to-workflow,4. Sagas to workflows with coexistence>>
@@ -159,7 +159,7 @@ Use it only if moving event-store data is a separate requirement of the upgrade.
 [#legacy-sagas]
 === Stage 3: Axon 4 sagas to Axon 5 legacy sagas
 
-Use the link:https://docs.axoniq.io/axon-framework-reference/development/migration/paths/sagas/[legacy saga upgrade path] to run existing sagas on the selected Axoniq Framework release.
+Use the xref:migration:paths/sagas.adoc[legacy saga upgrade path] to run existing sagas on the selected Axoniq Framework release.
 The OpenRewrite upgrade includes `org.axonframework.migration.Axon4ToAxon5Legacy` for mechanical saga changes.
 Finish the remaining handler injection, configuration, and test changes with `axon4to5-migrate-code`.
 

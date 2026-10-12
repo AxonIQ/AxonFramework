@@ -7,7 +7,7 @@ Reconstruct the saga's state machine, implement the intended behavior with workf
 Existing instances finish in the legacy saga runtime; new instances start as workflows.
 It covers behavior conversion, verification, coexistence, and retirement.
 
-The link:https://docs.axoniq.io/axon-framework-reference/development/migration/paths/sagas/[Axon 4 sagas to Axon 5 legacy sagas] path covers the preceding compatibility upgrade.
+The xref:migration:paths/sagas.adoc[Axon 4 sagas to Axon 5 legacy sagas] path covers the preceding compatibility upgrade.
 Return to the xref:migration:index.adoc#staged-upgrade[staged upgrade plan] for the complete application upgrade.
 
 [#prerequisites]
