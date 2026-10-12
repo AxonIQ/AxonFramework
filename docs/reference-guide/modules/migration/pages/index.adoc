@@ -104,8 +104,9 @@ Use a copy of production-like state to verify subsequent stages, including an in
 [#framework-upgrade]
 === Stage 1: Axon 4 to Axon 5 code
 
-Run the xref:migration:openrewrite-code-conversion.adoc[OpenRewrite conversion] on a working copy with a recoverable baseline.
-Choose the recipe for the selected Framework distribution:
+It is strongly recommended to run the xref:migration:openrewrite-code-conversion.adoc[OpenRewrite conversion] on a working copy with a recoverable baseline.
+Otherwise, you will have to process all the paths manually to ensure your Axon Framework 4 code is updated to Axon Framework 5.
+Assuming you're following the OpenRewrite approach, choose the recipe for the selected Framework distribution:
 
 * `org.axonframework.migration.UpgradeAxon4ToAxon5` for the open-source Framework route.
 * `io.axoniq.framework.migration.UpgradeAxon4ToAxoniq5` for the Axoniq route, including applications using Axon Server or the legacy saga module.
