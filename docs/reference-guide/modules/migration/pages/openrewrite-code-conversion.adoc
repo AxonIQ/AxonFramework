@@ -137,9 +137,3 @@ The following are explicitly out of scope for code conversion:
 
 * **No data migration**:event store contents, token tables, dead-letter queue entries, and saga state are never touched.
 * **No compile guarantee**:a non-compiling project after the run is the expected outcome, not an error.
-ifndef::advanced-framework[]
-* **Some Axon Framework 4 features have no Axon Framework 5 equivalent yet**:Sagas and Deadlines are not available in Axon Framework 5.0. See xref:migration:paths/index.adoc#_what_is_not_yet_there[what is not yet there] for the full list.
-endif::[]
-ifdef::advanced-framework[]
-* **Some Axon Framework 4 features have no Axon Framework 5 equivalent yet**:Sagas and Deadlines are not available in free Axon Framework 5. The commercial recipe keeps them running on `axoniq-legacy`, as described in <<_what_gets_converted,What gets converted>>. See xref:migration:paths/index.adoc#_what_is_not_yet_there[what is not yet there] for the full list.
-endif::[]
