@@ -134,7 +134,7 @@ To upgrade the Framework while retaining a regular context, use `AggregateBasedA
 Follow the version-specific link:https://docs.axoniq.io/axon-server-reference/v2026.1/axon-server/administration/multi-context/#_context_migration_to_dcb[Axon Server context upgrade procedure].
 It covers preparation, completion, cleanup, permissions, and restrictions on the source context.
 Schedule the completion step for an interruption: the context is temporarily unavailable during the switch.
-If Axon Framework 4 clients continue to use the context, upgrade them to 4.12 or newer before conversion.
+If Axon Framework 4 clients continue to use the context, upgrade them to 4.13.2 or higher to ensure compatibility.
 
 Verify snapshot compatibility for the selected engine and Framework release; see xref:migration:paths/snapshotting.adoc#reusing_existing_snapshots[snapshot upgrade].
 Include entity reconstruction from historical event streams in the verification.
