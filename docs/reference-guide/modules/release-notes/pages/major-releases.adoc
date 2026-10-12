@@ -58,7 +58,7 @@ All the enhancements and features which have been introduced to our major releas
 
 === Bug fixes
 
-- Recognise the broadcast sentinel by identity instead of by value (link:https://github.com/AxonIQ/AxonFramework/issues/4800[#4800], link:https://github.com/AxonIQ/AxonFramework/pull/4805[PR #4805], by link:https://github.com/schananas[@schananas])
+- Recognize the broadcast sentinel by identity instead of by value (link:https://github.com/AxonIQ/AxonFramework/issues/4800[#4800], link:https://github.com/AxonIQ/AxonFramework/pull/4805[PR #4805], by link:https://github.com/schananas[@schananas])
 - Resolve the reset converter only when there is a reset context (link:https://github.com/AxonIQ/AxonFramework/issues/4796[#4796], link:https://github.com/AxonIQ/AxonFramework/pull/4806[PR #4806], by link:https://github.com/schananas[@schananas])
 - Keep the work package's stored token monotonic from the first store of a claim (link:https://github.com/AxonIQ/AxonFramework/issues/4801[#4801], link:https://github.com/AxonIQ/AxonFramework/pull/4807[PR #4807], by link:https://github.com/schananas[@schananas])
 - Adopt a concurrently created config token instead of failing to start (link:https://github.com/AxonIQ/AxonFramework/issues/4802[#4802], link:https://github.com/AxonIQ/AxonFramework/pull/4813[PR #4813], by link:https://github.com/schananas[@schananas])
