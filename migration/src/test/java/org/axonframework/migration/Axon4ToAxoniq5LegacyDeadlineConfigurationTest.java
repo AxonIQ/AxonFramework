@@ -32,9 +32,9 @@ import static org.openrewrite.java.Assertions.java;
 class Axon4ToAxoniq5LegacyDeadlineConfigurationTest implements RewriteTest {
 
     private static final String STORED_DEADLINES_TODO =
-            "// TODO(axon4to5): check that this converter reads the deadlines already stored. Axon Framework 4"
-                    + " Spring Boot serialized them with XStream unless axon.serializer.* was set; those need an"
-                    + " XStreamConverter allowing your payload and scope types.";
+            "// TODO(axon4to5): check that this converter reads the deadlines already stored. They were written"
+                    + " by the Axon Framework 4 serializer this parameter received; configure the converter to match"
+                    + " that serializer, so pending deadlines stay readable.";
     private static final String PROVIDER_TODO =
             "// TODO(axon4to5): remove this ScopeAwareProvider registration. Axoniq Framework 5 registers its own"
                     + " ScopeAwareProvider component, with which the Saga managers register themselves; a provider"

@@ -71,7 +71,7 @@ After the migration run, search for every such location with:
   or local in scope, or, in a Spring `@Bean` method, taken from a `UnitOfWorkFactory` parameter it adds), replaces
   `serializer(JacksonSerializer.defaultSerializer())` with `converter(new JacksonConverter())` and a serializer
   `@Bean` method parameter with the matching `EventConverter`, `MessageConverter` or `GeneralConverter` parameter
-  (marked to check it against the deadlines already stored, as AF4 Spring Boot serialized with XStream by default),
+  (marked to check it against the deadlines the AF4 serializer already stored),
   and replaces `ConfigurationScopeAwareProvider` and `Configuration#deadlineManager()` with component lookups. A `TODO(axon4to5)`
   marker is left on a `unitOfWorkFactory(..)` with neither in reach, a `converter(..)` the recipe cannot infer, `configureDeadlineManager(..)`,
   `deadlineManager()` lookups, interceptors registered on the `DeadlineManager` interface, a `ScopeAwareProvider` the

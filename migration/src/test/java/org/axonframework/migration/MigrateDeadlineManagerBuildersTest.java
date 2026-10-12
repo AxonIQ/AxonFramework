@@ -46,9 +46,9 @@ class MigrateDeadlineManagerBuildersTest implements RewriteTest {
                     + " Quartz deadline manager to an XStreamSerializer; pass an XStreamConverter allowing your"
                     + " payload and scope types to read the jobs it stored.";
     private static final String STORED_DEADLINES_TODO =
-            "// TODO(axon4to5): check that this converter reads the deadlines already stored. Axon Framework 4"
-                    + " Spring Boot serialized them with XStream unless axon.serializer.* was set; those need an"
-                    + " XStreamConverter allowing your payload and scope types.";
+            "// TODO(axon4to5): check that this converter reads the deadlines already stored. They were written"
+                    + " by the Axon Framework 4 serializer this parameter received; configure the converter to match"
+                    + " that serializer, so pending deadlines stay readable.";
 
     @Override
     public void defaults(RecipeSpec spec) {

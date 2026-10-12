@@ -69,9 +69,9 @@ import java.util.UUID;
  * A serializer that a Spring {@code @Bean} method receives as a parameter used for nothing else becomes the converter
  * Axon Framework 5 Spring Boot provides in its place: the {@code "eventSerializer"} qualifier an
  * {@code EventConverter}, {@code "messageSerializer"} a {@code MessageConverter}, and {@code "serializer"} or no
- * qualifier a {@code GeneralConverter}, the one converter type Spring resolves without ambiguity. As Axon Framework 4
- * Spring Boot serialized with XStream by default, that statement keeps a marker to check the converter against the
- * deadlines already stored.
+ * qualifier a {@code GeneralConverter}, the one converter type Spring resolves without ambiguity. Which serializer that
+ * parameter was is configured elsewhere, so that statement keeps a marker to check the converter against the deadlines
+ * already stored.
  * <p>
  * It inserts {@code unitOfWorkFactory(..)} right after {@code builder()} in a Java builder chain when a factory is in
  * reach: {@code configuration.getComponent(UnitOfWorkFactory.class)} on an Axon Framework 4 {@code Configuration}
@@ -138,8 +138,8 @@ public class MigrateDeadlineManagerBuilders extends Recipe {
     private static final String STORED_DEADLINES_MARKER =
             "TODO(axon4to5): check that this converter reads the deadlines already stored";
     private static final String STORED_DEADLINES_TODO = " " + STORED_DEADLINES_MARKER
-            + ". Axon Framework 4 Spring Boot serialized them with XStream unless axon.serializer.* was set; those"
-            + " need an XStreamConverter allowing your payload and scope types.";
+            + ". They were written by the Axon Framework 4 serializer this parameter received; configure the"
+            + " converter to match that serializer, so pending deadlines stay readable.";
     private static final String CONVERTER_MARKER = "TODO(axon4to5): add converter(";
     private static final String QUARTZ_CONVERTER_TODO = " " + CONVERTER_MARKER
             + "..) to this deadline manager builder. Axon Framework 4 defaulted the Quartz deadline manager to an"
