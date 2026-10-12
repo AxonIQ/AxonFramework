@@ -1,3 +1,4 @@
+[.axoniq-feature]
 = Saga to Workflow Upgrade
 :navtitle: Sagas to workflows
 

@@ -149,6 +149,7 @@ It does not perform regular-context-to-DCB conversion.
 Use it only if moving event-store data is a separate requirement of the upgrade.
 ====
 
+[.axoniq-feature]
 [#legacy-sagas]
 === Stage 3: Axon 4 sagas to Axon 5 legacy sagas
 
@@ -165,6 +166,7 @@ When the selected legacy release does not support an existing deadline mechanism
 Verify success, failure, pending deadlines, and restart behavior against persisted state.
 New instances may still start as legacy sagas at this stage.
 
+[.axoniq-feature]
 [#saga-to-workflow]
 === Stage 4: Sagas to workflows with coexistence
 
