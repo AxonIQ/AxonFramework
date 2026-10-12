@@ -46,6 +46,7 @@ If you have used the `XStreamSerializer` in for serialization of your events, yo
 xref:paths/index.adoc#missing-a-migration-path[Contact the Axon Framework team] for assistance with this migration step.
 ====
 
+ifdef::advanced-framework[]
 [NOTE]
 .Saga state, deadlines, and scheduled events
 ====
@@ -54,6 +55,7 @@ XStream for sagas, deadlines, or scheduled events. For that narrow case, the `ax
 deprecated, opt-in `XStreamConverter` that wraps your own `XStream` instance to read (and, for sagas, keep writing)
 that data unchanged. See xref:migration:paths/sagas.adoc[Saga upgrade] and xref:ROOT:conversion.adoc#xstream_converter[XStreamConverter].
 ====
+endif::[]
 
 == Message and event converter types
 

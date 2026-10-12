@@ -157,6 +157,19 @@ All `DeadlineManager.schedule(...)` overloads are deprecated: they are kept so A
 while migrating, not for new code. Schedule a command with a scheduler of your choice that dispatches it through the
 `CommandGateway` instead, or replace the Saga with a Workflow. Cancelling deadlines stays fully supported.
 
+A fired deadline reaches the `@DeadlineHandler` of the Saga that scheduled it without any wiring. `axoniq-legacy`
+registers a `LegacyScopeAwareProvider` as the configuration's `ScopeAwareProvider`, and every Saga manager registers
+itself with it when it is built. Axon Framework 4's `ConfigurationScopeAwareProvider` is not ported: a deadline manager
+the application builds itself takes the configuration's provider instead, by autowiring the `ScopeAwareProvider` bean in
+Spring, or through `configuration.getComponent(ScopeAwareProvider.class)` otherwise. `@DeadlineHandler` methods are only
+invoked on legacy Sagas.
+
+A persistent deadline manager can fire an overdue deadline before the event processors have built the Saga managers.
+The provider then waits until the configuration has started until a configured timeout (defaulting to  30 seconds), and 
+fails afterwards with a transient `ScopeAwareProviderNotReadyException`, so that the deadline manager retries the 
+deadline. Change the timeout with the `axon.deadline.scope-aware-provider-readiness-timeout` property, or a 
+`ScopeAwareProviderSettings` component without Spring.
+
 ### SagaStore
 
 The saga stores in `axoniq-legacy` are an exception worth calling out, because the opposite would be a reasonable

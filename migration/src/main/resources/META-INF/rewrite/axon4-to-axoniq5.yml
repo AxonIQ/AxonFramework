@@ -16,16 +16,16 @@
 
 # Top-level Axon Framework 4 → Axoniq Framework 5 commercial upgrade.
 #
-# This composite migrates Sagas onto `axoniq-legacy`, runs `UpgradeAxon4ToAxon5`
-# (the entire free AF5 migration), then layers commercial-only migrations on
+# This composite migrates Sagas and deadlines onto `axoniq-legacy`, runs
+# `UpgradeAxon4ToAxon5` (the entire free AF5 migration), then layers commercial-only migrations on
 # top: source rewrites for Axon Server / DLQ / distributed-messaging, BOM swap to
 # `axoniq-framework-bom`, Spring Boot starter swap to
 # `axoniq-spring-boot-starter`, and conditional `AddDependency` for the
 # Axoniq jars when the corresponding feature is in use.
 #
 # Use this when your AF4 application uses Axon Server, the sequenced DLQ,
-# DistributedCommandBus, or Sagas. Those features were dropped from free AF5
-# and exist only in Axoniq Framework 5 commercial.
+# DistributedCommandBus, Sagas, or deadlines. Those features were dropped from
+# free AF5 and exist only in Axoniq Framework 5 commercial.
 
 ---
 type: specs.openrewrite.org/v1beta/recipe
@@ -37,8 +37,8 @@ description: >-
   commercial-only migrations: BOM swap to
   `io.axoniq.framework:axoniq-framework-bom`, Spring Boot starter swap to
   `io.axoniq.framework:axoniq-spring-boot-starter`, source rewrites and
-  Maven adds for Sagas (`axoniq-legacy`), Axon Server connector, sequenced
-  dead-letter queue, and distributed messaging.
+  Maven adds for Sagas and deadlines (`axoniq-legacy`), Axon Server
+  connector, sequenced dead-letter queue, and distributed messaging.
 recipeList:
   # The axoniq-legacy migrations run before the free leg, so the Saga-specific
   # CommandGateway handling is complete before the general @EventHandler

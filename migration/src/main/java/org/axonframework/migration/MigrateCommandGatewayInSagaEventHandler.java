@@ -31,7 +31,6 @@ import org.openrewrite.java.tree.JavaType;
 import org.openrewrite.java.tree.Space;
 import org.openrewrite.java.tree.Statement;
 import org.openrewrite.java.tree.TypeUtils;
-import org.openrewrite.kotlin.KotlinParser;
 import org.openrewrite.kotlin.tree.K;
 import org.openrewrite.marker.Markers;
 
@@ -46,6 +45,10 @@ import java.util.Set;
  * Migrates command dispatch from an Axon Framework 4 {@code CommandGateway} field in legacy Saga event handlers to
  * an Axon Framework 5 {@code CommandDispatcher} method parameter.
  * <p>
+ * The recipe acts when a {@code @SagaEventHandler}, or a {@code @DeadlineHandler} of a Saga, uses the gateway,
+ * directly or through the methods it calls; an aggregate's deadline handler is left alone. The dispatcher parameter
+ * is resolved before the payload, so even as the only parameter of a deadline handler it does not become the payload.
+ * <p>
  * The recipe preserves the dispatch contract of each call. {@code send(...)} remains fire-and-forget.
  * {@code sendAndWait(...)} waits through {@code FutureUtils.joinAndUnwrap(...)} so the Saga handler remains
  * synchronous and command failures retain their original exception type. When no references remain, the obsolete
@@ -57,6 +60,7 @@ import java.util.Set;
 public class MigrateCommandGatewayInSagaEventHandler extends Recipe {
 
     private static final String SAGA_EVENT_HANDLER_FQN = "org.axonframework.modelling.saga.SagaEventHandler";
+    private static final String DEADLINE_HANDLER_FQN = "org.axonframework.deadline.annotation.DeadlineHandler";
     private static final String COMMAND_GATEWAY_AF4_FQN = "org.axonframework.commandhandling.gateway.CommandGateway";
     private static final String COMMAND_GATEWAY_AF5_FQN =
             "org.axonframework.messaging.commandhandling.gateway.CommandGateway";
@@ -71,8 +75,8 @@ public class MigrateCommandGatewayInSagaEventHandler extends Recipe {
 
     @Override
     public String getDescription() {
-        return "Replaces a class-level `CommandGateway` used by `@SagaEventHandler` methods, and by the private "
-                + "helper methods they call, with an injected "
+        return "Replaces a class-level `CommandGateway` used by `@SagaEventHandler` methods or Saga "
+                + "`@DeadlineHandler` methods, and by the private helper methods they call, with an injected "
                 + "`CommandDispatcher` parameter. `send` remains fire-and-forget, while `sendAndWait` remains "
                 + "synchronous without changing the handler return type.";
     }
@@ -260,14 +264,26 @@ public class MigrateCommandGatewayInSagaEventHandler extends Recipe {
                 return keys;
             }
 
+            /**
+             * Whether a Saga handler needs the dispatcher: a {@code @SagaEventHandler}, or a {@code @DeadlineHandler}
+             * of a Saga. An aggregate's deadline handler is left out, as it turns into a command handler.
+             */
             private boolean hasSagaHandlerIn(J.ClassDeclaration classDeclaration, Set<String> signatures) {
+                boolean saga = SagaClasses.declaresSaga(classDeclaration);
                 for (Statement statement : classDeclaration.getBody().getStatements()) {
                     if (statement instanceof J.MethodDeclaration method
-                            && isSagaEventHandler(method) && signatures.contains(signatureOf(method))) {
+                            && (isSagaEventHandler(method) || (saga && isDeadlineHandler(method)))
+                            && signatures.contains(signatureOf(method))) {
                         return true;
                     }
                 }
                 return false;
+            }
+
+            private boolean isDeadlineHandler(J.MethodDeclaration method) {
+                return method.getLeadingAnnotations().stream().anyMatch(
+                        annotation -> SagaClasses.isAnnotation(annotation, DEADLINE_HANDLER_FQN, "DeadlineHandler")
+                );
             }
 
             private boolean callsAnyOf(J.MethodDeclaration method, Set<String> callKeys) {
@@ -445,70 +461,7 @@ public class MigrateCommandGatewayInSagaEventHandler extends Recipe {
             }
 
             private J.MethodDeclaration addDispatcherParameter(J.MethodDeclaration method, String parameterName) {
-                if (isKotlinSource()) {
-                    return addKotlinDispatcherParameter(method, parameterName);
-                }
-                List<Object> templateArguments = new ArrayList<>();
-                StringBuilder template = new StringBuilder();
-                List<Statement> existing = method.getParameters();
-                boolean hasExisting = !(existing.size() == 1 && existing.get(0) instanceof J.Empty);
-                if (hasExisting) {
-                    for (int i = 0; i < existing.size(); i++) {
-                        if (i > 0) {
-                            template.append(", ");
-                        }
-                        template.append("#{}");
-                        // trim: the printed parameter carries its own leading space, the template adds ", "
-                        templateArguments.add(existing.get(i).print(getCursor()).trim());
-                    }
-                    template.append(", ");
-                }
-                template.append("CommandDispatcher ").append(parameterName);
-                return JavaTemplate.builder(template.toString())
-                        .imports(COMMAND_DISPATCHER_FQN)
-                        .javaParser(JavaParser.fromJavaVersion().classpath(JavaParser.runtimeClasspath()))
-                        .build()
-                        .apply(getCursor(), method.getCoordinates().replaceParameters(), templateArguments.toArray());
-            }
-
-            private J.MethodDeclaration addKotlinDispatcherParameter(J.MethodDeclaration method,
-                                                                      String parameterName) {
-                List<Statement> existing = method.getParameters();
-                boolean hasExisting = !(existing.size() == 1 && existing.get(0) instanceof J.Empty);
-                StringBuilder parameters = new StringBuilder();
-                if (hasExisting) {
-                    for (int i = 0; i < existing.size(); i++) {
-                        if (i > 0) {
-                            parameters.append(", ");
-                        }
-                        parameters.append(existing.get(i).print(getCursor()).trim());
-                    }
-                    parameters.append(", ");
-                }
-                parameters.append(parameterName).append(": CommandDispatcher");
-
-                String snippet = "package _temp\n\nimport " + COMMAND_DISPATCHER_FQN + "\n\nfun _f("
-                        + parameters + ") {}\n";
-                List<SourceFile> parsed;
-                try {
-                    parsed = KotlinParser.builder().build().parse(snippet)
-                                         .filter(source -> source instanceof K.CompilationUnit)
-                                         .toList();
-                } catch (RuntimeException exception) {
-                    return method;
-                }
-                if (parsed.isEmpty()) {
-                    return method;
-                }
-                K.CompilationUnit compilationUnit = (K.CompilationUnit) parsed.get(0);
-                for (Statement statement : compilationUnit.getStatements()) {
-                    if (statement instanceof J.MethodDeclaration) {
-                        return method.getPadding().withParameters(
-                                ((J.MethodDeclaration) statement).getPadding().getParameters()
-                        );
-                    }
-                }
-                return method;
+                return MethodParameters.append(method, isKotlinSource(), COMMAND_DISPATCHER_FQN, parameterName);
             }
 
             private boolean isKotlinSource() {

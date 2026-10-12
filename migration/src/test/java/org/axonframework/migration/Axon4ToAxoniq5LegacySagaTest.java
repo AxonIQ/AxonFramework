@@ -133,6 +133,893 @@ class Axon4ToAxoniq5LegacySagaTest implements RewriteTest {
                     )
             );
         }
+
+        @Test
+        void appendsTheLifecycleParameterAfterSeveralExistingParameters() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.axonframework.modelling.saga.SagaLifecycle;
+
+                            class PaymentSaga {
+                                @SagaEventHandler(associationProperty = "rentalId")
+                                void on(Object event, String rentalId) {
+                                    SagaLifecycle.associateWith("rentalId", rentalId);
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.axonframework.modelling.saga.SagaLifecycle;
+
+                            class PaymentSaga {
+                                @SagaEventHandler(associationProperty = "rentalId")
+                                void on(Object event, String rentalId, SagaLifecycle sagaLifecycle) {
+                                    sagaLifecycle.associateWith("rentalId", rentalId);
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+    }
+
+    @Nested
+    class SagaLifecycleOutsideSagaEventHandler {
+
+        private static final String TODO = "// TODO(axon4to5): replace this static SagaLifecycle call."
+                + " axoniq-legacy has no static SagaLifecycle methods and injects a SagaLifecycle parameter into"
+                + " @SagaEventHandler methods only. Declare a ProcessingContext parameter, pass it on from every"
+                + " handler calling this method, and call SagaLifecycle.forContext(processingContext).";
+
+        @Test
+        void replacesAClosingUnconditionalEndInADeadlineHandlerWithEndSaga() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.axonframework.modelling.saga.SagaLifecycle;
+
+                            class PaymentSaga {
+                                private boolean overdue;
+
+                                @SagaEventHandler(associationProperty = "orderId")
+                                void on(Object event) {
+                                }
+
+                                @DeadlineHandler(deadlineName = "paymentOverdue")
+                                void onOverdue() {
+                                    overdue = true;
+                                    SagaLifecycle.end();
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.modelling.saga.EndSaga;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+
+                            class PaymentSaga {
+                                private boolean overdue;
+
+                                @SagaEventHandler(associationProperty = "orderId")
+                                void on(Object event) {
+                                }
+
+                                @EndSaga
+                                @DeadlineHandler(deadlineName = "paymentOverdue")
+                                void onOverdue() {
+                                    overdue = true;
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void replacesAStaticallyImportedEndInASpringSagaDeadlineHandler() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.spring.stereotype.Saga;
+
+                            import static org.axonframework.modelling.saga.SagaLifecycle.end;
+
+                            @Saga
+                            class PaymentSaga {
+                                @DeadlineHandler(deadlineName = "paymentOverdue")
+                                void onOverdue() {
+                                    // the payment never arrived
+                                    end();
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.modelling.saga.EndSaga;
+                            import org.axonframework.spring.stereotype.Saga;
+
+                            @Saga
+                            class PaymentSaga {
+                                @EndSaga
+                                @DeadlineHandler(deadlineName = "paymentOverdue")
+                                void onOverdue() {
+                                    // the payment never arrived
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void onlyRemovesTheEndWhenTheDeadlineHandlerAlreadyEndsTheSaga() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.modelling.saga.EndSaga;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.axonframework.modelling.saga.SagaLifecycle;
+
+                            class PaymentSaga {
+                                @SagaEventHandler(associationProperty = "orderId")
+                                void on(Object event) {
+                                }
+
+                                @DeadlineHandler(deadlineName = "paymentOverdue")
+                                @EndSaga
+                                void onOverdue() {
+                                    SagaLifecycle.end();
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.modelling.saga.EndSaga;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+
+                            class PaymentSaga {
+                                @SagaEventHandler(associationProperty = "orderId")
+                                void on(Object event) {
+                                }
+
+                                @DeadlineHandler(deadlineName = "paymentOverdue")
+                                @EndSaga
+                                void onOverdue() {
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void callsAConditionalEndInADeadlineHandlerThroughTheProcessingContext() {
+            // The ProcessingContext resolver ranks below the payload resolver, so a DeadlineMessage goes first.
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.axonframework.modelling.saga.SagaLifecycle;
+
+                            class PaymentSaga {
+                                private int reminders;
+
+                                @SagaEventHandler(associationProperty = "orderId")
+                                void on(Object event) {
+                                }
+
+                                @DeadlineHandler(deadlineName = "paymentReminder")
+                                void onReminder() {
+                                    if (++reminders > 3) {
+                                        SagaLifecycle.end();
+                                    }
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.DeadlineMessage;
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.axonframework.modelling.saga.SagaLifecycle;
+
+                            class PaymentSaga {
+                                private int reminders;
+
+                                @SagaEventHandler(associationProperty = "orderId")
+                                void on(Object event) {
+                                }
+
+                                @DeadlineHandler(deadlineName = "paymentReminder")
+                                void onReminder(DeadlineMessage deadlineMessage, ProcessingContext processingContext) {
+                                    if (++reminders > 3) {
+                                        SagaLifecycle.forContext(processingContext).end();
+                                    }
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void callsAnEndThatIsNotTheLastStatementOfTheDeadlineHandlerThroughTheProcessingContext() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.axonframework.modelling.saga.SagaLifecycle;
+
+                            class PaymentSaga {
+                                private boolean overdue;
+
+                                @SagaEventHandler(associationProperty = "orderId")
+                                void on(Object event) {
+                                }
+
+                                @DeadlineHandler(deadlineName = "paymentOverdue")
+                                void onOverdue() {
+                                    SagaLifecycle.end();
+                                    overdue = true;
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.DeadlineMessage;
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.axonframework.modelling.saga.SagaLifecycle;
+
+                            class PaymentSaga {
+                                private boolean overdue;
+
+                                @SagaEventHandler(associationProperty = "orderId")
+                                void on(Object event) {
+                                }
+
+                                @DeadlineHandler(deadlineName = "paymentOverdue")
+                                void onOverdue(DeadlineMessage deadlineMessage, ProcessingContext processingContext) {
+                                    SagaLifecycle.forContext(processingContext).end();
+                                    overdue = true;
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void callsEveryLifecycleMethodOfADeadlineHandlerThroughTheProcessingContext() {
+            // A handler with a payload parameter keeps it first, so it needs no DeadlineMessage.
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.axonframework.modelling.saga.SagaLifecycle;
+
+                            class PaymentSaga {
+                                @SagaEventHandler(associationProperty = "orderId")
+                                void on(Object event) {
+                                }
+
+                                @DeadlineHandler(deadlineName = "paymentOverdue")
+                                void onOverdue(String id) {
+                                    SagaLifecycle.removeAssociationWith("paymentId", id);
+                                    if (SagaLifecycle.associationValues().size() == 1) {
+                                        SagaLifecycle.associateWith("retryId", id);
+                                    }
+                                    SagaLifecycle.end();
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.axonframework.modelling.saga.SagaLifecycle;
+
+                            class PaymentSaga {
+                                @SagaEventHandler(associationProperty = "orderId")
+                                void on(Object event) {
+                                }
+
+                                @DeadlineHandler(deadlineName = "paymentOverdue")
+                                void onOverdue(String id, ProcessingContext processingContext) {
+                                    SagaLifecycle.forContext(processingContext).removeAssociationWith("paymentId", id);
+                                    if (SagaLifecycle.forContext(processingContext).associationValues().size() == 1) {
+                                        SagaLifecycle.forContext(processingContext).associateWith("retryId", id);
+                                    }
+                                    SagaLifecycle.forContext(processingContext).end();
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void reusesAnExistingProcessingContextParameterOfADeadlineHandler() {
+            rewriteRun(
+                    java(
+                            """
+                            package org.axonframework.messaging.core.unitofwork;
+
+                            public interface ProcessingContext {
+                            }
+                            """
+                    ),
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.axonframework.modelling.saga.SagaLifecycle;
+
+                            class PaymentSaga {
+                                @SagaEventHandler(associationProperty = "orderId")
+                                void on(Object event) {
+                                }
+
+                                @DeadlineHandler(deadlineName = "paymentRetry")
+                                void onRetry(String paymentId, ProcessingContext context) {
+                                    SagaLifecycle.associateWith("paymentId", paymentId);
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.axonframework.modelling.saga.SagaLifecycle;
+
+                            class PaymentSaga {
+                                @SagaEventHandler(associationProperty = "orderId")
+                                void on(Object event) {
+                                }
+
+                                @DeadlineHandler(deadlineName = "paymentRetry")
+                                void onRetry(String paymentId, ProcessingContext context) {
+                                    SagaLifecycle.forContext(context).associateWith("paymentId", paymentId);
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void callsAStaticallyImportedLifecycleMethodOfADeadlineHandlerThroughTheProcessingContext() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+
+                            import static org.axonframework.modelling.saga.SagaLifecycle.associateWith;
+
+                            class PaymentSaga {
+                                @SagaEventHandler(associationProperty = "orderId")
+                                void on(Object event) {
+                                }
+
+                                @DeadlineHandler(deadlineName = "paymentRetry")
+                                void onRetry(String processingContext) {
+                                    String retryId = "retry-" + processingContext;
+                                    associateWith("paymentId", retryId);
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.axonframework.modelling.saga.SagaLifecycle;
+
+                            class PaymentSaga {
+                                @SagaEventHandler(associationProperty = "orderId")
+                                void on(Object event) {
+                                }
+
+                                @DeadlineHandler(deadlineName = "paymentRetry")
+                                void onRetry(String processingContext, ProcessingContext processingContext1) {
+                                    String retryId = "retry-" + processingContext;
+                                    SagaLifecycle.forContext(processingContext1).associateWith("paymentId", retryId);
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void marksAnEndInAPrivateHelperAndMigratesTheSagaEventHandler() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.axonframework.modelling.saga.SagaLifecycle;
+
+                            class PaymentSaga {
+                                @SagaEventHandler(associationProperty = "orderId")
+                                void on(Object event) {
+                                    SagaLifecycle.associateWith("paymentId", "payment");
+                                    finish();
+                                }
+
+                                private void finish() {
+                                    SagaLifecycle.end();
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.axonframework.modelling.saga.SagaLifecycle;
+
+                            class PaymentSaga {
+                                @SagaEventHandler(associationProperty = "orderId")
+                                void on(Object event, SagaLifecycle sagaLifecycle) {
+                                    sagaLifecycle.associateWith("paymentId", "payment");
+                                    finish();
+                                }
+
+                                private void finish() {
+                                    %s
+                                    SagaLifecycle.end();
+                                }
+                            }
+                            """.formatted(TODO)
+                    )
+            );
+        }
+
+        @Test
+        void leavesAnAlreadyMarkedCallUnchanged() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.axonframework.modelling.saga.SagaLifecycle;
+
+                            class PaymentSaga {
+                                @SagaEventHandler(associationProperty = "orderId")
+                                void on(Object event) {
+                                }
+
+                                @DeadlineHandler(deadlineName = "paymentRetry")
+                                void onRetry(String paymentId) {
+                                    retry(paymentId);
+                                }
+
+                                private void retry(String paymentId) {
+                                    %s
+                                    SagaLifecycle.associateWith("paymentId", paymentId);
+                                }
+                            }
+                            """.formatted(TODO)
+                    )
+            );
+        }
+
+        @Test
+        void leavesStaticLifecycleCallsOutsideASagaAlone() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.modelling.saga.SagaLifecycle;
+
+                            class SagaSupport {
+                                @DeadlineHandler(deadlineName = "paymentOverdue")
+                                void onOverdue() {
+                                    SagaLifecycle.end();
+                                }
+
+                                void finish() {
+                                    SagaLifecycle.end();
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void replacesAClosingEndInAKotlinDeadlineHandlerAndCallsAConditionalOneThroughTheProcessingContext() {
+            rewriteRun(
+                    kotlin(
+                            """
+                            package com.example
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler
+                            import org.axonframework.modelling.saga.SagaEventHandler
+                            import org.axonframework.modelling.saga.SagaLifecycle
+
+                            class PaymentSaga {
+                                private var reminders = 0
+
+                                @SagaEventHandler(associationProperty = "orderId")
+                                fun on(event: Any) {
+                                }
+
+                                @DeadlineHandler(deadlineName = "paymentOverdue")
+                                fun onOverdue() {
+                                    reminders = 0
+                                    SagaLifecycle.end()
+                                }
+
+                                @DeadlineHandler(deadlineName = "paymentReminder")
+                                fun onReminder() {
+                                    if (++reminders > 3) {
+                                        SagaLifecycle.end()
+                                    }
+                                }
+                            }
+                            """,
+                            """
+                            package com.example
+
+                            import org.axonframework.deadline.DeadlineMessage
+                            import org.axonframework.deadline.annotation.DeadlineHandler
+                            import org.axonframework.messaging.core.unitofwork.ProcessingContext
+                            import org.axonframework.modelling.saga.EndSaga
+                            import org.axonframework.modelling.saga.SagaEventHandler
+                            import org.axonframework.modelling.saga.SagaLifecycle
+
+                            class PaymentSaga {
+                                private var reminders = 0
+
+                                @SagaEventHandler(associationProperty = "orderId")
+                                fun on(event: Any) {
+                                }
+
+                                @EndSaga
+                                @DeadlineHandler(deadlineName = "paymentOverdue")
+                                fun onOverdue() {
+                                    reminders = 0
+                                }
+
+                                @DeadlineHandler(deadlineName = "paymentReminder")
+                                fun onReminder(deadlineMessage: DeadlineMessage, processingContext: ProcessingContext) {
+                                    if (++reminders > 3) {
+                                        SagaLifecycle.forContext(processingContext).end()
+                                    }
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void callsAClosingEndThatAnEarlyReturnCanSkipThroughTheProcessingContext() {
+            // The paid path never reached the end in Axon Framework 4, while @EndSaga would end the Saga there too.
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.axonframework.modelling.saga.SagaLifecycle;
+
+                            class PaymentSaga {
+                                private boolean paid;
+
+                                @SagaEventHandler(associationProperty = "orderId")
+                                void on(Object event) {
+                                }
+
+                                @DeadlineHandler(deadlineName = "paymentOverdue")
+                                void onOverdue() {
+                                    if (paid) {
+                                        return;
+                                    }
+                                    SagaLifecycle.end();
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.DeadlineMessage;
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.axonframework.modelling.saga.SagaLifecycle;
+
+                            class PaymentSaga {
+                                private boolean paid;
+
+                                @SagaEventHandler(associationProperty = "orderId")
+                                void on(Object event) {
+                                }
+
+                                @DeadlineHandler(deadlineName = "paymentOverdue")
+                                void onOverdue(DeadlineMessage deadlineMessage, ProcessingContext processingContext) {
+                                    if (paid) {
+                                        return;
+                                    }
+                                    SagaLifecycle.forContext(processingContext).end();
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void replacesAClosingEndWhenOnlyNestedCodeReturns() {
+            // A return in a lambda, an anonymous class or a local class leaves only that nested code.
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import java.util.function.Supplier;
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.axonframework.modelling.saga.SagaLifecycle;
+
+                            class PaymentSaga {
+                                @SagaEventHandler(associationProperty = "orderId")
+                                void on(Object event) {
+                                }
+
+                                @DeadlineHandler(deadlineName = "paymentOverdue")
+                                void onOverdue() {
+                                    Supplier<String> reason = () -> {
+                                        return "overdue";
+                                    };
+                                    Supplier<String> anonymous = new Supplier<>() {
+                                        @Override
+                                        public String get() {
+                                            return reason.get();
+                                        }
+                                    };
+                                    class Local {
+                                        String reason() {
+                                            return anonymous.get();
+                                        }
+                                    }
+                                    new Local().reason();
+                                    SagaLifecycle.end();
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import java.util.function.Supplier;
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.modelling.saga.EndSaga;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+
+                            class PaymentSaga {
+                                @SagaEventHandler(associationProperty = "orderId")
+                                void on(Object event) {
+                                }
+
+                                @EndSaga
+                                @DeadlineHandler(deadlineName = "paymentOverdue")
+                                void onOverdue() {
+                                    Supplier<String> reason = () -> {
+                                        return "overdue";
+                                    };
+                                    Supplier<String> anonymous = new Supplier<>() {
+                                        @Override
+                                        public String get() {
+                                            return reason.get();
+                                        }
+                                    };
+                                    class Local {
+                                        String reason() {
+                                            return anonymous.get();
+                                        }
+                                    }
+                                    new Local().reason();
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void replacesAClosingEndThatAThrowCanSkip() {
+            // Axon Framework 4 did not end the Saga on the throwing path. @EndSaga ends it there, but the failed
+            // deadline rolls the unit of work back before the Saga is written, so the Saga stays active either way.
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.axonframework.modelling.saga.SagaLifecycle;
+
+                            class PaymentSaga {
+                                private boolean paid;
+
+                                @SagaEventHandler(associationProperty = "orderId")
+                                void on(Object event) {
+                                }
+
+                                @DeadlineHandler(deadlineName = "paymentOverdue")
+                                void onOverdue() {
+                                    if (paid) {
+                                        throw new IllegalStateException("already paid");
+                                    }
+                                    SagaLifecycle.end();
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.modelling.saga.EndSaga;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+
+                            class PaymentSaga {
+                                private boolean paid;
+
+                                @SagaEventHandler(associationProperty = "orderId")
+                                void on(Object event) {
+                                }
+
+                                @EndSaga
+                                @DeadlineHandler(deadlineName = "paymentOverdue")
+                                void onOverdue() {
+                                    if (paid) {
+                                        throw new IllegalStateException("already paid");
+                                    }
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void callsAClosingEndInAKotlinDeadlineHandlerThatAnEarlyReturnCanSkipThroughTheProcessingContext() {
+            // A bare return in an inline lambda returns from the handler, unlike a labelled one.
+            rewriteRun(
+                    kotlin(
+                            """
+                            package com.example
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler
+                            import org.axonframework.modelling.saga.SagaEventHandler
+                            import org.axonframework.modelling.saga.SagaLifecycle
+
+                            class PaymentSaga {
+                                private var paid = false
+                                private val payments = listOf(1)
+
+                                @SagaEventHandler(associationProperty = "orderId")
+                                fun on(event: Any) {
+                                }
+
+                                @DeadlineHandler(deadlineName = "paymentOverdue")
+                                fun onOverdue() {
+                                    if (paid) {
+                                        return
+                                    }
+                                    SagaLifecycle.end()
+                                }
+
+                                @DeadlineHandler(deadlineName = "paymentChecked")
+                                fun onChecked() {
+                                    payments.forEach { if (it > 0) return }
+                                    SagaLifecycle.end()
+                                }
+
+                                @DeadlineHandler(deadlineName = "paymentCounted")
+                                fun onCounted() {
+                                    payments.forEach { if (it > 0) return@forEach }
+                                    SagaLifecycle.end()
+                                }
+                            }
+                            """,
+                            """
+                            package com.example
+
+                            import org.axonframework.deadline.DeadlineMessage
+                            import org.axonframework.deadline.annotation.DeadlineHandler
+                            import org.axonframework.messaging.core.unitofwork.ProcessingContext
+                            import org.axonframework.modelling.saga.EndSaga
+                            import org.axonframework.modelling.saga.SagaEventHandler
+                            import org.axonframework.modelling.saga.SagaLifecycle
+
+                            class PaymentSaga {
+                                private var paid = false
+                                private val payments = listOf(1)
+
+                                @SagaEventHandler(associationProperty = "orderId")
+                                fun on(event: Any) {
+                                }
+
+                                @DeadlineHandler(deadlineName = "paymentOverdue")
+                                fun onOverdue(deadlineMessage: DeadlineMessage, processingContext: ProcessingContext) {
+                                    if (paid) {
+                                        return
+                                    }
+                                    SagaLifecycle.forContext(processingContext).end()
+                                }
+
+                                @DeadlineHandler(deadlineName = "paymentChecked")
+                                fun onChecked(deadlineMessage: DeadlineMessage, processingContext: ProcessingContext) {
+                                    payments.forEach { if (it > 0) return }
+                                    SagaLifecycle.forContext(processingContext).end()
+                                }
+
+                                @EndSaga
+                                @DeadlineHandler(deadlineName = "paymentCounted")
+                                fun onCounted() {
+                                    payments.forEach { if (it > 0) return@forEach }
+                                }
+                            }
+                            """.formatted(TODO)
+                    )
+            );
+        }
     }
 
     @Nested
@@ -213,6 +1100,104 @@ class Axon4ToAxoniq5LegacySagaTest implements RewriteTest {
                     )
             );
         }
+
+        @Test
+        void migratesAGatewayOnlyTheDeadlineHandlersOfASagaUse() {
+            // The CommandDispatcher resolver ranks above the payload resolver, so even as the only parameter of a
+            // deadline handler the dispatcher does not become the payload, and needs no DeadlineMessage in front.
+            rewriteRun(
+                    java(
+                            """
+                            package org.springframework.beans.factory.annotation;
+
+                            public @interface Autowired {
+                            }
+                            """
+                    ),
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.commandhandling.gateway.CommandGateway;
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.springframework.beans.factory.annotation.Autowired;
+
+                            class PaymentSaga {
+                                @Autowired
+                                private transient CommandGateway commandGateway;
+                                private String orderId;
+
+                                @SagaEventHandler(associationProperty = "orderId")
+                                void on(String orderId) {
+                                    this.orderId = orderId;
+                                }
+
+                                @DeadlineHandler(deadlineName = "paymentReminder")
+                                void onReminder() {
+                                    commandGateway.send(orderId);
+                                }
+
+                                @DeadlineHandler(deadlineName = "paymentOverdue")
+                                void onOverdue(String reason) {
+                                    commandGateway.sendAndWait(reason);
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.common.FutureUtils;
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+
+                            class PaymentSaga {
+                                private String orderId;
+
+                                @SagaEventHandler(associationProperty = "orderId")
+                                void on(String orderId) {
+                                    this.orderId = orderId;
+                                }
+
+                                @DeadlineHandler(deadlineName = "paymentReminder")
+                                void onReminder(CommandDispatcher commandDispatcher) {
+                                    commandDispatcher.send(orderId);
+                                }
+
+                                @DeadlineHandler(deadlineName = "paymentOverdue")
+                                void onOverdue(String reason, CommandDispatcher commandDispatcher) {
+                                    FutureUtils.joinAndUnwrap(commandDispatcher.send(reason).getResultMessage());
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void leavesAGatewayOnlyTheDeadlineHandlersOfANonSagaClassUseAlone() {
+            // An aggregate's deadline handler becomes a command handler, which the aggregate recipes migrate.
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.commandhandling.gateway.CommandGateway;
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+
+                            class PaymentAggregate {
+                                private transient CommandGateway commandGateway;
+
+                                @DeadlineHandler(deadlineName = "paymentReminder")
+                                void onReminder() {
+                                    commandGateway.send("remind");
+                                }
+                            }
+                            """
+                    )
+            );
+        }
     }
 
     @Nested
@@ -262,7 +1247,7 @@ class Axon4ToAxoniq5LegacySagaTest implements RewriteTest {
                             import org.springframework.beans.factory.annotation.Autowired;
 
                             class PaymentSaga {
-                                // TODO(axon4to5): add this dependency as a parameter of each @SagaEventHandler method that uses it, then remove the field. Axon Framework 5 does not inject Saga fields.
+                                // TODO(axon4to5): add this dependency as a parameter of each @SagaEventHandler or @DeadlineHandler method that uses it, then remove the field. Axon Framework 5 does not inject Saga fields. Put a DeadlineMessage parameter first on a @DeadlineHandler without parameters, or the dependency becomes its payload.
                                 @Autowired
                                 private transient PaymentService paymentService;
 
@@ -742,6 +1727,112 @@ class Axon4ToAxoniq5LegacySagaTest implements RewriteTest {
                                 assertThat(actual).contains("void on(Object event, SagaLifecycle sagaLifecycle)");
                                 return actual;
                             })))
+                    )
+            );
+        }
+
+        @Test
+        void commercialUpgradeKeepsTheTypesOfTheParametersTheLifecycleParameterIsAppendedTo() {
+            // The existing parameters must stay attributed, so the free leg still renames MetaData and its
+            // annotation, and moves EventMessage while dropping its type argument.
+            rewriteRun(
+                    spec -> spec.recipe(topLevelRecipe("io.axoniq.framework.migration.UpgradeAxon4ToAxoniq5"))
+                                .markerPrinter(PrintOutputCapture.MarkerPrinter.SEARCH_MARKERS_ONLY),
+                    mavenProject(
+                            "rental",
+                            pomXml(SAGA_POM, pom -> pom.after(actual -> actual)),
+                            srcMainJava(java(
+                                    """
+                                    package com.example;
+
+                                    import org.axonframework.eventhandling.EventMessage;
+                                    import org.axonframework.messaging.MetaData;
+                                    import org.axonframework.messaging.annotation.MetaDataValue;
+                                    import org.axonframework.modelling.saga.SagaEventHandler;
+                                    import org.axonframework.modelling.saga.SagaLifecycle;
+
+                                    class PaymentSaga {
+                                        @SagaEventHandler(associationProperty = "rentalId")
+                                        void on(String event, MetaData metaData, @MetaDataValue("k") String k,
+                                                EventMessage<?> message) {
+                                            SagaLifecycle.end();
+                                        }
+                                    }
+                                    """,
+                                    source -> source.after(actual -> {
+                                        assertThat(actual)
+                                                .contains("import org.axonframework.messaging.core.Metadata;")
+                                                .contains("import org.axonframework.messaging.core.annotation"
+                                                                  + ".MetadataValue;")
+                                                .contains("import org.axonframework.messaging.eventhandling"
+                                                                  + ".EventMessage;")
+                                                .contains("void on(String event, Metadata metaData, "
+                                                                  + "@MetadataValue(\"k\") String k,\n"
+                                                                  + "            EventMessage message, "
+                                                                  + "SagaLifecycle sagaLifecycle) {")
+                                                .doesNotContain("MetaData ")
+                                                .doesNotContain("<?>");
+                                        return actual;
+                                    })
+                            ))
+                    )
+            );
+        }
+
+        @Test
+        void commercialUpgradeKeepsTheTypesOfTheParametersTheCommandDispatcherIsAppendedTo() {
+            rewriteRun(
+                    spec -> spec.recipe(topLevelRecipe("io.axoniq.framework.migration.UpgradeAxon4ToAxoniq5"))
+                                .markerPrinter(PrintOutputCapture.MarkerPrinter.SEARCH_MARKERS_ONLY),
+                    mavenProject(
+                            "rental",
+                            pomXml(SAGA_POM, pom -> pom.after(actual -> actual)),
+                            srcMainJava(java(
+                                    """
+                                    package org.springframework.beans.factory.annotation;
+
+                                    public @interface Autowired {
+                                    }
+                                    """
+                            )),
+                            srcMainJava(java(
+                                    """
+                                    package com.example;
+
+                                    import org.axonframework.commandhandling.gateway.CommandGateway;
+                                    import org.axonframework.eventhandling.EventMessage;
+                                    import org.axonframework.messaging.MetaData;
+                                    import org.axonframework.messaging.annotation.MetaDataValue;
+                                    import org.axonframework.modelling.saga.SagaEventHandler;
+                                    import org.springframework.beans.factory.annotation.Autowired;
+
+                                    class PaymentSaga {
+                                        @Autowired
+                                        private transient CommandGateway commandGateway;
+
+                                        @SagaEventHandler(associationProperty = "rentalId")
+                                        void on(String event, MetaData metaData, @MetaDataValue("k") String k,
+                                                EventMessage<?> message) {
+                                            commandGateway.send(event);
+                                        }
+                                    }
+                                    """,
+                                    source -> source.after(actual -> {
+                                        assertThat(actual)
+                                                .contains("import org.axonframework.messaging.core.Metadata;")
+                                                .contains("import org.axonframework.messaging.core.annotation"
+                                                                  + ".MetadataValue;")
+                                                .contains("import org.axonframework.messaging.eventhandling"
+                                                                  + ".EventMessage;")
+                                                .contains("void on(String event, Metadata metaData, "
+                                                                  + "@MetadataValue(\"k\") String k,\n"
+                                                                  + "            EventMessage message, "
+                                                                  + "CommandDispatcher commandDispatcher) {")
+                                                .doesNotContain("MetaData ")
+                                                .doesNotContain("<?>");
+                                        return actual;
+                                    })
+                            ))
                     )
             );
         }

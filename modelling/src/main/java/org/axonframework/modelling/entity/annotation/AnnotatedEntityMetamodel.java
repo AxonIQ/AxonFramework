@@ -19,13 +19,14 @@ package org.axonframework.modelling.entity.annotation;
 import org.axonframework.common.Assert;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.ReflectionUtils;
+import org.axonframework.common.StringUtils;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.common.infra.DescribableComponent;
-import org.axonframework.conversion.ConversionException;
 import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.commandhandling.CommandResultMessage;
 import org.axonframework.messaging.commandhandling.GenericCommandResultMessage;
+import org.axonframework.messaging.commandhandling.NoHandlerForCommandException;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandlingMember;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
@@ -341,8 +342,7 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
                       inspected.getUniqueHandlers(entityType, EventMessage.class).stream())
               .filter(h -> h.unwrap(Method.class).map(m -> !Modifier.isAbstract(m.getModifiers())).orElse(false))
               .forEach(handler -> {
-                     QualifiedName qualifiedName = messageTypeResolver.resolveOrThrow(handler.payloadType())
-                                                                      .qualifiedName();
+                     QualifiedName qualifiedName = qualifiedNameFor(handler);
                      if (isCreationalCommandHandler(handler) && commandsToSkip.contains(qualifiedName)) {
                          // Only creational handlers are skipped: a concrete type re-registering a creational
                          // command already registered by the polymorphic super type would otherwise make
@@ -362,6 +362,16 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
                      addCommandHandlerToModel(builder, handler, qualifiedName, registeredCreationalCommands);
                  });
         return registeredCreationalCommands;
+    }
+
+    private QualifiedName qualifiedNameFor(MessageHandlingMember<? super E> handler) {
+        return handler.unwrap(CommandHandlingMember.class)
+                      .map(CommandHandlingMember::commandName)
+                      // Filter empty Strings to fall back to the MessageTypeResolver.
+                      .filter(StringUtils::nonEmpty)
+                      .map(QualifiedName::new)
+                      .orElseGet(() -> messageTypeResolver.resolveOrThrow(handler.payloadType())
+                                                          .qualifiedName());
     }
 
     private boolean isCreationalCommandHandler(MessageHandlingMember<? super E> handler) {
@@ -626,18 +636,14 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
         }
         Class<?> expectedRepresentation = getExpectedRepresentation(type.qualifiedName());
         if (expectedRepresentation == null) {
-            // Should not happen, since how does a command reach the model without a handler for it.
-            throw new ConversionException(String.format(
-                    "Cannot convert command [%s] for handling since entity [%s] has no handler for this command type.",
-                    type, entityType()
-            ));
+            return MessageStream.failed(new NoHandlerForCommandException(message, entityType()));
         }
         CommandMessage convertedMessage = message.withConvertedPayload(expectedRepresentation, messageConverter);
         return delegateMetamodel.handleCreate(convertedMessage, context);
     }
 
     @Override
-        public MessageStream.Single<CommandResultMessage> handleInstance(CommandMessage message,
+    public MessageStream.Single<CommandResultMessage> handleInstance(CommandMessage message,
                                                                      E entity,
                                                                      ProcessingContext context) {
         MessageType type = message.type();
@@ -647,11 +653,7 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
         }
         Class<?> expectedRepresentation = getExpectedRepresentation(type.qualifiedName());
         if (expectedRepresentation == null) {
-            // Should not happen, since how does a command reach the model without a handler for it.
-            throw new ConversionException(String.format(
-                    "Cannot convert command [%s] for handling since entity [%s] has no handler for this command type.",
-                    type, entityType()
-            ));
+            return MessageStream.failed(new NoHandlerForCommandException(message, entityType()));
         }
         CommandMessage convertedMessage = message.withConvertedPayload(expectedRepresentation, messageConverter);
         return delegateMetamodel.handleInstance(convertedMessage, entity, context);

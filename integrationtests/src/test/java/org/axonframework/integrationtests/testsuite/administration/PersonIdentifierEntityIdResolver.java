@@ -23,6 +23,7 @@ import org.axonframework.integrationtests.testsuite.administration.commands.Give
 import org.axonframework.integrationtests.testsuite.administration.commands.GrantCertificationCommand;
 import org.axonframework.integrationtests.testsuite.administration.commands.PersonCommand;
 import org.axonframework.integrationtests.testsuite.administration.commands.RevokeCertificationCommand;
+import org.axonframework.integrationtests.testsuite.administration.commands.SuspendEmployeeCommand;
 import org.axonframework.integrationtests.testsuite.administration.common.PersonIdentifier;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
@@ -31,30 +32,30 @@ import org.axonframework.modelling.EntityIdResolver;
 import org.jspecify.annotations.NonNull;
 
 import java.util.Collections;
-import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 class PersonIdentifierEntityIdResolver implements EntityIdResolver<PersonIdentifier> {
+
+    private static final Map<String, Class<? extends PersonCommand>> COMMAND_TYPES_BY_NAME = Map.of(
+            AssignTaskCommand.class.getName(), AssignTaskCommand.class,
+            ChangeEmailAddress.class.getName(), ChangeEmailAddress.class,
+            CompleteTaskCommand.class.getName(), CompleteTaskCommand.class,
+            GiveRaise.class.getName(), GiveRaise.class,
+            GrantCertificationCommand.class.getName(), GrantCertificationCommand.class,
+            RevokeCertificationCommand.class.getName(), RevokeCertificationCommand.class,
+            SuspendEmployeeCommand.COMMAND_NAME, SuspendEmployeeCommand.class
+    );
 
     @Override
     public PersonIdentifier resolve(
             @NonNull Message message,
             @NonNull ProcessingContext context
     ) throws EntityIdResolutionException {
-        List<Class<? extends PersonCommand>> personCommandTypes = List.of(
-                AssignTaskCommand.class,
-                ChangeEmailAddress.class,
-                CompleteTaskCommand.class,
-                GiveRaise.class,
-                GrantCertificationCommand.class,
-                RevokeCertificationCommand.class
-        );
-        var clazz = personCommandTypes.stream()
-                                      .filter(type -> type.getName().equals(message.type().name()))
-                                      .findFirst()
-                                      .orElseThrow(() -> new EntityIdResolutionException(
-                                              message.payloadType(), Collections.emptyList()
-                                      ));
+        Class<? extends PersonCommand> clazz = COMMAND_TYPES_BY_NAME.get(message.type().name());
+        if (clazz == null) {
+            throw new EntityIdResolutionException(message.payloadType(), Collections.emptyList());
+        }
         return Objects.requireNonNull(message.payloadAs(clazz)).identifier();
     }
 }
