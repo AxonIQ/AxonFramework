@@ -272,8 +272,10 @@ class Axon4ToAxoniq5LegacyDeadlineSagaTest implements RewriteTest {
                         import org.springframework.beans.factory.annotation.Autowired;
 
                         public abstract class BaseSaga {
-                            // TODO(axon4to5): add this dependency as a parameter of each @SagaEventHandler method \
-                        that uses it, then remove the field. Axon Framework 5 does not inject Saga fields.
+                            // TODO(axon4to5): add this dependency as a parameter of each @SagaEventHandler or \
+                        @DeadlineHandler method that uses it, then remove the field. Axon Framework 5 does not inject \
+                        Saga fields. Put a DeadlineMessage parameter first on a @DeadlineHandler without parameters, \
+                        or the dependency becomes its payload.
                             @Autowired
                             protected transient DeadlineManager deadlineManager;
 

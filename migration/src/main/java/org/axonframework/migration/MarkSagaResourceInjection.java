@@ -41,8 +41,8 @@ import java.util.Set;
  * <p>
  * Axon Framework 4 injected collaborators into {@code @Autowired} or {@code @Inject} fields of a Saga instance through
  * a {@code ResourceInjector}. Axon Framework 5 resolves those collaborators as parameters of the
- * {@code @SagaEventHandler} method instead. Which handlers need which collaborator is a decision this recipe does not
- * take, so it marks the two places that need manual work:
+ * {@code @SagaEventHandler} or {@code @DeadlineHandler} method instead. Which handlers need which collaborator is a
+ * decision this recipe does not take, so it marks the two places that need manual work:
  * <ul>
  *     <li>an {@code @Autowired} or {@code @Inject} field of a Saga, being a class with a {@code @SagaEventHandler}
  *     method or the Spring {@code @Saga} stereotype;</li>
@@ -84,11 +84,12 @@ public class MarkSagaResourceInjection extends Recipe {
 
     private static final String FIELD_MARKER = "TODO(axon4to5): add this dependency as a parameter";
     private static final String FIELD_TODO = " " + FIELD_MARKER
-            + " of each @SagaEventHandler method that uses it, then remove the field."
-            + " Axon Framework 5 does not inject Saga fields.";
+            + " of each @SagaEventHandler or @DeadlineHandler method that uses it, then remove the field."
+            + " Axon Framework 5 does not inject Saga fields. Put a DeadlineMessage parameter first on a"
+            + " @DeadlineHandler without parameters, or the dependency becomes its payload.";
     private static final String INJECTOR_MARKER = "TODO(axon4to5): ResourceInjector is not ported.";
     private static final String INJECTOR_TODO = " " + INJECTOR_MARKER
-            + " Remove it; Saga collaborators are resolved as @SagaEventHandler parameters.";
+            + " Remove it; Saga collaborators are resolved as handler method parameters.";
 
     @Override
     public String getDisplayName() {
@@ -99,7 +100,8 @@ public class MarkSagaResourceInjection extends Recipe {
     public String getDescription() {
         return "Leaves a `// TODO(axon4to5):` marker on `@Autowired` and `@Inject` fields of Sagas, and on usage of "
                 + "the Axon Framework 4 `ResourceInjector` types. Axon Framework 5 does not inject Saga fields; it "
-                + "resolves Saga collaborators as `@SagaEventHandler` method parameters instead. Idempotent.";
+                + "resolves Saga collaborators as `@SagaEventHandler` and `@DeadlineHandler` method parameters "
+                + "instead. Idempotent.";
     }
 
     @Override

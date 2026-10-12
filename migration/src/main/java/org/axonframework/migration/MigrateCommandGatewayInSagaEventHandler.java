@@ -45,6 +45,10 @@ import java.util.Set;
  * Migrates command dispatch from an Axon Framework 4 {@code CommandGateway} field in legacy Saga event handlers to
  * an Axon Framework 5 {@code CommandDispatcher} method parameter.
  * <p>
+ * The recipe acts when a {@code @SagaEventHandler}, or a {@code @DeadlineHandler} of a Saga, uses the gateway,
+ * directly or through the methods it calls; an aggregate's deadline handler is left alone. The dispatcher parameter
+ * is resolved before the payload, so even as the only parameter of a deadline handler it does not become the payload.
+ * <p>
  * The recipe preserves the dispatch contract of each call. {@code send(...)} remains fire-and-forget.
  * {@code sendAndWait(...)} waits through {@code FutureUtils.joinAndUnwrap(...)} so the Saga handler remains
  * synchronous and command failures retain their original exception type. When no references remain, the obsolete
@@ -56,6 +60,7 @@ import java.util.Set;
 public class MigrateCommandGatewayInSagaEventHandler extends Recipe {
 
     private static final String SAGA_EVENT_HANDLER_FQN = "org.axonframework.modelling.saga.SagaEventHandler";
+    private static final String DEADLINE_HANDLER_FQN = "org.axonframework.deadline.annotation.DeadlineHandler";
     private static final String COMMAND_GATEWAY_AF4_FQN = "org.axonframework.commandhandling.gateway.CommandGateway";
     private static final String COMMAND_GATEWAY_AF5_FQN =
             "org.axonframework.messaging.commandhandling.gateway.CommandGateway";
@@ -70,8 +75,8 @@ public class MigrateCommandGatewayInSagaEventHandler extends Recipe {
 
     @Override
     public String getDescription() {
-        return "Replaces a class-level `CommandGateway` used by `@SagaEventHandler` methods, and by the private "
-                + "helper methods they call, with an injected "
+        return "Replaces a class-level `CommandGateway` used by `@SagaEventHandler` methods or Saga "
+                + "`@DeadlineHandler` methods, and by the private helper methods they call, with an injected "
                 + "`CommandDispatcher` parameter. `send` remains fire-and-forget, while `sendAndWait` remains "
                 + "synchronous without changing the handler return type.";
     }
@@ -259,14 +264,26 @@ public class MigrateCommandGatewayInSagaEventHandler extends Recipe {
                 return keys;
             }
 
+            /**
+             * Whether a Saga handler needs the dispatcher: a {@code @SagaEventHandler}, or a {@code @DeadlineHandler}
+             * of a Saga. An aggregate's deadline handler is left out, as it turns into a command handler.
+             */
             private boolean hasSagaHandlerIn(J.ClassDeclaration classDeclaration, Set<String> signatures) {
+                boolean saga = SagaClasses.declaresSaga(classDeclaration);
                 for (Statement statement : classDeclaration.getBody().getStatements()) {
                     if (statement instanceof J.MethodDeclaration method
-                            && isSagaEventHandler(method) && signatures.contains(signatureOf(method))) {
+                            && (isSagaEventHandler(method) || (saga && isDeadlineHandler(method)))
+                            && signatures.contains(signatureOf(method))) {
                         return true;
                     }
                 }
                 return false;
+            }
+
+            private boolean isDeadlineHandler(J.MethodDeclaration method) {
+                return method.getLeadingAnnotations().stream().anyMatch(
+                        annotation -> SagaClasses.isAnnotation(annotation, DEADLINE_HANDLER_FQN, "DeadlineHandler")
+                );
             }
 
             private boolean callsAnyOf(J.MethodDeclaration method, Set<String> callKeys) {

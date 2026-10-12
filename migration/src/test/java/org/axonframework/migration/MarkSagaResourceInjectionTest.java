@@ -71,7 +71,7 @@ class MarkSagaResourceInjectionTest implements RewriteTest {
 
                             class PaymentSaga {
                                 private String rentalId;
-                                // TODO(axon4to5): add this dependency as a parameter of each @SagaEventHandler method that uses it, then remove the field. Axon Framework 5 does not inject Saga fields.
+                                // TODO(axon4to5): add this dependency as a parameter of each @SagaEventHandler or @DeadlineHandler method that uses it, then remove the field. Axon Framework 5 does not inject Saga fields. Put a DeadlineMessage parameter first on a @DeadlineHandler without parameters, or the dependency becomes its payload.
                                 @Autowired
                                 private transient PaymentService paymentService;
 
@@ -112,7 +112,7 @@ class MarkSagaResourceInjectionTest implements RewriteTest {
                             @Saga
                             class PaymentSaga {
                                 /** Charges the customer. */
-                                // TODO(axon4to5): add this dependency as a parameter of each @SagaEventHandler method that uses it, then remove the field. Axon Framework 5 does not inject Saga fields.
+                                // TODO(axon4to5): add this dependency as a parameter of each @SagaEventHandler or @DeadlineHandler method that uses it, then remove the field. Axon Framework 5 does not inject Saga fields. Put a DeadlineMessage parameter first on a @DeadlineHandler without parameters, or the dependency becomes its payload.
                                 @Inject
                                 transient Object paymentService;
                             }
@@ -147,7 +147,7 @@ class MarkSagaResourceInjectionTest implements RewriteTest {
                             import org.springframework.beans.factory.annotation.Autowired
 
                             class PaymentSaga {
-                                // TODO(axon4to5): add this dependency as a parameter of each @SagaEventHandler method that uses it, then remove the field. Axon Framework 5 does not inject Saga fields.
+                                // TODO(axon4to5): add this dependency as a parameter of each @SagaEventHandler or @DeadlineHandler method that uses it, then remove the field. Axon Framework 5 does not inject Saga fields. Put a DeadlineMessage parameter first on a @DeadlineHandler without parameters, or the dependency becomes its payload.
                                 @Autowired
                                 private lateinit var paymentService: Any
 
@@ -215,7 +215,7 @@ class MarkSagaResourceInjectionTest implements RewriteTest {
                             import org.springframework.beans.factory.annotation.Autowired;
 
                             class PaymentSaga {
-                                // TODO(axon4to5): add this dependency as a parameter of each @SagaEventHandler method that uses it, then remove the field. Axon Framework 5 does not inject Saga fields.
+                                // TODO(axon4to5): add this dependency as a parameter of each @SagaEventHandler or @DeadlineHandler method that uses it, then remove the field. Axon Framework 5 does not inject Saga fields. Put a DeadlineMessage parameter first on a @DeadlineHandler without parameters, or the dependency becomes its payload.
                                 @Autowired
                                 private transient Object paymentService;
 
@@ -258,7 +258,7 @@ class MarkSagaResourceInjectionTest implements RewriteTest {
                             import org.springframework.context.annotation.Bean;
 
                             class SagaConfig {
-                                // TODO(axon4to5): ResourceInjector is not ported. Remove it; Saga collaborators are resolved as @SagaEventHandler parameters.
+                                // TODO(axon4to5): ResourceInjector is not ported. Remove it; Saga collaborators are resolved as handler method parameters.
                                 @Bean
                                 ResourceInjector resourceInjector() {
                                     return new SpringResourceInjector();
@@ -287,7 +287,7 @@ class MarkSagaResourceInjectionTest implements RewriteTest {
                             package com.example;
 
                             class SagaConfig {
-                                // TODO(axon4to5): ResourceInjector is not ported. Remove it; Saga collaborators are resolved as @SagaEventHandler parameters.
+                                // TODO(axon4to5): ResourceInjector is not ported. Remove it; Saga collaborators are resolved as handler method parameters.
                                 void configure(Configurer configurer) {
                                     configurer.configureResourceInjector(config -> null);
                                 }
@@ -318,7 +318,7 @@ class MarkSagaResourceInjectionTest implements RewriteTest {
 
                             import org.axonframework.modelling.saga.ResourceInjector;
 
-                            // TODO(axon4to5): ResourceInjector is not ported. Remove it; Saga collaborators are resolved as @SagaEventHandler parameters.
+                            // TODO(axon4to5): ResourceInjector is not ported. Remove it; Saga collaborators are resolved as handler method parameters.
                             public class CustomResourceInjector implements ResourceInjector {
                                 @Override
                                 public void injectResources(Object saga) {

@@ -1100,6 +1100,104 @@ class Axon4ToAxoniq5LegacySagaTest implements RewriteTest {
                     )
             );
         }
+
+        @Test
+        void migratesAGatewayOnlyTheDeadlineHandlersOfASagaUse() {
+            // The CommandDispatcher resolver ranks above the payload resolver, so even as the only parameter of a
+            // deadline handler the dispatcher does not become the payload, and needs no DeadlineMessage in front.
+            rewriteRun(
+                    java(
+                            """
+                            package org.springframework.beans.factory.annotation;
+
+                            public @interface Autowired {
+                            }
+                            """
+                    ),
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.commandhandling.gateway.CommandGateway;
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.springframework.beans.factory.annotation.Autowired;
+
+                            class PaymentSaga {
+                                @Autowired
+                                private transient CommandGateway commandGateway;
+                                private String orderId;
+
+                                @SagaEventHandler(associationProperty = "orderId")
+                                void on(String orderId) {
+                                    this.orderId = orderId;
+                                }
+
+                                @DeadlineHandler(deadlineName = "paymentReminder")
+                                void onReminder() {
+                                    commandGateway.send(orderId);
+                                }
+
+                                @DeadlineHandler(deadlineName = "paymentOverdue")
+                                void onOverdue(String reason) {
+                                    commandGateway.sendAndWait(reason);
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.common.FutureUtils;
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+
+                            class PaymentSaga {
+                                private String orderId;
+
+                                @SagaEventHandler(associationProperty = "orderId")
+                                void on(String orderId) {
+                                    this.orderId = orderId;
+                                }
+
+                                @DeadlineHandler(deadlineName = "paymentReminder")
+                                void onReminder(CommandDispatcher commandDispatcher) {
+                                    commandDispatcher.send(orderId);
+                                }
+
+                                @DeadlineHandler(deadlineName = "paymentOverdue")
+                                void onOverdue(String reason, CommandDispatcher commandDispatcher) {
+                                    FutureUtils.joinAndUnwrap(commandDispatcher.send(reason).getResultMessage());
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void leavesAGatewayOnlyTheDeadlineHandlersOfANonSagaClassUseAlone() {
+            // An aggregate's deadline handler becomes a command handler, which the aggregate recipes migrate.
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.commandhandling.gateway.CommandGateway;
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+
+                            class PaymentAggregate {
+                                private transient CommandGateway commandGateway;
+
+                                @DeadlineHandler(deadlineName = "paymentReminder")
+                                void onReminder() {
+                                    commandGateway.send("remind");
+                                }
+                            }
+                            """
+                    )
+            );
+        }
     }
 
     @Nested
@@ -1149,7 +1247,7 @@ class Axon4ToAxoniq5LegacySagaTest implements RewriteTest {
                             import org.springframework.beans.factory.annotation.Autowired;
 
                             class PaymentSaga {
-                                // TODO(axon4to5): add this dependency as a parameter of each @SagaEventHandler method that uses it, then remove the field. Axon Framework 5 does not inject Saga fields.
+                                // TODO(axon4to5): add this dependency as a parameter of each @SagaEventHandler or @DeadlineHandler method that uses it, then remove the field. Axon Framework 5 does not inject Saga fields. Put a DeadlineMessage parameter first on a @DeadlineHandler without parameters, or the dependency becomes its payload.
                                 @Autowired
                                 private transient PaymentService paymentService;
 

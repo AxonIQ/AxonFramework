@@ -93,7 +93,15 @@ final class SagaClasses {
                 && !"java.lang.Object".equals(type.getFullyQualifiedName());
     }
 
-    private static boolean declaresSaga(J.ClassDeclaration classDeclaration) {
+    /**
+     * Returns whether the given class itself declares a Saga: it carries the Spring {@code @Saga} stereotype or
+     * declares a {@code @SagaEventHandler} method. Unlike {@link #isSaga(J.ClassDeclaration)}, this needs no scanning
+     * phase, so it suits a recipe that only looks at one class at a time.
+     *
+     * @param classDeclaration the class to inspect
+     * @return {@code true} when the class declares a Saga
+     */
+    static boolean declaresSaga(J.ClassDeclaration classDeclaration) {
         if (classDeclaration.getLeadingAnnotations().stream()
                             .anyMatch(annotation -> isAnnotation(annotation, SAGA_STEREOTYPE_FQN, "Saga"))) {
             return true;
