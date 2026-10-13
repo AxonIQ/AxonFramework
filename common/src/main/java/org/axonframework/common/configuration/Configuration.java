@@ -236,13 +236,17 @@ public interface Configuration extends DescribableComponent {
      * Returns the component declared under the given {@code type}, reverting to the given {@code defaultImpl} if no
      * such component is defined.
      * <p>
-     * When no component was previously registered, the default is then configured as the component for the given type.
+     * A component registered under a subtype of the given {@code type} counts as defined, as it does for
+     * {@link #getOptionalComponent(Class, String)}. Only when no component matches is the default used, and then
+     * configured as the component for the given type.
      *
      * @param type        The type of component, typically the interface the component implements.
      * @param defaultImpl The supplier of the default component to return if it was not registered.
      * @param <C>         The type of component.
      * @return The component declared under the given {@code type}, reverting to the given {@code defaultImpl} if no
      * such component is defined.
+     * @throws AmbiguousComponentMatchException if several components match the given {@code type}, in which case the
+     *                                          {@code defaultImpl} is not used
      */
     default <C> C getComponent(Class<C> type,
                                Supplier<C> defaultImpl) {
@@ -253,7 +257,9 @@ public interface Configuration extends DescribableComponent {
      * Returns the component declared under the given {@code type} and {@code name}, reverting to the given
      * {@code defaultImpl} if no such component is defined.
      * <p>
-     * When no component was previously registered, the default is then configured as the component for the given type.
+     * A component registered under a subtype of the given {@code type} counts as defined, as it does for
+     * {@link #getOptionalComponent(Class, String)}. Only when no component matches is the default used, and then
+     * configured as the component for the given type.
      *
      * @param type        The type of component, typically the interface the component implements.
      * @param name        The name of the component to retrieve. Use {@code null} when there is no name or use
@@ -262,6 +268,8 @@ public interface Configuration extends DescribableComponent {
      * @param <C>         The type of component.
      * @return The component declared under the given {@code type} and {@code name}, reverting to the given
      * {@code defaultImpl} if no such component is defined.
+     * @throws AmbiguousComponentMatchException if several components match the given {@code type} and {@code name}, in
+     *                                          which case the {@code defaultImpl} is not used
      */
     <C> C getComponent(Class<C> type,
                        @Nullable String name,

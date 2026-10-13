@@ -552,6 +552,12 @@ public class DefaultComponentRegistry implements ComponentRegistry {
                                   @Nullable String name,
                                   Supplier<C> defaultImpl) {
             Identifier<C> identifier = new Identifier<>(type, name);
+            // Like getOptionalComponent, a component registered under a subtype counts as present, so the default
+            // never shadows it. Only when no component matches is the default registered under the given identifier.
+            Optional<Component<C>> registered = components.get(identifier);
+            if (registered.isPresent()) {
+                return type.cast(registered.get().resolve(this));
+            }
             Object component = components.computeIfAbsent(
                                                  identifier,
                                                  () -> fromFactory(type, name).orElseGet(
