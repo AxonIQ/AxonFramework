@@ -380,7 +380,9 @@ public class SpringComponentRegistry implements
             return bean;
         }
 
-        ResolvableType beanType = beanFactory.getBeanDefinition(beanName).getResolvableType();
+        // The merged definition carries the type of a @Bean declared in a configuration class that Spring reads with
+        // ASM (component-scanned or auto-configuration), whereas the registered definition does not.
+        ResolvableType beanType = beanFactory.getMergedBeanDefinition(beanName).getResolvableType();
         if (beanType == ResolvableType.NONE) {
             logger.debug("Will not post process bean with name [{}] since we cannot define a Component Identifier.",
                          beanName);
@@ -727,7 +729,7 @@ public class SpringComponentRegistry implements
                 return beanFactory.getBeanNamesForType(type, true, false).length > 0;
             }
             return beanFactory.containsBeanDefinition(name)
-                    && type.isAssignableFrom(beanFactory.getBeanDefinition(name).getResolvableType());
+                    && type.isAssignableFrom(beanFactory.getMergedBeanDefinition(name).getResolvableType());
         }
 
         @Override
@@ -808,8 +810,7 @@ public class SpringComponentRegistry implements
         public <C> C getComponent(TypeReference<C> typeReference, @Nullable String name) {
             Assert.notNull(name, () -> "Spring does not allow the use of null names for component retrieval.");
             try {
-                BeanDefinition beanDefinition = beanFactory.getBeanDefinition(name);
-                ResolvableType beanType = beanDefinition.getResolvableType();
+                ResolvableType beanType = beanFactory.getMergedBeanDefinition(name).getResolvableType();
                 if (!ResolvableType.forType(typeReference.getType()).isAssignableFrom(beanType)) {
                     throw new ComponentNotFoundException(typeReference, name);
                 }
@@ -833,8 +834,7 @@ public class SpringComponentRegistry implements
         public <C> Optional<C> getOptionalComponent(TypeReference<C> typeReference, @Nullable String name) {
             Assert.notNull(name, () -> "Spring does not allow the use of null names for component retrieval.");
             try {
-                BeanDefinition beanDefinition = beanFactory.getBeanDefinition(name);
-                ResolvableType beanType = beanDefinition.getResolvableType();
+                ResolvableType beanType = beanFactory.getMergedBeanDefinition(name).getResolvableType();
                 if (!ResolvableType.forType(typeReference.getType()).isAssignableFrom(beanType)) {
                     return Optional.empty();
                 }
