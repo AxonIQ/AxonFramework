@@ -528,7 +528,12 @@ public class DefaultComponentRegistry implements ComponentRegistry {
         // not create it, or anything it depends on.
         @Override
         public boolean hasComponent(Class<?> type, @Nullable String name) {
-            if (components.get(new Identifier<>(type, name)).isPresent()) {
+            try {
+                if (components.get(new Identifier<>(type, name)).isPresent()) {
+                    return true;
+                }
+            } catch (AmbiguousComponentMatchException e) {
+                // Several components match, so a component is present, even though it cannot be retrieved.
                 return true;
             }
             Optional<? extends Component<?>> factoryComponent = fromFactory(type, name);

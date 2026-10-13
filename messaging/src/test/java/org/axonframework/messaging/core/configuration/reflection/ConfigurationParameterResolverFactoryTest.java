@@ -16,6 +16,8 @@
 
 package org.axonframework.messaging.core.configuration.reflection;
 
+import org.axonframework.common.configuration.AmbiguousComponentMatchException;
+import org.axonframework.common.configuration.Component;
 import org.axonframework.messaging.commandhandling.CommandBus;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.messaging.core.GenericMessage;
@@ -63,6 +65,16 @@ class ConfigurationParameterResolverFactoryTest {
         assertNull(testSubject.createInstance(method, parameters, 0));
 
         verify(configuration).getOptionalComponent(String.class);
+    }
+
+    @Test
+    void returnsNullWhenSeveralComponentsMatchTheParameter() {
+        // given - another factory, like Spring's, can tell the matching components apart by qualifier
+        when(configuration.getOptionalComponent(String.class))
+                .thenThrow(new AmbiguousComponentMatchException(new Component.Identifier<>(String.class, null)));
+
+        // when / then
+        assertNull(testSubject.createInstance(method, parameters, 0));
     }
 
     @Test
