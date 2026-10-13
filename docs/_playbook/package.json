@@ -8,7 +8,7 @@
     "@axoniq/antora-vale-extension": "^0.1.2",
     "asciidoctor-kroki": "^0.18.1",
     "chokidar": "^5.0.0",
-    "express": "^5.2.1"
+    "express": "^5.3.0"
   },
   "dependencies": {
     "serve-index": "^1.9.2"
