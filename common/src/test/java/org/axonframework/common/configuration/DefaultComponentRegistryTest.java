@@ -708,6 +708,65 @@ class DefaultComponentRegistryTest {
             }
 
             @Test
+            void getComponentWithDefaultSupplierReturnsComponentRegisteredUnderSubtype() {
+                // given
+                ServiceImplA registeredImpl = new ServiceImplA("registered");
+                testSubject.registerComponent(ServiceImplA.class, c -> registeredImpl);
+
+                // when
+                Configuration config = testSubject.build(mock());
+                ServiceInterface result = config.getComponent(ServiceInterface.class,
+                                                              () -> new ServiceImplB("default"));
+
+                // then
+                assertSame(registeredImpl, result);
+            }
+
+            @Test
+            void getComponentWithDefaultSupplierDoesNotShadowComponentRegisteredUnderSubtype() {
+                // given
+                ServiceImplA registeredImpl = new ServiceImplA("registered");
+                testSubject.registerComponent(ServiceImplA.class, c -> registeredImpl);
+                Configuration config = testSubject.build(mock());
+
+                // when
+                config.getComponent(ServiceInterface.class, () -> new ServiceImplB("default"));
+
+                // then - the default was not registered in place of the registered component
+                assertSame(registeredImpl, config.getComponent(ServiceInterface.class));
+            }
+
+            @Test
+            void getComponentWithDefaultSupplierThrowsAmbiguousComponentMatchExceptionWhenSeveralComponentsMatch() {
+                // given
+                testSubject.registerComponent(ServiceImplA.class, c -> new ServiceImplA("a"))
+                           .registerComponent(ServiceImplB.class, c -> new ServiceImplB("b"));
+                Configuration config = testSubject.build(mock());
+
+                // when / then - the default does not stand in for several matching components
+                assertThrows(AmbiguousComponentMatchException.class,
+                             () -> config.getComponent(ServiceInterface.class, () -> new ServiceImplA("default")));
+            }
+
+            @Test
+            void getComponentWithDefaultSupplierReturnsParentComponentRegisteredUnderSubtype() {
+                // given
+                ServiceImplA parentImpl = new ServiceImplA("parent");
+                DefaultComponentRegistry parentRegistry = new DefaultComponentRegistry();
+                parentRegistry.disableEnhancerScanning()
+                              .registerComponent(ServiceImplA.class, c -> parentImpl);
+                Configuration parent = parentRegistry.build(mock());
+
+                // when
+                Configuration config = testSubject.buildNested(parent, mock());
+                ServiceInterface result = config.getComponent(ServiceInterface.class,
+                                                              () -> new ServiceImplB("default"));
+
+                // then
+                assertSame(parentImpl, result);
+            }
+
+            @Test
             void getComponentWithDefaultSupplierReturnsRegisteredComponentWhenExists() {
                 // given
                 ServiceImplA registeredImpl = new ServiceImplA("registered");
