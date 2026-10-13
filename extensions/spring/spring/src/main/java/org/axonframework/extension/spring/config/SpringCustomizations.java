@@ -19,6 +19,7 @@ package org.axonframework.extension.spring.config;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.AxonThreadFactory;
 import org.axonframework.common.StringUtils;
+import org.axonframework.common.configuration.AmbiguousComponentMatchException;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.messaging.core.SubscribableEventSource;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
@@ -197,13 +198,24 @@ interface SpringCustomizations {
                 tokenStore = getComponent(configuration,
                                           TokenStore.class,
                                           CONVENTIONAL_TOKEN_STORE_BEAN_NAME,
-                                          () -> getComponent(configuration, TokenStore.class, null, null));
+                                          () -> getSingleTokenStore(configuration));
             }
             if (tokenStore != null) {
                 result = result.tokenStore(tokenStore);
             }
 
             return result;
+        }
+
+        @Nullable
+        private static TokenStore getSingleTokenStore(Configuration configuration) {
+            try {
+                return getComponent(configuration, TokenStore.class, null, null);
+            } catch (AmbiguousComponentMatchException e) {
+                // Leave it to a later customization to choose one of the TokenStores, or to
+                // requireResolvedTokenStore to report that none was chosen.
+                return null;
+            }
         }
     }
 
