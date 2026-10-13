@@ -31,6 +31,7 @@ Returns an `Optional`, useful when a component may not have been registered.
 `getComponent(Class<C>, String name)` / `getComponent(TypeReference<C>, String name)`::
 Returns the component registered under the given type and name.
 Used when multiple components of the same type exist (for example, multiple `EventProcessor` instances).
+With Spring, the name also matches a bean alias or `@Qualifier`, as described in xref:spring.adoc#axon-components-as-spring-beans[Axon components as Spring beans].
 
 `getOptionalComponent(Class<C>, String name)` / `getOptionalComponent(TypeReference<C>, String name)`::
 Returns an `Optional` for the component registered under the given type and name.
