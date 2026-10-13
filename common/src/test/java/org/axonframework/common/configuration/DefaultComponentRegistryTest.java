@@ -479,6 +479,37 @@ class DefaultComponentRegistryTest {
         }
 
         @Nested
+        class SeveralMatchingImplementations {
+
+            @Test
+            void hasComponentReturnsTrueWhenSeveralComponentsMatch() {
+                // given
+                testSubject.registerComponent(ServiceImplA.class, c -> new ServiceImplA("a"))
+                           .registerComponent(ServiceImplB.class, c -> new ServiceImplB("b"));
+
+                // when
+                Configuration config = testSubject.build(mock());
+
+                // then - both implementations match the interface, so a component is present
+                assertTrue(config.hasComponent(ServiceInterface.class));
+            }
+
+            @Test
+            void getOptionalComponentThrowsAmbiguousComponentMatchExceptionWhenSeveralComponentsMatch() {
+                // given
+                testSubject.registerComponent(ServiceImplA.class, c -> new ServiceImplA("a"))
+                           .registerComponent(ServiceImplB.class, c -> new ServiceImplB("b"));
+
+                // when
+                Configuration config = testSubject.build(mock());
+
+                // then - several matches are not reported as an absent component
+                assertThrows(AmbiguousComponentMatchException.class,
+                             () -> config.getOptionalComponent(ServiceInterface.class));
+            }
+        }
+
+        @Nested
         class MultipleImplementationsWithNames {
 
             @Test

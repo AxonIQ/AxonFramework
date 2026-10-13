@@ -23,10 +23,16 @@ include::example$configuration/configurer/retrieval/TypeReferenceRetrievalExampl
 
 Every `Class`-based retrieval method below has a matching `TypeReference`-based overload that behaves the same way.
 
+A lookup by type returns the component registered under exactly that type.
+Without such a component, it returns the single component registered under a subtype of that type.
+When several components match, the lookup throws an `AmbiguousComponentMatchException`.
+With Spring, lookups by type follow Spring's bean resolution instead, as described in xref:spring.adoc#axon-components-as-spring-beans[Axon components as Spring beans].
+
 Additional retrieval methods let you handle optional components and named components:
 
 `getOptionalComponent(Class<C>)` / `getOptionalComponent(TypeReference<C>)`::
 Returns an `Optional`, useful when a component may not have been registered.
+The `Optional` is only empty when no component matches; several matching components throw an `AmbiguousComponentMatchException`.
 
 `getComponent(Class<C>, String name)` / `getComponent(TypeReference<C>, String name)`::
 Returns the component registered under the given type and name.
@@ -45,7 +51,7 @@ When several components match, the lookup throws an `AmbiguousComponentMatchExce
 Same as `getComponent(Class<C>, Supplier<C>)`, scoped to a specific component name.
 
 `hasComponent(Class<?>)` / `hasComponent(TypeReference<?>)`::
-Returns `true` when a component is present.
+Returns `true` when a component is present, also when several components match.
 Useful in `ConfigurationEnhancer` implementations to apply decorators conditionally.
 
 `hasComponent(Class<?>, String name)` / `hasComponent(TypeReference<?>, String name)`::
