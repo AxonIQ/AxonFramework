@@ -1,6 +1,6 @@
 name: axon-framework-5-getting-started
 title: Getting Started with Axon Framework 5
-version: master
+version: '5.0'
 
 asciidoc:
   attributes:
