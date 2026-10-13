@@ -707,7 +707,8 @@ public class SpringComponentRegistry implements
         // that is still in creation.
         // A named lookup matches the bean with that name first. Without such a bean, it matches the single bean of the
         // requested type that carries the name as its qualifier. When several beans carry that qualifier, the
-        // getComponent variants fail with an AmbiguousComponentMatchException, while hasComponent returns false.
+        // getComponent variants fail with an AmbiguousComponentMatchException. hasComponent still returns true, as a
+        // component does exist, and returning false could make callers register a replacement component.
 
         @Override
         public boolean hasComponent(Class<?> type, @Nullable String name) {
@@ -715,7 +716,7 @@ public class SpringComponentRegistry implements
             List<String> candidateNames = Arrays.asList(candidates);
             if (name != null) {
                 return candidateNames.contains(name)
-                        || qualifiedBeanNames(ResolvableType.forClass(type), name).size() == 1;
+                        || !qualifiedBeanNames(ResolvableType.forClass(type), name).isEmpty();
             }
             return candidates.length == 1
                     || candidateNames.contains(type.getName())
@@ -728,7 +729,7 @@ public class SpringComponentRegistry implements
             if (name == null) {
                 return beanFactory.getBeanNamesForType(type, true, false).length > 0;
             }
-            return isDefinedAs(name, type) || qualifiedBeanNames(type, name).size() == 1;
+            return isDefinedAs(name, type) || !qualifiedBeanNames(type, name).isEmpty();
         }
 
         private boolean isDefinedAs(String beanName, ResolvableType type) {

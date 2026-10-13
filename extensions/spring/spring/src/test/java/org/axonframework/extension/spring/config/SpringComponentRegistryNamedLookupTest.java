@@ -153,9 +153,9 @@ class SpringComponentRegistryNamedLookupTest {
         }
 
         @Test
-        void returnsFalseWhenSeveralBeansCarryTheQualifier() {
+        void returnsTrueWhenSeveralBeansCarryTheQualifier() {
             // when / then
-            assertThat(testSubject.hasComponent(Greeter.class, "shared")).isFalse();
+            assertThat(testSubject.hasComponent(Greeter.class, "shared")).isTrue();
         }
 
         @Test
