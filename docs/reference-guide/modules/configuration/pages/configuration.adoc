@@ -36,8 +36,10 @@ Used when multiple components of the same type exist (for example, multiple `Eve
 Returns an `Optional` for the component registered under the given type and name.
 
 `getComponent(Class<C>, Supplier<C> defaultImpl)`::
-Returns the component registered under the given type, falling back to `defaultImpl` when none is registered.
+Returns the component registered under the given type, falling back to `defaultImpl` when no component matches.
+A component registered under a subtype of the given type also matches.
 The default is then registered as the component for that type, so later calls return the same instance.
+When several components match, the lookup throws an `AmbiguousComponentMatchException` instead of using the default.
 
 `getComponent(Class<C>, String name, Supplier<C> defaultImpl)`::
 Same as `getComponent(Class<C>, Supplier<C>)`, scoped to a specific component name.
