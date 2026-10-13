@@ -16,6 +16,8 @@
 
 package org.axonframework.extension.spring.config;
 
+import org.axonframework.common.AxonConfigurationException;
+import org.axonframework.common.configuration.ComponentDefinition;
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.ConfigurationEnhancer;
 import org.junit.jupiter.api.*;
@@ -25,6 +27,7 @@ import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.beans.factory.support.RootBeanDefinition;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Test class validating the initialization of the {@link SpringComponentRegistry}.
@@ -84,6 +87,66 @@ class SpringComponentRegistryInitializationTest {
 
         testSubject.postProcessAfterInitialization(new Object(), "applicationBean");
         assertThat(beanFactory.containsSingleton("testEnhancer")).isTrue();
+    }
+
+    @Nested
+    class PrematureComponentLookup {
+
+        @Test
+        void getComponentFailsFastWhenQueriedDuringEnhancerPhase() {
+            // given
+            SpringComponentRegistry testSubject = newRegistry();
+            testSubject.registerEnhancer(registry -> testSubject.configuration().getComponent(String.class));
+
+            // when / then
+            assertThatThrownBy(testSubject::initialize)
+                    .isInstanceOf(AxonConfigurationException.class)
+                    .hasMessageContaining("promoted");
+        }
+
+        @Test
+        void getOptionalComponentFailsFastWhenQueriedDuringEnhancerPhase() {
+            // given
+            SpringComponentRegistry testSubject = newRegistry();
+            testSubject.registerEnhancer(registry -> testSubject.configuration().getOptionalComponent(String.class));
+
+            // when / then
+            assertThatThrownBy(testSubject::initialize)
+                    .isInstanceOf(AxonConfigurationException.class)
+                    .hasMessageContaining("promoted");
+        }
+
+        @Test
+        void getOptionalComponentIsEmptyBeforeInitializationStarts() {
+            // given
+            SpringComponentRegistry testSubject = newRegistry();
+
+            // when / then
+            assertThat(testSubject.configuration().getOptionalComponent(String.class)).isEmpty();
+        }
+
+        @Test
+        void getComponentSucceedsAfterLocalComponentsArePromoted() {
+            // given
+            SpringComponentRegistry testSubject = newRegistry();
+            testSubject.registerComponent(ComponentDefinition.ofType(String.class).withInstance("promoted"));
+
+            // when
+            testSubject.initialize();
+
+            // then
+            assertThat(testSubject.configuration().getComponent(String.class)).isEqualTo("promoted");
+        }
+
+        private static SpringComponentRegistry newRegistry() {
+            DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory();
+            SpringLifecycleRegistry lifecycleRegistry = new SpringLifecycleRegistry();
+            lifecycleRegistry.setBeanFactory(beanFactory);
+            SpringComponentRegistry registry = new SpringComponentRegistry(beanFactory, lifecycleRegistry);
+            registry.postProcessBeanFactory(beanFactory);
+            registry.disableEnhancerScanning();
+            return registry;
+        }
     }
 
     @SuppressWarnings("unused")
