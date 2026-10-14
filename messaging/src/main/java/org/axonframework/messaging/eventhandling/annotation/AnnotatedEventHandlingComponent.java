@@ -41,9 +41,12 @@ import org.axonframework.messaging.eventhandling.replay.ResetContext;
 import org.axonframework.messaging.eventhandling.replay.ResetHandler;
 import org.axonframework.messaging.core.sequencing.SequencingPolicy;
 
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static java.util.Objects.requireNonNull;
 
@@ -117,18 +120,28 @@ public class AnnotatedEventHandlingComponent<T> implements EventHandlingComponen
 
     private void registerHandler(MessageHandlingMember<? super T> handler) {
         Class<?> payloadType = handler.payloadType();
-        QualifiedName qualifiedName = handler.unwrap(EventHandlingMember.class)
-                                             .map(EventHandlingMember::eventName)
-                                             // Filter empty Strings to  fall back to the MessageTypeResolver
-                                             .filter(StringUtils::nonEmpty)
-                                             .map(QualifiedName::new)
-                                             .orElseGet(() -> messageTypeResolver.resolveOrThrow(payloadType)
-                                                                                 .qualifiedName());
-
-        handlingComponent.subscribe(qualifiedName, constructEventHandlerFor(qualifiedName, handler));
+        Set<QualifiedName> names = resolveHandledNames(handler, payloadType);
+        EventHandler eventHandler = constructEventHandlerFor(names, handler);
+        names.forEach(name -> handlingComponent.subscribe(name, eventHandler));
     }
 
-    private EventHandler constructEventHandlerFor(QualifiedName qualifiedName,
+    private Set<QualifiedName> resolveHandledNames(MessageHandlingMember<? super T> handler,
+                                                   Class<?> payloadType) {
+        Set<QualifiedName> declaredNames = Stream.concat(
+                Arrays.stream(handler.<String[]>attribute(HandlerAttributes.EVENT_HANDLES).orElse(new String[0])),
+                handler.unwrap(EventHandlingMember.class).map(EventHandlingMember::eventName).stream()
+        ).filter(StringUtils::nonEmpty).map(QualifiedName::new).collect(Collectors.toUnmodifiableSet());
+        return declaredNames.isEmpty()
+                ? Set.of(messageTypeResolver.resolveOrThrow(payloadType).qualifiedName())
+                : declaredNames;
+    }
+
+    private Optional<SequencingPolicy> whenCustomSequencingPolicyOn(MessageHandlingMember<? super T> handler) {
+        return handler.unwrap(MethodSequencingPolicyEventHandlerDefinition.SequencingPolicyEventMessageHandlingMember.class)
+                      .map(MethodSequencingPolicyEventHandlerDefinition.SequencingPolicyEventMessageHandlingMember::sequencingPolicy);
+    }
+
+    private EventHandler constructEventHandlerFor(Set<QualifiedName> qualifiedNames,
                                                   MessageHandlingMember<? super T> handler) {
         MessageHandlerInterceptorMemberChain<T> interceptorChain = model.chainedInterceptor(target.getClass());
         EventHandler interceptedHandler =
@@ -148,27 +161,21 @@ public class AnnotatedEventHandlingComponent<T> implements EventHandlingComponen
                     String name = "CustomPolicyHandler[%s]".formatted(handler.signature());
                     SimpleEventHandlingComponent handlerWithCustomPolicy =
                             SimpleEventHandlingComponent.create(name, sequencingPolicy);
-                    handlerWithCustomPolicy.subscribe(qualifiedName, interceptedHandler);
-                    return handlerWithCustomPolicy;
+                    handlerWithCustomPolicy.subscribe(qualifiedNames, interceptedHandler);
+                    return (EventHandler) handlerWithCustomPolicy;
                 })
-                .map(component -> (EventHandler) component)
                 .orElse(interceptedHandler);
     }
 
-    private Optional<SequencingPolicy> whenCustomSequencingPolicyOn(MessageHandlingMember<? super T> handler) {
-        return handler.unwrap(MethodSequencingPolicyEventHandlerDefinition.SequencingPolicyEventMessageHandlingMember.class)
-                      .map(MethodSequencingPolicyEventHandlerDefinition.SequencingPolicyEventMessageHandlingMember::sequencingPolicy);
+    @Override
+    public Set<QualifiedName> supportedEvents() {
+        return Set.copyOf(handlingComponent.supportedEvents());
     }
 
     @Override
     public MessageStream.Empty<Message> handle(EventMessage event,
                                                ProcessingContext context) {
         return handlingComponent.handle(event, context);
-    }
-
-    @Override
-    public Set<QualifiedName> supportedEvents() {
-        return Set.copyOf(handlingComponent.supportedEvents());
     }
 
     @Override
@@ -204,7 +211,7 @@ public class AnnotatedEventHandlingComponent<T> implements EventHandlingComponen
         handlingComponent.subscribe(constructResetHandlerFor(handler, interceptorChain));
     }
 
-        private ResetHandler constructResetHandlerFor(
+    private ResetHandler constructResetHandlerFor(
             MessageHandlingMember<? super T> handler,
             MessageHandlerInterceptorMemberChain<T> interceptorChain
     ) {
@@ -234,7 +241,7 @@ public class AnnotatedEventHandlingComponent<T> implements EventHandlingComponen
 
     @Override
     public MessageStream.Empty<Message> handle(ResetContext resetContext,
-                                                        ProcessingContext context) {
+                                               ProcessingContext context) {
         return handlingComponent.handle(resetContext, context);
     }
     // endregion

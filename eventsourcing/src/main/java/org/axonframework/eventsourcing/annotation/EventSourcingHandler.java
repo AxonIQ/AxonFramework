@@ -17,11 +17,11 @@
 package org.axonframework.eventsourcing.annotation;
 
 import org.axonframework.messaging.commandhandling.CommandMessage;
-import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.Metadata;
+import org.axonframework.messaging.eventhandling.EventMessage;
+import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 
 import java.lang.annotation.Documented;
 import java.lang.annotation.ElementType;
@@ -79,6 +79,30 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.METHOD, ElementType.ANNOTATION_TYPE})
 public @interface EventSourcingHandler {
+
+    /**
+     * The names of the events this sourcing handler listens to, each matching to the
+     * {@link org.axonframework.messaging.core.MessageType#name()} from the {@link EventMessage#type()}.
+     * <p>
+     * Each entry is a fully qualified name, interpreted the same way as
+     * {@link org.axonframework.messaging.eventhandling.annotation.EventHandler#eventName()}. Use this when a single
+     * sourcing handler method should apply state from events arriving under multiple names, for example when an event
+     * was renamed but older events with the previous name are still in the event store. All listed events are
+     * converted to the payload type of the annotated method.
+     * <p>
+     * When not defined, the {@link org.axonframework.messaging.core.MessageTypeResolver} derives the name based on the
+     * payload type (thus the <b>first</b> parameter) of the annotated method.
+     * <p>
+     * Example:
+     * <pre>{@code
+     * @EventSourcingHandler(handles = {"com.example.CustomerMoved", "com.example.AddressCorrected"})
+     * void on(AddressChanged event) { ... }
+     * }</pre>
+     *
+     * @return the names of the events this sourcing handler listens to
+     * @since 5.5.0
+     */
+    String[] handles() default {};
 
     /**
      * The type of event this method handles. If specified, this handler will only be invoked for message that have a

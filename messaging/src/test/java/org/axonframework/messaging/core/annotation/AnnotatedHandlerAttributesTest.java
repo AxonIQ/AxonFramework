@@ -36,6 +36,7 @@ import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.Map;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -68,7 +69,7 @@ class AnnotatedHandlerAttributesTest {
 
         assertFalse(testSubject.isEmpty());
         assertTrue(testSubject.contains(HandlerAttributes.MESSAGE_TYPE));
-        assertEquals(testSubject.get(HandlerAttributes.MESSAGE_TYPE), CommandMessage.class);
+        assertEquals(CommandMessage.class, testSubject.get(HandlerAttributes.MESSAGE_TYPE));
         assertEquals(expected, testSubject.getAll());
     }
 
@@ -78,6 +79,7 @@ class AnnotatedHandlerAttributesTest {
 
         Map<String, Object> expected = new HashMap<>();
         expected.put(HandlerAttributes.EVENT_NAME, "custom-event-name");
+        expected.put(HandlerAttributes.EVENT_HANDLES, new String[0]);
         expected.put(HandlerAttributes.ALLOW_REPLAY, true);
         expected.put(HandlerAttributes.MESSAGE_TYPE, EventMessage.class);
         expected.put(HandlerAttributes.PAYLOAD_TYPE, Boolean.class);
@@ -88,7 +90,8 @@ class AnnotatedHandlerAttributesTest {
         assertFalse(testSubject.isEmpty());
         assertTrue(testSubject.contains(HandlerAttributes.ALLOW_REPLAY));
         assertEquals(true, testSubject.get(HandlerAttributes.ALLOW_REPLAY));
-        assertEquals(expected, testSubject.getAll());
+        // usingRecursiveComparison compares String[] by content rather than reference
+        assertThat(testSubject.getAll()).usingRecursiveComparison().isEqualTo(expected);
     }
 
     /**

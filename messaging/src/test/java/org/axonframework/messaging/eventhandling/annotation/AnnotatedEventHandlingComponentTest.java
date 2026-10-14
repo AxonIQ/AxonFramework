@@ -1209,4 +1209,194 @@ class AnnotatedEventHandlingComponentTest {
             }
         }
     }
+
+    @Nested
+    class HandlesAttribute {
+
+        @Nested
+        class WhenHandlesHasSingleEntry {
+
+            @Test
+            void supportedEventsContainsOnlyTheHandlesName() {
+                // given
+                var handler = new Object() {
+                    @SuppressWarnings("unused")
+                    @EventHandler(handles = "com.example.CustomerMoved")
+                    public void handle(String event) {
+                        // no-op
+                    }
+                };
+
+                // when
+                var supportedEvents = annotatedEventHandlingComponent(handler).supportedEvents();
+
+                // then
+                assertThat(supportedEvents).containsExactly(new QualifiedName("com.example.CustomerMoved"));
+            }
+
+            @Test
+            void messageTypeResolverIsNotConsultedDuringRegistration() {
+                // given
+                var handler = new Object() {
+                    @SuppressWarnings("unused")
+                    @EventHandler(handles = "com.example.CustomerMoved")
+                    public void handle(String event) {
+                        // no-op
+                    }
+                };
+                var resolver = spy(new AnnotationMessageTypeResolver());
+
+                // when
+                new AnnotatedEventHandlingComponent<>(
+                        handler,
+                        ClasspathParameterResolverFactory.forClass(handler.getClass()),
+                        ClasspathHandlerDefinition.forClass(handler.getClass()),
+                        resolver,
+                        new DelegatingEventConverter(PassThroughConverter.INSTANCE)
+                );
+
+                // then
+                verifyNoInteractions(resolver);
+            }
+
+            @Test
+            void eventWithHandlesNameIsRoutedToHandler() {
+                // given
+                var handler = new Object() {
+                    @SuppressWarnings("unused")
+                    @EventHandler(handles = "com.example.CustomerMoved")
+                    public void handle(String event) {
+                        callCount.incrementAndGet();
+                    }
+                };
+                var component = annotatedEventHandlingComponent(handler);
+                var event = eventForName("com.example.CustomerMoved");
+
+                // when
+                var result = component.handle(event, StubProcessingContext.forMessage(event));
+
+                // then
+                assertSuccessfulStream(result);
+                assertEquals(1, callCount.get());
+            }
+
+            @Test
+            void eventWithPayloadTypeNameIsNotRoutedWhenHandlesIsSet() {
+                // given
+                var handler = new Object() {
+                    @SuppressWarnings("unused")
+                    @EventHandler(handles = "com.example.CustomerMoved")
+                    public void handle(String event) {
+                        callCount.incrementAndGet();
+                    }
+                };
+                var component = annotatedEventHandlingComponent(handler);
+                // Event named after the payload type (String), not the handles entry
+                var event = new GenericEventMessage(new MessageType(String.class), "payload");
+
+                // when
+                var result = component.handle(event, StubProcessingContext.forMessage(event));
+
+                // then
+                assertTrue(result.error().isPresent());
+                assertEquals(0, callCount.get());
+            }
+        }
+
+        @Nested
+        class WhenHandlesHasMultipleEntries {
+
+            @Test
+            void supportedEventsContainsAllHandlesNames() {
+                // given
+                var handler = new Object() {
+                    @SuppressWarnings("unused")
+                    @EventHandler(handles = {"com.example.CustomerMoved", "com.example.AddressCorrected"})
+                    public void handle(String event) {
+                        // no-op
+                    }
+                };
+
+                // when
+                var supportedEvents = annotatedEventHandlingComponent(handler).supportedEvents();
+
+                // then
+                assertThat(supportedEvents).containsExactlyInAnyOrder(
+                        new QualifiedName("com.example.CustomerMoved"),
+                        new QualifiedName("com.example.AddressCorrected")
+                );
+            }
+
+            @Test
+            void eachHandlesNameRoutesToTheSameHandler() {
+                // given
+                var handler = new Object() {
+                    @SuppressWarnings("unused")
+                    @EventHandler(handles = {"com.example.CustomerMoved", "com.example.AddressCorrected"})
+                    public void handle(String event) {
+                        callCount.incrementAndGet();
+                    }
+                };
+                var component = annotatedEventHandlingComponent(handler);
+                var customerMoved = eventForName("com.example.CustomerMoved");
+                var addressCorrected = eventForName("com.example.AddressCorrected");
+
+                // when
+                var result1 = component.handle(customerMoved, StubProcessingContext.forMessage(customerMoved));
+                var result2 = component.handle(addressCorrected, StubProcessingContext.forMessage(addressCorrected));
+
+                // then
+                assertSuccessfulStream(result1);
+                assertSuccessfulStream(result2);
+                assertEquals(2, callCount.get());
+            }
+        }
+
+        @Nested
+        class NameInterpretation {
+
+            @Test
+            void nameWithoutNamespaceIsUsedAsIs() {
+                // given
+                var handler = new Object() {
+                    @SuppressWarnings("unused")
+                    @EventHandler(handles = "CustomerMoved")
+                    public void handle(String event) {
+                        // no-op - the payload type's package must not be used as namespace
+                    }
+                };
+
+                // when
+                var supportedEvents = annotatedEventHandlingComponent(handler).supportedEvents();
+
+                // then
+                assertThat(supportedEvents).containsExactly(new QualifiedName("CustomerMoved"));
+            }
+
+            @Test
+            void handlesAndEventNameAreCombined() {
+                // given
+                var handler = new Object() {
+                    @SuppressWarnings("unused")
+                    @EventHandler(eventName = "com.example.AddressCorrected", handles = "com.example.CustomerMoved")
+                    public void handle(String event) {
+                        // no-op
+                    }
+                };
+
+                // when
+                var supportedEvents = annotatedEventHandlingComponent(handler).supportedEvents();
+
+                // then
+                assertThat(supportedEvents).containsExactlyInAnyOrder(
+                        new QualifiedName("com.example.CustomerMoved"),
+                        new QualifiedName("com.example.AddressCorrected")
+                );
+            }
+        }
+
+        private static EventMessage eventForName(String qualifiedName) {
+            return new GenericEventMessage(new MessageType(qualifiedName), "payload");
+        }
+    }
 }

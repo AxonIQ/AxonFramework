@@ -79,11 +79,38 @@ public @interface EventHandler {
      * <p>
      * When not defined the {@link org.axonframework.messaging.core.MessageTypeResolver} will derive the name based on
      * the payload type (thus the <b>first</b> parameter) of the annotated method.
+     * <p>
+     * Prefer {@link #handles()}, which allows declaring one or more event names. When both are defined, this handler
+     * listens to the combined set of names.
      *
      * @return The name of the event this handler listens to, matching to the {@link MessageType#name()} from the
      * {@link EventMessage#type()}.
      */
     String eventName() default "";
+
+    /**
+     * The names of the events this handler listens to, each matching to the {@link MessageType#name()} from the
+     * {@link EventMessage#type()}.
+     * <p>
+     * Each entry is a fully qualified name, interpreted the same way as {@link #eventName()}. Use this when a single
+     * handler method should consume events arriving under multiple names, for example when an event was renamed but
+     * older events with the previous name still need to be handled. All listed events are converted to the payload
+     * type of the annotated method.
+     * <p>
+     * When {@link #eventName()} is defined as well, this handler listens to the combined set of names. When neither is
+     * defined, the {@link org.axonframework.messaging.core.MessageTypeResolver} will derive the name based on the
+     * payload type (thus the <b>first</b> parameter) of the annotated method.
+     * <p>
+     * Example:
+     * <pre>{@code
+     * @EventHandler(handles = {"com.example.CustomerMoved", "com.example.AddressCorrected"})
+     * void on(AddressChanged event) { ... }
+     * }</pre>
+     *
+     * @return the names of the events this handler listens to
+     * @since 5.5.0
+     */
+    String[] handles() default {};
 
     /**
      * The representation of the event this method requires. This is an indication for the framework to convert the
