@@ -21,10 +21,8 @@ package org.axonframework.examples.workflow.simple.user;
 import io.axoniq.framework.workflow.configuration.WorkflowModule;
 import io.axoniq.framework.workflow.dsl.simple.SimpleWorkflowContext;
 import io.axoniq.framework.workflow.dsl.simple.SimpleWorkflowContextFactory;
-import io.axoniq.framework.workflow.runtime.api.execution.context.EventConditions;
-import io.axoniq.framework.workflow.runtime.api.execution.context.WorkflowContext;
-import io.axoniq.framework.workflow.runtime.api.execution.context.WorkflowStatusChangeListener;
-import io.axoniq.framework.workflow.runtime.api.execution.status.WorkflowStatus;
+import io.axoniq.framework.workflow.dsl.api.EventConditions;
+import io.axoniq.framework.workflow.dsl.api.WorkflowStatus;
 import io.axoniq.framework.workflow.runtime.test.AbstractWorkflowTestBase;
 import io.axoniq.framework.workflow.runtime.test.fixture.WorkflowTestDriver;
 import io.axoniq.framework.workflow.runtime.test.utils.DelayedPublisher;
@@ -35,7 +33,7 @@ import java.util.Map;
 import java.util.function.Function;
 
 import static io.axoniq.framework.workflow.runtime.association.Associations.associate;
-import static io.axoniq.framework.workflow.dsl.base.BaseWorkflowContext.equalsTo;
+import static io.axoniq.framework.workflow.dsl.api.EventAssociationsUtils.equalsTo;
 import static io.axoniq.framework.workflow.runtime.association.PayloadPropertyValueRetriever.payloadProperty;
 import static io.axoniq.framework.workflow.runtime.execution.DefaultEventNameCustomizer.Builder.namespace;
 import static io.axoniq.framework.workflow.runtime.execution.PayloadPropertyWorkflowIdProvider.fromPayloadAttribute;
@@ -118,16 +116,11 @@ class UserSignupTest {
                     .customized((c, w) -> w
                             .eventNameCustomizer(namespace("io.axoniq.dsl.wf.workflow"))
                             .workflowIdProvider(fromPayloadAttribute(c, "id", id -> "signup-" + id))
-                            .registerWorkflowStatusChangeListener(WorkflowStatus.COMPLETED,
-                                                                  new WorkflowStatusChangeListener() {
-                                                                      @Override
-                                                                      public <C extends WorkflowContext> void onWorkflowStatus(
-                                                                              WorkflowStatus state,
-                                                                              C context) {
-                                                                          new UserSignupWorkflow().onFinish(state,
-                                                                                                            (SimpleWorkflowContext) context);
-                                                                      }
-                                                                  }
+                            .registerWorkflowStatusChangeListener(
+                                    WorkflowStatus.COMPLETED,
+                                    (status, context, processingContext) -> new UserSignupWorkflow().onFinish(
+                                            status, (SimpleWorkflowContext) context
+                                    )
                             )
                     );
         }

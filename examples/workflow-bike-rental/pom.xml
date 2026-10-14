@@ -26,18 +26,22 @@
         <version>${revision}</version>
     </parent>
 
-    <properties>
-        <spring.boot.version>4.1.1</spring.boot.version>
-        <testcontainers.version>2.0.5</testcontainers.version>
-        <kotlin.version>2.4.10</kotlin.version>
-        <axoniq-framework.version>5.4.0-SNAPSHOT</axoniq-framework.version>
-    </properties>
-
     <artifactId>workflow-bike-rental</artifactId>
     <name>Axon Example - Workflow - Bike Rental</name>
 
+    <properties>
+        <spring.boot.version>4.1.1</spring.boot.version>
+        <springdoc-openapi.version>3.1.1</springdoc-openapi.version>
+        <testcontainers.version>2.0.5</testcontainers.version>
+        <jackson.version>3.2.3</jackson.version>
+        <kotlin.version>2.4.21</kotlin.version>
+        <!-- Workflow examples run against the released Axoniq Framework line. -->
+        <axoniq-framework.version>5.4.0</axoniq-framework.version>
+    </properties>
+
     <dependencyManagement>
         <dependencies>
+            <!-- test containers first, since spring would overwrite it otherwise -->
             <dependency>
                 <groupId>org.testcontainers</groupId>
                 <artifactId>testcontainers-bom</artifactId>
@@ -45,15 +49,28 @@
                 <scope>import</scope>
                 <type>pom</type>
             </dependency>
+            <!-- Jackson 3 BOM before Spring Boot to ensure jackson-annotations
+                 is at the version required by Jackson 3 (not the older one managed by Spring Boot). -->
             <dependency>
-                <groupId>org.jetbrains.kotlin</groupId>
-                <artifactId>kotlin-stdlib</artifactId>
-                <version>${kotlin.version}</version>
+                <groupId>tools.jackson</groupId>
+                <artifactId>jackson-bom</artifactId>
+                <version>${jackson.version}</version>
+                <scope>import</scope>
+                <type>pom</type>
+            </dependency>
+            <!-- Spring Boot's BOM is imported before the axoniq-framework-bom of the parent, so its older protobuf
+                 version would win. Pin the protobuf version required by axonserver-connector-java instead. -->
+            <dependency>
+                <groupId>com.google.protobuf</groupId>
+                <artifactId>protobuf-java</artifactId>
+                <version>4.36.2</version>
             </dependency>
             <dependency>
                 <groupId>org.jetbrains.kotlin</groupId>
-                <artifactId>kotlin-reflect</artifactId>
+                <artifactId>kotlin-bom</artifactId>
                 <version>${kotlin.version}</version>
+                <scope>import</scope>
+                <type>pom</type>
             </dependency>
             <dependency>
                 <groupId>org.springframework.boot</groupId>
@@ -66,6 +83,7 @@
     </dependencyManagement>
 
     <dependencies>
+        <!-- Kotlin -->
         <dependency>
             <groupId>org.jetbrains.kotlin</groupId>
             <artifactId>kotlin-stdlib</artifactId>
@@ -78,11 +96,15 @@
         <!-- Spring Boot -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webmvc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webflux</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -93,27 +115,9 @@
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
         <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-databind</artifactId>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jackson</artifactId>
         </dependency>
-        <dependency>
-            <groupId>com.fasterxml.jackson.datatype</groupId>
-            <artifactId>jackson-datatype-jsr310</artifactId>
-        </dependency>
-
-        <!-- Workflow -->
-        <dependency>
-            <groupId>io.axoniq.framework</groupId>
-            <artifactId>axoniq-workflow-spring-boot</artifactId>
-            <version>${axoniq-framework.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>io.axoniq.framework</groupId>
-            <artifactId>axoniq-workflow-test</artifactId>
-            <version>${axoniq-framework.version}</version>
-            <scope>test</scope>
-        </dependency>
-
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-docker-compose</artifactId>
@@ -121,29 +125,36 @@
         <dependency>
             <groupId>org.springdoc</groupId>
             <artifactId>springdoc-openapi-starter-webflux-ui</artifactId>
-            <version>3.1.0</version>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-jpa</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.h2database</groupId>
-            <artifactId>h2</artifactId>
+            <version>${springdoc-openapi.version}</version>
         </dependency>
 
         <!-- Axon -->
         <dependency>
-            <groupId>org.axonframework.extensions.spring</groupId>
-            <artifactId>axon-spring-boot-starter</artifactId>
+            <groupId>io.axoniq.framework</groupId>
+            <artifactId>axoniq-spring-boot-starter</artifactId>
         </dependency>
         <dependency>
             <groupId>io.axoniq.framework</groupId>
             <artifactId>axon-server-connector</artifactId>
         </dependency>
+        <!-- The workflow artifacts are not part of the axoniq-framework-bom. -->
+        <dependency>
+            <groupId>io.axoniq.framework</groupId>
+            <artifactId>axoniq-workflow-dsl</artifactId>
+            <version>${axoniq-framework.version}</version>
+        </dependency>
+
+        <!-- Database -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+        </dependency>
+
+        <!-- Testing -->
         <dependency>
             <groupId>io.axoniq.framework</groupId>
             <artifactId>axoniq-testcontainer</artifactId>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>

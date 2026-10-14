@@ -20,8 +20,8 @@ package org.axonframework.examples.workflow.simple.user;
 
 import io.axoniq.framework.workflow.dsl.simple.SimpleWorkflowContext;
 import io.axoniq.framework.workflow.dsl.simple.SimpleWorkflowContextFactory;
-import io.axoniq.framework.workflow.runtime.api.execution.status.StepStatus;
-import io.axoniq.framework.workflow.runtime.api.execution.status.WorkflowStatus;
+import io.axoniq.framework.workflow.dsl.api.StepStatus;
+import io.axoniq.framework.workflow.dsl.api.WorkflowStatus;
 import io.axoniq.framework.workflow.runtime.test.fixture.GivenWhen;
 import io.axoniq.framework.workflow.runtime.test.fixture.Then;
 import io.axoniq.framework.workflow.runtime.test.fixture.WorkflowTestFixture;

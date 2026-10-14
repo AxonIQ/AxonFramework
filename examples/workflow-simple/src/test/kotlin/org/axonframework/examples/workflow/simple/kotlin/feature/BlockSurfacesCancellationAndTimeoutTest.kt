@@ -23,14 +23,13 @@ import io.axoniq.framework.workflow.configuration.WorkflowModule.WorkflowDefinit
 import io.axoniq.framework.workflow.dsl.kotlin.Kontext
 import io.axoniq.framework.workflow.dsl.kotlin.WorkflowKontext
 import io.axoniq.framework.workflow.dsl.kotlin.WorkflowKontextFactory
-import io.axoniq.framework.workflow.runtime.api.execution.context.EventConditions
-import io.axoniq.framework.workflow.runtime.api.execution.state.StepCancellationException
-import io.axoniq.framework.workflow.runtime.api.execution.state.StepTimedOutException
-import io.axoniq.framework.workflow.runtime.api.execution.status.StepStatus
-import io.axoniq.framework.workflow.runtime.api.execution.status.WorkflowStatus
+import io.axoniq.framework.workflow.dsl.api.EventConditions
+import io.axoniq.framework.workflow.dsl.api.StepCancellationException
+import io.axoniq.framework.workflow.dsl.api.StepTimedOutException
+import io.axoniq.framework.workflow.dsl.api.StepStatus
+import io.axoniq.framework.workflow.dsl.api.WorkflowStatus
 import io.axoniq.framework.workflow.runtime.execution.DefaultEventNameCustomizer.Builder.namespace
 import io.axoniq.framework.workflow.runtime.execution.PayloadPropertyWorkflowIdProvider.fromPayloadAttribute
-import io.axoniq.framework.workflow.runtime.execution.WorkflowCancellationService
 import io.axoniq.framework.workflow.runtime.execution.WorkflowExecutionRepository
 import io.axoniq.framework.workflow.runtime.test.AbstractWorkflowTestBase
 import io.axoniq.framework.workflow.runtime.test.utils.DelayedPublisher
@@ -39,6 +38,7 @@ import org.awaitility.Awaitility.await
 import org.axonframework.messaging.eventhandling.annotation.Event
 import org.junit.jupiter.api.Test
 import java.time.Duration
+import java.util.concurrent.TimeUnit
 import java.util.function.Function
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
@@ -76,7 +76,9 @@ class BlockSurfacesCancellationAndTimeoutTest : AbstractWorkflowTestBase<Workflo
         )
         delayedPublisher.start()
 
-        val executionRepository = configuration.getComponent(WorkflowExecutionRepository::class.java)
+        // Workflow components are registered per module, and the test base names the module after the test class.
+        val executionRepository = configuration.getComponents(WorkflowExecutionRepository::class.java)
+            .getValue("WorkflowExecutionRepository[${javaClass.simpleName}]")
 
         // The timed-out block has surfaced (via timeoutSurfaced) and the body now parks on the second block.
         await().atMost(Duration.ofSeconds(10)).untilAsserted {
@@ -84,25 +86,25 @@ class BlockSurfacesCancellationAndTimeoutTest : AbstractWorkflowTestBase<Workflo
             assertThat(execution).isPresent
             val state = execution.get().state()
             assertThat(state.containsStep("cancelledWait")).isTrue()
-            assertThat(state.getStep("cancelledWait").status()).isEqualTo(StepStatus.STARTED)
+            assertThat(state.getStep("cancelledWait")?.status()).isEqualTo(StepStatus.STARTED)
         }
 
-        configuration.getComponent(WorkflowCancellationService::class.java)
+        workflowCancellationService
             .requestStepCancellation("block-1", "cancelledWait", StepCancellationException("cancelled externally"))
             .join()
 
         await().atMost(Duration.ofSeconds(10)).untilAsserted {
-            val history = workflowHistoryRepository.findById("block-1")
+            val history = workflowHistoryRepository.findById("block-1").orTimeout(5, TimeUnit.SECONDS).join()
             assertThat(history).isPresent
             val state = history.get().state()
             assertThat(state.workflowStatus()).isEqualTo(WorkflowStatus.COMPLETED)
             // Timeout surfaced as StepTimedOutException: the catch ran, the fall-through did not.
-            assertThat(state.getStep("timedOutWait").status()).isEqualTo(StepStatus.TIMED_OUT)
-            assertThat(state.getStep("timeoutSurfaced").status()).isEqualTo(StepStatus.COMPLETED)
+            assertThat(state.getStep("timedOutWait")?.status()).isEqualTo(StepStatus.TIMED_OUT)
+            assertThat(state.getStep("timeoutSurfaced")?.status()).isEqualTo(StepStatus.COMPLETED)
             assertThat(state.containsStep("timeoutSwallowed")).isFalse()
             // Cancellation surfaced as StepCancellationException: the catch ran, the fall-through did not.
-            assertThat(state.getStep("cancelledWait").status()).isEqualTo(StepStatus.CANCELLED)
-            assertThat(state.getStep("cancelSurfaced").status()).isEqualTo(StepStatus.COMPLETED)
+            assertThat(state.getStep("cancelledWait")?.status()).isEqualTo(StepStatus.CANCELLED)
+            assertThat(state.getStep("cancelSurfaced")?.status()).isEqualTo(StepStatus.COMPLETED)
             assertThat(state.containsStep("cancelSwallowed")).isFalse()
         }
     }

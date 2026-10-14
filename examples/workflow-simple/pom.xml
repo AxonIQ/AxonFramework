@@ -29,29 +29,33 @@
     <name>Axon Example - Workflow - Simple</name>
 
     <properties>
-        <kotlin.version>2.4.10</kotlin.version>
-        <axoniq-framework.version>5.4.0-SNAPSHOT</axoniq-framework.version>
+        <kotlin.version>2.4.21</kotlin.version>
+        <!-- Workflow examples run against the released Axoniq Framework line. -->
+        <axoniq-framework.version>5.4.0</axoniq-framework.version>
     </properties>
 
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.jetbrains.kotlin</groupId>
+                <artifactId>kotlin-bom</artifactId>
+                <version>${kotlin.version}</version>
+                <scope>import</scope>
+                <type>pom</type>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
     <dependencies>
-        <dependency>
-            <groupId>org.jetbrains.kotlin</groupId>
-            <artifactId>kotlin-stdlib</artifactId>
-            <version>${kotlin.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.jetbrains.kotlin</groupId>
-            <artifactId>kotlin-reflect</artifactId>
-            <version>${kotlin.version}</version>
-        </dependency>
+        <!-- The workflow artifacts are not part of the axoniq-framework-bom. -->
         <dependency>
             <groupId>io.axoniq.framework</groupId>
-            <artifactId>axoniq-workflow-engine</artifactId>
+            <artifactId>axoniq-workflow-dsl</artifactId>
             <version>${axoniq-framework.version}</version>
         </dependency>
         <dependency>
             <groupId>io.axoniq.framework</groupId>
-            <artifactId>axoniq-workflow-dsl</artifactId>
+            <artifactId>axoniq-workflow-dsl-kotlin</artifactId>
             <version>${axoniq-framework.version}</version>
         </dependency>
         <dependency>

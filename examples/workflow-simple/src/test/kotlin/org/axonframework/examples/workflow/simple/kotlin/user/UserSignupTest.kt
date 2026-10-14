@@ -22,8 +22,8 @@ import io.axoniq.framework.workflow.configuration.WorkflowModule.WorkflowDefinit
 import io.axoniq.framework.workflow.configuration.WorkflowModule.WorkflowDefinitionPhase.FinalizedPhase
 import io.axoniq.framework.workflow.dsl.kotlin.WorkflowKontext
 import io.axoniq.framework.workflow.dsl.kotlin.WorkflowKontextFactory
-import io.axoniq.framework.workflow.runtime.api.execution.context.EventConditions
-import io.axoniq.framework.workflow.runtime.api.execution.status.WorkflowStatus
+import io.axoniq.framework.workflow.dsl.api.EventConditions
+import io.axoniq.framework.workflow.dsl.api.WorkflowStatus
 import io.axoniq.framework.workflow.runtime.execution.DefaultEventNameCustomizer.Builder.namespace
 import io.axoniq.framework.workflow.runtime.execution.PayloadPropertyWorkflowIdProvider.fromPayloadAttribute
 import io.axoniq.framework.workflow.runtime.test.AbstractWorkflowTestBase

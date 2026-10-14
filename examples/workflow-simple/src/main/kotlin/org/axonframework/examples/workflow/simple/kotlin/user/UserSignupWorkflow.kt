@@ -22,9 +22,9 @@ import org.axonframework.examples.workflow.simple.kotlin.user.MagicHappenedEvent
 import org.axonframework.examples.workflow.simple.kotlin.user.NotificationService
 import org.axonframework.examples.workflow.simple.kotlin.user.UserService
 import io.axoniq.framework.workflow.dsl.kotlin.Kontext
-import io.axoniq.framework.workflow.runtime.api.annotation.Workflow
-import io.axoniq.framework.workflow.runtime.api.execution.context.EventConditions
-import io.axoniq.framework.workflow.runtime.api.execution.context.retry.RetryPolicy
+import io.axoniq.framework.workflow.annotation.Workflow
+import io.axoniq.framework.workflow.dsl.api.EventConditions
+import io.axoniq.framework.workflow.dsl.api.retry.RetryPolicy
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.time.Instant
 import kotlin.time.Duration.Companion.seconds

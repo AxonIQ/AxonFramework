@@ -29,8 +29,8 @@ import org.axonframework.examples.workflow.bikerental.coreapi.rental.ApproveRequ
 import org.axonframework.examples.workflow.bikerental.coreapi.rental.RejectRequestCommand;
 import io.axoniq.framework.workflow.dsl.api.Payload;
 import io.axoniq.framework.workflow.dsl.simple.SimpleWorkflowContext;
-import io.axoniq.framework.workflow.runtime.api.annotation.Workflow;
-import io.axoniq.framework.workflow.runtime.api.execution.state.WorkflowStepResult;
+import io.axoniq.framework.workflow.annotation.Workflow;
+import io.axoniq.framework.workflow.dsl.api.WorkflowStepResult;
 import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,12 +39,11 @@ import org.springframework.stereotype.Component;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 
 import static io.axoniq.framework.workflow.runtime.association.Associations.associate;
 import static io.axoniq.framework.workflow.dsl.api.Payload.payload;
-import static io.axoniq.framework.workflow.dsl.base.BaseWorkflowContext.equalsTo;
+import static io.axoniq.framework.workflow.dsl.api.EventAssociationsUtils.equalsTo;
 import static io.axoniq.framework.workflow.runtime.association.PayloadPropertyValueRetriever.payloadProperty;
 
 /**
@@ -79,32 +78,35 @@ public class PaymentWorkflow {
 
         var paymentReference = ctx.workflowPayload().get("paymentReference");
 
-        AtomicBoolean paymentPending = new AtomicBoolean(true);
-        while (paymentPending.get()) {
+        // A step name is the durable identity of a step: a step that already ran is not run again, its recorded
+        // result is returned instead. Each retry therefore needs its own step names, suffixed by the attempt.
+        boolean paymentPending = true;
+        for (int attempt = 1; paymentPending; attempt++) {
 
-            logger.info("Preparing payment {}", paymentReference);
+            logger.info("Preparing payment {}, attempt {}", paymentReference, attempt);
 
+            // Wait for the event before sending the command, so the event cannot arrive before the workflow waits.
             var paymentPrepared = ctx.waitForEvent(
-                    "paymentPrepared",
+                    "paymentPrepared" + attempt,
                     PaymentPreparedEvent.class,
                     associate(payloadProperty("paymentReference"), equalsTo(paymentReference)),
                     step -> step.timeout(DEFAULT_TIMEOUT)
             );
 
             var preparePayment = sendCommand(ctx,
-                                             "preparePayment",
+                                             "preparePayment" + attempt,
                                              payload ->
                                                      new PreparePaymentCommand(
                                                              payload.get("amount"),
                                                              payload.get("paymentReference")
                                                      )
             );
-            preparePayment.await(); // wait for it
+            preparePayment.await();
 
             if (preparePayment.success()) {
                 paymentPrepared.await();
                 if (paymentPrepared.success()) {
-                    paymentPending.set(false);
+                    paymentPending = false;
                     var paymentDetails = paymentPrepared.<Map<String, @Nullable Object>>result()
                                                         .orElseThrow(() -> new IllegalStateException("No payload"));
                     ctx.awaitModifyPayload(
@@ -118,14 +120,14 @@ public class PaymentWorkflow {
                 } else {
                     logger.info("Did not receive payment prepared event. Retrying in {} secs.",
                                 DEFAULT_TIMEOUT.toSeconds());
-                    ctx.sleep("retryPayment",
+                    ctx.sleep("retryPayment" + attempt,
                               step -> step.timeout(DEFAULT_TIMEOUT));
                 }
             } else {
-                // NICE TO HAVE
+                // The command failed, so its event never arrives: stop waiting for it and retry after a pause.
                 logger.info("Prepare payment command failed. Retrying in {} secs.", DEFAULT_TIMEOUT.toSeconds());
                 paymentPrepared.cancel("Prepare payment command failed.");
-                ctx.sleep("retryPayment",
+                ctx.sleep("retryPayment" + attempt,
                           step -> step.timeout(DEFAULT_TIMEOUT));
             }
         }

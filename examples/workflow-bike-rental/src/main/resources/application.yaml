@@ -16,7 +16,7 @@
 #  https://www.axoniq.io/pricing
 spring:
   datasource:
-    url: jdbc:h2:./examples/bike-rental/rental_db;AUTO_SERVER=TRUE
+    url: jdbc:h2:mem:bike-rental;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
     username: sa
     password:
   jpa:
@@ -26,21 +26,22 @@ spring:
     name: bike-rental
   docker:
     compose:
-      file: file:examples/bike-rental/docker-compose.yaml
+      file: file:examples/docker-compose.yaml
       lifecycle-management: start_only
   main:
     web-application-type: reactive
 axon:
-  axon-server:
+  axonserver:
     enabled: true
   eventhandling:
     processors:
-      [io.axoniq.demo.bikerental.rental]:
-          mode: POOLED
-          initialSegmentCount: 1 # FIXME -> not working, still getting 16 segments
-      [io.axoniq.demo.bikerental.payment]:
-          mode: POOLED
-          initialSegmentCount: 1 # FIXME -> not working, still getting 16 segments
+      # Processors are named after the package of their event handlers.
+      "[org.axonframework.examples.workflow.bikerental.rental]":
+        mode: pooled
+        initial-segment-count: 1
+      "[org.axonframework.examples.workflow.bikerental.payment]":
+        mode: pooled
+        initial-segment-count: 1
 
 springdoc:
   swagger-ui:

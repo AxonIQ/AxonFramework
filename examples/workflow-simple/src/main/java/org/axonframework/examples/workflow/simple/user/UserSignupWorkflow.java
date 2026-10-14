@@ -19,9 +19,9 @@
 package org.axonframework.examples.workflow.simple.user;
 
 import io.axoniq.framework.workflow.dsl.simple.SimpleWorkflowContext;
-import io.axoniq.framework.workflow.runtime.api.annotation.Workflow;
-import io.axoniq.framework.workflow.runtime.api.annotation.WorkflowCompletedHandler;
-import io.axoniq.framework.workflow.runtime.api.execution.status.WorkflowStatus;
+import io.axoniq.framework.workflow.annotation.Workflow;
+import io.axoniq.framework.workflow.annotation.WorkflowCompletedHandler;
+import io.axoniq.framework.workflow.dsl.api.WorkflowStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,7 +31,7 @@ import java.util.Map;
 
 import static io.axoniq.framework.workflow.runtime.association.Associations.associate;
 import static io.axoniq.framework.workflow.dsl.api.Payload.payload;
-import static io.axoniq.framework.workflow.dsl.base.BaseWorkflowContext.equalsTo;
+import static io.axoniq.framework.workflow.dsl.api.EventAssociationsUtils.equalsTo;
 import static io.axoniq.framework.workflow.runtime.association.PayloadPropertyValueRetriever.payloadProperty;
 
 /**
@@ -67,12 +67,6 @@ public class UserSignupWorkflow {
                          UserService::activateUser,
                          step -> step.timeout(Duration.ofSeconds(10))
         );
-
-//        ctx.awaitExecute("activateUser2",
-//                         ctx.workflowPayload(),
-//                         UserService::activateUser,
-//                         step -> step.timeout(Duration.ofSeconds(10))
-//        );
 
         ctx.awaitExecute("sendWelcomeEmail",
                          ctx.workflowPayload(),
