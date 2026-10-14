@@ -3,6 +3,112 @@
 
 Any patch release made for an Axon project is tailored towards resolving bugs. This page aims to provide a dedicated overview of patch releases per project.
 
+[#release_5_3]
+== Release 5.3
+
+=== Release 5.3.3
+
+==== Bug fixes
+
+- `UpdateChecker` parameters should not be in headers (link:https://github.com/AxonIQ/AxonFramework/pull/5094[PR #5094], by @CodeDrivenMitch)
+- Ensure Micrometer `MessageMonitors` are Spring Boot-autoconfigured (link:https://github.com/AxonIQ/AxonFramework/issues/5077[#5077], link:https://github.com/AxonIQ/AxonFramework/pull/5091[PR #5091], by @smcvb)
+- Prevent PSEP from redelivering events to a lagging half of a merged segment (link:https://github.com/AxonIQ/AxonFramework/issues/5079[#5079], link:https://github.com/AxonIQ/AxonFramework/pull/5087[PR #5087], by @hatzlj)
+- Token claims stolen from segments waiting for a worker thread, despite coordinator claim extension (link:https://github.com/AxonIQ/AxonFramework/pull/5065[PR #5065], by @abuijze)
+- Fix `NullPointerException` for `@CommandHandlerInterceptor` on creational commands (link:https://github.com/AxonIQ/AxonFramework/pull/5064[PR #5064], by @abuijze)
+
+==== Contributors
+
+A heartfelt thank you to all contributors who worked on this section:
+
+- link:https://github.com/abuijze[@abuijze]
+- link:https://github.com/CodeDrivenMitch[@CodeDrivenMitch]
+- link:https://github.com/hatzlj[@hatzlj]
+- link:https://github.com/smcvb[@smcvb]
+
+=== Release 5.3.2
+
+==== Enhancements
+
+- Test Map-based `AggregateMember` rewrites (link:https://github.com/AxonIQ/AxonFramework/pull/5033[PR #5033], by @smcvb)
+- Encode username header value for non-ascii characters (link:https://github.com/AxonIQ/AxonFramework/pull/5028[PR #5028], by @CodeDrivenMitch)
+- Expand `UpdateChecker` logic (link:https://github.com/AxonIQ/AxonFramework/pull/5016[PR #5016], by @smcvb)
+- `SimpleQueryBus` should wrap any subscription query update exception in `CompletableFuture` (link:https://github.com/AxonIQ/AxonFramework/pull/4985[PR #4985], by @smcvb)
+- Add reporting of tags used for the append in the append exception (link:https://github.com/AxonIQ/AxonFramework/pull/4966[PR #4966], by @hjohn)
+
+==== Bug fixes
+
+- Defer `ConfigurationPropertiesBinding` qualified beans on `SpringComponentRegistry` initialization (link:https://github.com/AxonIQ/AxonFramework/pull/5043[PR #5043], by @smcvb)
+- Invoke a before-interceptor's handler exactly once (link:https://github.com/AxonIQ/AxonFramework/pull/5038[PR #5038], by @MateuszNaKodach)
+- Fix bugs found in AF4 during large investigation in AF5 (link:https://github.com/AxonIQ/AxonFramework/pull/5036[PR #5036], by @hjohn)
+- Support Entity-specific (annotated) command handler interceptors (link:https://github.com/AxonIQ/AxonFramework/pull/5035[PR #5035], by @smcvb)
+- Multi-Member entity event routing: docs, tests, and `@EventTag` recipe (link:https://github.com/AxonIQ/AxonFramework/pull/5021[PR #5021], by @MateuszNaKodach)
+- Fix for appending events in `SubscribingEventProcessor` (link:https://github.com/AxonIQ/AxonFramework/pull/5020[PR #5020], by @smcvb)
+- Ensure returned `CommandResultMessage` is never `null` (link:https://github.com/AxonIQ/AxonFramework/pull/4999[PR #4999], by @smcvb)
+- Bound the polling thread join in `JpaPollingEventCoordinator.terminate()` (link:https://github.com/AxonIQ/AxonFramework/pull/4968[PR #4968], by @smcvb)
+- Ensure user-configured `HandlerDefinitions` and `HandlerEnhancerDefinitions` are utilized throughout (link:https://github.com/AxonIQ/AxonFramework/issues/4786[#4786], link:https://github.com/AxonIQ/AxonFramework/pull/4965[PR #4965], by @smcvb)
+
+==== Documentation
+
+- Add saga-recipes example and a Sagas and Process Managers guide (link:https://github.com/AxonIQ/AxonFramework/issues/4619[#4619], link:https://github.com/AxonIQ/AxonFramework/pull/5017[PR #5017], by @MateuszNaKodach)
+- Fix spelling in Saga Guide (link:https://github.com/AxonIQ/AxonFramework/issues/4619[#4619], link:https://github.com/AxonIQ/AxonFramework/pull/5018[PR #5018], by @MateuszNaKodach)
+- Document that the initial token is not a replay (link:https://github.com/AxonIQ/AxonFramework/pull/4983[PR #4983], by @MateuszNaKodach)
+- Document the blast radius of a stalled segment (link:https://github.com/AxonIQ/AxonFramework/pull/4957[PR #4957], by @abuijze)
+- Add 5.3.1 release notes (link:https://github.com/AxonIQ/AxonFramework/pull/4951[PR #4951], by @smcvb)
+
+==== Contributors
+
+A heartfelt thank you to all contributors who worked on this section:
+
+- link:https://github.com/abuijze[@abuijze]
+- link:https://github.com/CodeDrivenMitch[@CodeDrivenMitch]
+- link:https://github.com/hjohn[@hjohn]
+- link:https://github.com/MateuszNaKodach[@MateuszNaKodach]
+- link:https://github.com/smcvb[@smcvb]
+
+=== Release 5.3.1
+
+==== Enhancements
+
+- Dedicated `@EntityCreator` annotation enforcing entity creation regardless of existence (link:https://github.com/AxonIQ/AxonFramework/pull/4933[PR #4933], by @smcvb)
+- Cache `AnnotationMessageTypeResolver` annotation look-ups | Pre-compute entity event routing (link:https://github.com/AxonIQ/AxonFramework/pull/4931[PR #4931], by @MateuszNaKodach)
+- Implement lowerBound on the aggregate-based consistency marker (link:https://github.com/AxonIQ/AxonFramework/issues/4815[#4815], link:https://github.com/AxonIQ/AxonFramework/pull/4928[PR #4928], by @schananas)
+- Match segments against pre-resolved sequence identifiers (link:https://github.com/AxonIQ/AxonFramework/issues/4797[#4797], link:https://github.com/AxonIQ/AxonFramework/pull/4923[PR #4923], by @MateuszNaKodach)
+- Add GHA to automate releases (link:https://github.com/AxonIQ/AxonFramework/pull/4922[PR #4922], by @corradom)
+- Leave the processor token-store name unset by default (link:https://github.com/AxonIQ/AxonFramework/issues/4809[#4809], link:https://github.com/AxonIQ/AxonFramework/pull/4909[PR #4909], by @schananas)
+- Clear the re-claim block when a split or merge fails (link:https://github.com/AxonIQ/AxonFramework/issues/4798[#4798], link:https://github.com/AxonIQ/AxonFramework/pull/4908[PR #4908], by @schananas)
+
+==== Bug fixes
+
+- `SegmentChangeListner#onSegmentClaimed` has token parameter | Unify `initializeTokenSegments` failure behavior (link:https://github.com/AxonIQ/AxonFramework/issues/4924[#4924], link:https://github.com/AxonIQ/AxonFramework/pull/4946[PR #4946], by @schananas)
+- Correctly support `@EventSourced` annotation for polymorphic entities (link:https://github.com/AxonIQ/AxonFramework/issues/4906[#4906], link:https://github.com/AxonIQ/AxonFramework/pull/4944[PR #4944], by @smcvb)
+- Convert message handlers to right MessageStream cardinality (link:https://github.com/AxonIQ/AxonFramework/pull/4943[PR #4943], by @CodeDrivenMitch)
+- Fix broken link to entity-creator.adoc in stateful-command-handler.adoc (link:https://github.com/AxonIQ/AxonFramework/pull/4938[PR #4938], by @corradom)
+- Return `ManagedEntity` from `Repository` and provided to `@InjectEntity` annotated parameters at all times (link:https://github.com/AxonIQ/AxonFramework/pull/4936[PR #4936], by @smcvb)
+- Release the token claim after the segment release listeners (link:https://github.com/AxonIQ/AxonFramework/issues/4924[#4924], link:https://github.com/AxonIQ/AxonFramework/pull/4935[PR #4935], by @schananas)
+- Ensure `HierarchicalStateManager` supports Entity-subtype search (link:https://github.com/AxonIQ/AxonFramework/issues/4904[#4904], link:https://github.com/AxonIQ/AxonFramework/pull/4932[PR #4932], by @smcvb)
+- Fall back to the event identifier when a sequencing policy resolves nothing (link:https://github.com/AxonIQ/AxonFramework/issues/4797[#4797], link:https://github.com/AxonIQ/AxonFramework/pull/4914[PR #4914], by @schananas)
+- Resolve the reset converter only when there is a reset context (link:https://github.com/AxonIQ/AxonFramework/issues/4796[#4796], link:https://github.com/AxonIQ/AxonFramework/pull/4913[PR #4913], by @schananas)
+- Preserve assignable payloads without a converter (link:https://github.com/AxonIQ/AxonFramework/issues/4874[#4874], link:https://github.com/AxonIQ/AxonFramework/pull/4912[PR #4912], by @MateuszNaKodach)
+- Make a batch of appended events visible atomically in the in-memory store (link:https://github.com/AxonIQ/AxonFramework/issues/4824[#4824], link:https://github.com/AxonIQ/AxonFramework/pull/4911[PR #4911], by @schananas)
+- Keep the work package's stored token monotonic from the first store of a claim (link:https://github.com/AxonIQ/AxonFramework/issues/4801[#4801], link:https://github.com/AxonIQ/AxonFramework/issues/4836[#4836], link:https://github.com/AxonIQ/AxonFramework/pull/4910[PR #4910], by @schananas)
+- Adopt a concurrently created config token instead of failing to start (link:https://github.com/AxonIQ/AxonFramework/issues/4802[#4802], link:https://github.com/AxonIQ/AxonFramework/pull/4907[PR #4907], by @schananas)
+- Recognise the broadcast sentinel by identity instead of by value (link:https://github.com/AxonIQ/AxonFramework/issues/4800[#4800], link:https://github.com/AxonIQ/AxonFramework/pull/4903[PR #4903], by @schananas)
+- Align the autoconfigured JPA gap defaults with the core defaults (link:https://github.com/AxonIQ/AxonFramework/issues/4799[#4799], link:https://github.com/AxonIQ/AxonFramework/pull/4902[PR #4902], by @schananas)
+
+==== Documentation
+
+- Add PostgreSQL known-issue link in Token Store section (link:https://github.com/AxonIQ/AxonFramework/pull/4947[PR #4947], by @smcvb)
+
+==== Contributors
+
+A heartfelt thank you to all contributors who worked on this section:
+
+- link:https://github.com/CodeDrivenMitch[@CodeDrivenMitch]
+- link:https://github.com/corradom[@corradom]
+- link:https://github.com/MateuszNaKodach[@MateuszNaKodach]
+- link:https://github.com/schananas[@schananas]
+- link:https://github.com/smcvb[@smcvb]
+
 [#release_5_2]
 == Release 5.2
 

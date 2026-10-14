@@ -22,45 +22,69 @@ import org.axonframework.common.configuration.Configuration;
 import org.axonframework.common.configuration.DefaultComponentRegistry;
 import org.axonframework.common.configuration.StubLifecycleRegistry;
 import org.axonframework.common.infra.ComponentDescriptor;
+import org.axonframework.conversion.jackson.JacksonConverter;
 import org.axonframework.eventsourcing.CriteriaResolver;
 import org.axonframework.eventsourcing.EventSourcedEntityFactory;
 import org.axonframework.eventsourcing.EventSourcingRepository;
 import org.axonframework.eventsourcing.annotation.CriteriaResolverDefinition;
 import org.axonframework.eventsourcing.annotation.EventSourcedEntity;
 import org.axonframework.eventsourcing.annotation.EventSourcedEntityFactoryDefinition;
+import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
+import org.axonframework.eventsourcing.annotation.EventTag;
 import org.axonframework.eventsourcing.annotation.Snapshotting;
-import org.axonframework.eventsourcing.configuration.packagelevel.PackageLevelCourse;
 import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
+import org.axonframework.eventsourcing.configuration.packagelevel.PackageLevelCourse;
 import org.axonframework.eventsourcing.handler.EntityLifecycleHandler;
 import org.axonframework.eventsourcing.handler.InitializingEntityEvolver;
 import org.axonframework.eventsourcing.handler.SnapshottingEntityLifecycleHandler;
 import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
+import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
+import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
+import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
+import org.axonframework.messaging.core.MessageTypeResolver;
+import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
+import org.axonframework.messaging.core.annotation.ClasspathParameterResolverFactory;
+import org.axonframework.messaging.core.annotation.HandlerDefinition;
+import org.axonframework.messaging.core.annotation.HandlerEnhancerDefinition;
+import org.axonframework.messaging.core.annotation.MessageHandlingMember;
+import org.axonframework.messaging.core.annotation.MultiHandlerDefinition;
+import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
+import org.axonframework.messaging.core.conversion.DelegatingMessageConverter;
+import org.axonframework.messaging.core.conversion.MessageConverter;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
+import org.axonframework.messaging.eventhandling.conversion.DelegatingEventConverter;
+import org.axonframework.messaging.eventhandling.conversion.EventConverter;
+import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
+import org.axonframework.modelling.EntityIdResolver;
 import org.axonframework.modelling.StateManager;
+import org.axonframework.modelling.annotation.AnnotationBasedEntityIdResolverDefinition;
+import org.axonframework.modelling.annotation.EntityIdResolverDefinition;
+import org.axonframework.modelling.annotation.TargetEntityId;
+import org.axonframework.modelling.entity.EntityMetamodel;
+import org.axonframework.modelling.entity.annotation.AnnotatedEntityMetamodel;
+import org.axonframework.modelling.entity.annotation.EntityMember;
 import org.axonframework.modelling.repository.Repository;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.*;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.Captor;
-import org.mockito.junit.jupiter.MockitoExtension;
+import org.junit.jupiter.api.extension.*;
+import org.mockito.*;
+import org.mockito.junit.jupiter.*;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
+import java.util.HashSet;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isA;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 /**
  * Test class validating the {@link AnnotatedEventSourcedEntityModule}.
@@ -472,6 +496,379 @@ class AnnotatedEventSourcedEntityModuleTest {
         @Snapshotting
         record EnclosedCourse(CourseId id) {
             @EntityCreator public EnclosedCourse {}
+        }
+    }
+
+    /**
+     * Tests that a {@link HandlerDefinition}/{@link HandlerEnhancerDefinition} explicitly passed to
+     * {@link AnnotatedEntityMetamodel}'s static factories is applied uniformly to concrete, polymorphic, concrete
+     * subtype, and child entity handlers, rather than only some of them.
+     */
+    @Nested
+    class HandlerDefinitionPropagation {
+
+        private final ParameterResolverFactory parameterResolverFactory =
+                ClasspathParameterResolverFactory.forClass(getClass());
+        private final MessageTypeResolver messageTypeResolver = new ClassBasedMessageTypeResolver();
+        private final MessageConverter messageConverter = new DelegatingMessageConverter(new JacksonConverter());
+        private final EventConverter eventConverter = new DelegatingEventConverter(new JacksonConverter());
+
+        @Test
+        void configuredHandlerEnhancerDefinitionWrapsConcreteEntityHandlers() {
+            // given
+            RecordingHandlerEnhancerDefinition recordingEnhancer = new RecordingHandlerEnhancerDefinition();
+            HandlerDefinition handlerDefinition = MultiHandlerDefinition.ordered(
+                    recordingEnhancer, ClasspathHandlerDefinition.forClass(getClass())
+            );
+
+            // when
+            AnnotatedEntityMetamodel.forConcreteType(
+                    SimpleTodoItem.class, parameterResolverFactory, handlerDefinition,
+                    messageTypeResolver, messageConverter, eventConverter
+            );
+
+            // then
+            assertThat(recordingEnhancer.wrappedDeclaringClasses()).contains(SimpleTodoItem.class);
+        }
+
+        @Test
+        void configuredHandlerEnhancerDefinitionWrapsPolymorphicParentConcreteSubtypeAndChildEntityHandlers() {
+            // given
+            RecordingHandlerEnhancerDefinition recordingEnhancer = new RecordingHandlerEnhancerDefinition();
+            HandlerDefinition handlerDefinition = MultiHandlerDefinition.ordered(
+                    recordingEnhancer, ClasspathHandlerDefinition.forClass(getClass())
+            );
+
+            // when
+            AnnotatedEntityMetamodel.forPolymorphicType(
+                    SimpleProject.class,
+                    Set.of(SimpleProject.InternalProject.class, SimpleProject.OpenSourceProject.class),
+                    parameterResolverFactory, handlerDefinition, messageTypeResolver, messageConverter, eventConverter
+            );
+
+            // then
+            assertThat(recordingEnhancer.wrappedDeclaringClasses())
+                    .as("polymorphic parent, concrete subtype, and child entity handlers should all be wrapped")
+                    .contains(SimpleProject.class, SimpleProject.OpenSourceProject.class, ProjectDeveloper.class);
+        }
+
+        static class SimpleTodoItem {
+
+            private String description;
+
+            @CommandHandler
+            public void handle(CreateTodoItem command) {
+                this.description = command.description();
+            }
+        }
+
+        record CreateTodoItem(String description) {
+
+        }
+
+        abstract static class SimpleProject {
+
+            @EntityMember(routingKey = "email")
+            private ProjectDeveloper developer;
+
+            @CommandHandler
+            public void handle(RenameProject command) {
+                // No-op: this test only checks handler creation/wrapping, not command handling.
+            }
+
+            static class InternalProject extends SimpleProject {
+
+            }
+
+            static class OpenSourceProject extends SimpleProject {
+
+                @CommandHandler
+                public void handle(AssignMaintainer command) {
+                    // No-op: this test only checks handler creation/wrapping, not command handling.
+                }
+            }
+        }
+
+        record ProjectDeveloper(String email) {
+
+            @CommandHandler
+            public void handle(ChangeDeveloperEmail command) {
+                // No-op: this test only checks handler creation/wrapping, not command handling.
+            }
+        }
+
+        record RenameProject(String projectId, String name) {
+
+        }
+
+        record AssignMaintainer(String projectId, String email) {
+
+        }
+
+        record ChangeDeveloperEmail(String email, String newEmail) {
+
+        }
+
+        private static class RecordingHandlerEnhancerDefinition implements HandlerEnhancerDefinition {
+
+            private final Set<Class<?>> wrappedDeclaringClasses = new HashSet<>();
+
+            @Override
+            public <T> MessageHandlingMember<T> wrapHandler(MessageHandlingMember<T> original) {
+                wrappedDeclaringClasses.add(original.declaringClass());
+                return original;
+            }
+
+            Set<Class<?>> wrappedDeclaringClasses() {
+                return wrappedDeclaringClasses;
+            }
+        }
+    }
+
+    @Nested
+    class ConfigurationOverriddenEntityIdResolver {
+
+        @Test
+        void fallsBackToAnnotationBasedResolutionWithoutARegisteredOverride() {
+            // given
+            AxonConfiguration configuration = EventSourcingConfigurer.create()
+                                                                     .componentRegistry(cr -> cr.registerModule(
+                                                                             EventSourcedEntityModule.autodetected(
+                                                                                     TestEntityId.class,
+                                                                                     TestCourse.class)
+                                                                     ))
+                                                                     .start();
+            CommandGateway commandGateway = configuration.getComponent(CommandGateway.class);
+            commandGateway.sendAndWait(new CreateCourse(new TestEntityId("course-1")));
+
+            // when
+            TestEntityId loaded = commandGateway.sendAndWait(
+                    new RenameCourse(new TestEntityId("course-1"), "DDD"), TestEntityId.class
+            );
+
+            // then
+            assertThat(loaded).isEqualTo(new TestEntityId("course-1"));
+        }
+
+        @Test
+        void usesTheConfigurationRegisteredOverrideWhenTheAttributeIsLeftAtItsDefault() {
+            // given
+            AxonConfiguration configuration =
+                    EventSourcingConfigurer.create()
+                                           .componentRegistry(cr -> cr.registerComponent(
+                                                   EntityIdResolverDefinition.class,
+                                                   c -> new StubEntityIdResolverDefinition(
+                                                           new TestEntityId("configuration-override")
+                                                   )
+                                           ))
+                                           .componentRegistry(cr -> cr.registerModule(
+                                                   EventSourcedEntityModule.autodetected(
+                                                           TestEntityId.class, TestCourse.class
+                                                   )
+                                           ))
+                                           .start();
+            CommandGateway commandGateway = configuration.getComponent(CommandGateway.class);
+            commandGateway.sendAndWait(new CreateCourse(new TestEntityId("course-1")));
+            commandGateway.sendAndWait(new CreateCourse(new TestEntityId("configuration-override")));
+
+            // when
+            TestEntityId loaded = commandGateway.sendAndWait(
+                    new RenameCourse(new TestEntityId("course-1"), "DDD"), TestEntityId.class
+            );
+
+            // then
+            assertThat(loaded).isEqualTo(new TestEntityId("configuration-override"));
+        }
+
+        @Test
+        void ignoresTheConfigurationRegisteredOverrideWhenAnExplicitDefinitionIsNamed() {
+            // given
+            AxonConfiguration configuration =
+                    EventSourcingConfigurer.create()
+                                           .componentRegistry(cr -> cr.registerComponent(
+                                                   EntityIdResolverDefinition.class,
+                                                   c -> new StubEntityIdResolverDefinition(new TestEntityId(
+                                                           "configuration-override"
+                                                   ))
+                                           ))
+                                           .componentRegistry(cr -> cr.registerModule(
+                                                   EventSourcedEntityModule.autodetected(
+                                                           TestEntityId.class, ExplicitResolverCourse.class
+                                                   )
+                                           ))
+                                           .start();
+            CommandGateway commandGateway = configuration.getComponent(CommandGateway.class);
+            commandGateway.sendAndWait(new CreateCourse(new TestEntityId("course-1")));
+            commandGateway.sendAndWait(new CreateCourse(new TestEntityId("configuration-override")));
+            commandGateway.sendAndWait(new CreateCourse(new TestEntityId("explicit-definition")));
+
+            // when
+            TestEntityId loaded = commandGateway.sendAndWait(
+                    new RenameCourse(new TestEntityId("course-1"), "DDD"), TestEntityId.class
+            );
+
+            // then
+            assertThat(loaded).isEqualTo(new TestEntityId("explicit-definition"));
+        }
+
+        @Test
+        void respectsAnExplicitAnnotationBasedEntityIdResolverDefinitionEvenWithARegisteredConfigurationOverride() {
+            // given
+            AxonConfiguration configuration =
+                    EventSourcingConfigurer.create()
+                                           .componentRegistry(cr -> cr.registerComponent(
+                                                   EntityIdResolverDefinition.class,
+                                                   c -> new StubEntityIdResolverDefinition(new TestEntityId(
+                                                           "configuration-override"
+                                                   ))
+                                           ))
+                                           .componentRegistry(cr -> cr.registerModule(
+                                                   EventSourcedEntityModule.autodetected(
+                                                           TestEntityId.class, ExplicitAnnotationBasedCourse.class
+                                                   )
+                                           ))
+                                           .start();
+            CommandGateway commandGateway = configuration.getComponent(CommandGateway.class);
+            commandGateway.sendAndWait(new CreateCourse(new TestEntityId("course-1")));
+            commandGateway.sendAndWait(new CreateCourse(new TestEntityId("configuration-override")));
+
+            // when
+            TestEntityId loaded = commandGateway.sendAndWait(
+                    new RenameCourse(new TestEntityId("course-1"), "DDD"), TestEntityId.class
+            );
+
+            // then
+            assertThat(loaded).isEqualTo(new TestEntityId("course-1"));
+        }
+
+        record TestEntityId(String value) {
+
+        }
+
+        record CreateCourse(TestEntityId id) {
+
+        }
+
+        record RenameCourse(@TargetEntityId TestEntityId id, String name) {
+
+        }
+
+        record CourseCreated(@EventTag(key = "testEntityId") TestEntityId id) {
+
+        }
+
+        @SuppressWarnings("unused")
+        @EventSourcedEntity(tagKey = "testEntityId")
+        static class TestCourse {
+
+            private TestEntityId id;
+
+            @EntityCreator
+            TestCourse() {
+            }
+
+            @CommandHandler
+            static void handle(CreateCourse command, EventAppender appender) {
+                appender.append(new CourseCreated(command.id()));
+            }
+
+            @CommandHandler
+            TestEntityId handle(RenameCourse command) {
+                return id;
+            }
+
+            @EventSourcingHandler
+            void on(CourseCreated event) {
+                this.id = event.id();
+            }
+        }
+
+        @SuppressWarnings("unused")
+        @EventSourcedEntity(tagKey = "testEntityId", entityIdResolverDefinition = ExplicitStubEntityIdResolverDefinition.class)
+        static class ExplicitResolverCourse {
+
+            private TestEntityId id;
+
+            @EntityCreator
+            ExplicitResolverCourse() {
+            }
+
+            @CommandHandler
+            static void handle(CreateCourse command, EventAppender appender) {
+                appender.append(new CourseCreated(command.id()));
+            }
+
+            @CommandHandler
+            TestEntityId handle(RenameCourse command) {
+                return id;
+            }
+
+            @EventSourcingHandler
+            void on(CourseCreated event) {
+                this.id = event.id();
+            }
+        }
+
+        @SuppressWarnings("unused")
+        @EventSourcedEntity(tagKey = "testEntityId", entityIdResolverDefinition = AnnotationBasedEntityIdResolverDefinition.class)
+        static class ExplicitAnnotationBasedCourse {
+
+            private TestEntityId id;
+
+            @EntityCreator
+            ExplicitAnnotationBasedCourse() {
+            }
+
+            @CommandHandler
+            static void handle(CreateCourse command, EventAppender appender) {
+                appender.append(new CourseCreated(command.id()));
+            }
+
+            @CommandHandler
+            TestEntityId handle(RenameCourse command) {
+                return id;
+            }
+
+            @EventSourcingHandler
+            void on(CourseCreated event) {
+                this.id = event.id();
+            }
+        }
+
+        static class StubEntityIdResolverDefinition implements EntityIdResolverDefinition {
+
+            private final TestEntityId fixedId;
+
+            StubEntityIdResolverDefinition(TestEntityId fixedId) {
+                this.fixedId = fixedId;
+            }
+
+            @NonNull
+            @Override
+            public <E, ID> EntityIdResolver<ID> createIdResolver(
+                    @NonNull Class<E> entityType,
+                    @NonNull Class<ID> idType,
+                    @NonNull EntityMetamodel<E> entityMetamodel,
+                    @NonNull Configuration configuration
+            ) {
+                //noinspection unchecked
+                return (message, context) -> (ID) fixedId;
+            }
+        }
+
+        static class ExplicitStubEntityIdResolverDefinition implements EntityIdResolverDefinition {
+
+            @NonNull
+            @Override
+            public <E, ID> EntityIdResolver<ID> createIdResolver(
+                    @NonNull Class<E> entityType,
+                    @NonNull Class<ID> idType,
+                    @NonNull EntityMetamodel<E> entityMetamodel,
+                    @NonNull Configuration configuration
+            ) {
+                //noinspection unchecked
+                return (message, context) -> (ID) new TestEntityId("explicit-definition");
+            }
         }
     }
 }

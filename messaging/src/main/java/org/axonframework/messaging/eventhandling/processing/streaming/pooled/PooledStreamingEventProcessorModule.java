@@ -36,6 +36,7 @@ import org.axonframework.messaging.eventhandling.interception.InterceptingEventH
 import org.axonframework.messaging.eventhandling.processing.streaming.StreamingEventProcessor;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.SequenceCachingEventHandlingComponent;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore;
+import org.jspecify.annotations.Nullable;
 
 import java.util.List;
 import java.util.Map;
@@ -75,7 +76,7 @@ public class PooledStreamingEventProcessorModule extends BaseModule<PooledStream
 
     private final String processorName;
     private Map<String, ComponentBuilder<EventHandlingComponent>> eventHandlingComponentBuilders;
-    private ComponentBuilder<PooledStreamingEventProcessorConfiguration> customizedProcessorConfigurationBuilder;
+    private @Nullable ComponentBuilder<PooledStreamingEventProcessorConfiguration> customizedProcessorConfigurationBuilder;
 
     /**
      * Constructs a module with the given processor name.
@@ -208,12 +209,19 @@ public class PooledStreamingEventProcessorModule extends BaseModule<PooledStream
     public PooledStreamingEventProcessorModule customized(
             BiFunction<Configuration, PooledStreamingEventProcessorConfiguration, PooledStreamingEventProcessorConfiguration> instanceCustomization
     ) {
-        this.customizedProcessorConfigurationBuilder = config -> {
-            var typeCustomization = typeSpecificCustomizationOrNoOp(config)
-                    .apply(config, defaultEventProcessorsConfiguration(config, processorName));
-            return instanceCustomization.apply(config, typeCustomization);
-        };
+        Objects.requireNonNull(instanceCustomization, "instanceCustomization may not be null");
+        ComponentBuilder<PooledStreamingEventProcessorConfiguration> previous =
+                this.customizedProcessorConfigurationBuilder;
+        this.customizedProcessorConfigurationBuilder =
+                previous == null
+                        ? config -> instanceCustomization.apply(config, typeCustomizedConfiguration(config))
+                        : config -> instanceCustomization.apply(config, previous.build(config));
         return this;
+    }
+
+    private PooledStreamingEventProcessorConfiguration typeCustomizedConfiguration(Configuration config) {
+        return typeSpecificCustomizationOrNoOp(config)
+                .apply(config, defaultEventProcessorsConfiguration(config, processorName));
     }
 
     private static PooledStreamingEventProcessorModule.Customization typeSpecificCustomizationOrNoOp(

@@ -44,10 +44,12 @@ class MapEntityChildModelDefinitionTest
 
     @Override
     protected AnnotatedEntityMetamodel<MapDefinitionTestTeam> getMetamodel() {
-        return AnnotatedEntityMetamodel.forConcreteType(
-                MapDefinitionTestTeam.class, parameterResolverFactory, messageTypeResolver, messageConverter,
-                eventConverter
-        );
+        return AnnotatedEntityMetamodel.forConcreteType(MapDefinitionTestTeam.class,
+                                                        parameterResolverFactory,
+                                                        handlerDefinition,
+                                                        messageTypeResolver,
+                                                        messageConverter,
+                                                        eventConverter);
     }
 
     @Test

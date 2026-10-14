@@ -36,6 +36,7 @@ import org.axonframework.modelling.tracing.configuration.ModellingTracingSetting
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.test.context.FilteredClassLoader;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.ApplicationContext;
 
@@ -100,6 +101,13 @@ class TracingAutoConfigurationTest {
     void tracingDisabledContributesNoEnhancerAtAll() {
         // given / when / then - the autoconfiguration backs off entirely
         contextRunner.withPropertyValues("axon.tracing.enabled=false")
+                     .run(context -> assertThat(context).doesNotHaveBean("tracingConfigurationEnhancer"));
+    }
+
+    @Test
+    void backsOffEntirelyWithoutATracingBackendOnTheClasspath() {
+        // given / when / then - no tracing backend (e.g. Micrometer's Tracer) present, so the autoconfiguration
+        contextRunner.withClassLoader(new FilteredClassLoader("io.micrometer.tracing.Tracer"))
                      .run(context -> assertThat(context).doesNotHaveBean("tracingConfigurationEnhancer"));
     }
 

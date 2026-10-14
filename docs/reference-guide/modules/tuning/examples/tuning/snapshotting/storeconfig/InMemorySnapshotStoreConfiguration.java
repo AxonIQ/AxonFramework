@@ -16,6 +16,7 @@
 package tuning.snapshotting.storeconfig;
 
 import org.axonframework.common.configuration.ApplicationConfigurer;
+import org.axonframework.conversion.Converter;
 import org.axonframework.eventsourcing.snapshot.inmemory.InMemorySnapshotStore;
 import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
 
@@ -29,7 +30,7 @@ class InMemorySnapshotStoreConfiguration {
             // tag::in-memory-snapshot-store[]
             registry.registerComponent(
                     SnapshotStore.class,
-                    c -> new InMemorySnapshotStore()
+                    c -> new InMemorySnapshotStore(c.getComponent(Converter.class))
             );
             // end::in-memory-snapshot-store[]
         });

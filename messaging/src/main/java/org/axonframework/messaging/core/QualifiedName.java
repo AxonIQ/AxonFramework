@@ -43,6 +43,7 @@ import static org.axonframework.common.ReflectionUtils.resolvePrimitiveWrapperTy
  * @author Mitchell Herrijgers
  * @author Steven van Beelen
  * @author John Hendrikx
+ * @see VersionedType
  * @see MessageType
  * @since 5.0.0
  */
@@ -52,15 +53,18 @@ public record QualifiedName(String name) {
 
     /**
      * Creates a new instance and asserts whether the {@code qualifiedName} is non-null, not blank, and does not
-     * contain {@link MessageType#VERSION_DELIMITER}.
+     * contain {@link VersionedType#VERSION_DELIMITER}.
      */
     public QualifiedName {
         requireNonNull(name, "The given name is unsupported because it is null.");
 
-        if (!MessageType.VALID_SEGMENT.matcher(name).matches()) {
+        if (name.isBlank()) {
+            throw new IllegalArgumentException("The given name [" + name + "] is unsupported because it is blank.");
+        }
+        if (name.contains(VersionedType.VERSION_DELIMITER)) {
             throw new IllegalArgumentException(
-                    "The given name [" + name + "] is unsupported because it is blank, or contains \""
-                            + MessageType.VERSION_DELIMITER + "\", which is reserved by MessageType as the "
+                    "The given name [" + name + "] is unsupported because it contains \""
+                            + VersionedType.VERSION_DELIMITER + "\", which is reserved by VersionedType as the "
                             + "separator between a qualified name and version in its String representation."
             );
         }

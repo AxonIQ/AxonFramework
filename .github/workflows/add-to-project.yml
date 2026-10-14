@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ github.actor == 'dependabot[bot]' }}
     steps:
-      - uses: actions/add-to-project@main
+      - uses: actions/add-to-project@v2
         with:
           project-url: https://github.com/orgs/Axoniq/projects/25
           github-token: ${{ secrets.ADD_PROJECT_TOKEN }}

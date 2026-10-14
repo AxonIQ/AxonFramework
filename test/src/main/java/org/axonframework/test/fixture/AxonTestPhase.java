@@ -617,10 +617,15 @@ public interface AxonTestPhase {
 
         /**
          * Interface describing the operations available in the Then phase of the test fixture execution. It's possible
-         * to assert published messages from the When phase.
+         * to assert messages produced while handling inputs in the When phase.
+         * <p>
+         * Message assertions exclude commands and events supplied directly through the current {@link When when-phase}.
+         * Messages produced while handling those inputs remain visible, including messages with equal payloads, because
+         * inputs are identified by their {@link org.axonframework.messaging.core.Message#identifier() message
+         * identifier}.
          *
-         * @param <T> The type of the current Then instance, for fluent interfacing. The type depends on the operation
-         *            which was triggered in the When phase.
+         * @param <T> the type of the current Then instance, for fluent interfacing; the type depends on the operation
+         *            which was triggered in the When phase
          */
         interface Message<T extends Message<T>> extends MessageAssertions<T> {
 

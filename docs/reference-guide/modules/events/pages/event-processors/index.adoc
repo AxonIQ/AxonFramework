@@ -192,7 +192,7 @@ Two synchronous methods allow you to inspect the current state of a processor at
 Returns `false` after a clean `shutdown()` or before `start()` has been called.
 * `isError()`: returns `true` when the processor has gone into error mode due to an unhandled exception.
 Returns `false` after a clean `shutdown()`.
-See xref:event-processors/streaming.adoc#error-mode[Error mode] for more on how the Streaming Event Processor handles errors.
+See xref:event-processors/streaming.adoc#error_mode[Error mode] for more on how the Streaming Event Processor handles errors.
 
 [source,java]
 ----
@@ -208,11 +208,11 @@ Depending on where they happen, you may want to respond differently.
 By default, exceptions raised by event handlers are handled by the `ErrorHandler`.
 The default `ErrorHandler` used is the `PropagatingErrorHandler`, which rethrows any exceptions it catches.
 
-In the case of a xref:event-processors/streaming.adoc#error-mode[Streaming Event Processor], this means the processor will go into error mode, releasing any tokens and retrying at an incremental interval (starting at 1 second, up to max 60 seconds).
+In the case of a xref:event-processors/streaming.adoc#error_mode[Streaming Event Processor], this means the processor will go into error mode, releasing any tokens and retrying at an incremental interval (starting at 1 second, up to max 60 seconds).
 A xref:event-processors/subscribing.adoc#error-mode[Subscribing Event Processor] will report a publication error to the component that provided the event.
 
 How the Event Processor deals with a rethrown exception differs per implementation.
-The behaviour for the Subscribing- and the Streaming Event Processor can respectively be found xref:event-processors/subscribing.adoc#error-mode[here] and xref:event-processors/streaming.adoc#error-mode[here].
+The behaviour for the Subscribing- and the Streaming Event Processor can respectively be found xref:event-processors/subscribing.adoc#error-mode[here] and xref:event-processors/streaming.adoc#error_mode[here].
 
 We can configure a default `ErrorHandler` for all Event Processors or an `ErrorHandler` for specific processors:
 

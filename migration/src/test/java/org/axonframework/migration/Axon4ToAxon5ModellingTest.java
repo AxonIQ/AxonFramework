@@ -16,6 +16,7 @@
 
 package org.axonframework.migration;
 
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.openrewrite.config.Environment;
 import org.openrewrite.test.RecipeSpec;
@@ -205,5 +206,102 @@ class Axon4ToAxon5ModellingTest implements RewriteTest {
                         """
                 )
         );
+    }
+
+    @Nested
+    class AggregateMemberToEntityMember {
+
+        // `ChangeType` rewrites the annotation reference regardless of the annotated field's
+        // shape, so single, List and Map member fields are all expected to convert identically.
+
+        @Test
+        void rewritesSingleObjectField() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+                            import org.axonframework.modelling.command.AggregateMember;
+                            class GiftCard {
+                                @AggregateMember
+                                private Transaction transaction;
+                            }
+                            class Transaction {
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.modelling.entity.annotation.EntityMember;
+
+                            class GiftCard {
+                                @EntityMember
+                                private Transaction transaction;
+                            }
+                            class Transaction {
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void rewritesListField() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+                            import org.axonframework.modelling.command.AggregateMember;
+
+                            import java.util.List;
+                            class GiftCard {
+                                @AggregateMember
+                                private List<String> transactions;
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.modelling.entity.annotation.EntityMember;
+
+                            import java.util.List;
+
+                            class GiftCard {
+                                @EntityMember
+                                private List<String> transactions;
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void rewritesMapField() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+                            import org.axonframework.modelling.command.AggregateMember;
+
+                            import java.util.Map;
+                            class GiftCard {
+                                @AggregateMember
+                                private Map<String, String> transactions;
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.modelling.entity.annotation.EntityMember;
+
+                            import java.util.Map;
+
+                            class GiftCard {
+                                @EntityMember
+                                private Map<String, String> transactions;
+                            }
+                            """
+                    )
+            );
+        }
     }
 }

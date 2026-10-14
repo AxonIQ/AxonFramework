@@ -66,7 +66,9 @@ class AnnotationBasedEntityEvolvingComponentTest {
     private static final EntityEvolver<TestState> ENTITY_EVOLVER = new AnnotationBasedEntityEvolvingComponent<>(
             TestState.class,
             converter,
-            messageTypeResolver
+            messageTypeResolver,
+            ClasspathParameterResolverFactory.forClass(TestState.class),
+            ClasspathHandlerDefinition.forClass(TestState.class)
     );
 
     @Nested
@@ -200,9 +202,13 @@ class AnnotationBasedEntityEvolvingComponentTest {
             // given
             var sharedEventType = new MessageType("shared-event");
             MessageTypeResolver sharedTypeResolver = payloadType -> Optional.of(sharedEventType);
-            var eventSourcedComponent = new AnnotationBasedEntityEvolvingComponent<>(TestState.class,
-                                                                                     converter,
-                                                                                     sharedTypeResolver);
+            var eventSourcedComponent = new AnnotationBasedEntityEvolvingComponent<>(
+                    TestState.class,
+                    converter,
+                    sharedTypeResolver,
+                    ClasspathParameterResolverFactory.forClass(TestState.class),
+                    ClasspathHandlerDefinition.forClass(TestState.class)
+            );
             var state = new TestState();
             var event = new GenericEventMessage(sharedEventType,
                                                 0,
@@ -220,9 +226,13 @@ class AnnotationBasedEntityEvolvingComponentTest {
         @Test
         void doNotHandleNotDeclaredEventType() {
             // given
-            var eventSourcedComponent = new AnnotationBasedEntityEvolvingComponent<>(HandlingJustStringState.class,
-                                                                                     converter,
-                                                                                     messageTypeResolver);
+            var eventSourcedComponent = new AnnotationBasedEntityEvolvingComponent<>(
+                    HandlingJustStringState.class,
+                    converter,
+                    messageTypeResolver,
+                    ClasspathParameterResolverFactory.forClass(HandlingJustStringState.class),
+                    ClasspathHandlerDefinition.forClass(HandlingJustStringState.class)
+            );
             var state = new HandlingJustStringState();
             var event = createEvent(0);
 
@@ -270,7 +280,10 @@ class AnnotationBasedEntityEvolvingComponentTest {
 
         private static final EntityEvolver<RecordState> ENTITY_EVOLVER = new AnnotationBasedEntityEvolvingComponent<>(
                 RecordState.class,
-                converter, messageTypeResolver
+                converter,
+                messageTypeResolver,
+                ClasspathParameterResolverFactory.forClass(RecordState.class),
+                ClasspathHandlerDefinition.forClass(RecordState.class)
         );
 
         @Test
@@ -306,9 +319,13 @@ class AnnotationBasedEntityEvolvingComponentTest {
         @Test
         void throwsStateEvolvingExceptionOnExceptionInsideEventHandler() {
             // given
-            var testSubject = new AnnotationBasedEntityEvolvingComponent<>(ErrorThrowingState.class,
-                                                                           converter,
-                                                                           messageTypeResolver);
+            var testSubject = new AnnotationBasedEntityEvolvingComponent<>(
+                    ErrorThrowingState.class,
+                    converter,
+                    messageTypeResolver,
+                    ClasspathParameterResolverFactory.forClass(ErrorThrowingState.class),
+                    ClasspathHandlerDefinition.forClass(ErrorThrowingState.class)
+            );
             var state = new ErrorThrowingState();
             var event = createEvent(0);
 
@@ -400,7 +417,13 @@ class AnnotationBasedEntityEvolvingComponentTest {
         void resolvesHandlerPayloadTypesOnlyDuringInitialization() {
             // given - TestState declares two handlers (Object and Integer payloads)
             var resolver = spy(new ClassBasedMessageTypeResolver());
-            var evolver = new AnnotationBasedEntityEvolvingComponent<>(TestState.class, converter, resolver);
+            var evolver = new AnnotationBasedEntityEvolvingComponent<>(
+                    TestState.class,
+                    converter,
+                    resolver,
+                    ClasspathParameterResolverFactory.forClass(TestState.class),
+                    ClasspathHandlerDefinition.forClass(TestState.class)
+            );
             var state = new TestState();
             verify(resolver).resolveOrThrow(Object.class);
             verify(resolver).resolveOrThrow(Integer.class);
@@ -426,7 +449,13 @@ class AnnotationBasedEntityEvolvingComponentTest {
         void usesResolvedMessageTypeForHandlingAndSupportedEvents() {
             // given
             var resolver = new AnnotationMessageTypeResolver();
-            var evolver = new AnnotationBasedEntityEvolvingComponent<>(RenamedEventState.class, converter, resolver);
+            var evolver = new AnnotationBasedEntityEvolvingComponent<>(
+                    RenamedEventState.class,
+                    converter,
+                    resolver,
+                    ClasspathParameterResolverFactory.forClass(RenamedEventState.class),
+                    ClasspathHandlerDefinition.forClass(RenamedEventState.class)
+            );
             var state = new RenamedEventState();
             var eventType = resolver.resolveOrThrow(RenamedEvent.class);
             var event = new GenericEventMessage(eventType, new RenamedEvent());
@@ -442,9 +471,13 @@ class AnnotationBasedEntityEvolvingComponentTest {
         @Test
         void explicitHandlerEventNameTakesPrecedenceOverPayloadType() {
             // given
-            var evolver = new AnnotationBasedEntityEvolvingComponent<>(ExplicitNameState.class,
-                                                                        converter,
-                                                                        messageTypeResolver);
+            var evolver = new AnnotationBasedEntityEvolvingComponent<>(
+                    ExplicitNameState.class,
+                    converter,
+                    messageTypeResolver,
+                    ClasspathParameterResolverFactory.forClass(ExplicitNameState.class),
+                    ClasspathHandlerDefinition.forClass(ExplicitNameState.class)
+            );
             var state = new ExplicitNameState();
             var event = new GenericEventMessage(new MessageType("explicit-event"), "payload");
 

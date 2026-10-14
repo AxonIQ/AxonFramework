@@ -18,8 +18,10 @@ package messagingconcepts.timeouts;
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.ConfigurationEnhancer;
 import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.messaging.core.interception.HandlerInterceptorRegistry;
-import org.axonframework.messaging.core.timeout.UnitOfWorkTimeoutInterceptorBuilder;
+import org.axonframework.messaging.core.timeout.TaskTimeoutSettings;
+import org.axonframework.messaging.core.timeout.TimeoutUnitOfWorkFactoryConfiguration;
+
+import java.util.Map;
 
 class TimeoutEnhancerExample {
 
@@ -29,23 +31,14 @@ class TimeoutEnhancerExample {
 
         @Override
         public void enhance(ComponentRegistry registry) {
-            // Register decorators for handler interceptor registry
-            registry.registerDecorator(HandlerInterceptorRegistry.class, 0, (config, name, delegate) ->
-                    delegate.registerCommandInterceptor(
-                                    c -> new UnitOfWorkTimeoutInterceptorBuilder(
-                                            "CommandBus", 30000, 25000, 1000
-                                    ).buildCommandInterceptor()
-                            )
-                            .registerQueryInterceptor(
-                                    c -> new UnitOfWorkTimeoutInterceptorBuilder(
-                                            "Query", 30000, 25000, 1000
-                                    ).buildQueryInterceptor()
-                            )
-                            .registerEventInterceptor(
-                                    c -> new UnitOfWorkTimeoutInterceptorBuilder(
-                                            "Event", 30000, 25000, 1000
-                                    ).buildEventInterceptor()
-                            )
+            registry.registerIfNotPresent(
+                    TimeoutUnitOfWorkFactoryConfiguration.class,
+                    c -> new TimeoutUnitOfWorkFactoryConfiguration(
+                            new TaskTimeoutSettings(30000, 25000, 1000), // command bus
+                            new TaskTimeoutSettings(30000, 25000, 1000), // query bus
+                            new TaskTimeoutSettings(30000, 25000, 1000), // event processors without specific settings
+                            Map.of("slow-processor", new TaskTimeoutSettings(60000, 50000, 1000))
+                    )
             );
         }
     }

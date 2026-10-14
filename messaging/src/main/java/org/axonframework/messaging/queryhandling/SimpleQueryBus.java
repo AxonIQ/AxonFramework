@@ -43,6 +43,8 @@ import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
+import static org.axonframework.common.FutureUtils.runFailing;
+
 /**
  * Implementation of the {@code QueryBus} that dispatches queries (through
  * {@link #query(QueryMessage, ProcessingContext)} or {@link #subscriptionQuery(QueryMessage, ProcessingContext, int)})
@@ -310,28 +312,28 @@ public class SimpleQueryBus implements QueryBus {
     }
 
     /**
-     * Runs the given {@code updateTask} immediately, or defers it until the given {@code context} commits,
-     * matching {@code updateTask}'s subscriptions to the given {@code filter}.
+     * Runs the given {@code updateTask} immediately, or defers it until the given {@code context} commits, matching
+     * {@code updateTask}'s subscriptions to the given {@code filter}.
      * <p>
-     * When run immediately, the returned count reflects the actual outcome of the {@code updateTask} - e.g. the
-     * number of subscribers an update was successfully delivered to, as opposed to the number of subscribers merely
-     * matching the {@code filter} before delivery was attempted.
+     * When run immediately, the returned count reflects the actual outcome of the {@code updateTask} - e.g. the number
+     * of subscribers an update was successfully delivered to, as opposed to the number of subscribers merely matching
+     * the {@code filter} before delivery was attempted.
      * <p>
-     * When deferred to after commit, the {@code updateTask} itself runs later and its outcome is not available to
-     * this method. In that case, the returned count is a match count against the given {@code filter}, computed at
-     * call time - not the outcome of the eventual {@code updateTask} run - since waiting for that outcome would
-     * require blocking until after the given {@code context} commits, which could deadlock a caller invoking this
-     * from within that same commit pipeline.
+     * When deferred to after commit, the {@code updateTask} itself runs later and its outcome is not available to this
+     * method. In that case, the returned count is a match count against the given {@code filter}, computed at call time
+     * - not the outcome of the eventual {@code updateTask} run - since waiting for that outcome would require blocking
+     * until after the given {@code context} commits, which could deadlock a caller invoking this from within that same
+     * commit pipeline.
      * <p>
-     * The match count is only computed when the {@code updateTask} will actually run (now or after commit) - not
-     * for an already-errored {@code context}, since the update is silently dropped in that case and the
-     * {@code filter} must not observe any side effects.
+     * The match count is only computed when the {@code updateTask} will actually run (now or after commit) - not for an
+     * already-errored {@code context}, since the update is silently dropped in that case and the {@code filter} must
+     * not observe any side effects.
      */
     private CompletableFuture<OptionalInt> runAfterCommitOrImmediately(@Nullable ProcessingContext context,
                                                                        Predicate<QueryMessage> filter,
                                                                        IntSupplier updateTask) {
         if (context == null || context.isCommitted()) {
-            return CompletableFuture.completedFuture(OptionalInt.of(updateTask.getAsInt()));
+            return runFailing(() -> CompletableFuture.completedFuture(OptionalInt.of(updateTask.getAsInt())));
         } else if (!context.isCompleted()) {
             int matchCount = matchCount(filter);
             context.computeResourceIfAbsent(
@@ -342,7 +344,16 @@ public class SimpleQueryBus implements QueryBus {
                                return subscriptionQueryTasks;
                            }
                    )
-                   .add(updateTask::getAsInt);
+                   .add(() -> runFailing(
+                                () -> CompletableFuture.completedFuture(OptionalInt.of(updateTask.getAsInt()))
+                        ).whenComplete((result, exception) -> {
+                            if (exception != null) {
+                                logger.warn(
+                                        "An error occurred while delivering a deferred subscription query update.",
+                                        exception);
+                            }
+                        })
+                   );
             return CompletableFuture.completedFuture(OptionalInt.of(matchCount));
         }
         // else: context completed with error - drop the update

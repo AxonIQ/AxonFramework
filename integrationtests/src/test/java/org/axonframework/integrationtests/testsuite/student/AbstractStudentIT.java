@@ -30,6 +30,9 @@ import org.axonframework.messaging.commandhandling.GenericCommandResultMessage;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.Metadata;
+import org.axonframework.messaging.core.annotation.AnnotatedHandlerInspector;
+import org.axonframework.messaging.core.annotation.HandlerDefinition;
+import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
 import org.axonframework.messaging.core.unitofwork.UnitOfWork;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
 import org.axonframework.messaging.eventhandling.GenericEventMessage;
@@ -155,7 +158,9 @@ public abstract class AbstractStudentIT extends AbstractIT {
         return new AnnotationBasedEntityEvolvingComponent<>(
                 Student.class,
                 config.getComponent(EventConverter.class),
-                config.getComponent(MessageTypeResolver.class)
+                config.getComponent(MessageTypeResolver.class),
+                config.getComponent(ParameterResolverFactory.class),
+                config.getComponent(HandlerDefinition.class)
         );
     }
 

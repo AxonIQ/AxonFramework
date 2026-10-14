@@ -16,27 +16,30 @@
 
 package org.axonframework.test.fixture;
 
-import org.axonframework.messaging.commandhandling.CommandBus;
-import org.axonframework.messaging.commandhandling.SimpleCommandHandlingComponent;
-import org.axonframework.messaging.core.configuration.MessagingConfigurer;
-import org.axonframework.messaging.eventhandling.SimpleEventBus;
-import org.axonframework.messaging.eventhandling.conversion.EventConverter;
-import org.axonframework.messaging.eventhandling.EventSink;
-import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.eventsourcing.EventSourcedEntityFactory;
 import org.axonframework.eventsourcing.EventSourcingRepository;
 import org.axonframework.eventsourcing.eventstore.AnnotationBasedTagResolver;
 import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.eventsourcing.eventstore.StorageEngineBackedEventStore;
 import org.axonframework.eventsourcing.eventstore.inmemory.InMemoryEventStorageEngine;
-import org.axonframework.messaging.eventstreaming.EventCriteria;
+import org.axonframework.messaging.commandhandling.CommandBus;
+import org.axonframework.messaging.commandhandling.SimpleCommandHandlingComponent;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.QualifiedName;
-import org.axonframework.modelling.annotation.AnnotationBasedEntityEvolvingComponent;
+import org.axonframework.messaging.core.annotation.AnnotatedHandlerInspector;
+import org.axonframework.messaging.core.annotation.HandlerDefinition;
+import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
+import org.axonframework.messaging.core.configuration.MessagingConfigurer;
+import org.axonframework.messaging.eventhandling.EventSink;
+import org.axonframework.messaging.eventhandling.GenericEventMessage;
+import org.axonframework.messaging.eventhandling.SimpleEventBus;
+import org.axonframework.messaging.eventhandling.conversion.EventConverter;
+import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.modelling.SimpleStateManager;
 import org.axonframework.modelling.StateManager;
+import org.axonframework.modelling.annotation.AnnotationBasedEntityEvolvingComponent;
 import org.axonframework.test.fixture.sampledomain.ChangeStudentNameCommand;
 import org.axonframework.test.fixture.sampledomain.Student;
 import org.axonframework.test.fixture.sampledomain.StudentNameChangedEvent;
@@ -254,7 +257,9 @@ class AxonTestFixtureStatefulCommandHandlerTest {
                                     new AnnotationBasedEntityEvolvingComponent<>(
                                             Student.class,
                                             c.getComponent(EventConverter.class),
-                                            c.getComponent(MessageTypeResolver.class)
+                                            c.getComponent(MessageTypeResolver.class),
+                                            c.getComponent(ParameterResolverFactory.class),
+                                            c.getComponent(HandlerDefinition.class)
                                     )
                             );
                             return SimpleStateManager.named("testfixture")

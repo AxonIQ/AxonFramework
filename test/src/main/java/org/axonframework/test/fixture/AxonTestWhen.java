@@ -16,6 +16,7 @@
 
 package org.axonframework.test.fixture;
 
+import org.axonframework.common.FutureUtils;
 import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.commandhandling.GenericCommandMessage;
 import org.axonframework.common.configuration.AxonConfiguration;
@@ -31,9 +32,12 @@ import org.axonframework.messaging.core.unitofwork.UnitOfWork;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
 import org.axonframework.messaging.eventhandling.EventSink;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 /**
  * Implementation of the {@link AxonTestPhase.When when-phase} of the {@link AxonTestFixture}.
@@ -50,6 +54,7 @@ class AxonTestWhen implements AxonTestPhase.When {
     private final RecordingComponentsRegistry recordings;
     private final MessageTypeResolver messageTypeResolver;
     private final UnitOfWorkFactory unitOfWorkFactory;
+    private final Set<String> inputMessageIdentifiers = new HashSet<>();
 
     private Message actualResult;
     private Throwable actualException;
@@ -99,6 +104,7 @@ class AxonTestWhen implements AxonTestPhase.When {
             var messageType = messageTypeResolver.resolveOrThrow(payload);
             message = new GenericCommandMessage(messageType, payload, metadata);
         }
+        inputMessageIdentifiers.add(message.identifier());
         inUnitOfWorkOnInvocation(processingContext ->
                                          commandBus.dispatch(message, processingContext)
                                                    .whenComplete((r, e) -> {
@@ -107,7 +113,7 @@ class AxonTestWhen implements AxonTestPhase.When {
                                                            actualException = null;
                                                        } else {
                                                            actualResult = null;
-                                                           actualException = e.getCause();
+                                                           actualException = FutureUtils.unwrap(e);
                                                        }
                                                    })
         );
@@ -144,8 +150,16 @@ class AxonTestWhen implements AxonTestPhase.When {
 
     @Override
     public Event events(EventMessage... messages) {
+        for (EventMessage message : messages) {
+            inputMessageIdentifiers.add(message.identifier());
+        }
         inUnitOfWorkOnInvocation(processingContext -> eventSink.publish(processingContext, messages));
         return new Event();
+    }
+
+    private Predicate<Message> whenPhaseOutputFilter() {
+        Set<String> identifiers = Set.copyOf(inputMessageIdentifiers);
+        return message -> !identifiers.contains(message.identifier());
     }
 
     private void inUnitOfWorkOnInvocation(Function<ProcessingContext, CompletableFuture<?>> action) {
@@ -159,7 +173,7 @@ class AxonTestWhen implements AxonTestPhase.When {
             completion.join();
         } catch (Exception e) {
             this.actualResult = null;
-            this.actualException = e.getCause();
+            this.actualException = FutureUtils.unwrap(e);
         }
     }
 
@@ -171,6 +185,7 @@ class AxonTestWhen implements AxonTestPhase.When {
                     configuration,
                     customization,
                     recordings,
+                    whenPhaseOutputFilter(),
                     actualResult,
                     actualException
             );
@@ -185,6 +200,7 @@ class AxonTestWhen implements AxonTestPhase.When {
                     configuration,
                     customization,
                     recordings,
+                    whenPhaseOutputFilter(),
                     actualException
             );
         }
@@ -203,6 +219,7 @@ class AxonTestWhen implements AxonTestPhase.When {
                     configuration,
                     customization,
                     recordings,
+                    whenPhaseOutputFilter(),
                     actualException
             );
         }

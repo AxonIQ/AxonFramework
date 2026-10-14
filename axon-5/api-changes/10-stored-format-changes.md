@@ -3,8 +3,8 @@
 > Part of the Axon Framework 4→5 migration guide.
 > Covers: database schema changes that require migration scripts.
 > Sections: JPA event entry rename (`domain_event_entry` → `aggregate_event_entry`) and column renames,
-> Dead Letter table column renames (JPA and JDBC), Deadline scheduler format changes
-> (JobRunr, Quartz, dbscheduler), and TokenStore new `mask` column.
+> Dead Letter table column renames (JPA and JDBC), the unchanged deadline job layout
+> (JobRunr, Quartz, db-scheduler), and TokenStore new `mask` column.
 
 Stored Format Changes
 =====================
@@ -68,17 +68,107 @@ consuming events through the `EventStorageEngine#stream(StreamingCondition)` met
 
 ## Deadlines
 
-1. The JobRunr `org.axonframework.deadline.jobrunr.DeadlineDetails` expects the `QualifiedName` to be present under the
-   field `type`.
-2. The Quartz `org.axonframework.deadline.quartz.DeadlineJob` expects the QualifiedName to be present in the
-   `JobDataMap` under the key `qualifiedType`.
-3. The dbscheduler `org.axonframework.deadline.dbscheduler.DbSchedulerBinaryDeadlineDetails` expects the `QualifiedName`
-   to be present under the field `t`.
-4. The dbscheduler `org.axonframework.deadline.dbscheduler.DbSchedulerHumanReadableDeadlineDetails` expects the
-   `QualifiedName` to be present under the field `type`.
+The Quartz, JobRunr and db-scheduler deadline managers in `axoniq-legacy` keep the Axon Framework 4.13 job layout:
+every `JobDataMap` key, details field, job signature and task name is unchanged, and no `QualifiedName` is stored.
+Deadlines that Axon Framework 4 scheduled therefore fire without migration, and during a rolling upgrade Axon Framework 4
+and Axon Framework 5 nodes fire and cancel each other's jobs. The `MessageType` of a fired deadline is derived from its
+payload class.
+
+The payload, metadata and scope descriptor are read and written with the `Converter` given to the manager's builder.
+It has to match the `Serializer` the Axon Framework 4 deadline manager used, including its configuration:
+
+- **Jackson:** a `JacksonConverter` configured like the Axon Framework 4 `ObjectMapper`. The Spring Boot
+  auto-configuration of the JobRunr and db-scheduler deadline managers uses the `EventConverter`, as Axon Framework 4
+  used the event serializer.
+- **XStream:** the Quartz deadline manager defaulted to an `XStreamSerializer`, and so did Spring Boot applications
+  without `axon.serializer.*` properties. Their jobs are XStream XML, which only an
+  `org.axonframework.conversion.xstream.XStreamConverter`, configured with the application's own `XStream` instance,
+  reads; see the reference guide's Conversion page, XStreamConverter section. In Spring Boot, this means defining the
+  `DeadlineManager` bean.
+- **Java serialization:** jobs written by Axon Framework 4's `JavaSerializer` are not readable.
+
+Further differences when reading a job:
+
+- With an `XStreamConverter`, also when it is wrapped in Axon Framework's delegating converters, stored payload and
+  scope descriptor type names resolve through the mapper of its `XStream` instance first, as Axon Framework 4's
+  `XStreamSerializer` did. A type Axon Framework 4 stored under an XStream alias, a built-in one such as `uuid` or
+  `int`, or one the application registered, therefore resolves, provided the `XStream` instance has the same aliases.
+- A payload type name that still does not resolve to a class, such as a class that was renamed or removed, fires the
+  deadline with an `org.axonframework.deadline.UnknownDeadlinePayload`, which holds the stored type name, revision and
+  data. The saga manager or the aggregate deadline translator logs a warning naming the deadline, the type and the
+  scope.
+- Metadata values become strings: numbers and booleans as `String.valueOf(...)`, nested maps and lists as JSON. An Axon
+  Framework 4 node reading a job written by Axon Framework 5 sees every metadata value as a string.
+- The stored revision is read but not used. A deadline payload is not upcast.
+- Quartz jobs in the Axon Framework 3.3 layout, with the `serializedDeadlineMessage` key, are not readable and fail with
+  a `DeadlineException`.
+
+`axoniq-legacy` manages its own versions of Quartz, JobRunr and db-scheduler. Both Axon Framework versions share the
+scheduler library's own store during a rolling upgrade, so run the same library version on all nodes.
 
 ## TokenStore
 
 1. A `mask` column containing the mask associated with each segment was added to avoid
    having to query all segments in order to calculate it.
+
+## Sagas
+
+The saga tables are unchanged, so an Axon Framework 4 saga table can be read and written by `axoniq-legacy` without
+migration, provided the `serializedSaga` column holds JSON. That requires the Axon Framework 4 node's `Serializer` to
+have been Jackson, whether configured explicitly or defaulted by Spring Boot auto-configuration. Two further columns
+need a closer look: `sagaType`, which is a condition on that statement, and `revision`, whose contents changed.
+
+### The `serializedSaga` column (XStream)
+
+Many applications never configured a `Serializer` for the legacy saga stores built without Spring Boot
+auto-configuration, which then defaulted to XStream, so in that configuration the `serializedSaga` column is XStream
+XML rather than JSON. No `axoniq-legacy` `Converter` reads XStream XML unless it is an
+`org.axonframework.conversion.xstream.XStreamConverter`, configured with the application's own `XStream` instance; see
+the reference guide's Conversion page, XStreamConverter section, for how to configure one. Without it, loading such a
+saga fails with a `ConversionException` naming the saga type, rather than returning a saga with default field values.
+
+### The `sagaType` column
+
+Axon Framework 4 derived this column, and the value it matched against when finding a saga, through the `Serializer`:
+`serializer.serialize(saga).getType().getName()` on write and `serializer.typeForClass(sagaType).getName()` on read.
+`axoniq-legacy` uses the class name directly on both sides.
+
+For the default configuration those are the same string, so nothing changes: the Jackson serializer returned the class
+name, and so did XStream for a class without an alias. An application that mapped its saga classes to some other type
+name, an XStream alias being the usual way to get one, has rows whose `sagaType` column holds that alias. Those rows are
+not reachable through `axoniq-legacy`, because `findSagas`, and the association queries behind loading and deleting, match
+the column literally against the class name. The saga row itself still loads by identifier, but without its
+associations, so it can never be routed an event.
+
+Such a table needs its `sagaType` columns rewritten to the class name before use, in both the saga entry and the
+association value entry tables:
+
+```sql
+UPDATE SagaEntry            SET sagaType = 'com.example.OrderSaga' WHERE sagaType = 'order-saga';
+UPDATE AssociationValueEntry SET sagaType = 'com.example.OrderSaga' WHERE sagaType = 'order-saga';
+```
+
+Reading a saga back changed with it. Axon Framework 4 resolved the class from the stored `sagaType`, so
+`serializer.deserialize` returned whatever the row said. `axoniq-legacy` converts into the class the caller asked for and
+ignores the stored name. In the saga flow those are the same class, since a saga is found by an association query that
+already filtered on it, so this is not separately observable; it only means the stored name is no longer what selects
+the type.
+
+### The `revision` column
+
+Axon Framework 4 filled it from the saga class's `@Revision` value, which the `Serializer` resolved, and rewrote it on
+every save. The `Converter` has no revision concept, and nothing has ever read the value back: the revision was half of
+a `SerializedType`, which is what an upcaster chain matches on, and saga stores never ran an upcaster chain.
+
+1. An `INSERT` writes the constant `SagaEntry.LEGACY_REVISION`, currently `"axon-legacy"`, marking the row as one this
+   module created.
+2. An `UPDATE` leaves the column alone, so a revision written by Axon Framework 4 survives rather than being replaced.
+3. No query reads the column.
+4. Schema creation retains the column, so a table created here is one an Axon Framework 4 application can still read.
+
+Two consequences are visible only from outside the store. A row created here has no `@Revision`-derived value where
+Axon Framework 4 would have recorded one, and a row Axon Framework 4 created keeps the revision from its last Axon
+Framework 4 write rather than tracking the current class. A migration script or support query reading the column
+directly will see that. A `revision` column narrowed to `NOT NULL`, which the Axon Framework 4 schema does not do, still
+accepts these inserts.
 

@@ -20,11 +20,12 @@ import org.axonframework.common.configuration.ApplicationConfigurer;
 import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.Configuration;
+import org.axonframework.common.configuration.ConfigurationEnhancer;
 import org.axonframework.common.configuration.LifecycleRegistry;
 import org.axonframework.extension.spring.config.SpringAxonApplication;
 import org.axonframework.extension.spring.config.SpringComponentRegistry;
 import org.axonframework.extension.spring.config.SpringLifecycleRegistry;
-import org.axonframework.extension.spring.config.annotation.HandlerDefinitionFactoryBean;
+import org.axonframework.extension.spring.config.annotation.SpringHandlerDefinitionEnhancer;
 import org.axonframework.extension.spring.config.annotation.SpringParameterResolverFactoryBean;
 import org.axonframework.messaging.core.annotation.HandlerDefinition;
 import org.axonframework.messaging.core.annotation.HandlerEnhancerDefinition;
@@ -151,23 +152,26 @@ public class AxonAutoConfiguration {
     }
 
     /**
-     * Bean creation method registering the {@link HandlerDefinitionFactoryBean}.
+     * Bean creation method registering the {@link SpringHandlerDefinitionEnhancer}.
      * <p>
-     * This {@link HandlerDefinition} {@link org.springframework.beans.factory.FactoryBean} will make it so all
-     * annotated handling components will use the given {@code handlerDefinitions}, {@code handlerEnhancerDefinitions},
-     * and Axon's default enhancer definitions to derive the required enhancements for
-     * {@link org.axonframework.messaging.core.annotation.MessageHandler} annotated methods.
+     * This {@link ConfigurationEnhancer} composes the given {@code handlerDefinitions} and
+     * {@code handlerEnhancerDefinitions} beans into the {@link ComponentRegistry}, alongside the classpath-discovered
+     * {@link HandlerDefinition} and {@link HandlerEnhancerDefinition} that every {@code Configuration} already has by
+     * default, so that all annotated handling components see the same, single composition to derive the required
+     * enhancements for {@link org.axonframework.messaging.core.annotation.MessageHandler} annotated methods.
      *
-     * @param handlerDefinitions         the list of {@code HandlerDefinitions} to pass along to the
-     *                                   {@link HandlerDefinitionFactoryBean}
-     * @param handlerEnhancerDefinitions the list of {@code HandlerEnhancerDefinitions} to pass along to the
-     *                                   {@link HandlerDefinitionFactoryBean}
-     * @return a {@link HandlerDefinition} {@link org.springframework.beans.factory.FactoryBean}
+     * @param handlerDefinitions         the list of {@code HandlerDefinitions} to compose into the
+     *                                   {@link ComponentRegistry}
+     * @param handlerEnhancerDefinitions the list of {@code HandlerEnhancerDefinitions} to compose into the
+     *                                   {@link ComponentRegistry}
+     * @return a {@link ConfigurationEnhancer} composing the given {@code handlerDefinitions} and
+     * {@code handlerEnhancerDefinitions} into the {@link ComponentRegistry}
      */
-    @Primary
     @Bean
-    HandlerDefinitionFactoryBean handlerDefinition(List<HandlerDefinition> handlerDefinitions,
-                                                   List<HandlerEnhancerDefinition> handlerEnhancerDefinitions) {
-        return new HandlerDefinitionFactoryBean(handlerDefinitions, handlerEnhancerDefinitions);
+    SpringHandlerDefinitionEnhancer springHandlerDefinitionEnhancer(
+            List<HandlerDefinition> handlerDefinitions,
+            List<HandlerEnhancerDefinition> handlerEnhancerDefinitions
+    ) {
+        return new SpringHandlerDefinitionEnhancer(handlerDefinitions, handlerEnhancerDefinitions);
     }
 }

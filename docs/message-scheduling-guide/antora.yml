@@ -1,0 +1,15 @@
+name: message-scheduling-guide
+title: Message Scheduling
+version:
+  axon-(?<version>+({0..9}).+({0..9})).*: $<version>
+  '*': development
+start_page: ROOT:index.adoc
+
+asciidoc:
+  attributes:
+    component_description: How to schedule messages in Axon Framework
+    type: guide
+    group: axon-framework
+
+nav:
+  - modules/nav.adoc

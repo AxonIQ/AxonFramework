@@ -228,6 +228,11 @@ public class PolymorphicEntityMetamodel<E> implements EntityMetamodel<E>, Descri
             return this;
         }
 
+        @Override
+        public Builder<E> commandHandlerInterceptor(EntityCommandHandlerInterceptor<E> interceptor) {
+            superTypeBuilder.commandHandlerInterceptor(interceptor);
+            return this;
+        }
 
         @Override
         public Builder<E> entityEvolver(@Nullable EntityEvolver<E> entityEvolver) {

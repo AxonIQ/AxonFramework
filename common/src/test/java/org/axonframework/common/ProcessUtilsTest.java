@@ -16,14 +16,23 @@
 
 package org.axonframework.common;
 
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.core.LogEvent;
+import org.apache.logging.log4j.core.Logger;
+import org.apache.logging.log4j.core.config.Configurator;
+import org.apache.logging.log4j.core.test.appender.ListAppender;
 import org.junit.jupiter.api.*;
 
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -174,6 +183,109 @@ class ProcessUtilsTest {
                               .havingCause()
                               .isEqualTo(cause);
             assertThat(callCount.get()).isEqualTo(1);
+        }
+    }
+
+    @Nested
+    class Safeguard {
+
+        private ListAppender appender;
+        private Logger logger;
+        private Level previousLevel;
+        private boolean previousAdditive;
+
+        @BeforeEach
+        void attachAppender() {
+            appender = new ListAppender("ProcessUtilsTestAppender");
+            appender.start();
+
+            logger = (Logger) LogManager.getLogger(ProcessUtils.class);
+            previousLevel = logger.getLevel();
+            previousAdditive = logger.isAdditive();
+            Configurator.setLevel(ProcessUtils.class.getName(), Level.DEBUG);
+            logger.setAdditive(false);
+            logger.addAppender(appender);
+        }
+
+        @AfterEach
+        void detachAppender() {
+            logger.removeAppender(appender);
+            logger.setAdditive(previousAdditive);
+            Configurator.setLevel(ProcessUtils.class.getName(), previousLevel);
+            appender.stop();
+        }
+
+        private List<LogEvent> events() {
+            return appender.getEvents();
+        }
+
+        @Test
+        void executesTheGivenTask() {
+            // given
+            AtomicBoolean invoked = new AtomicBoolean(false);
+            Runnable safeguarded = ProcessUtils.safeguard(() -> invoked.set(true), "error");
+
+            // when
+            safeguarded.run();
+
+            // then
+            assertThat(invoked).isTrue();
+            assertThat(events()).isEmpty();
+        }
+
+        @Test
+        void doesNotThrowAndLogsAtErrorLevelWhenTaskThrowsAnException() {
+            // given
+            RuntimeException exception = new RuntimeException("boom");
+            Runnable safeguarded = ProcessUtils.safeguard(() -> {
+                throw exception;
+            }, "task failed");
+
+            // when / then
+            assertThatCode(safeguarded::run).doesNotThrowAnyException();
+
+            assertThat(events()).hasSize(1);
+            LogEvent event = events().getFirst();
+            assertThat(event.getLevel()).isEqualTo(Level.ERROR);
+            assertThat(event.getMessage().getFormattedMessage()).isEqualTo("task failed");
+            assertThat(event.getThrown()).isSameAs(exception);
+        }
+
+        @Test
+        void doesNotThrowWhenTaskThrowsAnError() {
+            // given
+            Error error = new StackOverflowError("simulated");
+            Runnable safeguarded = ProcessUtils.safeguard(() -> {
+                throw error;
+            }, "task failed with an error");
+
+            // when / then
+            assertThatCode(safeguarded::run).doesNotThrowAnyException();
+
+            assertThat(events()).hasSize(1);
+            assertThat(events().getFirst().getThrown()).isSameAs(error);
+        }
+
+        @Test
+        void canBeInvokedMultipleTimesIndependently() {
+            // given
+            AtomicLong invocationCount = new AtomicLong();
+            Runnable safeguarded = ProcessUtils.safeguard(() -> {
+                if (invocationCount.incrementAndGet() <= 2) {
+                    throw new IllegalStateException("failure #" + invocationCount.get());
+                }
+            }, "repeated failure");
+
+            // when
+            safeguarded.run();
+            safeguarded.run();
+            safeguarded.run();
+
+            // then - two failures logged, third invocation completes without logging
+            assertThat(invocationCount.get()).isEqualTo(3);
+            assertThat(events()).hasSize(2);
+            assertThat(events().get(0).getMessage().getFormattedMessage()).isEqualTo("repeated failure");
+            assertThat(events().get(1).getMessage().getFormattedMessage()).isEqualTo("repeated failure");
         }
     }
 }

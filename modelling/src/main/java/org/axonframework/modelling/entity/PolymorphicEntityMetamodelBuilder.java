@@ -46,6 +46,9 @@ public interface PolymorphicEntityMetamodelBuilder<E> extends EntityMetamodelBui
     PolymorphicEntityMetamodelBuilder<E> addChild(EntityChildMetamodel<?, E> child);
 
     @Override
+    PolymorphicEntityMetamodelBuilder<E> commandHandlerInterceptor(EntityCommandHandlerInterceptor<E> interceptor);
+
+    @Override
     PolymorphicEntityMetamodelBuilder<E> entityEvolver(@Nullable EntityEvolver<E> entityEvolver);
 
     /**

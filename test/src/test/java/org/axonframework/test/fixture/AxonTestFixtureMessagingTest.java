@@ -107,7 +107,7 @@ class AxonTestFixtureMessagingTest {
         }
 
         @Test
-        void whenCommandReturnsEmptyThenSuccessWithNullValue() {
+        void whenCommandReturnsEmptyThenSuccessWithNullPayload() {
             var configurer = messagingConfigurer();
             registerChangeStudentNameHandlerReturnsEmpty(configurer);
 
@@ -117,7 +117,7 @@ class AxonTestFixtureMessagingTest {
                    .command(new ChangeStudentNameCommand("my-studentId-1", "name-1"))
                    .then()
                    .success()
-                   .resultMessageSatisfies(Assertions::assertNull);
+                   .resultMessageSatisfies(resultMessage -> Assertions.assertNull(resultMessage.payload()));
         }
 
         @Test

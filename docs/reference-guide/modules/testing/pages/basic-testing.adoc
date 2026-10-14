@@ -342,6 +342,11 @@ The Then-phase verifies that the action from the <<when_phase,when-phase>> produ
 As with given and when, there are a couple of options for you to validate your system fully.
 Note that you are able to combine several then-phase verifiers to come to the desired validation!
 
+Recorded-message assertions exclude commands and events supplied directly to the when-phase, even though those inputs
+still pass through the configured command bus or event sink. Event and command assertions, including custom assertions
+and their `noEvents()` and `noCommands()` variants, cover only messages produced while handling the inputs. Input
+messages are recognized by identifier, so a handler-produced message with an equal payload remains visible.
+
 [#then_successful]
 ==== Then verifying successful handling
 

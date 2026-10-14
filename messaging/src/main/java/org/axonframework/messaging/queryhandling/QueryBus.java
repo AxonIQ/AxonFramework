@@ -126,15 +126,19 @@ public interface QueryBus extends QueryHandlerRegistry<QueryBus>, DescribableCom
      * Emits the outcome of the {@code updateSupplier} to
      * {@link QueryBus#subscriptionQuery(QueryMessage, ProcessingContext, int) subscription queries} matching the given
      * {@code queryName} and given {@code filter}.
+     * <p>
+     * Any exceptions that might occur as part of invoking the {@code updateSupplier} will result in this method
+     * returning an exceptional {@link CompletableFuture} carrying the {@code updateSupplier's} exception.
      *
      * @param filter         a predicate filtering on {@link QueryMessage QueryMessages}. The {@code updateSupplier}
      *                       will only be sent to subscription queries matching this filter
      * @param updateSupplier the update supplier to emit for
      *                       {@link QueryBus#subscriptionQuery(QueryMessage, ProcessingContext, int) subscription
      *                       queries} matching the given {@code filter}
-     * @param context        the processing context under which the updateSupplier is being emitted (can be
+     * @param context        the processing context under which the {@code updateSupplier} is being emitted (can be
      *                       {@code null})
-     * @return a future completing whenever the updateSupplier has been emitted
+     * @return a successful future completing whenever the {@code updateSupplier} has been emitted, or exceptional if
+     * the {@code updateSupplier} threw an exception
      */
     CompletableFuture<Void> emitUpdate(Predicate<QueryMessage> filter,
                                        Supplier<SubscriptionQueryUpdateMessage> updateSupplier,
@@ -148,8 +152,11 @@ public interface QueryBus extends QueryHandlerRegistry<QueryBus>, DescribableCom
      * <p>
      * Implementations that cannot determine this number return {@link OptionalInt#empty} instead.
      * <p>
-     * A subscription query to which delivery of the update fails (for example due to a full update buffer) is
-     * excluded from this count, even though that failure still terminates the subscription.
+     * A subscription query to which delivery of the update fails (for example due to a full update buffer) is excluded
+     * from this count, even though that failure still terminates the subscription.
+     * <p>
+     * Any exceptions that might occur as part of invoking the {@code updateSupplier} will result in this method
+     * returning an exceptional {@link CompletableFuture} carrying the {@code updateSupplier's} exception.
      *
      * @param filter         a predicate filtering on {@link QueryMessage QueryMessages}. The {@code updateSupplier}
      *                       will only be sent to subscription queries matching this filter
@@ -158,8 +165,9 @@ public interface QueryBus extends QueryHandlerRegistry<QueryBus>, DescribableCom
      *                       queries} matching the given {@code filter}
      * @param context        the processing context under which the updateSupplier is being emitted (can be
      *                       {@code null})
-     * @return a future completing with the number of subscription queries the update was emitted to as an
-     * {@link OptionalInt}, which is empty when we couldn't match
+     * @return a successful future completing with the number of subscription queries the update was emitted to as an
+     * {@link OptionalInt}, which is empty when we couldn't match, or exceptional if the {@code updateSupplier} threw an
+     * exception
      */
     default CompletableFuture<OptionalInt> emitUpdateAndCount(Predicate<QueryMessage> filter,
                                                               Supplier<SubscriptionQueryUpdateMessage> updateSupplier,
@@ -173,13 +181,16 @@ public interface QueryBus extends QueryHandlerRegistry<QueryBus>, DescribableCom
      * <p>
      * To be used whenever there are no subsequent update to
      * {@link #emitUpdate(Predicate, Supplier, ProcessingContext) emit} left.
+     * <p>
+     * Any exceptions that might occur as part of invoking the {@code filter} will result in this method returning an
+     * exceptional {@link CompletableFuture} carrying the {@code filter's} exception.
      *
      * @param filter  a predicate filtering on {@link QueryMessage QueryMessages}. Subscription queries matching this
      *                filter will be completed
      * @param context the processing context within which to complete subscription queries (can be {@code null})
-     * @return a future completing whenever all matching
+     * @return a successful future completing whenever all matching
      * {@link QueryBus#subscriptionQuery(QueryMessage, ProcessingContext, int) subscription queries} have been
-     * completed
+     * completed, or exceptional if the {@code filter} threw an exception
      */
     CompletableFuture<Void> completeSubscriptions(Predicate<QueryMessage> filter,
                                                   @Nullable ProcessingContext context);
@@ -191,12 +202,16 @@ public interface QueryBus extends QueryHandlerRegistry<QueryBus>, DescribableCom
      * Implementations that cannot determine this number return {@link OptionalInt#empty} instead.
      * <p>
      * A subscription query for which completion fails is excluded from this count.
+     * <p>
+     * Any exceptions that might occur as part of invoking the {@code filter} will result in this method returning an
+     * exceptional {@link CompletableFuture} carrying the {@code filter's} exception.
      *
      * @param filter  a predicate filtering on {@link QueryMessage QueryMessages}. Subscription queries matching this
      *                filter will be completed
      * @param context the processing context within which to complete subscription queries (can be {@code null})
-     * @return a future completing with the number of subscription queries that were completed as an
-     * {@link OptionalInt}, which is empty when we couldn't match
+     * @return a successful future completing with the number of subscription queries that were completed as an
+     * {@link OptionalInt}, which is empty when we couldn't match, or exceptional if the {@code filter} threw an
+     * exception
      */
     default CompletableFuture<OptionalInt> completeSubscriptionsAndCount(Predicate<QueryMessage> filter,
                                                                          @Nullable ProcessingContext context) {
@@ -209,15 +224,18 @@ public interface QueryBus extends QueryHandlerRegistry<QueryBus>, DescribableCom
      * <p>
      * To be used whenever {@link #emitUpdate(Predicate, Supplier, ProcessingContext) emitting update} should be stopped
      * due to some exception.
+     * <p>
+     * Any exceptions that might occur as part of invoking the {@code filter} will result in this method returning an
+     * exceptional {@link CompletableFuture} carrying the {@code filter's} exception.
      *
      * @param filter  a predicate filtering on {@link QueryMessage QueryMessages}. Subscription queries matching this
      *                filter will be completed exceptionally
      * @param cause   the cause of an error
      * @param context the processing context within which to complete subscription queries exceptionally (can be
      *                {@code null})
-     * @return a future completing whenever all matching
+     * @return a successful future completing whenever all matching
      * {@link QueryBus#subscriptionQuery(QueryMessage, ProcessingContext, int) subscription queries} have been completed
-     * exceptionally
+     * exceptionally, or exceptional if the {@code filter} threw an exception
      */
     CompletableFuture<Void> completeSubscriptionsExceptionally(Predicate<QueryMessage> filter,
                                                                Throwable cause,
@@ -231,14 +249,18 @@ public interface QueryBus extends QueryHandlerRegistry<QueryBus>, DescribableCom
      * Implementations that cannot determine this number return {@link OptionalInt#empty} instead.
      * <p>
      * A subscription query for which the exceptional completion fails to be delivered is excluded from this count.
+     * <p>
+     * Any exceptions that might occur as part of invoking the {@code filter} will result in this method returning an
+     * exceptional {@link CompletableFuture} carrying the {@code filter's} exception.
      *
      * @param filter  a predicate filtering on {@link QueryMessage QueryMessages}. Subscription queries matching this
      *                filter will be completed exceptionally
      * @param cause   the cause of an error
      * @param context the processing context within which to complete subscription queries exceptionally (can be
      *                {@code null})
-     * @return a future completing with the number of subscription queries that were completed exceptionally as an
-     * {@link OptionalInt}, which is empty when we couldn't match
+     * @return a successful future completing with the number of subscription queries that were completed exceptionally
+     * as an {@link OptionalInt}, which is empty when we couldn't match, or exceptional if the {@code filter} threw an
+     * exception
      */
     default CompletableFuture<OptionalInt> completeSubscriptionsExceptionallyAndCount(
             Predicate<QueryMessage> filter,

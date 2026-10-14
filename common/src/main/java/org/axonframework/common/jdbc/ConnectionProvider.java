@@ -16,26 +16,31 @@
 
 package org.axonframework.common.jdbc;
 
-import org.axonframework.common.annotation.Internal;
-
 import java.sql.Connection;
 import java.sql.SQLException;
 
 /**
- * Interface towards a mechanism that provides access to a JDBC Connection.
+ * Interface towards a mechanism that provides access to a JDBC {@link Connection}.
+ * <p>
+ * The returned connection's transactional lifecycle (commit, rollback, and close) is never
+ * managed by {@link ConnectionExecutor} or any other consumer of this interface; it remains
+ * entirely the responsibility of whatever owns the connection on the other end of this provider,
+ * such as a container's transaction manager binding it to the current unit of work.
  *
  * @author Allard Buijze
+ * @author John Hendrikx
  * @since 2.2
  */
-@Internal
 @FunctionalInterface
 public interface ConnectionProvider {
 
     /**
      * Returns a connection, ready for use.
+     * <p>
+     * The caller must never commit, roll back, or close the returned connection directly; its
+     * lifecycle is managed externally by whatever this provider obtained it from.
      *
-     * @return a new connection to use
-     *
+     * @return a connection to use, never {@code null}
      * @throws SQLException when an error occurs obtaining the connection
      */
     Connection getConnection() throws SQLException;

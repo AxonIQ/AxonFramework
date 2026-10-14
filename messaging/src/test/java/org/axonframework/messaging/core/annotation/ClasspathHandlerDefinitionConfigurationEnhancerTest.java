@@ -19,17 +19,17 @@ package org.axonframework.messaging.core.annotation;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.common.configuration.DefaultComponentRegistry;
 import org.axonframework.common.configuration.LifecycleRegistry;
-import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.reflection.ClasspathHandlerDefinitionConfigurationEnhancer;
 import org.junit.jupiter.api.*;
-
-import java.lang.reflect.Method;
-import java.util.Optional;
-import java.util.function.Function;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
+/**
+ * Test class validating the {@link ClasspathHandlerDefinitionConfigurationEnhancer}.
+ *
+ * @author Steven van Beelen
+ */
 class ClasspathHandlerDefinitionConfigurationEnhancerTest {
 
     private DefaultComponentRegistry componentRegistry;
@@ -44,30 +44,50 @@ class ClasspathHandlerDefinitionConfigurationEnhancerTest {
     class DefaultRegistration {
 
         @Test
-        void registersClasspathHandlerDefinitionAsComponent() {
+        void setsClasspathHandlerDefinitionAsComponent() {
             // given
             componentRegistry.registerEnhancer(new ClasspathHandlerDefinitionConfigurationEnhancer());
 
             // when
-            Configuration configuration = componentRegistry.build(mock(LifecycleRegistry.class));
+            Configuration config = componentRegistry.build(mock(LifecycleRegistry.class));
 
             // then
-            assertThat(configuration.getComponent(HandlerDefinition.class))
+            assertThat(config.getComponent(HandlerDefinition.class))
                     .isInstanceOf(MultiHandlerDefinition.class);
         }
 
         @Test
-        void leavesAnExplicitlyRegisteredHandlerDefinitionInPlace() {
-            // given an application registering its own definition before the enhancer runs
-            HandlerDefinition applicationDefinition = new NoOpHandlerDefinition();
-            componentRegistry.registerComponent(HandlerDefinition.class, c -> applicationDefinition)
+        void setsClasspathHandlerEnhancerDefinitionAsComponent() {
+            // given
+            componentRegistry.registerEnhancer(new ClasspathHandlerDefinitionConfigurationEnhancer());
+
+            // when
+            Configuration config = componentRegistry.build(mock(LifecycleRegistry.class));
+
+            // then
+            assertThat(config.getComponent(HandlerEnhancerDefinition.class))
+                    .isInstanceOf(MultiHandlerEnhancerDefinition.class);
+        }
+
+        @Test
+        void composesWithAlreadyRegisteredDefinitions() {
+            // given
+            HandlerDefinition customDefinition = mock(HandlerDefinition.class);
+            HandlerEnhancerDefinition customEnhancer = mock(HandlerEnhancerDefinition.class);
+            componentRegistry.registerComponent(HandlerDefinition.class, c -> customDefinition)
+                             .registerComponent(HandlerEnhancerDefinition.class, c -> customEnhancer)
                              .registerEnhancer(new ClasspathHandlerDefinitionConfigurationEnhancer());
 
             // when
-            Configuration configuration = componentRegistry.build(mock(LifecycleRegistry.class));
+            Configuration config = componentRegistry.build(mock(LifecycleRegistry.class));
 
             // then
-            assertThat(configuration.getComponent(HandlerDefinition.class)).isSameAs(applicationDefinition);
+            HandlerDefinition resultDefinition = config.getComponent(HandlerDefinition.class);
+            HandlerEnhancerDefinition resultEnhancer = config.getComponent(HandlerEnhancerDefinition.class);
+            assertThat(resultDefinition).isInstanceOf(MultiHandlerDefinition.class);
+            assertThat(((MultiHandlerDefinition) resultDefinition).getDelegates()).contains(customDefinition);
+            assertThat(resultEnhancer).isInstanceOf(MultiHandlerEnhancerDefinition.class);
+            assertThat(((MultiHandlerEnhancerDefinition) resultEnhancer).getDelegates()).contains(customEnhancer);
         }
     }
 
@@ -76,31 +96,18 @@ class ClasspathHandlerDefinitionConfigurationEnhancerTest {
 
         @Test
         void registeredComponentCanBeDecorated() {
-            // given the default plus a decorator, as the event sourcing module registers one
+            // given
+            HandlerDefinition decoratedDefinition = mock(HandlerDefinition.class);
             componentRegistry.registerEnhancer(new ClasspathHandlerDefinitionConfigurationEnhancer())
                              .registerDecorator(HandlerDefinition.class,
                                                 0,
-                                                (config, name, delegate) -> new NoOpHandlerDefinition());
+                                                (config, name, delegate) -> decoratedDefinition);
 
             // when
-            Configuration configuration = componentRegistry.build(mock(LifecycleRegistry.class));
+            Configuration config = componentRegistry.build(mock(LifecycleRegistry.class));
 
-            // then the decorator applied, which it cannot do without a registered component
-            assertThat(configuration.getComponent(HandlerDefinition.class))
-                    .isInstanceOf(NoOpHandlerDefinition.class);
-        }
-    }
-
-    private static class NoOpHandlerDefinition implements HandlerDefinition {
-
-        @Override
-        public <T> Optional<MessageHandlingMember<T>> createHandler(
-                Class<T> declaringType,
-                Method method,
-                ParameterResolverFactory parameterResolverFactory,
-                Function<Object, MessageStream<?>> messageStreamResolver
-        ) {
-            return Optional.empty();
+            // then
+            assertThat(config.getComponent(HandlerDefinition.class)).isSameAs(decoratedDefinition);
         }
     }
 }

@@ -178,7 +178,7 @@ public abstract class Matchers {
      * <p>
      * This {@code Matcher} will first perform a regular equals check based on the given {@code expected} and
      * {@code actual} (provided during the {@link Matcher#matches(Object)} invocation). If this fails and given type
-     * <em>does not</em> override {@link Object#equals(Object)}, this {@code Matcher} will match the fields of the
+     * does not override {@link Object#equals(Object)}, this {@code Matcher} will match the fields of the
      * given {@code expected} and {@code actual}.
      *
      * @param expected The object to match against.
@@ -195,7 +195,7 @@ public abstract class Matchers {
      * <p>
      * This {@code Matcher} will first perform a regular equals check based on the given {@code expected} and
      * {@code actual} (provided during the {@link Matcher#matches(Object)} invocation). If this fails and given type
-     * <em>does not</em> override {@link Object#equals(Object)}, this {@code Matcher} will match the fields of the
+     * does not override {@link Object#equals(Object)}, this {@code Matcher} will match the fields of the
      * given {@code expected} and {@code actual}. Fields can be in- or excluded for this last step through the
      * {@code filter}.
      *

@@ -37,6 +37,7 @@ import org.axonframework.messaging.eventhandling.processing.streaming.token.Glob
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
 import org.axonframework.messaging.eventstreaming.EventsCondition;
 import org.axonframework.messaging.eventstreaming.StreamingCondition;
+import org.axonframework.messaging.eventstreaming.Tag;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -57,6 +58,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.stream.Collectors;
 
 import static org.axonframework.eventsourcing.eventstore.AppendEventsTransactionRejectedException.conflictingEventsDetected;
 import static org.axonframework.messaging.core.MessageStreamUtils.NO_OP_CALLBACK;
@@ -116,7 +118,9 @@ public class InMemoryEventStorageEngine implements EventStorageEngine {
                                                                 List<TaggedEventMessage<?>> events) {
         if (containsConflicts(condition)) {
             // early failure, since we know conflicts already exist at insert-time
-            return CompletableFuture.failedFuture(conflictingEventsDetected(condition.consistencyMarker()));
+            return CompletableFuture.failedFuture(
+                    conflictingEventsDetected(condition.consistencyMarker(), tagsOf(condition))
+            );
         }
 
         return CompletableFuture.completedFuture(new AppendTransaction<ConsistencyMarker>() {
@@ -132,7 +136,9 @@ public class InMemoryEventStorageEngine implements EventStorageEngine {
                 appendLock.lock();
                 try {
                     if (containsConflicts(condition)) {
-                        return CompletableFuture.failedFuture(conflictingEventsDetected(condition.consistencyMarker()));
+                        return CompletableFuture.failedFuture(
+                                conflictingEventsDetected(condition.consistencyMarker(), tagsOf(condition))
+                        );
                     }
                     ConsistencyMarker newLatest =
                             events.stream()
@@ -185,6 +191,14 @@ public class InMemoryEventStorageEngine implements EventStorageEngine {
      */
     private boolean isVisible(long position) {
         return position <= lastVisiblePosition.get() && eventStorage.containsKey(position);
+    }
+
+    private static Set<Tag> tagsOf(AppendCondition condition) {
+        return condition.criteria()
+            .flatten()
+            .stream()
+            .flatMap(criterion -> criterion.tags().stream())
+            .collect(Collectors.toSet());
     }
 
     private boolean containsConflicts(AppendCondition condition) {

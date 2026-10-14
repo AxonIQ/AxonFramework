@@ -75,6 +75,7 @@ class PolymorphicAnnotatedEntityMetamodelTest {
                     Project.class,
                     Set.of(Project.InternalProject.class, Project.OpenSourceProject.class),
                     parameterResolverFactory,
+                    handlerDefinition,
                     messageTypeResolver,
                     messageConverter,
                     eventConverter
@@ -410,6 +411,7 @@ class PolymorphicAnnotatedEntityMetamodelTest {
             return AnnotatedEntityMetamodel.forPolymorphicSealedType(
                     SealedProject.class,
                     parameterResolverFactory,
+                    handlerDefinition,
                     messageTypeResolver,
                     messageConverter,
                     eventConverter
@@ -753,6 +755,7 @@ class PolymorphicAnnotatedEntityMetamodelTest {
             return AnnotatedEntityMetamodel.forPolymorphicSealedType(
                     SealedTaskState.class,
                     parameterResolverFactory,
+                    handlerDefinition,
                     messageTypeResolver,
                     messageConverter,
                     eventConverter
@@ -807,6 +810,7 @@ class PolymorphicAnnotatedEntityMetamodelTest {
                             TaskState.InitialTask.class
                     ),
                     parameterResolverFactory,
+                    handlerDefinition,
                     messageTypeResolver,
                     messageConverter,
                     eventConverter

@@ -25,6 +25,8 @@ import org.axonframework.update.configuration.UsagePropertyProvider;
 import org.axonframework.update.detection.AxonVersionDetector;
 import org.axonframework.update.detection.KotlinVersion;
 import org.axonframework.update.detection.MachineId;
+import org.axonframework.update.detection.MachineUserName;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -66,6 +68,7 @@ public class UpdateChecker implements Runnable {
     private boolean firstRequest = true;
     private final AtomicBoolean started = new AtomicBoolean(false);
     private int errorRetryBackoffFactor = 1;
+    @Nullable
     private DelayedTask delayedTask;
 
     /**
@@ -168,6 +171,7 @@ public class UpdateChecker implements Runnable {
 
         return new UpdateCheckRequest(
                 machineId.get(),
+                MachineUserName.get(),
                 installationId,
                 osName,
                 osVersion,

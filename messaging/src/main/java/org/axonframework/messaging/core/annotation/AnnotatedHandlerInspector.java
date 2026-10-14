@@ -82,44 +82,6 @@ public class AnnotatedHandlerInspector<T> {
     }
 
     /**
-     * Create an inspector for given {@code handlerType} that uses a {@link ClasspathParameterResolverFactory} to
-     * resolve method parameters and {@link ClasspathHandlerDefinition} to create handlers.
-     *
-     * @param handlerType the target handler type
-     * @param <T>         the handler's type
-     * @return a new inspector instance for the inspected class
-     */
-    public static <T> AnnotatedHandlerInspector<T> inspectType(Class<T> handlerType) {
-        return inspectType(handlerType,
-                           new AnnotationMessageTypeResolver(),
-                           ClasspathParameterResolverFactory.forClass(handlerType));
-    }
-
-    /**
-     * Create an inspector for given {@code handlerType} that uses given {@code parameterResolverFactory} to resolve
-     * method parameters.
-     *
-     * @param <T>                      the handler's type
-     * @param handlerType              the target handler type
-     * @param messageTypeResolver      the message type resolver used to derive the return type of the message returned
-     *                                 by the {@link org.axonframework.messaging.core.MessageStream} returned from
-     *                                 uncovered
-     *                                 {@link org.axonframework.messaging.core.MessageHandler MessageHandlers}
-     * @param parameterResolverFactory the resolver factory to use during detection
-     * @return a new inspector instance for the inspected class
-     */
-    public static <T> AnnotatedHandlerInspector<T> inspectType(Class<T> handlerType,
-                                                               MessageTypeResolver messageTypeResolver,
-                                                               ParameterResolverFactory parameterResolverFactory) {
-        return inspectType(
-                handlerType,
-                messageTypeResolver,
-                parameterResolverFactory,
-                ClasspathHandlerDefinition.forClass(handlerType)
-        );
-    }
-
-    /**
      * Create an inspector for given {@code handlerType} that uses given {@code parameterResolverFactory} to resolve
      * method parameters and given {@code handlerDefinition} to create handlers.
      *
