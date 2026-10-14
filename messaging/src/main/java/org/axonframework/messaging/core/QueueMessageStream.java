@@ -110,15 +110,7 @@ public class QueueMessageStream<M extends Message> extends AbstractMessageStream
     protected FetchResult<Entry<M>> fetchNext() {
         Entry<M> next = queue.poll();
 
-        if (next != null) {
-            return FetchResult.of(next);
-        }
-
-        return switch (state.get()) {
-            case State(boolean sealed, Throwable error) when sealed && error == null -> FetchResult.completed();
-            case State(boolean sealed, Throwable error) when sealed -> FetchResult.error(error);
-            default -> FetchResult.notReady();
-        };
+        return next != null ? FetchResult.of(next) : terminalState();
     }
 
     /**
@@ -188,15 +180,13 @@ public class QueueMessageStream<M extends Message> extends AbstractMessageStream
 
     @Override
     protected FetchResult<Entry<M>> terminalState() {
-        if (!queue.isEmpty()) {
+        State current = state.get();  // read before the queue, as entries may be added until the stream is sealed
+
+        if (!current.sealed() || !queue.isEmpty()) {
             return FetchResult.notReady();
         }
 
-        return switch (state.get()) {
-            case State(boolean sealed, Throwable error) when sealed && error == null -> FetchResult.completed();
-            case State(boolean sealed, Throwable error) when sealed -> FetchResult.error(error);
-            default -> FetchResult.notReady();
-        };
+        return current.error() == null ? FetchResult.completed() : FetchResult.error(current.error());
     }
 
     @Override

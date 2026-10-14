@@ -66,7 +66,7 @@ class FluxMessageStream<M extends Message> extends AbstractMessageStream<M> {
         FetchResult<Entry<M>> next = peeked.poll();
 
         if (next == null) {
-            return sealed.get() ? FetchResult.completed() : FetchResult.notReady();
+            return terminalState();
         }
 
         if (next instanceof FetchResult.Value) {
@@ -78,13 +78,14 @@ class FluxMessageStream<M extends Message> extends AbstractMessageStream<M> {
 
     @Override
     protected FetchResult<Entry<M>> terminalState() {
+        boolean isSealed = sealed.get();  // read before the buffer, as entries may be added until the stream is sealed
         FetchResult<Entry<M>> head = peeked.peek();
 
         if (head instanceof FetchResult.Error) {
             return head;
         }
 
-        return head == null && sealed.get() ? FetchResult.completed() : FetchResult.notReady();
+        return head == null && isSealed ? FetchResult.completed() : FetchResult.notReady();
     }
 
     @Override

@@ -143,12 +143,7 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
         static <M extends Message> FetchResult<Entry<M>> of(MessageStream<M> delegate) {
             return delegate.next()
                 .map(FetchResult::of)
-                .orElseGet(() -> delegate.isCompleted()
-                    ? delegate.error()
-                        .map(FetchResult::<Entry<M>>error)
-                        .orElse(FetchResult.completed())
-                    : FetchResult.notReady()
-                );
+                .orElseGet(() -> terminalStateOf(delegate));
         }
 
         /**
@@ -501,15 +496,20 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
             /*
              * The completed flag is set by a read that observes a terminal result, so it does not yet cover a
              * stream whose source is exhausted but has not been read past. terminalState() covers that without
-             * a fetch, keeping this check free of side effects and independent of composition depth.
+             * a fetch, keeping this check free of side effects and independent of composition depth. The
+             * pending callback is not flushed: the consumer asking receives the answer as the return value.
              */
 
             switch (terminalState()) {
-                case FetchResult.Completed() -> markTerminal(null);
-                case FetchResult.Error(Throwable throwable) -> markTerminal(throwable);
-                case FetchResult.Value(Entry<M> ignored) -> throw new IllegalStateException(
-                        "terminalState() returned a Value; it must never hand out entries.");
-                case FetchResult.NotReady() -> {
+                case FetchResult.Completed() -> {
+                    this.initialized = true;
+                    complete();
+                }
+                case FetchResult.Error(Throwable throwable) -> {
+                    this.initialized = true;
+                    completeExceptionally(throwable);
+                }
+                default -> {
                     // Not determinable without reading, so the stream stays open.
                 }
             }
@@ -533,19 +533,21 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
      *
      * @return {@link FetchResult.Completed} or {@link FetchResult.Error} when this stream is terminal,
      * {@link FetchResult.NotReady} when that cannot be determined without reading; never {@link FetchResult.Value}
+     * @since 5.5.0
      */
     protected FetchResult<Entry<M>> terminalState() {
         return FetchResult.notReady();
     }
 
     /**
-     * Returns the terminal state of the given {@code delegate}, for a composed stream to return from its own
-     * {@link #terminalState()}.
+     * Returns the terminal state of the given {@code delegate}, as reported by its {@link MessageStream#isCompleted()}
+     * and {@link MessageStream#error()}.
      *
      * @param delegate the stream to report the terminal state of
      * @param <T>      the entry type of the returned result
      * @return the terminal state the given {@code delegate} reports, or {@link FetchResult.NotReady} when it is not
      * terminal
+     * @since 5.5.0
      */
     protected static <T extends Entry<?>> FetchResult<T> terminalStateOf(MessageStream<?> delegate) {
         if (!delegate.isCompleted()) {
@@ -555,31 +557,6 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
         return delegate.error()
                        .<FetchResult<T>>map(FetchResult::error)
                        .orElseGet(FetchResult::completed);
-    }
-
-    /**
-     * Records that this stream reached its terminal state, as observed by {@link #isCompleted()}. Callers must hold
-     * this stream's lock.
-     * <p>
-     * The notification recorded by {@link #complete()} is not flushed here, since the consumer reading the completion
-     * status receives it as the return value. It is flushed by the next consumer-side call.
-     *
-     * @param error the failure this stream completed with, or {@code null} when it completed normally
-     */
-    private void markTerminal(@Nullable Throwable error) {
-
-        /*
-         * Reaching a terminal state here counts as the interaction that initializes the stream, which is otherwise
-         * done by the first read.
-         */
-
-        this.initialized = true;
-
-        if (error == null) {
-            complete();
-        } else {
-            completeExceptionally(error);
-        }
     }
 
     @Override

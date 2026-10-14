@@ -809,15 +809,6 @@ class AbstractMessageStreamTest {
         }
 
         @Test
-        void withTerminalStateValueThenThrowsIllegalStateException() {
-            // given: reporting an entry as a terminal state is a programming error, entries come from fetchNext
-            stream.reportTerminalState(FetchResult.of(entryOf("msg")));
-
-            // when / then
-            assertThatThrownBy(() -> stream.isCompleted()).isInstanceOf(IllegalStateException.class);
-        }
-
-        @Test
         void thenRunsTheOnCompletedHookExactlyOnce() {
             // given: resources are released on the transition, wherever the transition is observed
             stream.reportTerminalState(FetchResult.completed());
