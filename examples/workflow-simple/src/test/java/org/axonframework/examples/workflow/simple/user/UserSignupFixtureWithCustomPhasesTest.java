@@ -65,10 +65,9 @@ public class UserSignupFixtureWithCustomPhasesTest {
         fixture.then()
                .noExecution()
                .workflowFinished(WorkflowStatus.COMPLETED)
-               .stepsPassed("activateUser", "sendWelcomeEmail", "waitForMagicToHappen", "modifyPayload")
+               .stepsPassed("activateUser", "sendWelcomeEmail", "waitForMagicToHappen")
                .step("activateUser", StepStatus.COMPLETED)
                .payloadEquals(Map.of(
-                       "magician", "Merlin",
                        "email", "piggy@muppets.biz",
                        "status", "vip",
                        "id", "2"

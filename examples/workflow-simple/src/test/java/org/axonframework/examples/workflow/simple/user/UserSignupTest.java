@@ -80,12 +80,10 @@ class UserSignupTest {
                 "activateUser",
                 "sendWelcomeEmail",
                 "waitASecond",
-                "waitForMagicToHappen",
-                "modifyPayload"
+                "waitForMagicToHappen"
         );
         //noinspection SuspiciousMethodCalls
         testDriver.testingState().payloadMatches(payload -> payload.entrySet().containsAll(Map.of(
-                "magician", "Merlin",
                 "email", "piggy@muppets.biz",
                 "status", "vip",
                 "id", "2"

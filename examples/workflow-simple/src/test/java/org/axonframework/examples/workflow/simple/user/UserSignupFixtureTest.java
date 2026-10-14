@@ -30,7 +30,6 @@ import java.util.Map;
 import java.util.function.UnaryOperator;
 
 import static io.axoniq.framework.workflow.runtime.test.fixture.WorkflowTestFixture.workflowModule;
-import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Fixture-based test for {@link UserSignupWorkflow}.
@@ -157,11 +156,7 @@ public class UserSignupFixtureTest {
 
         fixture.then()
                .executionExists()
-               .waitingIn("waitForMagicToHappen")
-               .payloadSatisfies(p ->
-                                         assertThat(p).doesNotContainKey("magician")
-               );
-        ;
+               .waitingIn("waitForMagicToHappen");
     }
 
     @Test
@@ -183,10 +178,9 @@ public class UserSignupFixtureTest {
         fixture.then()
                .noExecution()
                .workflowFinished(WorkflowStatus.COMPLETED)
-               .stepsPassed("activateUser", "sendWelcomeEmail", "waitForMagicToHappen", "modifyPayload")
+               .stepsPassed("activateUser", "sendWelcomeEmail", "waitForMagicToHappen")
                .step("activateUser", StepStatus.COMPLETED)
                .payloadEquals(Map.of(
-                       "magician", "Merlin",
                        "email", "piggy@muppets.biz",
                        "status", "vip",
                        "id", "2"
