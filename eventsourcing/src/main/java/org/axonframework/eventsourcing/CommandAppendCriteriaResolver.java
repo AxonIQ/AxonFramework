@@ -27,6 +27,15 @@ import org.axonframework.messaging.eventstreaming.EventCriteria;
  * separately for each command invocation and receives the complete criteria accumulated through sourcing in that
  * command's transaction. Its result replaces those sourcing-derived criteria as the command's consistency boundary.
  * Resolution is synchronous.
+ * <p>
+ * A resolver registered declaratively, through
+ * {@link org.axonframework.eventsourcing.commandhandling.AppendCriteriaResolvingCommandHandlingComponent} or an
+ * {@link org.axonframework.eventsourcing.configuration.EventSourcedEntityModule}, receives the command as dispatched.
+ * When it arrives serialized, for example from a distributed command bus, its payload is not converted yet, so use
+ * {@link CommandMessage#payloadAs(Class, org.axonframework.conversion.Converter)} with the
+ * {@link org.axonframework.messaging.core.conversion.MessageConverter} instead of {@link CommandMessage#payload()}. An
+ * {@link org.axonframework.eventsourcing.annotation.AppendCriteriaBuilder} receives the payload already converted to
+ * the handler's declared type.
  *
  * @author Mateusz Nowak
  * @since 5.4.0
