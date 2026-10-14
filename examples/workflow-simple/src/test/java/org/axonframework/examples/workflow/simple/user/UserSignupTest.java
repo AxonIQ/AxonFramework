@@ -61,10 +61,10 @@ class UserSignupTest {
                         500,
                         new RegistrationReceivedEvent("2", "piggy@muppets.biz", "vip") // start
                 ),
-                ofMillis(2500, new MagicHappenedEvent("Saruman")), // don't correlate
+                ofMillis(2500, new EmailConfirmedEvent("3")), // other user, don't correlate
                 ofMillis(
                         400,
-                        new MagicHappenedEvent("Merlin") // correlate
+                        new EmailConfirmedEvent("2") // correlate
                 )
         ));
 
@@ -79,8 +79,7 @@ class UserSignupTest {
                 "createUser",
                 "activateUser",
                 "sendWelcomeEmail",
-                "waitASecond",
-                "waitForMagicToHappen"
+                "waitForEmailConfirmation"
         );
         //noinspection SuspiciousMethodCalls
         testDriver.testingState().payloadMatches(payload -> payload.entrySet().containsAll(Map.of(

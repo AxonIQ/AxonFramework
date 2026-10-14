@@ -26,8 +26,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
-import java.time.Instant;
-import java.util.Map;
 
 import static io.axoniq.framework.workflow.runtime.association.Associations.associate;
 import static io.axoniq.framework.workflow.dsl.api.Payload.payload;
@@ -36,10 +34,6 @@ import static io.axoniq.framework.workflow.runtime.association.PayloadPropertyVa
 
 /**
  * Sample user registration.
- * <p>
- * The {@link #execute(SimpleWorkflowContext) workflow body} reads as the process: create and activate the user, send
- * a welcome email and wait for magic to happen. Each step of the process lives in its own method, which receives the
- * values it needs as arguments and returns the values the process needs next.
  *
  * @since 5.4.0
  */
@@ -56,56 +50,28 @@ public class UserSignupWorkflow {
             workflowNamespace = "io.axoniq.dsl.wf.workflow"
     )
     public void execute(SimpleWorkflowContext ctx) {
-        logger.info("User signup workflow started at {} for {}", Instant.now(), ctx.workflowPayload());
+        logger.info("User signup workflow started for {}", ctx.workflowPayload());
         var registration = payload(ctx.workflowPayload());
         String userId = registration.get("id");
         String email = registration.get("email");
 
-        if (!createUser(ctx)) {
+        if (!ctx.awaitExecute("createUser", Boolean.class, UserService::createUser)) {
             return;
         }
-        activateUser(ctx, userId);
-        sendWelcomeEmail(ctx, email);
-        ctx.sleep("waitASecond", Duration.ofSeconds(1L));
-
-        var magic = waitForMagic(ctx);
-        logger.info("Magic happened because of the magician {}", magic.magician());
-    }
-
-    @WorkflowCompletedHandler
-    public void onFinish(WorkflowStatus workflowStatus, SimpleWorkflowContext ctx) {
-        logger.info("User signup workflow {} at {} for {}", workflowStatus, Instant.now(), ctx.workflowPayload());
-    }
-
-    private boolean createUser(SimpleWorkflowContext ctx) {
-        return ctx.awaitExecute("createUser", Boolean.class, UserService::createUser);
-    }
-
-    private void activateUser(SimpleWorkflowContext ctx, String userId) {
         ctx.awaitExecute("activateUser",
                          payload("id", userId).getValues(),
                          UserService::activateUser,
                          step -> step.timeout(Duration.ofSeconds(10)));
+        ctx.awaitExecute("sendWelcomeEmail", Boolean.class, () -> NotificationService.sendEmail(email));
+
+        ctx.awaitEvent("waitForEmailConfirmation",
+                       EmailConfirmedEvent.class,
+                       associate(payloadProperty("userId"), equalsTo(userId)),
+                       step -> step.timeout(Duration.ofSeconds(5)));
     }
 
-    private void sendWelcomeEmail(SimpleWorkflowContext ctx, String email) {
-        ctx.awaitExecute("sendWelcomeEmail",
-                         Map.of(),
-                         (pc, input) -> {
-                             NotificationService.sendEmail(email);
-                             return Map.of();
-                         });
-    }
-
-    /**
-     * Waits for Merlin to make magic happen.
-     *
-     * @return the magic that happened
-     */
-    private MagicHappenedEvent waitForMagic(SimpleWorkflowContext ctx) {
-        return ctx.awaitEvent("waitForMagicToHappen",
-                              MagicHappenedEvent.class,
-                              associate(payloadProperty("magician"), equalsTo("Merlin")),
-                              step -> step.timeout(Duration.ofSeconds(5)));
+    @WorkflowCompletedHandler
+    public void onFinish(WorkflowStatus workflowStatus, SimpleWorkflowContext ctx) {
+        logger.info("User signup workflow {} for {}", workflowStatus, ctx.workflowPayload());
     }
 }

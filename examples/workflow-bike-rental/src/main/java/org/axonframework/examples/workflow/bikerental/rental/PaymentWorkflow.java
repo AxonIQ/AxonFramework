@@ -27,6 +27,7 @@ import org.axonframework.examples.workflow.bikerental.coreapi.payment.PaymentRej
 import org.axonframework.examples.workflow.bikerental.coreapi.payment.PreparePaymentCommand;
 import org.axonframework.examples.workflow.bikerental.coreapi.payment.RejectPaymentCommand;
 import org.axonframework.examples.workflow.bikerental.coreapi.rental.ApproveRequestCommand;
+import org.axonframework.examples.workflow.bikerental.coreapi.rental.BikeRequestedEvent;
 import org.axonframework.examples.workflow.bikerental.coreapi.rental.RejectRequestCommand;
 import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher;
 import org.slf4j.Logger;
@@ -35,7 +36,6 @@ import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 import static io.axoniq.framework.workflow.dsl.api.EventAssociationsUtils.equalsTo;
@@ -44,12 +44,7 @@ import static io.axoniq.framework.workflow.runtime.association.Associations.asso
 import static io.axoniq.framework.workflow.runtime.association.PayloadPropertyValueRetriever.payloadProperty;
 
 /**
- * Workflow that handles the payment of a bike rental. This workflow is a port of the Bike Rental Saga of the Axon
- * Framework 4 example, with the same business logic.
- * <p>
- * The {@link #execute(SimpleWorkflowContext) workflow body} reads as the process: prepare the payment, wait for its
- * outcome and approve or reject the rental request accordingly. Each step of the process lives in its own method,
- * which receives the values it needs as arguments and returns the values the process needs next.
+ * Payment workflow of a bike rental, ported from the Bike Rental Saga of the Axon Framework 4 example.
  *
  * @author Simon Zambrovski
  * @since 5.4.0
@@ -65,7 +60,7 @@ public class PaymentWorkflow {
     private static final Duration PAYMENT_OUTCOME_TIMEOUT = Duration.ofSeconds(240);
 
     @Workflow(
-            startOnEventName = "org.axonframework.examples.workflow.bikerental.coreapi.rental.BikeRequestedEvent",
+            startOnEventClass = BikeRequestedEvent.class,
             idProperty = "bikeId",
             workflowName = "PaymentWorkflow"
     )
@@ -87,62 +82,31 @@ public class PaymentWorkflow {
         }
     }
 
-    /**
-     * Prepares the payment, retrying after a delay until the payment is prepared.
-     *
-     * @return the id of the prepared payment
-     */
     private String preparePayment(SimpleWorkflowContext ctx, String paymentReference) {
-        // A step name is the durable identity of a step: a step that already ran is not run again, its recorded
-        // result is returned instead. Each attempt therefore needs its own step names, suffixed by the attempt.
+        // A step name identifies a step durably, so each attempt needs its own step names.
         for (int attempt = 1; ; attempt++) {
-            var paymentId = tryPreparePayment(ctx, paymentReference, attempt);
-            if (paymentId.isPresent()) {
-                return paymentId.get();
+            // Wait before sending, so the event cannot arrive before the workflow listens.
+            var paymentPrepared = waitForPaymentEvent(
+                    ctx, "paymentPrepared" + attempt, PaymentPreparedEvent.class, paymentReference, STEP_TIMEOUT
+            );
+            var preparePayment = sendCommand(
+                    ctx, "preparePayment" + attempt, new PreparePaymentCommand(RENTAL_FEE, paymentReference)
+            );
+
+            if (ctx.allMatch(WorkflowStepResult::success, preparePayment, paymentPrepared).success()) {
+                return paymentPrepared.resultAs(PaymentPreparedEvent.class)
+                                      .map(PaymentPreparedEvent::paymentId)
+                                      .orElseThrow();
             }
-            logger.info("Retrying to prepare payment {} in {} secs.", paymentReference, RETRY_DELAY.toSeconds());
+            // allMatch stops at the first failure, so the other step may still be running.
+            cancelIfRunning(preparePayment);
+            cancelIfRunning(paymentPrepared);
+            logger.info("Payment {} not prepared in attempt {}.", paymentReference, attempt);
             ctx.sleep("retryPayment" + attempt, RETRY_DELAY);
         }
     }
 
-    /**
-     * Sends the prepare payment command and waits for the payment to be prepared.
-     *
-     * @return the id of the prepared payment, or empty when the command failed or the payment was not prepared in time
-     */
-    private Optional<String> tryPreparePayment(SimpleWorkflowContext ctx, String paymentReference, int attempt) {
-        logger.info("Preparing payment {}, attempt {}", paymentReference, attempt);
-
-        // Wait for the event before sending the command, so the event cannot arrive before the workflow waits.
-        var paymentPrepared = waitForPaymentEvent(
-                ctx, "paymentPrepared" + attempt, PaymentPreparedEvent.class, paymentReference, STEP_TIMEOUT
-        );
-        var preparePayment = sendCommand(
-                ctx, "preparePayment" + attempt, new PreparePaymentCommand(RENTAL_FEE, paymentReference)
-        );
-
-        if (!ctx.allMatch(WorkflowStepResult::success, preparePayment, paymentPrepared).success()) {
-            // After a failed command, the event never arrives: stop waiting for it. Cancelling a finished step does
-            // nothing.
-            paymentPrepared.cancel("Payment not prepared.");
-            logger.info("Payment {} not prepared.", paymentReference);
-            return Optional.empty();
-        }
-
-        var paymentId = paymentPrepared.resultAs(PaymentPreparedEvent.class)
-                                       .map(PaymentPreparedEvent::paymentId)
-                                       .orElseThrow(() -> new IllegalStateException("No payment prepared event"));
-        logger.info("Payment {} prepared with payment id {}", paymentReference, paymentId);
-        return Optional.of(paymentId);
-    }
-
-    /**
-     * Waits for the payment to be confirmed or rejected, whichever comes first. Without either within the
-     * {@link #PAYMENT_OUTCOME_TIMEOUT}, the payment expires.
-     */
     private PaymentOutcome awaitPaymentOutcome(SimpleWorkflowContext ctx, String paymentReference) {
-        logger.info("Waiting for payment confirmation or rejection for the next {} seconds",
-                    PAYMENT_OUTCOME_TIMEOUT.toSeconds());
         var confirmed = waitForPaymentEvent(
                 ctx, "paymentConfirmed", PaymentConfirmedEvent.class, paymentReference, PAYMENT_OUTCOME_TIMEOUT
         );
@@ -151,31 +115,27 @@ public class PaymentWorkflow {
         );
         ctx.anyMatch(WorkflowStepResult::success, confirmed, rejected).await();
 
-        // success() blocks until a step finishes, and the losing wait is still open: check isCompleted() first.
+        // success() blocks until the step finishes, so check isCompleted() first.
         if (confirmed.isCompleted() && confirmed.success()) {
-            rejected.cancel("Payment confirmed.");
+            cancelIfRunning(rejected);
             return PaymentOutcome.CONFIRMED;
         }
         if (rejected.isCompleted() && rejected.success()) {
-            confirmed.cancel("Payment rejected.");
+            cancelIfRunning(confirmed);
             return PaymentOutcome.REJECTED;
         }
         return PaymentOutcome.EXPIRED;
     }
 
     private void approveRequest(SimpleWorkflowContext ctx, String bikeId, String renter) {
-        logger.info("Payment confirmed. Approving the request of {} for bike {}.", renter, bikeId);
         sendCommand(ctx, "confirmRequest", new ApproveRequestCommand(bikeId, renter)).await();
     }
 
     private void rejectRequest(SimpleWorkflowContext ctx, String bikeId, String renter) {
-        logger.info("Rejecting the request of {} for bike {}.", renter, bikeId);
         sendCommand(ctx, "rejectRequest", new RejectRequestCommand(bikeId, renter)).await();
     }
 
     private void rejectPayment(SimpleWorkflowContext ctx, String paymentId) {
-        logger.info("Payment {} not confirmed or rejected within {} seconds. Rejecting the payment.",
-                    paymentId, PAYMENT_OUTCOME_TIMEOUT.toSeconds());
         sendCommand(ctx, "rejectPayment", new RejectPaymentCommand(paymentId)).await();
     }
 
@@ -205,6 +165,12 @@ public class PaymentWorkflow {
                 },
                 step -> step.timeout(STEP_TIMEOUT)
         );
+    }
+
+    private static void cancelIfRunning(WorkflowStepResult step) {
+        if (!step.isCompleted()) {
+            step.cancel();
+        }
     }
 
     private enum PaymentOutcome {

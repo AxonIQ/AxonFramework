@@ -25,7 +25,6 @@ import io.axoniq.framework.workflow.dsl.api.WorkflowStatus;
 import io.axoniq.framework.workflow.runtime.test.fixture.WorkflowTestFixture;
 import org.junit.jupiter.api.*;
 
-import java.time.Duration;
 import java.util.Map;
 import java.util.function.UnaryOperator;
 
@@ -115,12 +114,13 @@ public class UserSignupFixtureTest {
 
         fixture.then()
                .executionExists()
-               .waitingIn("waitASecond")
+               .waitingIn("waitForEmailConfirmation")
         ;
     }
 
     @Test
-    void startsForVipAndActivatesUserAndSendsMailAndWaitsASecond() {
+    void startsForVipAndActivatesUserAndSendsMailAndOtherUsersEmailConfirmationTriggersNoProgress() {
+
         fixture.given()
                .publishEvent(new RegistrationReceivedEvent("2", "piggy@muppets.biz", "vip"))
                .executionExists()
@@ -130,37 +130,16 @@ public class UserSignupFixtureTest {
         ;
 
         fixture.when()
-               .timePasses(Duration.ofSeconds(1));
-
-        fixture.then()
-               .executionExists()
-               .waitingIn("waitForMagicToHappen")
-        ;
-    }
-
-    @Test
-    void startsForVipAndActivatesUserAndSendsMailAndWaitsASecondAndWrongMagicianTriggersNoProgress() {
-
-        fixture.given()
-               .publishEvent(new RegistrationReceivedEvent("2", "piggy@muppets.biz", "vip"))
-               .executionExists()
-               .execute("createUser")
-               .executeReturning("activateUser", Map.of())
-               .executeReturning("sendWelcomeEmail", Map.of())
-               .timePasses(Duration.ofSeconds(1))
-        ;
-
-        fixture.when()
-               .publishEvent(new MagicHappenedEvent("Saruman"))
+               .publishEvent(new EmailConfirmedEvent("3"))
         ;
 
         fixture.then()
                .executionExists()
-               .waitingIn("waitForMagicToHappen");
+               .waitingIn("waitForEmailConfirmation");
     }
 
     @Test
-    void startsForVipAndActivatesUserAndSendsMailAndWaitsASecondAndCorrectMagicianFinishesWorkflow() {
+    void startsForVipAndActivatesUserAndSendsMailAndEmailConfirmationFinishesWorkflow() {
 
         fixture.given()
                .publishEvent(new RegistrationReceivedEvent("2", "piggy@muppets.biz", "vip"))
@@ -168,17 +147,16 @@ public class UserSignupFixtureTest {
                .execute("createUser")
                .executeReturning("activateUser", Map.of())
                .executeReturning("sendWelcomeEmail", Map.of())
-               .timePasses(Duration.ofSeconds(1))
         ;
 
         fixture.when()
-               .publishEvent(new MagicHappenedEvent("Merlin"))
+               .publishEvent(new EmailConfirmedEvent("2"))
         ;
 
         fixture.then()
                .noExecution()
                .workflowFinished(WorkflowStatus.COMPLETED)
-               .stepsPassed("activateUser", "sendWelcomeEmail", "waitForMagicToHappen")
+               .stepsPassed("activateUser", "sendWelcomeEmail", "waitForEmailConfirmation")
                .step("activateUser", StepStatus.COMPLETED)
                .payloadEquals(Map.of(
                        "email", "piggy@muppets.biz",

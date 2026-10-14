@@ -24,7 +24,7 @@ import com.fasterxml.jackson.annotation.JsonProperty
  * @since 5.4.0
  */
 @JvmRecord
-data class MagicHappenedEvent(
-    @field:JsonProperty("magician")
-    val magician: String
+data class EmailConfirmedEvent(
+    @field:JsonProperty("userId")
+    val userId: String
 )

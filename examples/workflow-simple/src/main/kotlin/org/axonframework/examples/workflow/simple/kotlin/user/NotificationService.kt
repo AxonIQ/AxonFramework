@@ -26,7 +26,8 @@ private val logger = KotlinLogging.logger {}
  * @since 5.4.0
  */
 object NotificationService {
-    fun sendEmail() {
+    fun sendEmail(): Boolean {
         logger.info { "Sending welcome mail to user." }
+        return true
     }
 }

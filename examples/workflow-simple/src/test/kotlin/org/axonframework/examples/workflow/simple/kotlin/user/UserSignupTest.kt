@@ -68,7 +68,7 @@ class UserSignupTest : AbstractWorkflowTestBase<WorkflowKontext>(
                 ),
                 DelayedPublisher.Schedule.ofMillis(
                     5500,
-                    MagicHappenedEvent("Merlin")
+                    EmailConfirmedEvent("user-456")
                 )
             )
         )
@@ -83,9 +83,8 @@ class UserSignupTest : AbstractWorkflowTestBase<WorkflowKontext>(
         testDriver.testingState().hasStepsInOrder(
             "createUser",
             "activateUser",
-            "waitASecond",
             "sendWelcomeEmail",
-            "waitForMagicToHappen"
+            "waitForEmailConfirmation"
         )
     }
 

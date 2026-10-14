@@ -28,7 +28,8 @@ public class NotificationService {
 
     static Logger logger = LoggerFactory.getLogger(NotificationService.class);
 
-    public static void sendEmail(String emailAddress) {
+    public static boolean sendEmail(String emailAddress) {
         logger.info("Sending welcome mail to user.");
+        return true;
     }
 }

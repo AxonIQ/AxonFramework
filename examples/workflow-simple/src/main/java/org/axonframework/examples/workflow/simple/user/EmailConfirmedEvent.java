@@ -19,10 +19,11 @@
 package org.axonframework.examples.workflow.simple.user;
 
 /**
- * Event that is published when a magic happens
- * @param magician magician that did the magic
+ * Event that is published when a user confirms their email address.
+ *
+ * @param userId id of the user that confirmed their email address
  * @since 5.4.0
  */
-public record MagicHappenedEvent(String magician) {
+public record EmailConfirmedEvent(String userId) {
 
 }

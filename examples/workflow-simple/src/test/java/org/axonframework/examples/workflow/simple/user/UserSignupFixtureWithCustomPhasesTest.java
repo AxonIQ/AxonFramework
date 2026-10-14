@@ -27,7 +27,6 @@ import io.axoniq.framework.workflow.runtime.test.fixture.Then;
 import io.axoniq.framework.workflow.runtime.test.fixture.WorkflowTestFixture;
 import org.junit.jupiter.api.*;
 
-import java.time.Duration;
 import java.util.Map;
 import java.util.function.UnaryOperator;
 
@@ -50,22 +49,21 @@ public class UserSignupFixtureWithCustomPhasesTest {
     );
 
     @Test
-    void startsForVipAndActivatesUserAndSendsMailAndWaitsASecondAndCorrectMagicianFinishesWorkflow() {
+    void startsForVipAndActivatesUserAndSendsMailAndEmailConfirmationFinishesWorkflow() {
 
         fixture.given()
                .publishEvent(new RegistrationReceivedEvent("2", "piggy@muppets.biz", "vip"))
                .customerRegistrationComplete()
-               .timePasses(Duration.ofSeconds(1))
         ;
 
         fixture.when()
-               .publishEvent(new MagicHappenedEvent("Merlin"))
+               .publishEvent(new EmailConfirmedEvent("2"))
         ;
 
         fixture.then()
                .noExecution()
                .workflowFinished(WorkflowStatus.COMPLETED)
-               .stepsPassed("activateUser", "sendWelcomeEmail", "waitForMagicToHappen")
+               .stepsPassed("activateUser", "sendWelcomeEmail", "waitForEmailConfirmation")
                .step("activateUser", StepStatus.COMPLETED)
                .payloadEquals(Map.of(
                        "email", "piggy@muppets.biz",
