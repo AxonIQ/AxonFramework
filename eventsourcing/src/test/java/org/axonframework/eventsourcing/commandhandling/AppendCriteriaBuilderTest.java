@@ -28,6 +28,7 @@ import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.commandhandling.GenericCommandMessage;
 import org.axonframework.messaging.commandhandling.annotation.AnnotatedCommandHandlingComponent;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
+import org.axonframework.messaging.commandhandling.interception.InterceptingCommandHandlingComponent;
 import org.axonframework.messaging.core.FluxUtils;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.Metadata;
@@ -242,10 +243,12 @@ class AppendCriteriaBuilderTest {
             CommandHandlingComponent annotated = component(
                     new QualifiedBuilderHandler(configuration.getComponent(EventStore.class)), configuration
             );
-            CommandHandlingComponent duplicate = new AppendCriteriaResolvingCommandHandlingComponent(
-                    annotated,
-                    configuration.getComponent(EventStore.class),
-                    (command, context, sourcingCriteria) -> sourcingCriteria
+            CommandHandlingComponent duplicate = new InterceptingCommandHandlingComponent(
+                    List.of(new AppendCriteriaInterceptor(
+                            configuration.getComponent(EventStore.class),
+                            (command, context, sourcingCriteria) -> sourcingCriteria
+                    )),
+                    annotated
             );
             CommandMessage command = command("credits.Create", new SharedCommand("one"), Map.of());
 

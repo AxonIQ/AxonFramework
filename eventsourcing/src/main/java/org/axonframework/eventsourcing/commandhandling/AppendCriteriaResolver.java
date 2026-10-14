@@ -21,21 +21,24 @@ import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 
 /**
- * Resolves the complete append criteria for a command-handling component.
+ * Resolves the append criteria of a command, replacing the criteria accumulated through sourcing while it was handled.
  * <p>
- * One resolver is configured for the component and applies to every command handled by it. The resolver runs
- * separately for each command invocation and receives the complete criteria accumulated through sourcing in that
- * command's transaction. Its result replaces those sourcing-derived criteria as the command's consistency boundary.
+ * A resolver runs once per command invocation, when the command's
+ * {@link org.axonframework.eventsourcing.eventstore.EventStoreTransaction} commits. It receives the command and the
+ * complete criteria accumulated through sourcing in that transaction, across every entity the command loaded, and its
+ * result becomes the command's consistency boundary. Sourcing itself is unaffected. This is what sets it apart from an
+ * {@link org.axonframework.eventsourcing.CriteriaResolver}, which resolves sourcing criteria for one entity identifier.
  * Resolution is synchronous.
  * <p>
- * A resolver registered declaratively, through
- * {@link org.axonframework.eventsourcing.commandhandling.AppendCriteriaResolvingCommandHandlingComponent} or an
- * {@link org.axonframework.eventsourcing.configuration.EventSourcedEntityModule}, receives the command as dispatched.
- * When it arrives serialized, for example from a distributed command bus, its payload is not converted yet, so use
+ * Register a resolver through an {@link AppendCriteriaInterceptor}, or declare it with an
+ * {@link org.axonframework.eventsourcing.commandhandling.annotation.AppendCriteriaBuilder} method on the
+ * command-handling class.
+ * <p>
+ * A resolver registered through an {@code AppendCriteriaInterceptor} receives the command as dispatched. When it
+ * arrives serialized, for example from a distributed command bus, its payload is not converted yet, so use
  * {@link CommandMessage#payloadAs(Class, org.axonframework.conversion.Converter)} with the
  * {@link org.axonframework.messaging.core.conversion.MessageConverter} instead of {@link CommandMessage#payload()}. An
- * {@link org.axonframework.eventsourcing.commandhandling.annotation.AppendCriteriaBuilder} receives the payload already converted to
- * the handler's declared type.
+ * {@code AppendCriteriaBuilder} receives the payload already converted to the handler's declared type.
  *
  * @author Mateusz Nowak
  * @since 5.5.0
@@ -44,7 +47,7 @@ import org.axonframework.messaging.eventstreaming.EventCriteria;
 public interface AppendCriteriaResolver {
 
     /**
-     * Resolves the complete append criteria for the given {@code command}.
+     * Resolves the append criteria for the given {@code command}.
      *
      * @param command the command being handled
      * @param context the context in which the command is handled

@@ -29,8 +29,9 @@ import java.util.Objects;
  * Overrides the append criteria of a command-handling transaction with the outcome of one
  * {@link AppendCriteriaResolver}.
  * <p>
- * At most one override is installed per transaction, so a component carrying both an annotated and a declaratively
- * configured resolver fails rather than letting one silently win.
+ * At most one override is installed per transaction, so a command reaching both an annotated builder and an
+ * {@link AppendCriteriaInterceptor}, or two interceptors, fails rather than letting one silently win. Shared by the
+ * interceptor and {@link AppendCriteriaHandlerDefinition}, so both paths apply the same safeguards.
  *
  * @author Mateusz Nowak
  * @since 5.5.0

@@ -14,26 +14,38 @@
  * limitations under the License.
  */
 package events.eventstoreinternals.appendcriteria.entity;
-
 // tag::declarative-entity-append-criteria[]
-import org.axonframework.eventsourcing.configuration.EventSourcedEntityModule;
+import org.axonframework.common.configuration.Configuration;
+import org.axonframework.eventsourcing.commandhandling.AppendCriteriaInterceptor;
+import org.axonframework.eventsourcing.eventstore.EventStore;
+import org.axonframework.messaging.core.MessageStream;
+import org.axonframework.messaging.core.QualifiedName;
+import org.axonframework.modelling.entity.EntityCommandHandlerInterceptor;
+import org.axonframework.modelling.entity.EntityMetamodel;
+import org.axonframework.modelling.entity.EntityMetamodelBuilder;
 
 public class DeclarativeEntityAppendCriteria {
 
-    public static EventSourcedEntityModule<String, CreditBalance> configureAppendCriteria(
-            EventSourcedEntityModule.OptionalPhase<String, CreditBalance> entityModule
-    ) {
-        return entityModule
-                .appendCriteriaResolver((command, context, sourcingCriteria) ->
-                        switch (command.type().qualifiedName().fullName()) {
-                            case "credits.UseCredits" -> sourcingCriteria.replaceEventTypes(
-                                    CreditsUsed.class
-                            );
-                            case "credits.TopUpCredits" -> sourcingCriteria;
-                            default -> throw new IllegalArgumentException(
-                                    "Unsupported command: " + command.type().qualifiedName()
-                            );
-                        })
+    // Used as EventSourcedEntityModule.declarative(String.class, CreditBalance.class)
+    //                                 .messagingModel(DeclarativeEntityAppendCriteria::messagingModel)
+    public static EntityMetamodel<CreditBalance> messagingModel(Configuration configuration,
+                                                                EntityMetamodelBuilder<CreditBalance> builder) {
+        AppendCriteriaInterceptor appendCriteria = new AppendCriteriaInterceptor(
+                configuration.getComponent(EventStore.class),
+                (command, context, sourcingCriteria) -> switch (command.type().qualifiedName().fullName()) {
+                    case "credits.UseCredits" -> sourcingCriteria.replaceEventTypes(CreditsUsed.class);
+                    case "credits.TopUpCredits" -> sourcingCriteria;
+                    default -> throw new IllegalArgumentException(
+                            "Unsupported command: " + command.type().qualifiedName()
+                    );
+                }
+        );
+        return builder
+                .instanceCommandHandler(new QualifiedName("credits.UseCredits"),
+                                        (command, balance, context) -> MessageStream.empty().cast())
+                .instanceCommandHandler(new QualifiedName("credits.TopUpCredits"),
+                                        (command, balance, context) -> MessageStream.empty().cast())
+                .commandHandlerInterceptor(EntityCommandHandlerInterceptor.of(appendCriteria))
                 .build();
     }
 }

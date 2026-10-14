@@ -28,6 +28,7 @@ import org.axonframework.messaging.commandhandling.CommandHandlingComponent;
 import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.commandhandling.GenericCommandMessage;
 import org.axonframework.messaging.commandhandling.SimpleCommandHandlingComponent;
+import org.axonframework.messaging.commandhandling.interception.InterceptingCommandHandlingComponent;
 import org.axonframework.messaging.core.FluxUtils;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
@@ -169,12 +170,14 @@ class AppendCriteriaConcurrencyTest {
             eventStore.transaction(context).appendEvent(asEventMessage(new CreditDecision("account-one")));
             return MessageStream.empty();
         });
-        CommandHandlingComponent component = new AppendCriteriaResolvingCommandHandlingComponent(
-                delegate,
-                eventStore,
-                (command, context, accumulatedCriteria) -> restrictToUsed
-                        ? accumulatedCriteria.replaceEventTypes(Set.of(new QualifiedName(CreditsUsed.class)))
-                        : accumulatedCriteria
+        CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
+                List.of(new AppendCriteriaInterceptor(
+                        eventStore,
+                        (command, context, accumulatedCriteria) -> restrictToUsed
+                                ? accumulatedCriteria.replaceEventTypes(Set.of(new QualifiedName(CreditsUsed.class)))
+                                : accumulatedCriteria
+                )),
+                delegate
         );
         return execute(component, command(Map.of()));
     }
@@ -192,11 +195,13 @@ class AppendCriteriaConcurrencyTest {
             transaction.appendEvent(asEventMessage(new CreditDecision("account-one")));
             return MessageStream.empty();
         });
-        CommandHandlingComponent component = new AppendCriteriaResolvingCommandHandlingComponent(
-                delegate,
-                eventStore,
-                (command, context, accumulatedCriteria) ->
-                        accumulatedCriteria.replaceEventTypes(Set.of(new QualifiedName(CreditsUsed.class)))
+        CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
+                List.of(new AppendCriteriaInterceptor(
+                        eventStore,
+                        (command, context, accumulatedCriteria) ->
+                                accumulatedCriteria.replaceEventTypes(Set.of(new QualifiedName(CreditsUsed.class)))
+                )),
+                delegate
         );
         return execute(component, command(Map.of()));
     }
@@ -208,11 +213,13 @@ class AppendCriteriaConcurrencyTest {
             eventStore.transaction(context).appendEvent(asEventMessage(new DecisionRecorded(tenantId)));
             return MessageStream.empty();
         });
-        return new AppendCriteriaResolvingCommandHandlingComponent(
-                delegate,
-                eventStore,
-                (command, context, sourcingCriteria) ->
-                        EventCriteria.havingTags("tenant", command.metadata().get("tenantId"))
+        return new InterceptingCommandHandlingComponent(
+                List.of(new AppendCriteriaInterceptor(
+                        eventStore,
+                        (command, context, sourcingCriteria) ->
+                                EventCriteria.havingTags("tenant", command.metadata().get("tenantId"))
+                )),
+                delegate
         );
     }
 
@@ -227,10 +234,12 @@ class AppendCriteriaConcurrencyTest {
             eventStore.transaction(context).appendEvent(asEventMessage(new DecisionRecorded(tenantId)));
             return MessageStream.empty();
         });
-        return new AppendCriteriaResolvingCommandHandlingComponent(
-                delegate,
-                eventStore,
-                (command, context, sourcingCriteria) -> sourcingCriteria
+        return new InterceptingCommandHandlingComponent(
+                List.of(new AppendCriteriaInterceptor(
+                        eventStore,
+                        (command, context, sourcingCriteria) -> sourcingCriteria
+                )),
+                delegate
         );
     }
 

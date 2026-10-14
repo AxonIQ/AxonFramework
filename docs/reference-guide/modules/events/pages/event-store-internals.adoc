@@ -147,17 +147,17 @@ Returning it unchanged preserves the symmetric default for a command, as the `To
 The replacement may narrow or broaden the events considered conflicting without reconstructing the sourcing tags.
 The builder returns the complete append criteria; it does not add a contribution for one entity.
 
-Annotations adapt the same component-level declarative API:
+Without annotations, register an `AppendCriteriaInterceptor` with an `AppendCriteriaResolver` on the command-handling module:
 
 [source,java]
 ----
 include::example$events/eventstoreinternals/appendcriteria/declarative/CreditCommandConfiguration.java[tag=declarative-append-criteria,indent=0]
 ----
 
-`AppendCriteriaResolvingCommandHandlingComponent.withAppendCriteria` decorates one external command-handling component with one synchronous resolver.
-The resolver handles every qualified command name supported by that component and runs once per invocation.
-It receives the complete `CommandMessage`, `ProcessingContext`, and accumulated sourcing criteria.
-Configuring append criteria both declaratively and through an annotation for the same component is invalid.
+The interceptor applies its resolver to every command it intercepts; on a module, that is every command of every component in it.
+The resolver runs once per invocation, when the command's transaction commits, and receives the complete `CommandMessage`, `ProcessingContext`, and accumulated sourcing criteria.
+It receives the command as dispatched, so a command that arrived serialized still carries an unconverted payload; use `payloadAs` with the `MessageConverter` to read it.
+At most one resolver applies per command: a command reaching both an annotation builder and an interceptor, or two interceptors, fails explicitly.
 
 === Commands without sourcing
 
@@ -246,17 +246,17 @@ Every effective command-handling class resolves zero or one builder.
 Entity classes without an append-criteria builder retain the symmetric sourcing-derived append criteria.
 All marker selection, including no-source handling, remains the responsibility of the event-store transaction.
 
-For a declaratively built entity metamodel, configure one resolver on the entity module's command-handling component:
+For a declaratively built entity metamodel, register the same `AppendCriteriaInterceptor` on the metamodel builder, adapted with `EntityCommandHandlerInterceptor.of`:
 
 [source,java]
 ----
 include::example$events/eventstoreinternals/appendcriteria/entity/DeclarativeEntityAppendCriteria.java[tag=declarative-entity-append-criteria,indent=0]
 ----
 
-Call `appendCriteriaResolver` after the required messaging model, entity factory, and sourcing criteria resolver have been configured.
-The resolver applies once to the complete entity command-handling component and runs separately for each command that appends events.
-It remains a command append-criteria resolver: it does not contribute criteria per entity or change how entities are sourced.
-Defining it more than once, or combining it with an annotation builder for the same command-handling transaction, fails explicitly.
+The interceptor applies to the creational and instance commands of the entity and to the commands forwarded to its child entities.
+It remains a per-command resolver: it does not contribute criteria per entity or change how entities are sourced.
+For a polymorphic entity, interceptors registered on the polymorphic metamodel only cover the commands its shared supertype handles, so register the interceptor on each concrete type's metamodel as well.
+Combining it with an annotation builder for the same command fails explicitly.
 
 [#conditions]
 == Append, source, and stream conditions

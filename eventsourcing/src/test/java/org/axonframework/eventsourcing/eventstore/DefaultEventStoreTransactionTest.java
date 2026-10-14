@@ -17,12 +17,13 @@
 package org.axonframework.eventsourcing.eventstore;
 
 import org.axonframework.common.infra.ComponentDescriptor;
-import org.axonframework.eventsourcing.commandhandling.AppendCriteriaResolvingCommandHandlingComponent;
+import org.axonframework.eventsourcing.commandhandling.AppendCriteriaInterceptor;
 import org.axonframework.eventsourcing.eventstore.EventStorageEngine.AppendTransaction;
 import org.axonframework.eventsourcing.eventstore.inmemory.InMemoryEventStorageEngine;
 import org.axonframework.messaging.commandhandling.CommandHandlingComponent;
 import org.axonframework.messaging.commandhandling.GenericCommandMessage;
 import org.axonframework.messaging.commandhandling.SimpleCommandHandlingComponent;
+import org.axonframework.messaging.commandhandling.interception.InterceptingCommandHandlingComponent;
 import org.axonframework.messaging.core.Context;
 import org.axonframework.messaging.core.FluxUtils;
 import org.axonframework.messaging.core.MessageStream;
@@ -401,10 +402,12 @@ class DefaultEventStoreTransactionTest {
                 transaction.appendEvent(eventFor(FIRST_AGGREGATE_ID));
                 return MessageStream.empty();
             });
-            CommandHandlingComponent component = new AppendCriteriaResolvingCommandHandlingComponent(
-                    delegate,
-                    eventStore,
-                    (command, context, sourcingCriteria) -> unrelatedCriteria
+            CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
+                    List.of(new AppendCriteriaInterceptor(
+                            eventStore,
+                            (command, context, sourcingCriteria) -> unrelatedCriteria
+                    )),
+                    delegate
             );
 
             // when

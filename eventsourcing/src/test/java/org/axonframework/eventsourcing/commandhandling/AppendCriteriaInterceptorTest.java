@@ -16,8 +16,7 @@
 
 package org.axonframework.eventsourcing.commandhandling;
 
-import org.axonframework.common.configuration.ComponentBuilder;
-import org.axonframework.common.configuration.Configuration;
+import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
 import org.axonframework.eventsourcing.eventstore.AppendCondition;
 import org.axonframework.eventsourcing.eventstore.ConsistencyMarker;
@@ -25,11 +24,14 @@ import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.eventsourcing.eventstore.SourcingCondition;
 import org.axonframework.eventsourcing.eventstore.StorageEngineBackedEventStore;
 import org.axonframework.eventsourcing.eventstore.inmemory.InMemoryEventStorageEngine;
+import org.axonframework.messaging.commandhandling.CommandBus;
 import org.axonframework.messaging.commandhandling.CommandHandlingComponent;
 import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.commandhandling.CommandResultMessage;
 import org.axonframework.messaging.commandhandling.GenericCommandMessage;
 import org.axonframework.messaging.commandhandling.SimpleCommandHandlingComponent;
+import org.axonframework.messaging.commandhandling.configuration.CommandHandlingModule;
+import org.axonframework.messaging.commandhandling.interception.InterceptingCommandHandlingComponent;
 import org.axonframework.messaging.core.FluxUtils;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
@@ -40,6 +42,11 @@ import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.messaging.eventhandling.SimpleEventBus;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.messaging.eventstreaming.Tag;
+import org.axonframework.modelling.entity.ConcreteEntityMetamodel;
+import org.axonframework.modelling.entity.EntityCommandHandlerInterceptor;
+import org.axonframework.modelling.entity.EntityMetamodel;
+import org.axonframework.modelling.entity.child.ChildEntityFieldDefinition;
+import org.axonframework.modelling.entity.child.SingleEntityChildMetamodel;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
@@ -47,6 +54,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -56,12 +65,13 @@ import static org.axonframework.common.util.AssertUtils.awaitSuccessfulCompletio
 import static org.axonframework.messaging.core.unitofwork.UnitOfWorkTestUtils.aUnitOfWork;
 
 /**
- * Test class validating declarative command append criteria on external command-handling components.
+ * Test class validating the {@link AppendCriteriaInterceptor}.
  */
-class AppendCriteriaResolvingCommandHandlingComponentTest {
+class AppendCriteriaInterceptorTest {
 
     private static final QualifiedName USE_CREDITS = new QualifiedName("credits.UseCredits");
     private static final QualifiedName TOP_UP_CREDITS = new QualifiedName("credits.TopUpCredits");
+    private static final QualifiedName REPLACE_CARD = new QualifiedName("credits.ReplaceCard");
     private static final Tag ACCOUNT_ONE = Tag.of("accountId", "one");
     private static final Tag ACCOUNT_TWO = Tag.of("accountId", "two");
 
@@ -87,7 +97,13 @@ class AppendCriteriaResolvingCommandHandlingComponentTest {
                 return sourcingCriteria;
             };
             CommandHandlingComponent component =
-                    new AppendCriteriaResolvingCommandHandlingComponent(delegate, eventStore, resolver);
+                    new InterceptingCommandHandlingComponent(
+                            List.of(new AppendCriteriaInterceptor(
+                                    eventStore,
+                                    resolver
+                            )),
+                            delegate
+                    );
             CommandMessage use = command(USE_CREDITS, "one");
             CommandMessage topUp = command(TOP_UP_CREDITS, "two");
 
@@ -120,13 +136,15 @@ class AppendCriteriaResolvingCommandHandlingComponentTest {
                 ));
                 return MessageStream.empty();
             });
-            CommandHandlingComponent component = new AppendCriteriaResolvingCommandHandlingComponent(
-                    delegate,
-                    eventStore,
-                    (command, context, sourcingCriteria) -> {
-                        received.add(sourcingCriteria);
-                        return sourcingCriteria;
-                    }
+            CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
+                    List.of(new AppendCriteriaInterceptor(
+                            eventStore,
+                            (command, context, sourcingCriteria) -> {
+                                received.add(sourcingCriteria);
+                                return sourcingCriteria;
+                            }
+                    )),
+                    delegate
             );
 
             // when
@@ -164,8 +182,12 @@ class AppendCriteriaResolvingCommandHandlingComponentTest {
                 ));
                 return MessageStream.empty();
             });
-            CommandHandlingComponent component = new AppendCriteriaResolvingCommandHandlingComponent(
-                    delegate, eventStore, (command, context, criteria) -> commandCriteria
+            CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
+                    List.of(new AppendCriteriaInterceptor(
+                            eventStore,
+                            (command, context, criteria) -> commandCriteria
+                    )),
+                    delegate
             );
 
             // when
@@ -193,13 +215,15 @@ class AppendCriteriaResolvingCommandHandlingComponentTest {
                 ));
                 return MessageStream.empty();
             });
-            CommandHandlingComponent component = new AppendCriteriaResolvingCommandHandlingComponent(
-                    delegate,
-                    eventStore,
-                    (command, context, sourcingCriteria) -> {
-                        receivedSourcingCriteria.set(sourcingCriteria);
-                        return commandCriteria;
-                    }
+            CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
+                    List.of(new AppendCriteriaInterceptor(
+                            eventStore,
+                            (command, context, sourcingCriteria) -> {
+                                receivedSourcingCriteria.set(sourcingCriteria);
+                                return commandCriteria;
+                            }
+                    )),
+                    delegate
             );
 
             // when
@@ -226,8 +250,12 @@ class AppendCriteriaResolvingCommandHandlingComponentTest {
                 ));
                 return MessageStream.empty();
             });
-            CommandHandlingComponent component = new AppendCriteriaResolvingCommandHandlingComponent(
-                    delegate, eventStore, (command, context, sourcingCriteria) -> sourcingCriteria
+            CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
+                    List.of(new AppendCriteriaInterceptor(
+                            eventStore,
+                            (command, context, sourcingCriteria) -> sourcingCriteria
+                    )),
+                    delegate
             );
 
             // when
@@ -248,12 +276,14 @@ class AppendCriteriaResolvingCommandHandlingComponentTest {
                 ));
                 return MessageStream.empty();
             });
-            CommandHandlingComponent component = new AppendCriteriaResolvingCommandHandlingComponent(
-                    delegate,
-                    eventStore,
-                    (command, context, sourcingCriteria) -> {
-                        throw new IllegalStateException("Cannot resolve append criteria");
-                    }
+            CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
+                    List.of(new AppendCriteriaInterceptor(
+                            eventStore,
+                            (command, context, sourcingCriteria) -> {
+                                throw new IllegalStateException("Cannot resolve append criteria");
+                            }
+                    )),
+                    delegate
             );
             var uow = aUnitOfWork();
             uow.runOnPreInvocation(context -> component.handle(command(USE_CREDITS, "one"), context));
@@ -278,8 +308,12 @@ class AppendCriteriaResolvingCommandHandlingComponentTest {
                 ));
                 return MessageStream.empty();
             });
-            CommandHandlingComponent component = new AppendCriteriaResolvingCommandHandlingComponent(
-                    delegate, eventStore, (command, context, sourcingCriteria) -> null
+            CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
+                    List.of(new AppendCriteriaInterceptor(
+                            eventStore,
+                            (command, context, sourcingCriteria) -> null
+                    )),
+                    delegate
             );
             var uow = aUnitOfWork();
             uow.runOnPreInvocation(context -> component.handle(command(USE_CREDITS, "one"), context));
@@ -303,11 +337,19 @@ class AppendCriteriaResolvingCommandHandlingComponentTest {
             // given
             SimpleCommandHandlingComponent delegate = SimpleCommandHandlingComponent.create("duplicate");
             delegate.subscribe(USE_CREDITS, (command, context) -> MessageStream.empty());
-            CommandHandlingComponent first = new AppendCriteriaResolvingCommandHandlingComponent(
-                    delegate, eventStore, (command, context, sourcingCriteria) -> sourcingCriteria
+            CommandHandlingComponent first = new InterceptingCommandHandlingComponent(
+                    List.of(new AppendCriteriaInterceptor(
+                            eventStore,
+                            (command, context, sourcingCriteria) -> sourcingCriteria
+                    )),
+                    delegate
             );
-            CommandHandlingComponent second = new AppendCriteriaResolvingCommandHandlingComponent(
-                    first, eventStore, (command, context, sourcingCriteria) -> sourcingCriteria
+            CommandHandlingComponent second = new InterceptingCommandHandlingComponent(
+                    List.of(new AppendCriteriaInterceptor(
+                            eventStore,
+                            (command, context, sourcingCriteria) -> sourcingCriteria
+                    )),
+                    first
             );
             CommandMessage command = command(USE_CREDITS, "one");
 
@@ -322,72 +364,188 @@ class AppendCriteriaResolvingCommandHandlingComponentTest {
     }
 
     /**
-     * Covers the {@code withAppendCriteria} factory, which is the entry point the declarative configuration uses. Its
-     * only other caller is a documentation sample, and that module compiles its samples without running them.
+     * Covers the two ways users register the interceptor: on a {@link CommandHandlingModule}, and on an entity through
+     * {@link EntityCommandHandlerInterceptor#of(org.axonframework.messaging.core.MessageHandlerInterceptor)}.
      */
     @Nested
-    class ComponentBuilding {
+    class Registration {
 
         @Test
-        void builtComponentTakesTheEventStoreFromTheConfigurationAndAppliesTheResolver() {
-            // given a configuration whose EventStore is the one this test observes
-            Configuration configuration = EventSourcingConfigurer
-                    .create()
-                    .componentRegistry(registry -> registry.registerComponent(EventStore.class, c -> eventStore))
-                    .build();
-            List<CommandMessage> resolvedCommands = new ArrayList<>();
+        void moduleInterceptorAppliesTheResolverThroughTheConfiguredEventStore() {
+            // given a module whose interceptor takes the EventStore from the configuration
+            List<CommandMessage> resolvedCommands = new CopyOnWriteArrayList<>();
             AtomicReference<AppendCondition> finalCondition = new AtomicReference<>();
             EventCriteria commandCriteria = EventCriteria.havingTags("decision", "use-credits");
-            ComponentBuilder<CommandHandlingComponent> builder =
-                    AppendCriteriaResolvingCommandHandlingComponent.withAppendCriteria(
-                            c -> observingDelegate(finalCondition),
-                            c -> (command, context, sourcingCriteria) -> {
+            EventSourcingConfigurer configurer = EventSourcingConfigurer
+                    .create()
+                    .componentRegistry(registry -> registry.registerComponent(EventStore.class, c -> eventStore))
+                    .registerCommandHandlingModule(
+                            CommandHandlingModule.named("credits")
+                                                 .commandHandlers()
+                                                 .commandHandlingComponent(c -> observingComponent(finalCondition))
+                                                 .intercepted(c -> new AppendCriteriaInterceptor(
+                                                         c.getComponent(EventStore.class),
+                                                         (command, context, sourcingCriteria) -> {
+                                                             resolvedCommands.add(command);
+                                                             return commandCriteria;
+                                                         }
+                                                 ))
+                    );
+            AxonConfiguration configuration = configurer.start();
+            CommandMessage use = command(USE_CREDITS, "one");
+
+            try {
+                // when
+                configuration.getComponent(CommandBus.class).dispatch(use, null)
+                             .orTimeout(5, TimeUnit.SECONDS)
+                             .join();
+
+                // then the resolver ran, and its criteria reached the transaction of the configured event store
+                assertThat(resolvedCommands).containsExactly(use);
+                assertThat(finalCondition.get().criteria()).isEqualTo(commandCriteria);
+            } finally {
+                configuration.shutdown();
+            }
+        }
+
+        @Test
+        void entityInterceptorAppliesToInstanceCommandsOfTheEntity() {
+            // given
+            AtomicReference<AppendCondition> finalCondition = new AtomicReference<>();
+            EventCriteria commandCriteria = EventCriteria.havingTags("decision", "use-credits");
+            EntityMetamodel<Balance> metamodel = ConcreteEntityMetamodel
+                    .forEntityClass(Balance.class)
+                    .instanceCommandHandler(USE_CREDITS, (command, entity, context) ->
+                            sourceAccountAndAppend(command, context, finalCondition))
+                    .commandHandlerInterceptor(EntityCommandHandlerInterceptor.of(new AppendCriteriaInterceptor(
+                            eventStore, (command, context, sourcingCriteria) -> commandCriteria
+                    )))
+                    .build();
+
+            // when
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> metamodel.handleInstance(command(USE_CREDITS, "one"),
+                                                                       new Balance(),
+                                                                       context));
+            awaitSuccessfulCompletion(uow.execute());
+
+            // then
+            assertThat(finalCondition.get().criteria()).isEqualTo(commandCriteria);
+            assertThat(finalCondition.get().consistencyMarker()).isNotEqualTo(ConsistencyMarker.ORIGIN);
+        }
+
+        @Test
+        void entityInterceptorAppliesToCreationalCommandsWithoutAnEntity() {
+            // given a creational command that sources nothing and reserves a key
+            AtomicReference<AppendCondition> finalCondition = new AtomicReference<>();
+            EventCriteria reservation = EventCriteria.havingTags("accountId", "new");
+            EntityMetamodel<Balance> metamodel = ConcreteEntityMetamodel
+                    .forEntityClass(Balance.class)
+                    .creationalCommandHandler(TOP_UP_CREDITS, (command, context) -> {
+                        observeFinalCondition(context, finalCondition);
+                        eventStore.transaction(context).appendEvent(new GenericEventMessage(
+                                new MessageType(CreditsChanged.class), new CreditsChanged("new")
+                        ));
+                        return MessageStream.empty().cast();
+                    })
+                    .commandHandlerInterceptor(EntityCommandHandlerInterceptor.of(new AppendCriteriaInterceptor(
+                            eventStore, (command, context, sourcingCriteria) -> reservation
+                    )))
+                    .build();
+
+            // when
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> metamodel.handleCreate(command(TOP_UP_CREDITS, "new"), context));
+            awaitSuccessfulCompletion(uow.execute());
+
+            // then the criteria are checked against the whole history
+            assertThat(finalCondition.get().criteria()).isEqualTo(reservation);
+            assertThat(finalCondition.get().consistencyMarker()).isEqualTo(ConsistencyMarker.ORIGIN);
+        }
+
+        @Test
+        void entityInterceptorOnTheParentAppliesToCommandsForwardedToAChildEntity() {
+            // given
+            AtomicReference<AppendCondition> finalCondition = new AtomicReference<>();
+            List<CommandMessage> resolvedCommands = new ArrayList<>();
+            EventCriteria commandCriteria = EventCriteria.havingTags("decision", "replace-card");
+            EntityMetamodel<Card> cardMetamodel = ConcreteEntityMetamodel
+                    .forEntityClass(Card.class)
+                    .instanceCommandHandler(REPLACE_CARD, (command, card, context) ->
+                            sourceAccountAndAppend(command, context, finalCondition))
+                    .build();
+            EntityMetamodel<Balance> metamodel = ConcreteEntityMetamodel
+                    .forEntityClass(Balance.class)
+                    .addChild(SingleEntityChildMetamodel
+                                      .forEntityModel(Balance.class, cardMetamodel)
+                                      .childEntityFieldDefinition(ChildEntityFieldDefinition.forGetterEvolver(
+                                              Balance::card, (balance, card) -> balance
+                                      ))
+                                      .build())
+                    .commandHandlerInterceptor(EntityCommandHandlerInterceptor.of(new AppendCriteriaInterceptor(
+                            eventStore,
+                            (command, context, sourcingCriteria) -> {
                                 resolvedCommands.add(command);
                                 return commandCriteria;
                             }
-                    );
+                    )))
+                    .build();
+            CommandMessage replaceCard = command(REPLACE_CARD, "one");
 
             // when
-            CommandHandlingComponent component = builder.build(configuration);
-            CommandMessage use = command(USE_CREDITS, "one");
-            handleSuccessfully(component, use);
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> metamodel.handleInstance(replaceCard, new Balance(), context));
+            awaitSuccessfulCompletion(uow.execute());
 
-            // then the resolver ran, and its criteria reached the transaction of the configured event store
-            assertThat(resolvedCommands).containsExactly(use);
+            // then
+            assertThat(resolvedCommands).containsExactly(replaceCard);
             assertThat(finalCondition.get().criteria()).isEqualTo(commandCriteria);
         }
 
         @Test
-        void rejectsNullComponentAndResolverBuilders() {
+        void rejectsNullEventStoreAndResolver() {
             // given
-            ComponentBuilder<CommandHandlingComponent> componentBuilder = c -> componentSourcingOneAccountPerCommand();
-            ComponentBuilder<AppendCriteriaResolver> resolverBuilder =
-                    c -> (command, context, sourcingCriteria) -> sourcingCriteria;
+            AppendCriteriaResolver resolver = (command, context, sourcingCriteria) -> sourcingCriteria;
 
             // when / then
-            assertThatThrownBy(() -> AppendCriteriaResolvingCommandHandlingComponent
-                    .withAppendCriteria(null, resolverBuilder))
+            //noinspection DataFlowIssue
+            assertThatThrownBy(() -> new AppendCriteriaInterceptor(null, resolver))
                     .isInstanceOf(NullPointerException.class)
-                    .hasMessageContaining("command-handling component builder cannot be null");
-            assertThatThrownBy(() -> AppendCriteriaResolvingCommandHandlingComponent
-                    .withAppendCriteria(componentBuilder, null))
+                    .hasMessageContaining("EventStore cannot be null");
+            //noinspection DataFlowIssue
+            assertThatThrownBy(() -> new AppendCriteriaInterceptor(eventStore, null))
                     .isInstanceOf(NullPointerException.class)
-                    .hasMessageContaining("command append criteria resolver builder cannot be null");
+                    .hasMessageContaining("append criteria resolver cannot be null");
         }
 
-        private CommandHandlingComponent observingDelegate(AtomicReference<AppendCondition> finalCondition) {
-            SimpleCommandHandlingComponent delegate = SimpleCommandHandlingComponent.create("configured");
-            delegate.subscribe(USE_CREDITS, (command, context) -> {
-                eventStore.transaction(context).overrideAppendCondition(condition -> {
-                    finalCondition.set(condition);
-                    return condition;
-                });
+        private CommandHandlingComponent observingComponent(AtomicReference<AppendCondition> finalCondition) {
+            SimpleCommandHandlingComponent component = SimpleCommandHandlingComponent.create("configured");
+            component.subscribe(USE_CREDITS, (command, context) -> {
+                observeFinalCondition(context, finalCondition);
                 eventStore.transaction(context).appendEvent(new GenericEventMessage(
                         new MessageType(CreditsChanged.class), new CreditsChanged("one")
                 ));
                 return MessageStream.empty();
             });
-            return delegate;
+            return component;
+        }
+
+        private MessageStream.Single<CommandResultMessage> sourceAccountAndAppend(
+                CommandMessage command,
+                ProcessingContext context,
+                AtomicReference<AppendCondition> finalCondition
+        ) {
+            observeFinalCondition(context, finalCondition);
+            return AppendCriteriaInterceptorTest.this.sourceAccountAndAppend(command, context);
+        }
+
+        private void observeFinalCondition(ProcessingContext context,
+                                           AtomicReference<AppendCondition> finalCondition) {
+            // registered after the interceptor's override, so it observes the condition that override produced
+            eventStore.transaction(context).overrideAppendCondition(condition -> {
+                finalCondition.set(condition);
+                return condition;
+            });
         }
     }
 
@@ -425,5 +583,18 @@ class AppendCriteriaResolvingCommandHandlingComponentTest {
     }
 
     private record CreditsChanged(String accountId) {
+    }
+
+    private static class Balance {
+
+        private final Card card = new Card();
+
+        Card card() {
+            return card;
+        }
+    }
+
+    private static class Card {
+
     }
 }

@@ -16,8 +16,9 @@
 package events.eventstoreinternals.appendcriteria.declarative;
 
 // tag::declarative-append-criteria[]
-import org.axonframework.eventsourcing.commandhandling.AppendCriteriaResolvingCommandHandlingComponent;
+import org.axonframework.eventsourcing.commandhandling.AppendCriteriaInterceptor;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
+import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.messaging.commandhandling.SimpleCommandHandlingComponent;
 import org.axonframework.messaging.commandhandling.configuration.CommandHandlingModule;
 import org.axonframework.messaging.core.MessageStream;
@@ -31,38 +32,31 @@ public class CreditCommandConfiguration {
                 CommandHandlingModule.named("credit-commands")
                                      .commandHandlers()
                                      .commandHandlingComponent(
-                                             AppendCriteriaResolvingCommandHandlingComponent.withAppendCriteria(
-                                                     configuration -> SimpleCommandHandlingComponent
-                                                             .create("credit-command-handler")
-                                                             .subscribe(
-                                                                     new QualifiedName("credits.UseCredits"),
-                                                                     (command, context) -> MessageStream.empty()
-                                                             )
-                                                             .subscribe(
-                                                                     new QualifiedName("credits.TopUpCredits"),
-                                                                     (command, context) -> MessageStream.empty()
-                                                             ),
-                                                     configuration -> (command, context, sourcingCriteria) -> {
-                                                         MessageConverter converter =
-                                                                 context.component(MessageConverter.class);
-                                                         return switch (command.type()
-                                                                               .qualifiedName()
-                                                                               .fullName()) {
-                                                             case "credits.UseCredits" -> {
-                                                                 command.payloadAs(UseCredits.class, converter);
-                                                                 yield sourcingCriteria.replaceEventTypes(
-                                                                         CreditsUsed.class
-                                                                 );
-                                                             }
-                                                             case "credits.TopUpCredits" -> sourcingCriteria;
-                                                             default -> throw new IllegalArgumentException(
-                                                                     "Unsupported command: " + command.type()
-                                                                                              .qualifiedName()
-                                                             );
-                                                         };
-                                                     }
-                                             )
+                                             configuration -> SimpleCommandHandlingComponent
+                                                     .create("credit-command-handler")
+                                                     .subscribe(new QualifiedName("credits.UseCredits"),
+                                                                (command, context) -> MessageStream.empty())
+                                                     .subscribe(new QualifiedName("credits.TopUpCredits"),
+                                                                (command, context) -> MessageStream.empty())
                                      )
+                                     .intercepted(configuration -> new AppendCriteriaInterceptor(
+                                             configuration.getComponent(EventStore.class),
+                                             (command, context, sourcingCriteria) -> {
+                                                 MessageConverter converter =
+                                                         context.component(MessageConverter.class);
+                                                 return switch (command.type().qualifiedName().fullName()) {
+                                                     case "credits.UseCredits" -> {
+                                                         // the payload may still be serialized, so convert it
+                                                         command.payloadAs(UseCredits.class, converter);
+                                                         yield sourcingCriteria.replaceEventTypes(CreditsUsed.class);
+                                                     }
+                                                     case "credits.TopUpCredits" -> sourcingCriteria;
+                                                     default -> throw new IllegalArgumentException(
+                                                             "Unsupported command: " + command.type().qualifiedName()
+                                                     );
+                                                 };
+                                             }
+                                     ))
         );
     }
 }
