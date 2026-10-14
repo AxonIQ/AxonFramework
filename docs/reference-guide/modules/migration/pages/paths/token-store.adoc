@@ -261,6 +261,34 @@ Only the token column changes to JSON.
 The token type column can keep the old class name, because Axon Framework 5 maps it on read.
 After this, upgrade and apply the mask migration above.
 
+[#axon-server-token-positions]
+== Axon Server token positions
+
+A `GlobalSequenceTrackingToken` of a processor that reads from Axon Server means something different in each version:
+
+* Axon Framework 4 stores the index of the *last event it handled*, and asks Axon Server for the next one.
+* Axon Framework 5 stores the index of the *next event to read*, and asks Axon Server for exactly that index.
+
+Axon Framework 5 reads the stored index as it is.
+So every processor handles the last event Axon Framework 4 handled once more.
+If that event has a side effect, such as sending a command or scheduling a deadline, the side effect happens twice.
+
+To avoid this, add 1 to the index of each of these tokens before the first Axon Framework 5 start.
+For a PostgreSQL token store with a `bytea` token column and JSON tokens, that is:
+
+[source,sql]
+----
+UPDATE token_entry
+SET token = convert_to(
+        json_build_object('globalIndex',
+                          (convert_from(token, 'UTF8')::json ->> 'globalIndex')::bigint + 1)::text,
+        'UTF8')
+WHERE token_type = 'org.axonframework.eventhandling.GlobalSequenceTrackingToken';
+----
+
+Run it once, while no Axon Framework 4 or 5 node is running.
+Adapt it to your database and column types, for example `lo_get` and `lo_from_bytea` for a PostgreSQL `oid` column.
+
 [#java-api-changes]
 == Java API changes
 
