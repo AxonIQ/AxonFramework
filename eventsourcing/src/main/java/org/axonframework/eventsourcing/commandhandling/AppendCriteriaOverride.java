@@ -16,7 +16,6 @@
 
 package org.axonframework.eventsourcing.commandhandling;
 
-import org.axonframework.eventsourcing.CommandAppendCriteriaResolver;
 import org.axonframework.eventsourcing.eventstore.AggregateBasedConsistencyMarker;
 import org.axonframework.eventsourcing.eventstore.AppendCondition;
 import org.axonframework.eventsourcing.eventstore.EventStore;
@@ -28,7 +27,7 @@ import java.util.Objects;
 
 /**
  * Overrides the append criteria of a command-handling transaction with the outcome of one
- * {@link CommandAppendCriteriaResolver}.
+ * {@link AppendCriteriaResolver}.
  * <p>
  * At most one override is installed per transaction, so a component carrying both an annotated and a declaratively
  * configured resolver fails rather than letting one silently win.
@@ -36,18 +35,18 @@ import java.util.Objects;
  * @author Mateusz Nowak
  * @since 5.5.0
  */
-final class CommandAppendCriteriaOverride {
+final class AppendCriteriaOverride {
 
     private static final ResourceKey<Boolean> APPLIED_KEY =
-            ResourceKey.withLabel("commandAppendCriteriaOverrideApplied");
+            ResourceKey.withLabel("appendCriteriaOverrideApplied");
 
-    private CommandAppendCriteriaOverride() {
+    private AppendCriteriaOverride() {
     }
 
     static void apply(CommandMessage command,
                       ProcessingContext context,
                       EventStore eventStore,
-                      CommandAppendCriteriaResolver resolver) {
+                      AppendCriteriaResolver resolver) {
         Boolean alreadyApplied = context.putResourceIfAbsent(APPLIED_KEY, Boolean.TRUE);
         if (alreadyApplied != null) {
             throw new IllegalStateException(
@@ -59,7 +58,7 @@ final class CommandAppendCriteriaOverride {
         eventStore.transaction(context).overrideAppendCondition(current -> {
             var commandCriteria = Objects.requireNonNull(
                     resolver.resolve(command, context, current.criteria()),
-                    "The command append criteria resolver returned null."
+                    "The append criteria resolver returned null."
             );
             if (AppendCondition.none().equals(current)) {
                 // The command sourced nothing, so the resolver was supplied criteria that restrict nothing. Getting
@@ -73,7 +72,7 @@ final class CommandAppendCriteriaOverride {
             if (current.consistencyMarker() instanceof AggregateBasedConsistencyMarker
                     && !current.criteria().equals(commandCriteria)) {
                 throw new IllegalStateException(
-                        ("Cannot apply command append criteria for command [%s]. An aggregate-based consistency marker "
+                        ("Cannot apply append criteria for command [%s]. An aggregate-based consistency marker "
                                 + "tracks a single aggregate sequence, so it cannot express a boundary that differs "
                                 + "from the sourcing criteria. Either return the supplied sourcing criteria unchanged "
                                 + "for this command, or move the entity to a tag-based event store.")

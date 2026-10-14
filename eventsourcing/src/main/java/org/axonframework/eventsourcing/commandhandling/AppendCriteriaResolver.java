@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.axonframework.eventsourcing;
+package org.axonframework.eventsourcing.commandhandling;
 
 import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
@@ -34,14 +34,14 @@ import org.axonframework.messaging.eventstreaming.EventCriteria;
  * When it arrives serialized, for example from a distributed command bus, its payload is not converted yet, so use
  * {@link CommandMessage#payloadAs(Class, org.axonframework.conversion.Converter)} with the
  * {@link org.axonframework.messaging.core.conversion.MessageConverter} instead of {@link CommandMessage#payload()}. An
- * {@link org.axonframework.eventsourcing.annotation.AppendCriteriaBuilder} receives the payload already converted to
+ * {@link org.axonframework.eventsourcing.commandhandling.annotation.AppendCriteriaBuilder} receives the payload already converted to
  * the handler's declared type.
  *
  * @author Mateusz Nowak
  * @since 5.5.0
  */
 @FunctionalInterface
-public interface CommandAppendCriteriaResolver {
+public interface AppendCriteriaResolver {
 
     /**
      * Resolves the complete append criteria for the given {@code command}.

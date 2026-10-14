@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-package org.axonframework.eventsourcing.annotation;
+package org.axonframework.eventsourcing.commandhandling.annotation;
 
 import org.axonframework.common.configuration.Configuration;
-import org.axonframework.eventsourcing.CommandAppendCriteriaResolver;
+import org.axonframework.eventsourcing.commandhandling.AppendCriteriaResolver;
 import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.core.Metadata;
 import org.axonframework.messaging.core.annotation.MetadataValue;
@@ -52,7 +52,7 @@ import java.lang.annotation.Target;
  * either widen that builder's command parameter or declare a builder on the subclass.
  *
  * @author Mateusz Nowak
- * @see CommandAppendCriteriaResolver
+ * @see AppendCriteriaResolver
  * @since 5.5.0
  */
 @Target(ElementType.METHOD)

@@ -15,7 +15,7 @@
  */
 
 /**
- * Components for applying command-specific append criteria.
+ * Components for resolving append criteria per command invocation.
  */
 @NullMarked
 package org.axonframework.eventsourcing.commandhandling;

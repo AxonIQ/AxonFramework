@@ -20,9 +20,9 @@ import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.common.configuration.ComponentBuilder;
 import org.axonframework.common.lifecycle.LifecycleHandlerInvocationException;
 import org.axonframework.eventsourcing.CriteriaResolver;
-import org.axonframework.eventsourcing.CommandAppendCriteriaResolver;
 import org.axonframework.eventsourcing.EventSourcedEntityFactory;
 import org.axonframework.eventsourcing.EventSourcingRepository;
+import org.axonframework.eventsourcing.commandhandling.AppendCriteriaResolver;
 import org.axonframework.eventsourcing.snapshot.api.SnapshotPolicy;
 import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
 import org.axonframework.messaging.commandhandling.CommandBus;
@@ -188,10 +188,10 @@ class SimpleEventSourcedEntityModuleTest {
                                         .messagingModel((c, b) -> testEntityModel)
                                         .entityFactory(c -> testEntityFactory)
                                         .criteriaResolver(c -> testCriteriaResolver);
-        CommandAppendCriteriaResolver resolver = (command, context, sourcingCriteria) -> sourcingCriteria;
+        AppendCriteriaResolver resolver = (command, context, sourcingCriteria) -> sourcingCriteria;
 
         // when / then
-        assertThatThrownBy(() -> phase.appendCriteriaResolver((CommandAppendCriteriaResolver) null))
+        assertThatThrownBy(() -> phase.appendCriteriaResolver((AppendCriteriaResolver) null))
                 .isInstanceOf(NullPointerException.class)
                 .hasMessageContaining("command append criteria resolver");
         phase.appendCriteriaResolver(resolver);

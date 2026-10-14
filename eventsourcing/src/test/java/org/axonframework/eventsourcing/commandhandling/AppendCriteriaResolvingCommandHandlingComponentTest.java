@@ -18,7 +18,6 @@ package org.axonframework.eventsourcing.commandhandling;
 
 import org.axonframework.common.configuration.ComponentBuilder;
 import org.axonframework.common.configuration.Configuration;
-import org.axonframework.eventsourcing.CommandAppendCriteriaResolver;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
 import org.axonframework.eventsourcing.eventstore.AppendCondition;
 import org.axonframework.eventsourcing.eventstore.ConsistencyMarker;
@@ -82,7 +81,7 @@ class AppendCriteriaResolvingCommandHandlingComponentTest {
             List<CommandMessage> resolvedCommands = new ArrayList<>();
             List<EventCriteria> receivedSourcingCriteria = new ArrayList<>();
             CommandHandlingComponent delegate = componentSourcingOneAccountPerCommand();
-            CommandAppendCriteriaResolver resolver = (command, context, sourcingCriteria) -> {
+            AppendCriteriaResolver resolver = (command, context, sourcingCriteria) -> {
                 resolvedCommands.add(command);
                 receivedSourcingCriteria.add(sourcingCriteria);
                 return sourcingCriteria;
@@ -289,7 +288,7 @@ class AppendCriteriaResolvingCommandHandlingComponentTest {
             assertThatThrownBy(() -> awaitExceptionalCompletion(uow.execute()))
                     .isInstanceOf(CompletionException.class)
                     .hasCauseInstanceOf(NullPointerException.class)
-                    .hasStackTraceContaining("command append criteria resolver returned null");
+                    .hasStackTraceContaining("append criteria resolver returned null");
 
             // then
             assertThat(storageEngine.latestToken().join().position()).hasValue(-1);
@@ -362,7 +361,7 @@ class AppendCriteriaResolvingCommandHandlingComponentTest {
         void rejectsNullComponentAndResolverBuilders() {
             // given
             ComponentBuilder<CommandHandlingComponent> componentBuilder = c -> componentSourcingOneAccountPerCommand();
-            ComponentBuilder<CommandAppendCriteriaResolver> resolverBuilder =
+            ComponentBuilder<AppendCriteriaResolver> resolverBuilder =
                     c -> (command, context, sourcingCriteria) -> sourcingCriteria;
 
             // when / then

@@ -26,10 +26,10 @@ import org.axonframework.common.configuration.LifecycleRegistry;
 import org.axonframework.common.lifecycle.Phase;
 import org.axonframework.conversion.Converter;
 import org.axonframework.conversion.GeneralConverter;
-import org.axonframework.eventsourcing.CommandAppendCriteriaResolver;
 import org.axonframework.eventsourcing.CriteriaResolver;
 import org.axonframework.eventsourcing.EventSourcedEntityFactory;
 import org.axonframework.eventsourcing.EventSourcingRepository;
+import org.axonframework.eventsourcing.commandhandling.AppendCriteriaResolver;
 import org.axonframework.eventsourcing.commandhandling.AppendCriteriaResolvingCommandHandlingComponent;
 import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.eventsourcing.eventstore.TagResolver;
@@ -76,7 +76,7 @@ class SimpleEventSourcedEntityModule<ID, E> extends BaseModule<SimpleEventSource
     private ComponentBuilder<CriteriaResolver<ID>> criteriaResolver;
     private ComponentBuilder<EntityMetamodel<E>> entityModel;
     private ComponentBuilder<EntityIdResolver<ID>> entityIdResolver;
-    private ComponentBuilder<CommandAppendCriteriaResolver> appendCriteriaResolver;
+    private ComponentBuilder<AppendCriteriaResolver> appendCriteriaResolver;
     private ComponentBuilder<SnapshotPolicy> snapshotPolicy;
 
     SimpleEventSourcedEntityModule(Class<ID> idType,
@@ -116,7 +116,7 @@ class SimpleEventSourcedEntityModule<ID, E> extends BaseModule<SimpleEventSource
 
     @Override
     public OptionalPhase<ID, E> appendCriteriaResolver(
-            ComponentBuilder<CommandAppendCriteriaResolver> appendCriteriaResolver
+            ComponentBuilder<AppendCriteriaResolver> appendCriteriaResolver
     ) {
         requireNonNull(appendCriteriaResolver, "The command append criteria resolver cannot be null.");
         if (this.appendCriteriaResolver != null) {

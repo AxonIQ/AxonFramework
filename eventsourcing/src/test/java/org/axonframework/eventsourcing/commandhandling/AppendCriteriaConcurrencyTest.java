@@ -14,10 +14,9 @@
  * limitations under the License.
  */
 
-package org.axonframework.eventsourcing;
+package org.axonframework.eventsourcing.commandhandling;
 
 import org.axonframework.eventsourcing.annotation.EventTag;
-import org.axonframework.eventsourcing.commandhandling.AppendCriteriaResolvingCommandHandlingComponent;
 import org.axonframework.eventsourcing.eventstore.AnnotationBasedTagResolver;
 import org.axonframework.eventsourcing.eventstore.AppendEventsTransactionRejectedException;
 import org.axonframework.eventsourcing.eventstore.EventStore;
@@ -50,9 +49,9 @@ import static org.axonframework.messaging.core.unitofwork.UnitOfWorkTestUtils.aU
 import static org.axonframework.messaging.eventhandling.EventTestUtils.asEventMessage;
 
 /**
- * End-to-end concurrency tests for command-specific append criteria.
+ * End-to-end concurrency tests for append criteria resolved per command invocation.
  */
-class CommandAppendCriteriaConcurrencyTest {
+class AppendCriteriaConcurrencyTest {
 
     private static final QualifiedName DECIDE = new QualifiedName("credits.Decide");
 

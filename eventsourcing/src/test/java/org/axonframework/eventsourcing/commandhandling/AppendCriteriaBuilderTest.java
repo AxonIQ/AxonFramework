@@ -18,7 +18,7 @@ package org.axonframework.eventsourcing.commandhandling;
 
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.conversion.PassThroughConverter;
-import org.axonframework.eventsourcing.annotation.AppendCriteriaBuilder;
+import org.axonframework.eventsourcing.commandhandling.annotation.AppendCriteriaBuilder;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
 import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.eventsourcing.eventstore.EventStorageEngine;
@@ -60,7 +60,7 @@ import static org.axonframework.messaging.core.unitofwork.UnitOfWorkTestUtils.aU
 /**
  * Test class validating {@link AppendCriteriaBuilder} on external annotated command-handling classes.
  */
-class AnnotatedCommandAppendCriteriaBuilderTest {
+class AppendCriteriaBuilderTest {
 
     private static final Tag ACCOUNT_ONE = Tag.of("accountId", "one");
     private static final EventCriteria ACCOUNT_CRITERIA = EventCriteria.havingTags(ACCOUNT_ONE);

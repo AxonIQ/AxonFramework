@@ -19,7 +19,7 @@ package org.axonframework.eventsourcing.configuration;
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.common.configuration.ConfigurationEnhancer;
-import org.axonframework.eventsourcing.commandhandling.CommandAppendCriteriaHandlerDefinition;
+import org.axonframework.eventsourcing.commandhandling.AppendCriteriaHandlerDefinition;
 import org.axonframework.eventsourcing.eventstore.AnnotationBasedTagResolver;
 import org.axonframework.eventsourcing.eventstore.EventStorageEngine;
 import org.axonframework.eventsourcing.eventstore.EventStore;
@@ -54,8 +54,8 @@ import java.util.List;
  * <ul>
  *     <li>The {@link EventStore} in a {@link InterceptingEventStore} <b>if</b> there are any
  *     {@link MessageDispatchInterceptor MessageDispatchInterceptors} present in the {@link DispatchInterceptorRegistry}.</li>
- *     <li>The {@link HandlerDefinition} in a {@link CommandAppendCriteriaHandlerDefinition}, adding support for
- *     {@link org.axonframework.eventsourcing.annotation.AppendCriteriaBuilder} on annotated command handlers. The
+ *     <li>The {@link HandlerDefinition} in a {@link AppendCriteriaHandlerDefinition}, adding support for
+ *     {@link org.axonframework.eventsourcing.commandhandling.annotation.AppendCriteriaBuilder} on annotated command handlers. The
  *     {@code HandlerDefinition} component itself is registered by
  *     {@link org.axonframework.messaging.core.reflection.ClasspathHandlerDefinitionConfigurationEnhancer} in the
  *     messaging module.</li>
@@ -93,9 +93,9 @@ public class EventSourcingConfigurationDefaults implements ConfigurationEnhancer
         registry.registerEnhancer(new SnapshotSourcingConfigurationEnhancer());
         registry.registerDecorator(
                 HandlerDefinition.class,
-                CommandAppendCriteriaHandlerDefinition.DECORATION_ORDER,
+                AppendCriteriaHandlerDefinition.DECORATION_ORDER,
                 (configuration, name, delegate) ->
-                        new CommandAppendCriteriaHandlerDefinition(delegate, configuration)
+                        new AppendCriteriaHandlerDefinition(delegate, configuration)
         );
         registry.registerDecorator(
                 EventStore.class,

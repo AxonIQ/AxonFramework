@@ -18,10 +18,10 @@ package org.axonframework.eventsourcing.configuration;
 
 import org.axonframework.common.configuration.ComponentBuilder;
 import org.axonframework.common.configuration.ModuleBuilder;
-import org.axonframework.eventsourcing.CommandAppendCriteriaResolver;
 import org.axonframework.eventsourcing.CriteriaResolver;
 import org.axonframework.eventsourcing.EventSourcedEntityFactory;
 import org.axonframework.eventsourcing.annotation.EventSourcedEntity;
+import org.axonframework.eventsourcing.commandhandling.AppendCriteriaResolver;
 import org.axonframework.eventsourcing.eventstore.SourcingCondition;
 import org.axonframework.eventsourcing.snapshot.api.SnapshotPolicy;
 import org.axonframework.messaging.commandhandling.CommandBus;
@@ -283,7 +283,7 @@ public interface EventSourcedEntityModule<ID, E> extends EntityModule<ID, E> {
          * @throws UnsupportedOperationException if the module implementation does not support command append criteria
          */
         default OptionalPhase<ID, E> appendCriteriaResolver(
-                ComponentBuilder<CommandAppendCriteriaResolver> appendCriteriaResolver
+                ComponentBuilder<AppendCriteriaResolver> appendCriteriaResolver
         ) {
             throw new UnsupportedOperationException(
                     "This event-sourced entity module does not support command append criteria."
@@ -298,7 +298,7 @@ public interface EventSourcedEntityModule<ID, E> extends EntityModule<ID, E> {
          * @return the {@link OptionalPhase} phase of this builder, for a fluent API
          */
         default OptionalPhase<ID, E> appendCriteriaResolver(
-                CommandAppendCriteriaResolver appendCriteriaResolver
+                AppendCriteriaResolver appendCriteriaResolver
         ) {
             Objects.requireNonNull(appendCriteriaResolver, "The command append criteria resolver cannot be null.");
             return appendCriteriaResolver(configuration -> appendCriteriaResolver);

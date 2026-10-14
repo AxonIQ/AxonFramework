@@ -19,8 +19,7 @@ package org.axonframework.eventsourcing.commandhandling;
 import org.axonframework.common.ReflectionUtils;
 import org.axonframework.common.annotation.AnnotationUtils;
 import org.axonframework.common.configuration.Configuration;
-import org.axonframework.eventsourcing.CommandAppendCriteriaResolver;
-import org.axonframework.eventsourcing.annotation.AppendCriteriaBuilder;
+import org.axonframework.eventsourcing.commandhandling.annotation.AppendCriteriaBuilder;
 import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.core.Message;
@@ -41,7 +40,7 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * Adapts a class-level {@link AppendCriteriaBuilder} method to the {@link CommandAppendCriteriaResolver} contract.
+ * Adapts a class-level {@link AppendCriteriaBuilder} method to the {@link AppendCriteriaResolver} contract.
  * <p>
  * Resolution is synchronous, matching the resolver contract: the builder's parameters come from the command, the
  * accumulated sourcing criteria, and the {@link Configuration}, none of which require awaiting. The command is passed
@@ -51,11 +50,11 @@ import java.util.Set;
  * @author Mateusz Nowak
  * @since 5.5.0
  */
-final class AnnotationCommandAppendCriteriaResolver implements CommandAppendCriteriaResolver {
+final class AnnotationBasedAppendCriteriaResolver implements AppendCriteriaResolver {
 
     private final BuilderMethod builder;
 
-    private AnnotationCommandAppendCriteriaResolver(BuilderMethod builder) {
+    private AnnotationBasedAppendCriteriaResolver(BuilderMethod builder) {
         this.builder = builder;
     }
 
@@ -66,7 +65,7 @@ final class AnnotationCommandAppendCriteriaResolver implements CommandAppendCrit
      * subclass declaring its own shadows the one it would otherwise inherit. Interfaces are not searched, as a builder
      * is required to be {@code static} and static interface methods are not inherited.
      */
-    static Optional<AnnotationCommandAppendCriteriaResolver> inspect(Class<?> declaringType,
+    static Optional<AnnotationBasedAppendCriteriaResolver> inspect(Class<?> declaringType,
                                                                      Configuration configuration) {
         for (Class<?> type = declaringType; type != null && type != Object.class; type = type.getSuperclass()) {
             List<Method> builders = declaredBuilders(type);
@@ -83,7 +82,7 @@ final class AnnotationCommandAppendCriteriaResolver implements CommandAppendCrit
             }
             BuilderMethod builder = new BuilderMethod(builders.getFirst(), configuration);
             validateCompleteCoverage(declaringType, builder);
-            return Optional.of(new AnnotationCommandAppendCriteriaResolver(builder));
+            return Optional.of(new AnnotationBasedAppendCriteriaResolver(builder));
         }
         return Optional.empty();
     }

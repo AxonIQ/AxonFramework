@@ -17,11 +17,11 @@
 package org.axonframework.examples.university.write.unsubscribestudent;
 
 import org.jspecify.annotations.NonNull;
-import org.axonframework.eventsourcing.annotation.AppendCriteriaBuilder;
 import org.axonframework.eventsourcing.annotation.EventCriteriaBuilder;
 import org.axonframework.eventsourcing.annotation.EventSourcedEntity;
 import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
 import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
+import org.axonframework.eventsourcing.commandhandling.annotation.AppendCriteriaBuilder;
 import org.axonframework.examples.university.event.StudentSubscribedToCourse;
 import org.axonframework.examples.university.event.StudentUnsubscribedFromCourse;
 import org.axonframework.examples.university.shared.FacultyTags;

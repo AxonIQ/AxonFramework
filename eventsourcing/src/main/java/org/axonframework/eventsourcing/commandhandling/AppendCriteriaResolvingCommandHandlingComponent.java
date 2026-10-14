@@ -18,7 +18,6 @@ package org.axonframework.eventsourcing.commandhandling;
 
 import org.axonframework.common.configuration.ComponentBuilder;
 import org.axonframework.common.infra.ComponentDescriptor;
-import org.axonframework.eventsourcing.CommandAppendCriteriaResolver;
 import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.messaging.commandhandling.CommandHandlingComponent;
 import org.axonframework.messaging.commandhandling.CommandMessage;
@@ -35,7 +34,7 @@ import static java.util.Objects.requireNonNull;
  * A {@link CommandHandlingComponent} decorator that resolves command append criteria for every command supported by
  * its delegate.
  * <p>
- * The configured {@link CommandAppendCriteriaResolver} is shared by the component, but invoked separately for every
+ * The configured {@link AppendCriteriaResolver} is shared by the component, but invoked separately for every
  * command. Resolution is deferred until transaction finalization so the resolver receives all criteria accumulated
  * through sourcing during command handling.
  *
@@ -46,7 +45,7 @@ public final class AppendCriteriaResolvingCommandHandlingComponent implements Co
 
     private final CommandHandlingComponent delegate;
     private final EventStore eventStore;
-    private final CommandAppendCriteriaResolver resolver;
+    private final AppendCriteriaResolver resolver;
 
     /**
      * Creates a component decorator that applies the given append-criteria {@code resolver} to every command handled
@@ -58,7 +57,7 @@ public final class AppendCriteriaResolvingCommandHandlingComponent implements Co
      */
     public AppendCriteriaResolvingCommandHandlingComponent(CommandHandlingComponent delegate,
                                                            EventStore eventStore,
-                                                           CommandAppendCriteriaResolver resolver) {
+                                                           AppendCriteriaResolver resolver) {
         this.delegate = requireNonNull(delegate, "The command-handling component cannot be null.");
         this.eventStore = requireNonNull(eventStore, "The EventStore cannot be null.");
         this.resolver = requireNonNull(resolver, "The command append criteria resolver cannot be null.");
@@ -73,7 +72,7 @@ public final class AppendCriteriaResolvingCommandHandlingComponent implements Co
      */
     public static ComponentBuilder<CommandHandlingComponent> withAppendCriteria(
             ComponentBuilder<? extends CommandHandlingComponent> componentBuilder,
-            ComponentBuilder<? extends CommandAppendCriteriaResolver> resolverBuilder
+            ComponentBuilder<? extends AppendCriteriaResolver> resolverBuilder
     ) {
         requireNonNull(componentBuilder, "The command-handling component builder cannot be null.");
         requireNonNull(resolverBuilder, "The command append criteria resolver builder cannot be null.");
@@ -87,7 +86,7 @@ public final class AppendCriteriaResolvingCommandHandlingComponent implements Co
     @Override
     public MessageStream.Single<CommandResultMessage> handle(CommandMessage command, ProcessingContext context) {
         try {
-            CommandAppendCriteriaOverride.apply(command, context, eventStore, resolver);
+            AppendCriteriaOverride.apply(command, context, eventStore, resolver);
             return delegate.handle(command, context);
         } catch (Exception e) {
             return MessageStream.failed(e);

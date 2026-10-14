@@ -40,14 +40,14 @@ import static java.util.Objects.requireNonNull;
 
 /**
  * Handler-definition decorator that adapts a class-level
- * {@link org.axonframework.eventsourcing.annotation.AppendCriteriaBuilder} to annotated external and entity-owned
- * command handlers.
+ * {@link org.axonframework.eventsourcing.commandhandling.annotation.AppendCriteriaBuilder} to annotated external and
+ * entity-owned command handlers.
  *
  * @author Mateusz Nowak
  * @since 5.5.0
  */
 @Internal
-public final class CommandAppendCriteriaHandlerDefinition implements HandlerDefinition {
+public final class AppendCriteriaHandlerDefinition implements HandlerDefinition {
 
     /**
      * Decoration order for the configured {@link HandlerDefinition}.
@@ -56,7 +56,7 @@ public final class CommandAppendCriteriaHandlerDefinition implements HandlerDefi
 
     private final HandlerDefinition delegate;
     private final Configuration configuration;
-    private final Map<Class<?>, Optional<AnnotationCommandAppendCriteriaResolver>> resolvers =
+    private final Map<Class<?>, Optional<AnnotationBasedAppendCriteriaResolver>> resolvers =
             new ConcurrentHashMap<>();
 
     /**
@@ -65,7 +65,7 @@ public final class CommandAppendCriteriaHandlerDefinition implements HandlerDefi
      * @param delegate the definition used to create the original handler
      * @param configuration the configuration used to resolve builder components and the event store
      */
-    public CommandAppendCriteriaHandlerDefinition(HandlerDefinition delegate, Configuration configuration) {
+    public AppendCriteriaHandlerDefinition(HandlerDefinition delegate, Configuration configuration) {
         this.delegate = requireNonNull(delegate, "The delegate handler definition cannot be null.");
         this.configuration = requireNonNull(configuration, "The configuration cannot be null.");
     }
@@ -83,7 +83,7 @@ public final class CommandAppendCriteriaHandlerDefinition implements HandlerDefi
         if (original.isEmpty() || !(original.get() instanceof CommandHandlingMember<T> commandHandler)) {
             return original;
         }
-        Optional<AnnotationCommandAppendCriteriaResolver> resolver = resolverFor(declaringType);
+        Optional<AnnotationBasedAppendCriteriaResolver> resolver = resolverFor(declaringType);
         if (resolver.isEmpty()) {
             return original;
         }
@@ -94,10 +94,10 @@ public final class CommandAppendCriteriaHandlerDefinition implements HandlerDefi
         ));
     }
 
-    private Optional<AnnotationCommandAppendCriteriaResolver> resolverFor(Class<?> declaringType) {
+    private Optional<AnnotationBasedAppendCriteriaResolver> resolverFor(Class<?> declaringType) {
         return resolvers.computeIfAbsent(
                 declaringType,
-                type -> AnnotationCommandAppendCriteriaResolver.inspect(type, configuration)
+                type -> AnnotationBasedAppendCriteriaResolver.inspect(type, configuration)
         );
     }
 
@@ -107,11 +107,11 @@ public final class CommandAppendCriteriaHandlerDefinition implements HandlerDefi
 
         private final CommandHandlingMember<T> delegate;
         private final EventStore eventStore;
-        private final AnnotationCommandAppendCriteriaResolver resolver;
+        private final AnnotationBasedAppendCriteriaResolver resolver;
 
         private AppendCriteriaCommandHandlingMember(CommandHandlingMember<T> delegate,
                                                     EventStore eventStore,
-                                                    AnnotationCommandAppendCriteriaResolver resolver) {
+                                                    AnnotationBasedAppendCriteriaResolver resolver) {
             super(delegate);
             this.delegate = delegate;
             this.eventStore = eventStore;
@@ -124,7 +124,7 @@ public final class CommandAppendCriteriaHandlerDefinition implements HandlerDefi
                 return delegate.handle(message, context, target);
             }
             try {
-                CommandAppendCriteriaOverride.apply(command, context, eventStore, resolver);
+                AppendCriteriaOverride.apply(command, context, eventStore, resolver);
                 return delegate.handle(message, context, target);
             } catch (Exception e) {
                 return MessageStream.failed(e);
