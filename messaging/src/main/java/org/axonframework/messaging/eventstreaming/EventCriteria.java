@@ -303,7 +303,7 @@ public sealed interface EventCriteria
      *
      * @param types the event types used by every branch of the resulting criteria
      * @return criteria with the given event types on every branch
-     * @since 5.4.0
+     * @since 5.5.0
      */
     default EventCriteria replaceEventTypes(Set<QualifiedName> types) {
         Set<QualifiedName> requestedTypes = Set.copyOf(Objects.requireNonNull(types, "The types cannot be null."));
@@ -319,7 +319,7 @@ public sealed interface EventCriteria
      * @param types the fully qualified event type names used by every branch of the resulting criteria
      * @return criteria with the given event types on every branch
      * @see #replaceEventTypes(Set)
-     * @since 5.4.0
+     * @since 5.5.0
      */
     default EventCriteria replaceEventTypes(String... types) {
         Objects.requireNonNull(types, "The types cannot be null.");
@@ -336,7 +336,7 @@ public sealed interface EventCriteria
      * @param additionalTypes any additional Java event types used by every branch of the resulting criteria
      * @return criteria with the given event types on every branch
      * @see #replaceEventTypes(Set)
-     * @since 5.4.0
+     * @since 5.5.0
      */
     default EventCriteria replaceEventTypes(Class<?> type, Class<?>... additionalTypes) {
         Objects.requireNonNull(type, "The type cannot be null.");

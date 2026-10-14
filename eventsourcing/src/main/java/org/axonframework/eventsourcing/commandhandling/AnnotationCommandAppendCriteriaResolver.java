@@ -49,7 +49,7 @@ import java.util.Set;
  * condition is finalized rather than while the handler is invoked.
  *
  * @author Mateusz Nowak
- * @since 5.4.0
+ * @since 5.5.0
  */
 final class AnnotationCommandAppendCriteriaResolver implements CommandAppendCriteriaResolver {
 

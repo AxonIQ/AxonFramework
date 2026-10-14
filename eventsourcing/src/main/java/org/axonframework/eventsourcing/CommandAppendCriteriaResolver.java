@@ -38,7 +38,7 @@ import org.axonframework.messaging.eventstreaming.EventCriteria;
  * the handler's declared type.
  *
  * @author Mateusz Nowak
- * @since 5.4.0
+ * @since 5.5.0
  */
 @FunctionalInterface
 public interface CommandAppendCriteriaResolver {

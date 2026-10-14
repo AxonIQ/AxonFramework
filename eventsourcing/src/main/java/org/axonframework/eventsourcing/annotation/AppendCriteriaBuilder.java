@@ -53,7 +53,7 @@ import java.lang.annotation.Target;
  *
  * @author Mateusz Nowak
  * @see CommandAppendCriteriaResolver
- * @since 5.4.0
+ * @since 5.5.0
  */
 @Target(ElementType.METHOD)
 @Retention(RetentionPolicy.RUNTIME)

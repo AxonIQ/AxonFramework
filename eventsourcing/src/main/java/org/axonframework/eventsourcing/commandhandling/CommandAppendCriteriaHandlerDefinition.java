@@ -44,7 +44,7 @@ import static java.util.Objects.requireNonNull;
  * command handlers.
  *
  * @author Mateusz Nowak
- * @since 5.4.0
+ * @since 5.5.0
  */
 @Internal
 public final class CommandAppendCriteriaHandlerDefinition implements HandlerDefinition {

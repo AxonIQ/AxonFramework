@@ -40,7 +40,7 @@ import static java.util.Objects.requireNonNull;
  * through sourcing during command handling.
  *
  * @author Mateusz Nowak
- * @since 5.4.0
+ * @since 5.5.0
  */
 public final class AppendCriteriaResolvingCommandHandlingComponent implements CommandHandlingComponent {
 

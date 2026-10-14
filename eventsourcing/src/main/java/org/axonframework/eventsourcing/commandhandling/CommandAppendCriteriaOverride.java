@@ -34,7 +34,7 @@ import java.util.Objects;
  * configured resolver fails rather than letting one silently win.
  *
  * @author Mateusz Nowak
- * @since 5.4.0
+ * @since 5.5.0
  */
 final class CommandAppendCriteriaOverride {
 
