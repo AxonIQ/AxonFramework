@@ -19,6 +19,7 @@ package org.axonframework.extension.spring.config;
 import org.axonframework.common.Assert;
 import org.axonframework.common.TypeReference;
 import org.axonframework.common.annotation.Internal;
+import org.axonframework.common.configuration.AmbiguousComponentMatchException;
 import org.axonframework.common.configuration.Component;
 import org.axonframework.common.configuration.ComponentDefinition;
 import org.axonframework.common.configuration.ComponentFactory;
@@ -47,16 +48,19 @@ import org.springframework.beans.factory.InitializingBean;
 import org.springframework.beans.factory.ListableBeanFactory;
 import org.springframework.beans.factory.NoSuchBeanDefinitionException;
 import org.springframework.beans.factory.NoUniqueBeanDefinitionException;
+import org.springframework.beans.factory.annotation.BeanFactoryAnnotationUtils;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
+import org.springframework.beans.factory.config.InstantiationAwareBeanPostProcessor;
 import org.springframework.beans.factory.support.AbstractBeanDefinition;
 import org.springframework.beans.factory.support.BeanDefinitionBuilder;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.core.ResolvableType;
 
 import java.lang.invoke.MethodHandles;
+import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -97,11 +101,19 @@ import static org.axonframework.common.configuration.DefaultComponentRegistry.cr
  */
 @Internal
 public class SpringComponentRegistry implements
-        BeanPostProcessor,
+        InstantiationAwareBeanPostProcessor,
         BeanFactoryPostProcessor,
         ComponentRegistry {
 
     private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
+
+    /**
+     * The {@link org.springframework.beans.factory.annotation.Qualifier @Qualifier} value Spring Boot's
+     * {@code ConfigurationPropertiesBinding} annotation carries. Used by {@link #shouldDeferInitialization(String)}
+     * to detect beans matching that qualifier without a compile-time dependency on Spring Boot.
+     */
+    private static final String CONFIGURATION_PROPERTIES_BINDING_QUALIFIER =
+            "org.springframework.boot.context.properties.ConfigurationPropertiesBinding";
 
     private final SpringLifecycleRegistry lifecycleRegistry;
 
@@ -304,6 +316,38 @@ public class SpringComponentRegistry implements
     }
 
     /**
+     * Initializes {@code this ComponentRegistry} just before the first top-level application bean is instantiated.
+     * <p>
+     * A top-level bean is one no other bean is waiting on: nothing else is in creation. Initializing at that moment
+     * means that whatever the {@link ConfigurationEnhancer enhancers} create cannot re-enter a bean that is still being
+     * created, which it could when initialization is triggered by a bean created as the dependency of another.
+     * <p>
+     * Should no such moment occur, {@link #postProcessAfterInitialization(Object, String)} initializes instead.
+     */
+    @Override
+    public @Nullable Object postProcessBeforeInstantiation(Class<?> beanClass, String beanName) {
+        if (!initialized.get() && isSafeToInitialize(beanClass, beanName)) {
+            initialize();
+        }
+        return null;
+    }
+
+    private boolean isSafeToInitialize(Class<?> beanClass, String beanName) {
+        if (!beanFactory.containsBeanDefinition(beanName)
+                || beanFactory.getBeanDefinition(beanName).getRole() == BeanDefinition.ROLE_INFRASTRUCTURE
+                || BeanPostProcessor.class.isAssignableFrom(beanClass)
+                || BeanFactoryPostProcessor.class.isAssignableFrom(beanClass)) {
+            return false;
+        }
+        for (String otherBean : beanFactory.getBeanDefinitionNames()) {
+            if (!otherBean.equals(beanName) && beanFactory.isCurrentlyInCreation(otherBean)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
      * Override from the {@link BeanPostProcessor} interface.
      * <p>
      * This ensures that {@link #registerDecorator(DecoratorDefinition) registered decorators} or decorators registered
@@ -324,7 +368,8 @@ public class SpringComponentRegistry implements
     @Override
     public Object postProcessAfterInitialization(Object bean,
                                                  String beanName) throws BeansException {
-        if (!initialized.get() && isInfrastructureBean(beanName)) {
+        if (!initialized.get() && shouldDeferInitialization(beanName)) {
+            logger.debug("Deferring initialization while post processing bean with name [{}].", beanName);
             return bean;
         }
         // Ensure this ComponentRegistry is fully initialized, as this may set additional components and decorators.
@@ -335,7 +380,9 @@ public class SpringComponentRegistry implements
             return bean;
         }
 
-        ResolvableType beanType = beanFactory.getBeanDefinition(beanName).getResolvableType();
+        // The merged definition carries the type of a @Bean declared in a configuration class that Spring reads with
+        // ASM (component-scanned or auto-configuration), whereas the registered definition does not.
+        ResolvableType beanType = beanFactory.getMergedBeanDefinition(beanName).getResolvableType();
         if (beanType == ResolvableType.NONE) {
             logger.debug("Will not post process bean with name [{}] since we cannot define a Component Identifier.",
                          beanName);
@@ -364,37 +411,40 @@ public class SpringComponentRegistry implements
     }
 
     /**
-     * Checks whether the given {@code beanName} refers to a Spring infrastructure bean.
+     * Checks whether {@code this ComponentRegistry} should keep deferring {@link #initialize()} while post-processing
+     * the given {@code beanName}, rather than letting it trigger Axon's configuration cascade mid-construction.
      * <p>
-     * This is used to avoid triggering Axon's full {@link #initialize()} during Spring Boot's early internal startup
-     * phase. In Spring Boot 4, infrastructure beans involved in configuration properties binding (for example,
-     * {@code BoundConfigurationProperties}) are created very early. If Axon initializes at that moment, enhancer
-     * scanning and component lookups may eagerly request application-level {@code @ConfigurationProperties} beans such
-     * as {@code AxonServerConfiguration}. That can cause a circular dependency between early Boot binding internals and
-     * Axon's properties beans.
+     * Two categories of beans are deferred: {@link BeanDefinition#ROLE_INFRASTRUCTURE} beans, and beans qualified with
+     * Spring Boot's {@code @ConfigurationPropertiesBinding} (typically a {@code Converter} or {@code Formatter}
+     * contributed by a third-party auto-configuration, e.g. Flyway). The latter matters because Spring Boot's
+     * {@code ConversionServiceDeducer} eagerly resolves <b>every</b> bean carrying that qualifier whenever it builds a
+     * {@code ConversionService} for {@code @ConfigurationProperties} binding.
      * <p>
-     * By deferring initialization while only infrastructure beans are being post-processed, we let Spring finish its
-     * internal bootstrap first. Initialization then happens on the first non-infrastructure bean, preserving normal
-     * Axon behavior.
+     * When a {@link ConfigurationEnhancer} triggers such a binding while a qualified converter is still
+     * mid-construction, Spring re-enters that still-in-creation bean and throws
+     * {@code BeanCurrentlyInCreationException}. Deferring on this qualifier keeps such converters from ever being the
+     * bean that triggers {@link #initialize()} mid-construction.
      * <p>
-     * We intentionally do <b>not</b> skip {@link BeanDefinition#ROLE_SUPPORT} or
-     * {@link BeanDefinition#ROLE_APPLICATION} beans:
-     * <ul>
-     *   <li>{@code ROLE_APPLICATION} contains user and framework-integrated application beans that should be eligible
-     *   for Axon decoration and lifecycle registration.</li>
-     *   <li>{@code ROLE_SUPPORT} can still participate in application wiring, so filtering it broadly could skip
-     *   required post-processing.</li>
-     * </ul>
+     * The qualifier is matched via {@link BeanFactoryAnnotationUtils#isQualifierMatch} against the literal qualifier
+     * value rather than the annotation type, since this module has no compile-time dependency on Spring Boot.
+     * <p>
+     * {@link BeanDefinition#ROLE_SUPPORT} beans and otherwise-unqualified {@link BeanDefinition#ROLE_APPLICATION} beans
+     * are intentionally not deferred here. They remain eligible for Axon decoration and lifecycle registration.
      *
-     * @param beanName The bean name to inspect.
-     * @return {@code true} if the bean definition role is {@link BeanDefinition#ROLE_INFRASTRUCTURE}, {@code false}
-     * otherwise.
+     * @param beanName the bean name to inspect
+     * @return {@code true} if {@link #initialize()} should stay deferred while processing this bean, {@code false}
+     * otherwise
      */
-    private boolean isInfrastructureBean(String beanName) {
+    private boolean shouldDeferInitialization(String beanName) {
         if (!beanFactory.containsBeanDefinition(beanName)) {
             return false;
         }
-        return beanFactory.getBeanDefinition(beanName).getRole() == BeanDefinition.ROLE_INFRASTRUCTURE;
+        if (beanFactory.getBeanDefinition(beanName).getRole() == BeanDefinition.ROLE_INFRASTRUCTURE) {
+            return true;
+        }
+        return BeanFactoryAnnotationUtils.isQualifierMatch(
+                CONFIGURATION_PROPERTIES_BINDING_QUALIFIER::equals, beanName, beanFactory
+        );
     }
 
     /**
@@ -496,7 +546,11 @@ public class SpringComponentRegistry implements
      */
     private void invokeEnhancers() {
         // last-minute registration of enhancers from Spring context
-        listableBeanFactory.getBeansOfType(ConfigurationEnhancer.class).forEach(this::doRegisterEnhancer);
+        // Each enhancer bean is retrieved by name: getBeansOfType silently skips a bean whose creation fails on a bean
+        // that is currently in creation, which would leave that enhancer out without notice.
+        for (String enhancerName : listableBeanFactory.getBeanNamesForType(ConfigurationEnhancer.class)) {
+            doRegisterEnhancer(enhancerName, listableBeanFactory.getBean(enhancerName, ConfigurationEnhancer.class));
+        }
         Set<String> processedEnhancerKeys = new HashSet<>();
 
         while (processedEnhancerKeys.size() < enhancers.size()) {
@@ -563,13 +617,23 @@ public class SpringComponentRegistry implements
      * The registration of {@code Components} should occur <b>after</b> all
      * {@link ConfigurationEnhancer ConfigurationEnhancers} have enhanced the configuration. By doing so, we ensure that
      * any defaults or overrides are present in the Application Context too.
+     * <p>
+     * A {@code Component} registered under a name becomes a
+     * {@link AbstractBeanDefinition#setFallback(boolean) fallback} bean. When a dependency of its type is autowired
+     * without a {@link org.springframework.beans.factory.annotation.Qualifier @Qualifier}, Spring prefers the unique
+     * non-fallback candidate, which is the type-level {@code Component}, over the named ones. That mirrors how the
+     * {@link Configuration} resolves the type-level component when several components of a type exist. A named
+     * {@code Component} remains injectable through a {@code @Qualifier} carrying its name, which Spring matches
+     * against the bean name. Unlike a primary bean, a fallback bean never competes with a {@code @Primary} bean of the
+     * same type, nor does it affect lookups of the component's supertypes.
      */
     private void registerLocalComponentsWithApplicationContext() {
         components.postProcessComponents(component -> {
-            String name = Objects.requireNonNullElseGet(component.identifier().name(),
+            String componentName = component.identifier().name();
+            String beanName = Objects.requireNonNullElseGet(componentName,
                                                         () -> component.identifier().typeAsClass().getName());
-            if (beanFactory.containsBeanDefinition(name)) {
-                logger.info("Component with name [{}] is already available. Skipping registration.", name);
+            if (beanFactory.containsBeanDefinition(beanName)) {
+                logger.info("Component with name [{}] is already available. Skipping registration.", beanName);
                 return;
             }
 
@@ -579,7 +643,11 @@ public class SpringComponentRegistry implements
                                                  () -> component.resolve(configuration)
                                          )
                                          .getBeanDefinition();
-            ((BeanDefinitionRegistry) beanFactory).registerBeanDefinition(name, definition);
+            if (componentName != null) {
+                // Named components step aside for the type-level component when a dependency is autowired by type.
+                definition.setFallback(true);
+            }
+            ((BeanDefinitionRegistry) beanFactory).registerBeanDefinition(beanName, definition);
             // Initialize the components lifecycle handlers, by adapting them into SmartLifecycle beans through the SpringLifecycleRegistry.
             component.initLifecycle(configuration, lifecycleRegistry);
         });
@@ -635,6 +703,35 @@ public class SpringComponentRegistry implements
 
     private class SpringConfiguration implements Configuration {
 
+        // The hasComponent variants answer from bean definitions, without instantiating any bean, following the same
+        // resolution rules as the corresponding getOptionalComponent variants. Enhancers probe for components while
+        // the application context is still creating beans, and instantiating one at that point can re-enter a bean
+        // that is still in creation.
+        // A lookup by type that matches several beans, none of which is primary or registered by Axon under the type's
+        // name, is ambiguous. The getComponent and getOptionalComponent variants then throw an
+        // AmbiguousComponentMatchException rather than reporting the component as absent, so a configured default never
+        // silently replaces the beans. For the same reason, hasComponent returns true as soon as any bean matches.
+
+        @Override
+        public boolean hasComponent(Class<?> type, @Nullable String name) {
+            String[] candidates = beanFactory.getBeanNamesForType(type, true, false);
+            List<String> candidateNames = Arrays.asList(candidates);
+            if (name != null) {
+                return candidateNames.contains(name);
+            }
+            return candidates.length > 0;
+        }
+
+        @Override
+        public boolean hasComponent(TypeReference<?> typeReference, @Nullable String name) {
+            ResolvableType type = ResolvableType.forType(typeReference.getType());
+            if (name == null) {
+                return beanFactory.getBeanNamesForType(type, true, false).length > 0;
+            }
+            return beanFactory.containsBeanDefinition(name)
+                    && type.isAssignableFrom(beanFactory.getMergedBeanDefinition(name).getResolvableType());
+        }
+
         @Override
         public <C> C getComponent(Class<C> type) {
             try {
@@ -644,7 +741,7 @@ public class SpringComponentRegistry implements
                 C bean = beanFactory.getBeansOfType(type)
                                     .get(type.getName());
                 if (bean == null) {
-                    throw new ComponentNotFoundException(type, null, e);
+                    throw ambiguousMatch(type, e);
                 }
                 return bean;
             } catch (NoSuchBeanDefinitionException e) {
@@ -691,11 +788,21 @@ public class SpringComponentRegistry implements
         }
 
         @Override
+        @SuppressWarnings("unchecked")
         public <C> C getComponent(TypeReference<C> typeReference) {
-            return beanFactory.<C>getBeanProvider(ResolvableType.forType(typeReference.getType()))
-                              .stream()
-                              .findFirst()
-                              .orElseThrow(() -> new ComponentNotFoundException(typeReference, null));
+            ResolvableType type = ResolvableType.forType(typeReference.getType());
+            try {
+                return beanFactory.<C>getBeanProvider(type).getObject();
+            } catch (NoUniqueBeanDefinitionException e) {
+                // Axon registers a component without a name under the name of its (raw) type.
+                String typeName = type.toClass().getName();
+                if (Arrays.asList(beanFactory.getBeanNamesForType(type)).contains(typeName)) {
+                    return (C) beanFactory.getBean(typeName);
+                }
+                throw ambiguousMatch(typeReference.getType(), e);
+            } catch (NoSuchBeanDefinitionException e) {
+                throw new ComponentNotFoundException(typeReference, null, e);
+            }
         }
 
         @Override
@@ -703,8 +810,7 @@ public class SpringComponentRegistry implements
         public <C> C getComponent(TypeReference<C> typeReference, @Nullable String name) {
             Assert.notNull(name, () -> "Spring does not allow the use of null names for component retrieval.");
             try {
-                BeanDefinition beanDefinition = beanFactory.getBeanDefinition(name);
-                ResolvableType beanType = beanDefinition.getResolvableType();
+                ResolvableType beanType = beanFactory.getMergedBeanDefinition(name).getResolvableType();
                 if (!ResolvableType.forType(typeReference.getType()).isAssignableFrom(beanType)) {
                     throw new ComponentNotFoundException(typeReference, name);
                 }
@@ -716,9 +822,11 @@ public class SpringComponentRegistry implements
 
         @Override
         public <C> Optional<C> getOptionalComponent(TypeReference<C> typeReference) {
-            return beanFactory.<C>getBeanProvider(ResolvableType.forType(typeReference.getType()))
-                              .stream()
-                              .findFirst();
+            try {
+                return Optional.of(getComponent(typeReference));
+            } catch (ComponentNotFoundException e) {
+                return Optional.empty();
+            }
         }
 
         @Override
@@ -726,8 +834,7 @@ public class SpringComponentRegistry implements
         public <C> Optional<C> getOptionalComponent(TypeReference<C> typeReference, @Nullable String name) {
             Assert.notNull(name, () -> "Spring does not allow the use of null names for component retrieval.");
             try {
-                BeanDefinition beanDefinition = beanFactory.getBeanDefinition(name);
-                ResolvableType beanType = beanDefinition.getResolvableType();
+                ResolvableType beanType = beanFactory.getMergedBeanDefinition(name).getResolvableType();
                 if (!ResolvableType.forType(typeReference.getType()).isAssignableFrom(beanType)) {
                     return Optional.empty();
                 }
@@ -742,6 +849,15 @@ public class SpringComponentRegistry implements
                                   @Nullable String name,
                                   Supplier<C> defaultImpl) {
             return getOptionalComponent(type, name).orElseGet(defaultImpl);
+        }
+
+        private static AmbiguousComponentMatchException ambiguousMatch(Type type,
+                                                                       NoUniqueBeanDefinitionException cause) {
+            AmbiguousComponentMatchException exception =
+                    new AmbiguousComponentMatchException(new Component.Identifier<>(type, null));
+            // The cause lists the names of the candidate beans.
+            exception.initCause(cause);
+            return exception;
         }
 
         @Override

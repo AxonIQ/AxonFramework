@@ -16,6 +16,10 @@
 
 package org.axonframework.common;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.lang.invoke.MethodHandles;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
@@ -28,12 +32,11 @@ import java.util.function.Supplier;
  * Processing utilities.
  *
  * @author Marc Gathier
- * @since 4.2
+ * @since 4.2.0
  */
 public final class ProcessUtils {
 
-    private ProcessUtils() {
-    }
+    private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 
     /**
      * Executes an action, with potential retry in case of an exception.
@@ -72,8 +75,8 @@ public final class ProcessUtils {
     }
 
     /**
-     * Executes an action asynchronously, with potential retry in case the result is false. Exception handling should
-     * be taken care of within the action if needed.
+     * Executes an action asynchronously, with potential retry in case the result is false. Exception handling should be
+     * taken care of within the action if needed.
      *
      * @param action        action to execute, will be executed until the result is {@code true} or max tries are
      *                      reached
@@ -81,16 +84,16 @@ public final class ProcessUtils {
      * @param maxTries      maximum number of times the action is invoked
      * @param executor      executor used to schedule the delay between retries
      * @return a {@link CompletableFuture} that completes when the action returns {@code true}, or exceptionally with a
-     *         {@link ProcessRetriesExhaustedException} if max tries is reached
+     * {@link ProcessRetriesExhaustedException} if max tries is reached
      */
     public static CompletableFuture<Void> executeUntilTrue(Supplier<CompletableFuture<Boolean>> action,
-                                                                 long retryInterval, long maxTries, Executor executor) {
+                                                           long retryInterval, long maxTries, Executor executor) {
         return executeUntilTrue(action, retryInterval, maxTries, maxTries, executor);
     }
 
     private static CompletableFuture<Void> executeUntilTrue(Supplier<CompletableFuture<Boolean>> action,
-                                                                  long retryInterval, long originalMaxTries,
-                                                                  long attemptsLeft, Executor executor) {
+                                                            long retryInterval, long originalMaxTries,
+                                                            long attemptsLeft, Executor executor) {
         if (attemptsLeft <= 0) {
             return CompletableFuture.failedFuture(new ProcessRetriesExhaustedException(String.format(
                     "Tried invoking the action for %d times, without the result being true", originalMaxTries
@@ -101,10 +104,11 @@ public final class ProcessUtils {
                 return CompletableFuture.completedFuture(null);
             }
             return CompletableFuture
-                    .runAsync(() -> {}, CompletableFuture.delayedExecutor(retryInterval, TimeUnit.MILLISECONDS,
-                                                                          executor))
+                    .runAsync(() -> {
+                    }, CompletableFuture.delayedExecutor(retryInterval, TimeUnit.MILLISECONDS,
+                                                         executor))
                     .thenCompose(ignored -> executeUntilTrue(action, retryInterval, originalMaxTries,
-                                                                  attemptsLeft - 1, executor));
+                                                             attemptsLeft - 1, executor));
         });
     }
 
@@ -120,7 +124,7 @@ public final class ProcessUtils {
         AtomicLong totalTriesCounter = new AtomicLong();
         boolean result = runnable.getAsBoolean();
         while (!result) {
-            if (totalTriesCounter.incrementAndGet() >= maxTries){
+            if (totalTriesCounter.incrementAndGet() >= maxTries) {
                 throw new ProcessRetriesExhaustedException(String.format(
                         "Tried invoking the action for %d times, without the result being true",
                         maxTries));
@@ -132,5 +136,29 @@ public final class ProcessUtils {
                 Thread.currentThread().interrupt();
             }
         }
+    }
+
+    /**
+     * Wraps the given {@code task} so that any {@link Throwable} escaping it is logged rather than silently lost.
+     * <p>
+     * When a {@code Throwabel} is thrown, the given {@code errorMessage} is logged on
+     * {@link Logger#error(String, Throwable) error level}.
+     *
+     * @param task         the task to guard against an escaping {@link Throwable}
+     * @param errorMessage the error message to log on {@link Logger#error(String, Throwable) error level} when the
+     *                     {@code task} throws a {@link Throwable}
+     * @return a {@link Runnable} that never throws
+     */
+    public static Runnable safeguard(Runnable task, String errorMessage) {
+        return () -> {
+            try {
+                task.run();
+            } catch (Throwable e) {
+                logger.error(errorMessage, e);
+            }
+        };
+    }
+
+    private ProcessUtils() {
     }
 }

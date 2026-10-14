@@ -72,6 +72,34 @@ class Axon4ToAxon5TestFixtureTest implements RewriteTest {
     }
 
     @Test
+    void movesTheCallbackBehaviourTypesToTheTestUtilPackage() {
+        rewriteRun(
+                java(
+                        """
+                        package com.example;
+
+                        import org.axonframework.test.utils.CallbackBehavior;
+                        import org.axonframework.test.utils.DefaultCallbackBehavior;
+
+                        class FooTest {
+                            CallbackBehavior behavior = new DefaultCallbackBehavior();
+                        }
+                        """,
+                        """
+                        package com.example;
+
+                        import org.axonframework.test.util.CallbackBehavior;
+                        import org.axonframework.test.util.DefaultCallbackBehavior;
+
+                        class FooTest {
+                            CallbackBehavior behavior = new DefaultCallbackBehavior();
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
     void rewritesGivenEventsWhenCommandExpectEvents() {
         rewriteRun(
                 java(
@@ -450,32 +478,17 @@ class Axon4ToAxon5TestFixtureTest implements RewriteTest {
     }
 
     @Test
-    void leavesSagaTestFixtureSetupAlone() {
-        // The new setup recipe matches the AF4 AggregateTestFixture FQN only,
-        // so SagaTestFixture constructors are left untouched (only the type
-        // rename runs against them).
+    void leavesSagaTestFixtureAlone() {
+        // SagaTestFixture is ported by axoniq-legacy-test for sagas that keep running on axoniq-legacy.
+        // Neither the type nor the setup changes. Axon4ToAxoniq5LegacySaga adds the dependency and the tear-down.
         rewriteRun(
                 java(
                         """
-                        package com.example;
                         import org.axonframework.test.saga.SagaTestFixture;
                         class FooSagaTest {
                             SagaTestFixture<FooSaga> fixture;
                             void setUp() {
                                 fixture = new SagaTestFixture<>(FooSaga.class);
-                            }
-                        }
-                        class FooSaga {}
-                        """,
-                        """
-                        package com.example;
-
-                        import org.axonframework.test.fixture.AxonTestFixture;
-
-                        class FooSagaTest {
-                            AxonTestFixture fixture;
-                            void setUp() {
-                                fixture = new AxonTestFixture(FooSaga.class);
                             }
                         }
                         class FooSaga {}

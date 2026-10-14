@@ -65,6 +65,14 @@ import java.util.Map;
  *       {@code // TODO(axon4to5):} comment so a human reviewer can verify the choice.</li>
  * </ol>
  *
+ * <p>Child entities declared on a parent via {@code @AggregateMember}/{@code @EntityMember} are
+ * followed as well: each event used in a child entity's {@code @EventSourcingHandler} (or
+ * {@code apply(...)} call) is tagged with the <b>parent</b> entity's tag, so it is sourced into the
+ * parent's stream. This preserves the single event stream an Axon Framework 4 aggregate shared with
+ * its members. When the child event carries the parent identifier under the parent's field name it
+ * is tagged directly; otherwise the same first-field fallback and {@code // TODO(axon4to5):} comment
+ * apply.
+ *
  * <p><b>Must run before {@code @AggregateIdentifier} is removed</b> (i.e. before the
  * {@link org.openrewrite.java.RemoveAnnotation} step inside {@code Axon4ToAxon5Modelling}), so
  * that the annotation is still present for the scan.
@@ -96,6 +104,13 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
 
     private static final String EVENT_TAG_FQN =
             "org.axonframework.eventsourcing.annotation.EventTag";
+
+    // AF4 @AggregateMember / AF5 @EntityMember, used to follow a parent entity to its child
+    // entities so their events are tagged with the PARENT's boundary as well.
+    private static final String AGGREGATE_MEMBER_AF4 =
+            "org.axonframework.modelling.command.AggregateMember";
+    private static final String ENTITY_MEMBER_AF5 =
+            "org.axonframework.modelling.entity.annotation.EntityMember";
 
     private static final String AF4_AGGREGATE_LIFECYCLE =
             "org.axonframework.modelling.command.AggregateLifecycle";
@@ -130,6 +145,23 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
         }
 
         final Map<String, EventTagTarget> targets = new HashMap<>();
+
+        /**
+         * Maps a child-entity class FQN (declared via {@code @AggregateMember}/{@code @EntityMember}
+         * on a parent entity) to the PARENT entity's tag boundary. Child events are tagged with the
+         * parent's tag so they are sourced into the parent's stream.
+         */
+        final Map<String, EventTagTarget> memberChildBoundary = new HashMap<>();
+
+        /**
+         * Maps any class FQN to the non-framework event types it uses, via {@code @EventSourcingHandler}
+         * or {@code AggregateLifecycle.apply(...)}. Populated for every class so that child entities
+         * (which are not themselves entity classes) can be reconciled against their parent's boundary.
+         */
+        final Map<String, List<String>> classEventTypes = new HashMap<>();
+
+        /** Guards {@link AddEventTagAnnotation#reconcileMemberEvents} so it runs once. */
+        boolean reconciled = false;
     }
 
     @Override
@@ -156,6 +188,19 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
             @Override
             public J.ClassDeclaration visitClassDeclaration(J.ClassDeclaration classDecl,
                                                             ExecutionContext ctx) {
+                // Record the events used in every class (entity or not). Child entities declared
+                // via @AggregateMember/@EntityMember are not entity classes themselves, so their
+                // events are captured here and later attributed to the parent's tag boundary.
+                if (classDecl.getType() != null) {
+                    List<String> events = collectClassEventTypes(classDecl);
+                    if (!events.isEmpty()) {
+                        acc.classEventTypes
+                           .computeIfAbsent(classDecl.getType().getFullyQualifiedName(),
+                                            k -> new java.util.ArrayList<>())
+                           .addAll(events);
+                    }
+                }
+
                 if (!isEntityClass(classDecl)) {
                     return super.visitClassDeclaration(classDecl, ctx);
                 }
@@ -243,6 +288,17 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
                     }
                 }.visit(classDecl, ctx);
 
+                // Follow @AggregateMember/@EntityMember fields to their child entity types, and
+                // record that those children belong to THIS entity's tag boundary. Their events are
+                // reconciled into `targets` before the edit phase, so a child event is tagged with
+                // the parent's tag and thus sourced into the parent's stream (as in Axon Framework 4,
+                // where an aggregate and its members shared one event stream).
+                for (String childFqn : findMemberChildFqns(classDecl)) {
+                    acc.memberChildBoundary.putIfAbsent(
+                            childFqn,
+                            new Accumulator.EventTagTarget(idFieldName, entitySimpleName));
+                }
+
                 return super.visitClassDeclaration(classDecl, ctx);
             }
         };
@@ -250,6 +306,7 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
 
     @Override
     public TreeVisitor<?, ExecutionContext> getVisitor(Accumulator acc) {
+        reconcileMemberEvents(acc);
         return new JavaIsoVisitor<>() {
 
             @Override
@@ -759,5 +816,149 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
             }
         }
         return null;
+    }
+
+    /**
+     * Attributes every child-entity event to its parent's tag boundary. For each child discovered
+     * via {@code @AggregateMember}/{@code @EntityMember}, each event the child uses is added to
+     * {@link Accumulator#targets} with the parent's {@code idFieldName} and {@code tagKey}, unless
+     * the event already has a target. Runs once, after the scan has populated the accumulator.
+     */
+    private static void reconcileMemberEvents(Accumulator acc) {
+        if (acc.reconciled) {
+            return;
+        }
+        acc.reconciled = true;
+        for (Map.Entry<String, Accumulator.EventTagTarget> entry : acc.memberChildBoundary.entrySet()) {
+            List<String> events = acc.classEventTypes.get(entry.getKey());
+            if (events == null) {
+                continue;
+            }
+            for (String eventFqn : events) {
+                acc.targets.putIfAbsent(eventFqn, entry.getValue());
+            }
+        }
+    }
+
+    /**
+     * Collects the non-framework event types used in {@code classDecl}, from both the first
+     * parameter of each {@code @EventSourcingHandler} method and the first argument of every
+     * {@code AggregateLifecycle.apply(...)} call in the class body.
+     */
+    private static List<String> collectClassEventTypes(J.ClassDeclaration classDecl) {
+        List<String> events = new java.util.ArrayList<>();
+        if (classDecl.getBody() == null) {
+            return events;
+        }
+        for (Statement stmt : classDecl.getBody().getStatements()) {
+            if (!(stmt instanceof J.MethodDeclaration)) {
+                continue;
+            }
+            J.MethodDeclaration method = (J.MethodDeclaration) stmt;
+            if (!isEventSourcingHandler(method)) {
+                continue;
+            }
+            List<Statement> params = method.getParameters();
+            if (params.isEmpty() || !(params.get(0) instanceof J.VariableDeclarations)) {
+                continue;
+            }
+            J.VariableDeclarations firstParam = (J.VariableDeclarations) params.get(0);
+            if (firstParam.getTypeExpression() == null) {
+                continue;
+            }
+            JavaType.FullyQualified eventType =
+                    TypeUtils.asFullyQualified(firstParam.getTypeExpression().getType());
+            if (eventType != null
+                    && !eventType.getFullyQualifiedName().startsWith("org.axonframework")) {
+                events.add(eventType.getFullyQualifiedName());
+            }
+        }
+        new JavaIsoVisitor<List<String>>() {
+            @Override
+            public J.MethodInvocation visitMethodInvocation(J.MethodInvocation mi, List<String> collected) {
+                J.MethodInvocation invocation = super.visitMethodInvocation(mi, collected);
+                if (!APPLY_AF4.matches(invocation) && !APPLY_AF5.matches(invocation)) {
+                    return invocation;
+                }
+                if (invocation.getArguments().isEmpty()
+                        || invocation.getArguments().get(0) instanceof J.Empty) {
+                    return invocation;
+                }
+                JavaType.FullyQualified eventType =
+                        TypeUtils.asFullyQualified(invocation.getArguments().get(0).getType());
+                if (eventType != null
+                        && !eventType.getFullyQualifiedName().startsWith("org.axonframework")
+                        && !collected.contains(eventType.getFullyQualifiedName())) {
+                    collected.add(eventType.getFullyQualifiedName());
+                }
+                return invocation;
+            }
+        }.visit(classDecl, events);
+        return events;
+    }
+
+    /**
+     * Returns the FQNs of the child entity types declared on {@code cd} via
+     * {@code @AggregateMember}/{@code @EntityMember} fields. For {@code List<Child>},
+     * {@code Map<K, Child>}, or {@code Optional<Child>} fields the element (last type parameter) is
+     * returned.
+     */
+    private static List<String> findMemberChildFqns(J.ClassDeclaration cd) {
+        List<String> result = new java.util.ArrayList<>();
+        if (cd.getBody() == null) {
+            return result;
+        }
+        for (Statement stmt : cd.getBody().getStatements()) {
+            J.VariableDeclarations vd = unwrapVariableDeclarations(stmt);
+            if (vd == null || !isEntityMemberField(vd)) {
+                continue;
+            }
+            String childFqn = memberChildTypeFqn(vd);
+            if (childFqn != null
+                    && !childFqn.startsWith("org.axonframework")
+                    && !childFqn.startsWith("java.")) {
+                result.add(childFqn);
+            }
+        }
+        return result;
+    }
+
+    private static boolean isEntityMemberField(J.VariableDeclarations vd) {
+        for (J.Annotation ann : vd.getLeadingAnnotations()) {
+            if (TypeUtils.isOfClassType(ann.getType(), AGGREGATE_MEMBER_AF4)
+                    || TypeUtils.isOfClassType(ann.getType(), ENTITY_MEMBER_AF5)) {
+                return true;
+            }
+            if (ann.getAnnotationType() instanceof J.Identifier) {
+                String name = ((J.Identifier) ann.getAnnotationType()).getSimpleName();
+                if ("AggregateMember".equals(name) || "EntityMember".equals(name)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Resolves the child entity FQN from an {@code @AggregateMember}/{@code @EntityMember} field's
+     * declared type, unwrapping the last type parameter for collection / map / optional fields.
+     */
+    private static @Nullable String memberChildTypeFqn(J.VariableDeclarations vd) {
+        if (vd.getTypeExpression() == null) {
+            return null;
+        }
+        JavaType type = vd.getTypeExpression().getType();
+        if (type instanceof JavaType.Parameterized) {
+            List<JavaType> typeParameters = ((JavaType.Parameterized) type).getTypeParameters();
+            if (!typeParameters.isEmpty()) {
+                JavaType.FullyQualified element =
+                        TypeUtils.asFullyQualified(typeParameters.get(typeParameters.size() - 1));
+                if (element != null) {
+                    return element.getFullyQualifiedName();
+                }
+            }
+        }
+        JavaType.FullyQualified fq = TypeUtils.asFullyQualified(type);
+        return fq == null ? null : fq.getFullyQualifiedName();
     }
 }

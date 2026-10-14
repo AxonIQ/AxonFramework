@@ -1,5 +1,5 @@
-= Migration Paths
-:navtitle: Migration Paths
+= Upgrade Paths
+:navtitle: Upgrade Paths
 
 Axon Framework 5 introduces several architectural shifts that may require different migration strategies depending on your application's complexity and the features you use.
 This section outlines the common migration tasks and provides detailed "paths" for specific components.
@@ -14,16 +14,21 @@ Whether you are performing a straightforward version bump or a deep architectura
 2. **Specific Migration Paths**
 * xref:migration:paths/messages.adoc[Message Migration (@Event, @Command, @Query)]
 * xref:migration:paths/aggregates/index.adoc[Aggregate Migration]
+* xref:migration:paths/projectors-event-processors.adoc[Event Processor configuration]
+* xref:migration:paths/token-store.adoc[Token Store migration]
 * xref:migration:paths/event-store.adoc[Event Store migration]
 * xref:migration:paths/snapshotting.adoc[Snapshot migration]
-* xref:migration:paths/projectors-event-processors.adoc[Event Processor configuration]
+ifdef::advanced-framework[]
+* xref:migration:paths/sagas.adoc[Saga migration]
+endif::[]
+* xref:migration:paths/sagas-to-workflows.adoc[Legacy sagas to workflows]
 * xref:migration:paths/test-fixtures.adoc[Test Fixture migration]
+* xref:migration:paths/configuration.adoc[Configuration migration]
 * xref:migration:paths/serializers.adoc[Serializer migration]
 * xref:migration:paths/interceptors.adoc[Interceptor migration]
-* xref:migration:paths/configuration.adoc[Configuration migration]
 * xref:migration:paths/sequencing-policies.adoc[Sequencing Policy migration]
 * xref:migration:paths/dlq.adoc[Dead-Letter Queue migration]
-* xref:migration:paths/token-store.adoc[Token Store migration]
+* xref:migration:paths/timeouts.adoc[Timeout migration]
 * xref:migration:paths/distributed-tracing.adoc[Distributed Tracing migration]
 ifdef::advanced-framework[]
 * xref:migration:paths/upcasters.adoc[Upcaster Migration]
@@ -33,8 +38,7 @@ endif::[]
 ifdef::data-protection[]
 * xref:data-protection-migration:migration-path.adoc[Data Protection module migration]
 endif::[]
-3. **What is not yet there**
-4. **Missing a Migration Path?**
+3. **Missing a Migration Path?**
 
 == Base migration changes
 
@@ -292,22 +296,6 @@ For ease of dependency management, it is highly recommended to use the Axon Fram
     </dependencies>
 </dependencyManagement>
 ----
-
-[#what-is-not-yet-there]
-== What is not yet there
-
-As Axon Framework 5.0 is the first step in this new major version, not all features from the 4.x lineage have been fully migrated or redesigned yet.
-
-- **Saga & Deadline Overhaul**: Sagas and Deadlines do not have a native "async-native" replacement yet. A full redesign is in progress.
-- **Event Replaying**: The ability to replay events for streaming event processors is not yet implemented.
-- **Multiple Event Sources**: `MultiStreamableEventSource` support is not yet available. Currently scheduled for 5.1.
-- **Annotated Features (Coming in 5.2.0)**:
-    *   **Timeouts**: Built-in timeout support for message handlers and processing contexts.
-    *   **Interceptors**: Declarative and annotated interceptor support for message handling components.
-    *   **Exception Handling**: Annotated exception handling support (`@ExceptionHandler`).
-- **Extensions**: Specialized external extensions are not yet migrated to support Axon Framework 5.x yet. As these are community-driven, their availability may vary.
-
-If your application relies heavily on these features, we recommend checking the release notes for future 5.x versions or contacting us for guidance.
 
 [#missing-a-migration-path]
 == Missing a migration path?

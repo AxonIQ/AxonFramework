@@ -29,11 +29,13 @@ import org.axonframework.messaging.core.unitofwork.UnitOfWork;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
 import org.axonframework.messaging.eventhandling.EventHandlingComponent;
 import org.axonframework.messaging.eventhandling.EventMessage;
+import org.axonframework.messaging.eventhandling.processing.ProcessorEventHandlingComponents;
 import org.axonframework.messaging.eventhandling.processing.streaming.progress.SegmentProgressContext;
 import org.axonframework.messaging.eventhandling.processing.streaming.progress.SegmentProgressStrategy;
 import org.axonframework.messaging.eventhandling.processing.streaming.progress.SegmentProgressStrategyFactory;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.TrackerStatus;
+import org.axonframework.messaging.eventhandling.processing.streaming.token.MergedTrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingTokenUtils;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.WrappedToken;
@@ -48,6 +50,7 @@ import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -61,6 +64,7 @@ import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
 
 import static org.axonframework.common.FutureUtils.emptyCompletedFuture;
+import static org.axonframework.common.ProcessUtils.safeguard;
 
 /**
  * Defines the process of handling {@link EventMessage}s for a specific {@link Segment}. This entails validating if the
@@ -103,10 +107,9 @@ class WorkPackage implements SegmentProgressContext {
     private final Clock clock;
     private final SegmentProgressStrategy progressStrategy;
 
-    private TrackingToken lastDeliveredToken; // For use only by event delivery threads, like Coordinator
+    private @Nullable TrackingToken lastDeliveredToken; // For use only by event delivery threads, like Coordinator
     private @Nullable TrackingToken lastStoredToken;
     private final AtomicLong nextClaimExtension;
-    private final AtomicBoolean processingEvents;
 
     private final Queue<ProcessingEntry> processingQueue = new ConcurrentLinkedQueue<>();
     private final AtomicBoolean scheduled = new AtomicBoolean();
@@ -144,7 +147,6 @@ class WorkPackage implements SegmentProgressContext {
         // the first store of every claim cycle.
         this.lastStoredToken = builder.initialToken;
         this.nextClaimExtension = new AtomicLong(now() + claimExtensionThreshold);
-        this.processingEvents = new AtomicBoolean(false);
         this.schedulingProcessingContextProvider = builder.schedulingProcessingContextProvider;
         // Created last: the factory only retains this context (as SegmentProgressContext); it must be fully initialized.
         this.progressStrategy = builder.progressStrategyFactory.create(this);
@@ -197,19 +199,22 @@ class WorkPackage implements SegmentProgressContext {
             return false;
         }
 
+        // All entries share one TrackingToken (asserted above), so the token is advanced once per batch.
+        TrackingToken eventToken = TrackingToken.fromContext(eventEntries.getFirst()).orElse(null);
+        Segment handlingSegment = advanceLastDeliveredToken(eventToken);
+
         BatchProcessingEntry batchProcessingEntry = new BatchProcessingEntry();
         boolean canHandleAny = eventEntries.stream()
                                            .map(eventEntry -> {
-                                               boolean canHandle = canHandleMessage(eventEntry);
-                                               batchProcessingEntry.add(new DefaultProcessingEntry(eventEntry,
-                                                                                                   canHandle));
+                                               boolean canHandle = canHandleMessage(eventEntry, handlingSegment);
+                                               batchProcessingEntry.add(new DefaultProcessingEntry(
+                                                       eventEntry, canHandle, handlingSegment));
                                                return canHandle;
                                            })
                                            .reduce(Boolean::logicalOr)
                                            .orElse(false);
 
         processingQueue.add(batchProcessingEntry);
-        lastDeliveredToken = batchProcessingEntry.trackingToken();
         // the worker must always be scheduled to ensure claims are extended
         scheduleWorker();
 
@@ -255,10 +260,10 @@ class WorkPackage implements SegmentProgressContext {
                      eventToken != null ? eventToken.position().orElse(-1) : -1,
                      segment.getSegmentId());
 
-        var canHandle = canHandleMessage(eventEntry);
+        Segment handlingSegment = advanceLastDeliveredToken(eventToken);
+        var canHandle = canHandleMessage(eventEntry, handlingSegment);
 
-        processingQueue.add(new DefaultProcessingEntry(eventEntry, canHandle));
-        lastDeliveredToken = eventToken;
+        processingQueue.add(new DefaultProcessingEntry(eventEntry, canHandle, handlingSegment));
         // the worker must always be scheduled to ensure claims are extended
         scheduleWorker();
 
@@ -298,18 +303,20 @@ class WorkPackage implements SegmentProgressContext {
      * This method is called during event scheduling in {@link #scheduleEvent(MessageStream.Entry)} and
      * {@link #scheduleEvents(List)} to determine if events should be added to the processing queue.
      *
-     * @param eventEntry The event entry containing the message and associated resources to evaluate.
+     * @param eventEntry      The event entry containing the message and associated resources to evaluate.
+     * @param handlingSegment The (possibly merge-narrowed) segment to evaluate the event against, as resolved by
+     *                        {@link #advanceLastDeliveredToken(TrackingToken)}.
      * @return {@code true} if this {@code WorkPackage} can handle the event for processing, {@code false} otherwise
-     * @see #canHandle(EventMessage, ProcessingContext)
+     * @see #canHandle(EventMessage, ProcessingContext, Segment)
      * @see EventSchedulingProcessingContext
      */
-    private boolean canHandleMessage(MessageStream.Entry<? extends EventMessage> eventEntry) {
+    private boolean canHandleMessage(MessageStream.Entry<? extends EventMessage> eventEntry, Segment handlingSegment) {
         var processingContext =
                 Message.addToContext(
                         copyResources(eventEntry, schedulingProcessingContextProvider.get()),
                         eventEntry.message()
                 );
-        return canHandle(eventEntry.message(), processingContext);
+        return canHandle(eventEntry.message(), processingContext, handlingSegment);
     }
 
     private static ProcessingContext copyResources(Context from, ProcessingContext to) {
@@ -318,16 +325,56 @@ class WorkPackage implements SegmentProgressContext {
         return to;
     }
 
-    private boolean canHandle(EventMessage eventMessage, ProcessingContext processingContext) {
+    private boolean canHandle(EventMessage eventMessage, ProcessingContext processingContext, Segment handlingSegment) {
         try {
-            return eventFilter.canHandle(eventMessage, processingContext, segment);
-        } catch (Exception e) {
+            return eventFilter.canHandle(eventMessage, processingContext, handlingSegment);
+        } catch (Throwable e) {
             logger.warn("Error while detecting whether event can be handled in Work Package [{}]-[{}]. "
                                 + "Aborting Work Package...",
                         segment.getSegmentId(), name, e);
             abort(e);
             return false;
         }
+    }
+
+    /**
+     * Advances the {@link #lastDeliveredToken} to the given {@code eventToken} and returns the part of this package's
+     * {@link #segment} that the event at that position is relevant to. Leaves the {@link #lastDeliveredToken}
+     * untouched when the given {@code eventToken} is {@code null}.
+     * <p>
+     * Ordinarily the returned segment is simply {@link #segment}. When this {@code WorkPackage}'s segment resulted from
+     * a merge and only one of the two pre-merge halves has not yet reached the event's position, the event is only
+     * relevant to that half: the returned {@link Segment} is then narrowed to that half's original (pre-merge)
+     * sub-segment, obtained via {@link Segment#split()}, so the caller's {@link EventFilter} is evaluated against the
+     * correct hash range instead of the merged, and therefore too wide, one.
+     *
+     * @param eventToken the tracking token of the event being scheduled, or {@code null} when unavailable
+     * @return the assigned {@link #segment}, or a pre-merge sub-segment of it
+     */
+    private Segment advanceLastDeliveredToken(@Nullable TrackingToken eventToken) {
+        if (eventToken != null) {
+            lastDeliveredToken = WrappedToken.advance(lastDeliveredToken, eventToken);
+        }
+        return narrowSegment(lastDeliveredToken, segment);
+    }
+
+    private static Segment narrowSegment(@Nullable TrackingToken progressToken, Segment candidateSegment) {
+        Optional<MergedTrackingToken> merged = WrappedToken.unwrap(progressToken, MergedTrackingToken.class);
+        if (merged.isEmpty()) {
+            return candidateSegment;
+        }
+        MergedTrackingToken mergedToken = merged.get();
+        boolean lowerNeedsIt = mergedToken.isLowerSegmentAdvanced();
+        boolean upperNeedsIt = mergedToken.isUpperSegmentAdvanced();
+        if (lowerNeedsIt == upperNeedsIt) {
+            // Both halves still need it, or (not expected once shouldNotSchedule has run) neither does: don't
+            // discriminate further at this level.
+            return candidateSegment;
+        }
+        Segment[] splitSegments = candidateSegment.split();
+        return lowerNeedsIt
+                ? narrowSegment(mergedToken.lowerSegmentToken(), splitSegments[0])
+                : narrowSegment(mergedToken.upperSegmentToken(), splitSegments[1]);
     }
 
     /**
@@ -341,7 +388,12 @@ class WorkPackage implements SegmentProgressContext {
             return;
         }
         logger.debug("Scheduling Work Package [{}]-[{}] to process events.", segment.getSegmentId(), name);
-        executorService.submit(this::runWorker);
+        executorService.submit(safeguard(
+                this::runWorker,
+                "Work Package [" + segment.getSegmentId() + "]-[" + name + "]. "
+                        + "Unexpected error escaped the worker task. "
+                        + "This Work Package may no longer be scheduled for further processing."
+        ));
     }
 
     private void runWorker() {
@@ -379,7 +431,6 @@ class WorkPackage implements SegmentProgressContext {
 
         logger.debug("Work Package [{}]-[{}] is processing a batch of {} events.",
                      segment.getSegmentId(), name, eventBatch.size());
-        processingEvents.set(true);
         var unitOfWork = unitOfWorkFactory.create();
         unitOfWork.runOnPreInvocation(ctx -> {
             ctx.putResource(Segment.RESOURCE_KEY, segment);
@@ -398,10 +449,10 @@ class WorkPackage implements SegmentProgressContext {
         CompletableFuture<Void> result;
         try {
             result = unitOfWork.execute();
-        } catch (Exception e) {
+        } catch (Throwable e) {
             result = CompletableFuture.failedFuture(e);
         }
-        return result.whenComplete((v, t) -> processingEvents.set(false));
+        return result;
     }
 
     private void onProcessingComplete(@Nullable Throwable e) {
@@ -565,16 +616,18 @@ class WorkPackage implements SegmentProgressContext {
     }
 
     /**
-     * Returns the {@link TrackingToken} of the {@link MessageStream.Entry} that was delivered in the last
-     * {@link WorkPackage#scheduleEvent(MessageStream.Entry)} call.
+     * Returns the {@link TrackingToken} representing the position up to which events have been delivered to this
+     * {@code WorkPackage}, through either {@link #scheduleEvent(MessageStream.Entry)} or {@link #scheduleEvents(List)}.
+     * This is the initial token advanced with the token of every delivered event, so it may be a wrapped token, like a
+     * {@link MergedTrackingToken}.
      * <p>
      * <b>Threading note:</b> This method is only safe to call from {@link Coordinator} threads. The {@link
      * WorkPackage} threads must not rely on this method.
      *
-     * @return the {@link TrackingToken} of the last {@link MessageStream.Entry} that was delivered to this
-     * {@code WorkPackage}
+     * @return the position up to which events have been delivered to this {@code WorkPackage}, or {@code null} when
+     * no events have been delivered and no initial token was given
      */
-    public TrackingToken lastDeliveredToken() {
+    public @Nullable TrackingToken lastDeliveredToken() {
         return lastDeliveredToken;
     }
 
@@ -650,12 +703,17 @@ class WorkPackage implements SegmentProgressContext {
     }
 
     /**
-     * Returns whether this {@code WorkPackage} is actively processing events.
+     * Indicates whether a worker is scheduled for this {@code WorkPackage}, either processing a batch or waiting for a
+     * thread of the worker executor to become available.
+     * <p>
+     * This {@code WorkPackage} refreshes its claim on its {@link TrackingToken} from its worker only. As long as one is
+     * outstanding it thus cannot do so itself, regardless of whether that worker is handling events or is still queued
+     * behind work on other segments.
      *
-     * @return Whether this {@code WorkPackage} is actively processing events.
+     * @return {@code true} if a worker is processing a batch or waiting for a thread, {@code false} otherwise
      */
-    public boolean isProcessingEvents() {
-        return processingEvents.get();
+    public boolean isWorkerScheduled() {
+        return scheduled.get();
     }
 
     /**
@@ -941,12 +999,19 @@ class WorkPackage implements SegmentProgressContext {
     }
 
     /**
-     * Container of a {@link MessageStream.Entry} and {@code boolean} whether the given {@code eventMessage} can be
-     * handled in this package. The combination constitutes to a processing entry the {@code WorkPackage} should
-     * ingest.
+     * Container of a {@link MessageStream.Entry}, {@code boolean} whether the given {@code eventMessage} can be
+     * handled in this package, and the {@link Segment} that {@link ProcessorEventHandlingComponents} should evaluate
+     * per-component eligibility against for this specific event. The combination constitutes to a processing entry
+     * the {@code WorkPackage} should ingest.
+     * <p>
+     * {@code handlingSegment} is ordinarily this package's own {@link #segment}, but may be a narrower, pre-merge
+     * sub-segment (see {@link #advanceLastDeliveredToken(TrackingToken)}) while this package's segment resulted from a
+     * merge whose two halves have not yet fully converged. It is attached per-event, rather than once for the whole
+     * batch, because different events in the same batch can require different sub-segments.
      */
-    private record DefaultProcessingEntry(MessageStream.Entry<? extends EventMessage> eventEntry, boolean canHandle)
-            implements ProcessingEntry {
+    private record DefaultProcessingEntry(
+            MessageStream.Entry<? extends EventMessage> eventEntry, boolean canHandle, Segment handlingSegment
+    ) implements ProcessingEntry {
 
         @Override
         public TrackingToken trackingToken() {
@@ -959,7 +1024,8 @@ class WorkPackage implements SegmentProgressContext {
                 TrackingToken wrappedToken
         ) {
             if (canHandle) {
-                eventBatch.add(eventEntry.withResource(TrackingToken.RESOURCE_KEY, wrappedToken));
+                eventBatch.add(eventEntry.withResource(TrackingToken.RESOURCE_KEY, wrappedToken)
+                                         .withResource(Segment.RESOURCE_KEY, handlingSegment));
             }
         }
     }

@@ -17,22 +17,34 @@
 package org.axonframework.common.jpa;
 
 import jakarta.persistence.EntityManager;
-import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.function.ThrowingFunction;
+import org.axonframework.common.tx.MaterializationAware;
+import org.axonframework.common.tx.MaterializingResource;
 import org.axonframework.common.tx.TransactionalExecutor;
 
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Function;
 
 /**
  * A {@link TransactionalExecutor} implementation for {@link EntityManager EntityManagers}.
+ * <p>
+ * The entity manager is obtained from the given {@link EntityManagerProvider} at most once, the first time
+ * {@link #apply} is called, and reused for the remainder of this instance's lifetime. Concurrent
+ * {@link #apply} calls are serialized, since a single {@link EntityManager} is not safe for concurrent
+ * use.
+ * <p>
+ * This executor never commits, rolls back, or closes the entity manager itself; that remains the
+ * responsibility of whoever supplied it through {@link EntityManagerProvider}. This is deliberate: an
+ * entity manager reached through this class is typically an ambient one bound to an externally-managed
+ * unit of work, whose commit, rollback, and close lifecycle is controlled by that external owner, not
+ * this executor.
  *
  * @author John Hendrikx
  * @since 5.0.2
  */
-@Internal
-public class EntityManagerExecutor implements TransactionalExecutor<EntityManager> {
-    private final EntityManagerProvider provider;
+public class EntityManagerExecutor implements TransactionalExecutor<EntityManager>, MaterializationAware {
+    private final MaterializingResource<EntityManager> delegate;
 
     /**
      * Creates a new instance.
@@ -41,16 +53,18 @@ public class EntityManagerExecutor implements TransactionalExecutor<EntityManage
      * @throws NullPointerException If any argument is {@code null}.
      */
     public EntityManagerExecutor(EntityManagerProvider provider) {
-        this.provider = Objects.requireNonNull(provider, "provider");
+        Objects.requireNonNull(provider, "provider");
+
+        this.delegate = new MaterializingResource<>(provider::getEntityManager);
+    }
+
+    @Override
+    public <R> R withMaterializationShielded(Function<Boolean, R> decision) {
+        return delegate.withMaterializationShielded(decision);
     }
 
     @Override
     public <R> CompletableFuture<R> apply(ThrowingFunction<EntityManager, R, Exception> function) {
-        try {
-            return CompletableFuture.completedFuture(function.apply(provider.getEntityManager()));
-        }
-        catch (Exception e) {
-            return CompletableFuture.failedFuture(e);
-        }
+        return delegate.apply(function);
     }
 }

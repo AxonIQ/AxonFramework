@@ -30,7 +30,7 @@
     <description>Plain Java Example application for demo and integration testing.</description>
 
     <properties>
-        <jackson.version>2.22.2</jackson.version>
+        <jackson.version>2.22.3</jackson.version>
     </properties>
 
     <dependencyManagement>
@@ -49,7 +49,7 @@
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
-            <version>1.18.46</version>
+            <version>1.18.48</version>
         </dependency>
 
         <!-- Axon Framework Dependencies -->
@@ -96,7 +96,7 @@
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
-            <version>1.6.3</version>
+            <version>1.6.5</version>
         </dependency>
 
 

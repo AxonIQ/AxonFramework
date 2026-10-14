@@ -1,0 +1,15 @@
+name: saga-guide
+title: Sagas and Process Managers
+version:
+  axon-(?<version>+({0..9}).+({0..9})).*: $<version>
+  '*': development
+start_page: ROOT:index.adoc
+
+asciidoc:
+  attributes:
+    component_description: Patterns for implementing long-running business processes that span several entities
+    type: guide
+    group: axon-framework
+
+nav:
+  - modules/nav.adoc

@@ -88,6 +88,8 @@ import java.util.function.BiFunction;
 public class SimpleEventBus implements EventBus {
 
     private final Context.ResourceKey<List<EventMessage>> eventsKey = Context.ResourceKey.withLabel("EventBus_Events");
+    private final Context.ResourceKey<Boolean> eventsDeliveredKey =
+            Context.ResourceKey.withLabel("EventBus_EventsDelivered");
     private final EventSubscribers eventSubscribers = new EventSubscribers();
 
     /**
@@ -116,7 +118,15 @@ public class SimpleEventBus implements EventBus {
     }
 
     private void registerEventPublishingHooks(ProcessingContext context, List<? extends EventMessage> events) {
-        // Check if we're already in or past the commit phase - publishing is forbidden at this point
+        // Publishing is forbidden once the queue was drained: anything added now would never be delivered.
+        if (Boolean.TRUE.equals(context.getResource(eventsDeliveredKey))) {
+            throw new IllegalStateException(
+                    "It is not allowed to publish events after the events of this ProcessingContext were delivered "
+                            + "to their subscribers, which happens in the "
+                            + ProcessingLifecycle.DefaultPhases.PREPARE_COMMIT + " phase. Publish no later than that "
+                            + "phase, or start a new ProcessingContext."
+            );
+        }
         if (context.isCommitted()) {
             throw new IllegalStateException(
                     "It is not allowed to publish events when the ProcessingContext has already been committed. "
@@ -130,11 +140,20 @@ public class SimpleEventBus implements EventBus {
 
             context.onPrepareCommit(ctx -> {
                 List<EventMessage> queuedEvents = ctx.getResource(eventsKey);
-                return processEventsInPhase(queuedEvents, ctx, eventSubscribers::notifySubscribers);
+                CompletableFuture<Void> delivery =
+                        processEventsInPhase(queuedEvents, ctx, eventSubscribers::notifySubscribers);
+                // processEventsInPhase returns once its drain loop exhausted the queue, so no later addition to it
+                // will be picked up. Recording that here, rather than when the delivery completes, is what makes a
+                // publish from a still-running asynchronous subscriber fail instead of vanish.
+                ctx.putResource(eventsDeliveredKey, Boolean.TRUE);
+                return delivery;
             });
 
             // Clean up events resource on completion or error to free memory
-            context.doFinally(ctx -> ctx.removeResource(eventsKey));
+            context.doFinally(ctx -> {
+                ctx.removeResource(eventsKey);
+                ctx.removeResource(eventsDeliveredKey);
+            });
 
             return queue;
         });

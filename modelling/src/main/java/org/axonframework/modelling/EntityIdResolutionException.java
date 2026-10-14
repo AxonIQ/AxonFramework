@@ -19,8 +19,7 @@ package org.axonframework.modelling;
 import java.util.List;
 
 /**
- * Thrown when an {@link EntityIdResolver} was unable to determine an id from
- * a given payload.
+ * Thrown when an {@link EntityIdResolver} was unable to determine an id from a given payload.
  *
  * @author John Hendrikx
  * @since 5.0.0
@@ -28,12 +27,21 @@ import java.util.List;
 public class EntityIdResolutionException extends Exception {
 
     /**
+     * Constructs a free-form {@code EntityIdResolutionException} with the given {@code message}.
+     *
+     * @param message the message to add to the {@code EntityIdResolutionException} being constructed
+     */
+    public EntityIdResolutionException(String message) {
+        super(message);
+    }
+
+    /**
      * Constructs a new instance.
      *
-     * @param cls The payload type, cannot be {@code null}
-     * @param identifiers The extracted identifiers, cannot be {@code null}, or contain exactly 1 element
-     * @throws IllegalArgumentException When any argument is {@code null}, or when {@code identifiers}
-     *         contains exactly one element.
+     * @param cls         the payload type, cannot be {@code null}
+     * @param identifiers the extracted identifiers, cannot be {@code null}, or contain exactly 1 element
+     * @throws IllegalArgumentException when any argument is {@code null}, or when {@code identifiers} contains exactly
+     *                                  one element
      */
     public EntityIdResolutionException(Class<?> cls, List<Object> identifiers) {
         super(createMessage(cls, identifiers));
@@ -41,12 +49,14 @@ public class EntityIdResolutionException extends Exception {
 
     private static String createMessage(Class<?> cls, List<Object> identifiers) {
         if (identifiers == null || identifiers.size() == 1) {
-            throw new IllegalArgumentException("identifiers cannot be null or contain exactly one element: " + identifiers);
+            throw new IllegalArgumentException(
+                    "identifiers cannot be null or contain exactly one element: " + identifiers
+            );
         }
 
         return "Unable to resolve id for payload of type [%s]: %s".formatted(
-            cls,
-            identifiers.isEmpty() ? "found no identifiers" : "found multiple identifiers: %s".formatted(identifiers)
+                cls,
+                identifiers.isEmpty() ? "found no identifiers" : "found multiple identifiers: %s".formatted(identifiers)
         );
     }
 }

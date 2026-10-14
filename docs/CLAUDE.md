@@ -277,6 +277,10 @@ grep -r "xref:.*old-filename.adoc" docs/reference-guide/
   - ❌ "The event processor internally uses a token store which maintains..."
   - ✅ "When choosing between X and Y, consider..." (when implementation matters for choice)
 
+**Limit architectural justification.** Explain a design decision only to the extent it changes what the reader does
+next; do not defend or narrate the design process behind a feature. See "Documentation voice" under Writing Style for
+the full rule, the actionability test, and the scoping note about narrowly-scoped edits.
+
 ### Verification
 **CRITICAL - Always verify before writing code:**
 - Do NOT make assumptions about API details - **ALWAYS check the actual framework code**
@@ -340,6 +344,109 @@ These terms are exceptions to sentence-case rules in H2-H6 headings:
 - ✅ "The processor starts immediately, consuming from the head of the stream."
 - ✅ "The processor starts immediately (consuming from the head of the stream)."
 - ❌ "The processor starts immediately — consuming from the head of the stream."
+
+### Documentation voice
+**Write technical documentation in a plain reference-manual style.** The documentation is an information source, not
+an essay: optimize for information density, directness, and scanability, not narrative flow, persuasion, or
+explanatory elegance.
+
+**The rule that matters most:** do not explain the reader's reasoning for them - state the information they need and
+let them draw their own conclusions. Default to the shortest grammatically complete formulation that conveys the
+required technical information; if two formulations say the same thing, use the shorter one. Do not write prose whose
+purpose is to guide the reader's thought process ("what this means is...", "so what does this tell us..."). This one
+distinction matters more than any list of banned phrases below - a model (or a person) can avoid every phrase on that
+list and still produce the same explain-first, fact-second discourse structure it is trying to eliminate.
+
+Applies to every Antora module under `docs/`, including `docs/reference-guide/` and `docs/saga-guide/` (and any
+future guide module). The one exception is a page explicitly designated as promotional/persuasive - currently
+`why-upgrade.adoc` and `solved-architecture-choices.adoc` - which intentionally uses second-person address and
+rhetorical questions to make a pitch. Do not let that voice spread to reference, migration-path, or guide content.
+
+**Sentence style**
+- State facts directly, one main claim per sentence, in active voice with concrete subjects and verbs where natural.
+- Remove introductory or transitional phrases that carry no information of their own.
+- Do not add rhetorical framing around a technical fact, and do not explain why the reader should care unless that is
+  itself technically relevant (affects a decision, not just interesting background).
+
+**Paragraph style**
+- One technical topic per paragraph: state the fact, then the relevant constraint or consequence, then an example if
+  one is needed.
+- Do not build a paragraph as an argument (fact -> explanation -> implication -> broader implication -> conclusion).
+  Do not add a closing sentence that only restates or interprets what came before.
+- Three or more related, independent facts belong in a list or table, not a paragraph.
+
+**Explanations - supporting "Limit architectural justification" above**
+- Explain *how* the framework works, not *why the reader should find the design interesting*. Keep rationale to one
+  sentence, and only when it has an actionable implication - e.g. "the timeout is a command, not an event, so the
+  process can reject a stale one" earns its place; a rationale that only explains a trade-off, with nothing the
+  reader would do differently for knowing it, does not.
+- Test before keeping a justification: if the paragraph disappeared, would the reader still know what to do? If yes,
+  cut it or compress it to a clause. Cut standalone sections whose whole purpose is justifying a design decision (e.g.
+  a "why there is no replacement construct" section walking through removed-API reasoning) - if the replacement needs
+  explaining, explain the replacement, not the decision that led to it.
+- This is a call made when writing or substantively revising a page. It is NOT a license to cut content during a
+  narrowly scoped edit ("fix the tone of this paragraph") - a scoped edit changes phrasing only; how much
+  justification a page carries is a separate editorial decision, made on purpose, not as a side effect of a style pass.
+
+**Transitions**
+State a relationship directly instead of signposting it. The most common tells - not an exhaustive list, and not a
+lexical blocklist to route around while keeping the same structure: "which is why", "That means that", "The key thing
+to understand is", "This brings us to", "The reason for this is", "It is worth...". If a sentence needs one of these
+to make sense, the two sentences it connects usually need to be recombined or reordered, not bridged with a
+connective.
+
+**Reader address**
+Use "you" only for direct instructions ("You can configure the processor with `ProcessingConfigurer`."), never to
+create a conversational or persuasive tone ("If you are already familiar with this, you might wonder...").
+
+**Structure**
+Prefer headings, tables, lists, code examples, and `[NOTE]`/`[TIP]`/`[IMPORTANT]`/`[WARNING]` blocks over connective
+prose. If three or more related items can be a list or table, make them one.
+
+**Style test**
+Before committing a sentence, ask: could it be removed without losing a technical fact, constraint, instruction,
+example, or necessary explanation? If yes, remove it. Also remove a sentence whose only purpose is to introduce a
+topic the heading already names, tell the reader something is interesting/important/subtle, summarize the preceding
+paragraph without adding information, or persuade the reader a design is reasonable.
+
+**The transformation this produces:**
+
+Essayistic:
+> Axon Framework 5 takes a different approach to saga handling. Rather than retaining the dedicated Saga abstraction,
+> it provides the building blocks required to model the same behavior directly, which gives applications more control
+> over how these processes are structured.
+
+Reference:
+> Axon Framework 5 has no `Saga` construct. Implement the same coordination with framework building blocks: event
+> handlers, deadlines, and (in Axoniq Framework) Workflows.
+
+### Final editorial pass
+Generation style and grammatical correctness are two different tasks - do not mix them into a single instruction.
+After writing to the voice above, run a separate pass over the result:
+
+1. Remove rhetorical questions and conversational transitions.
+2. Remove sentences that comment on the text instead of conveying information ("worth dwelling on", "worth a
+   moment", "None of those three properties survives, and none is missed").
+3. Split long sentences that carry more than one independent claim.
+4. Convert three-or-more-item sequences into a list or table.
+5. Check subject-verb agreement, articles, possessives, and verb forms.
+6. Check that listed alternatives are joined with an explicit "and"/"or", not a bare comma - "X for a
+   `<<workflows,Workflow>>`, for a plain `@EventHandler` Y" is missing its coordinator; it needs "..., or Y for a
+   plain `@EventHandler`...".
+7. Remove unnecessary hedging - "Axon Framework 5 allows you to replace the Axon Framework 4 `Saga` concept with
+   existing core framework building blocks" says less, and less clearly, than "Axon Framework 5 has no `Saga`
+   construct."
+
+The pass reduces and corrects; it does not elaborate. Do not add new explanations while doing it, and do not
+sacrifice grammatical correctness for brevity - "plain" describes the register, not permission to write clipped or
+mechanically-translated-sounding sentences. A short sentence with a grammar error is a worse outcome than the
+rhetorical version it replaced, not a better one.
+
+**How to verify:** most of this has no reliable grep - proofread by reading the sentence aloud; if it needs a second
+reading to parse, fix it. A rough first-pass grep for step 2 catches the most common leftover tells:
+`worth dwelling|worth a moment|worth understanding|worth knowing|which is why|deliberately|Let's explore|Here's a
+question|What does this mean|Now if you`. Passing that grep is a smoke test, not the definition of compliance - it
+will not catch a passage that avoids every listed phrase while still explaining the reader's reasoning for them.
 
 ### ASCII-only text
 **All `.adoc` files must contain only ASCII characters.** Never use:

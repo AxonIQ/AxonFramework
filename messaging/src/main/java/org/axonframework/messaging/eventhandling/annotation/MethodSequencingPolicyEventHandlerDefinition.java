@@ -29,7 +29,11 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Member;
 import java.lang.reflect.Method;
 import java.util.Arrays;
+import java.util.Map;
 import java.util.Optional;
+
+import static org.axonframework.common.annotation.AnnotationUtils.OVERRIDE_ONLY;
+import static org.axonframework.common.annotation.AnnotationUtils.findAnnotationAttributes;
 
 /**
  * Definition of {@link EventHandlingMember event handlers} that are annotated with {@link SequencingPolicy}. These
@@ -38,7 +42,8 @@ import java.util.Optional;
  * <p>
  * The {@link SequencingPolicy} annotation can be applied either directly to the handler method or to the declaring
  * class. When applied to the class, all handler methods in that class will inherit the sequencing policy. Method-level
- * annotations take precedence over class-level annotations.
+ * annotations take precedence over class-level annotations. On both levels, the {@link SequencingPolicy} may also be
+ * present as a meta-annotation on a custom annotation.
  *
  * @author Mateusz Nowak
  * @since 5.0.0
@@ -46,6 +51,7 @@ import java.util.Optional;
 public class MethodSequencingPolicyEventHandlerDefinition implements HandlerEnhancerDefinition {
 
     @Override
+    @SuppressWarnings({"rawtypes", "unchecked"})
     public <T> MessageHandlingMember<T> wrapHandler(MessageHandlingMember<T> original) {
         // Only wrap event handlers - check the message type to work through any existing wrappers
         if (!original.canHandleMessageType(EventMessage.class)) {
@@ -60,22 +66,24 @@ public class MethodSequencingPolicyEventHandlerDefinition implements HandlerEnha
         }
 
         // Check for sequencing policy attributes (set by @HasHandlerAttributes on @SequencingPolicy annotation)
-        @SuppressWarnings("rawtypes")
         Optional<Class<? extends org.axonframework.messaging.core.sequencing.SequencingPolicy>> policyType =
                 original.attribute(HandlerAttributes.SEQUENCING_POLICY_TYPE);
         Optional<String[]> parameters = original.attribute(HandlerAttributes.SEQUENCING_POLICY_PARAMETERS);
 
         // Fallback to class-level annotation if method-level not found
-        // @HasHandlerAttributes only scans the method, not the declaring class
+        // @HasHandlerAttributes only scans the method, not the declaring class. The declaring class is inspected,
+        // as a handling member is created once for the class declaring its method and is shared with subclasses.
         if (policyType.isEmpty()) {
-            Optional<SequencingPolicy> classLevelAnnotation = original.unwrap(Method.class)
-                                                                      .map(Method::getDeclaringClass)
-                                                                      .map(clazz -> clazz.getAnnotation(SequencingPolicy.class));
+            Optional<Map<String, Object>> classLevelAttributes =
+                    original.unwrap(Method.class)
+                            .map(Method::getDeclaringClass)
+                            .flatMap(clazz -> findAnnotationAttributes(clazz, SequencingPolicy.class, OVERRIDE_ONLY));
 
-            if (classLevelAnnotation.isPresent()) {
-                policyType = Optional.of(classLevelAnnotation.get().type());
-                parameters = Optional.of(classLevelAnnotation.get().parameters());
-            }
+            policyType = classLevelAttributes.map(
+                    attributes -> (Class<? extends org.axonframework.messaging.core.sequencing.SequencingPolicy>)
+                            attributes.get("type")
+            );
+            parameters = classLevelAttributes.map(attributes -> (String[]) attributes.get("parameters"));
         }
 
         if (policyType.isEmpty()) {

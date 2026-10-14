@@ -25,6 +25,7 @@ import org.axonframework.messaging.core.unitofwork.transaction.Transaction;
 import org.axonframework.messaging.core.unitofwork.transaction.TransactionManager;
 
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * A {@link TransactionManager} implementation that manages JPA {@link EntityTransaction EntityTransactions} directly
@@ -67,7 +68,6 @@ public class EntityManagerTransactionManager implements TransactionManager {
         this.entityManagerProvider = Objects.requireNonNull(entityManagerProvider, "entityManagerProvider");
     }
 
-    
     @Override
     public Transaction startTransaction() {
         EntityTransaction tx = entityManagerProvider.getEntityManager().getTransaction();
@@ -108,9 +108,19 @@ public class EntityManagerTransactionManager implements TransactionManager {
     public void attachToProcessingLifecycle(ProcessingLifecycle processingLifecycle) {
         processingLifecycle.runOnPreInvocation(pc -> {
             Transaction transaction = startTransaction();
+            AtomicBoolean concluded = new AtomicBoolean(false);
+
             pc.putResource(JpaTransactionalExecutorProvider.SUPPLIER_KEY, CachingSupplier.of(() -> new EntityManagerExecutor(entityManagerProvider)));
-            pc.runOnCommit(p -> transaction.commit());
-            pc.onError((p, phase, e) -> transaction.rollback());
+            pc.runOnCommit(p -> {
+                if (concluded.compareAndSet(false, true)) {
+                    transaction.commit();
+                }
+            });
+            pc.onError((p, phase, e) -> {
+                if (concluded.compareAndSet(false, true)) {
+                    transaction.rollback();
+                }
+            });
         });
     }
 

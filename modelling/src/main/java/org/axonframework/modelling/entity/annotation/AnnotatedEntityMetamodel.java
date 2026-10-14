@@ -19,14 +19,16 @@ package org.axonframework.modelling.entity.annotation;
 import org.axonframework.common.Assert;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.ReflectionUtils;
+import org.axonframework.common.StringUtils;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.common.infra.DescribableComponent;
-import org.axonframework.conversion.ConversionException;
 import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.commandhandling.CommandResultMessage;
 import org.axonframework.messaging.commandhandling.GenericCommandResultMessage;
+import org.axonframework.messaging.commandhandling.NoHandlerForCommandException;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandlingMember;
+import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.MessageTypeResolver;
@@ -36,11 +38,15 @@ import org.axonframework.messaging.core.annotation.HandlerDefinition;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
 import org.axonframework.messaging.core.conversion.MessageConverter;
+import org.axonframework.messaging.core.interception.annotation.ChainedMessageHandlerInterceptorMember;
+import org.axonframework.messaging.core.interception.annotation.MessageHandlerInterceptorMemberChain;
+import org.axonframework.messaging.core.interception.annotation.NoMoreInterceptors;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.conversion.EventConverter;
 import org.axonframework.modelling.annotation.AnnotationBasedEntityEvolvingComponent;
 import org.axonframework.modelling.entity.ConcreteEntityMetamodel;
+import org.axonframework.modelling.entity.EntityCommandHandlerInterceptorChain;
 import org.axonframework.modelling.entity.EntityMetamodel;
 import org.axonframework.modelling.entity.EntityMetamodelBuilder;
 import org.axonframework.modelling.entity.PolymorphicEntityMetamodel;
@@ -60,6 +66,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.ServiceLoader;
 import java.util.Set;
+import java.util.SortedSet;
 import java.util.stream.Stream;
 
 import static java.util.Objects.requireNonNull;
@@ -241,9 +248,13 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
      *                                 classes
      * @param eventConverter           the converter used to convert the {@link EventMessage#payload()} to the desired
      *                                 format
-     * @param commandsToSkip           the commands to skip when initializing the metamodel. This is useful to prevent
-     *                                 concrete implementations from registering commands that are already registered by
-     *                                 the abstract entity type, as this will lead to problems
+     * @param commandsToSkip           the creational commands to skip when initializing the metamodel. This prevents a
+     *                                 concrete implementation from re-registering a creational command handler already
+     *                                 registered by the polymorphic super type, which {@link PolymorphicEntityMetamodel}
+     *                                 would otherwise reject as a clash between concrete types. Instance command
+     *                                 handlers are never skipped: each concrete type re-registers any it inherits, so
+     *                                 that its own command handler interceptors still apply when it handles the
+     *                                 command directly
      */
     private AnnotatedEntityMetamodel(
             Class<E> entityType,
@@ -279,6 +290,7 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
                 entityType, inspected, eventConverter, messageTypeResolver
         ));
         initializeDetectedHandlers(builder, inspected);
+        registerCommandInterceptors(builder, inspected);
         initializeChildren(builder);
         return builder.build();
     }
@@ -303,13 +315,14 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
                                                                            eventConverter,
                                                                            messageTypeResolver));
         initializeChildren(builder);
-        // Commands that are present on the parent entity should not be registered again on the concrete
-        // types. So we tell concrete types to skip these commands.
-        LinkedList<QualifiedName> registeredCommands = initializeDetectedHandlers(builder, inspected);
+        // Creational commands present on the super type must not be re-registered on a concrete type: see
+        // initializeDetectedHandlers and the commandsToSkip javadoc for why.
+        List<QualifiedName> registeredCreationalCommands = initializeDetectedHandlers(builder, inspected);
+        registerCommandInterceptors(builder, inspected);
         concreteTypes.forEach(concreteType -> {
             AnnotatedEntityMetamodel<? extends E> createdConcreteEntityModel = new AnnotatedEntityMetamodel<>(
                     concreteType, Set.of(), parameterResolverFactory, handlerDefinition, messageTypeResolver,
-                    messageConverter, eventConverter, registeredCommands
+                    messageConverter, eventConverter, registeredCreationalCommands
             );
             concreteMetamodels.add(createdConcreteEntityModel);
             builder.addConcreteType(createdConcreteEntityModel);
@@ -321,40 +334,60 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
         return !ReflectionUtils.collectMatchingMethodsAndFields(type, isAnnotatedWith(EntityMember.class)).isEmpty();
     }
 
-    private LinkedList<QualifiedName> initializeDetectedHandlers(
+    private List<QualifiedName> initializeDetectedHandlers(
             EntityMetamodelBuilder<E> builder, AnnotatedHandlerInspector<E> inspected
     ) {
-        LinkedList<QualifiedName> registeredCommands = new LinkedList<>();
+        List<QualifiedName> registeredCreationalCommands = new LinkedList<>();
         Stream.concat(inspected.getUniqueHandlers(entityType, CommandMessage.class).stream(),
                       inspected.getUniqueHandlers(entityType, EventMessage.class).stream())
               .filter(h -> h.unwrap(Method.class).map(m -> !Modifier.isAbstract(m.getModifiers())).orElse(false))
               .forEach(handler -> {
-                     QualifiedName qualifiedName = messageTypeResolver.resolveOrThrow(handler.payloadType())
-                                                                      .qualifiedName();
-                     if (commandsToSkip.contains(qualifiedName)) {
+                     QualifiedName qualifiedName = qualifiedNameFor(handler);
+                     if (isCreationalCommandHandler(handler) && commandsToSkip.contains(qualifiedName)) {
+                         // Only creational handlers are skipped: a concrete type re-registering a creational
+                         // command already registered by the polymorphic super type would otherwise make
+                         // PolymorphicEntityMetamodelBuilder#addConcreteType reject it as a clashing creational
+                         // command. Instance commands have no such clash check, and inherited (non-overridden)
+                         // instance handlers must be re-registered here so this concrete type's own interceptors
+                         // (annotated or declarative) still wrap them when this concrete metamodel handles the
+                         // command directly, instead of only the super type's.
                          logger.debug(
-                                 "Skipping registration of command handler for [{}] on [{}] "
+                                 "Skipping registration of creational command handler for [{}] on [{}] "
                                          + "(already registered by parent)",
                                  qualifiedName,
                                  entityType);
                          return;
                      }
                      addPayloadTypeFromHandler(qualifiedName, handler);
-                     addCommandHandlerToModel(builder, handler, qualifiedName, registeredCommands);
+                     addCommandHandlerToModel(builder, handler, qualifiedName, registeredCreationalCommands);
                  });
-        return registeredCommands;
+        return registeredCreationalCommands;
+    }
+
+    private QualifiedName qualifiedNameFor(MessageHandlingMember<? super E> handler) {
+        return handler.unwrap(CommandHandlingMember.class)
+                      .map(CommandHandlingMember::commandName)
+                      // Filter empty Strings to fall back to the MessageTypeResolver.
+                      .filter(StringUtils::nonEmpty)
+                      .map(QualifiedName::new)
+                      .orElseGet(() -> messageTypeResolver.resolveOrThrow(handler.payloadType())
+                                                          .qualifiedName());
+    }
+
+    private boolean isCreationalCommandHandler(MessageHandlingMember<? super E> handler) {
+        return handler instanceof CommandHandlingMember<? super E> commandMember && commandMember.isFactoryHandler();
     }
 
     private void addCommandHandlerToModel(EntityMetamodelBuilder<E> builder,
                                           MessageHandlingMember<? super E> handler,
                                           QualifiedName qualifiedName,
-                                          LinkedList<QualifiedName> registeredCommands
+                                          List<QualifiedName> registeredCreationalCommands
     ) {
         if (!(handler instanceof CommandHandlingMember<? super E> commandMember)) {
             return;
         }
-        registeredCommands.add(qualifiedName);
         if (commandMember.isFactoryHandler()) {
+            registeredCreationalCommands.add(qualifiedName);
             logger.debug("Registered creational command handler for [{}] on [{}]", qualifiedName, entityType);
             builder.creationalCommandHandler(qualifiedName, ((command, context) -> handler
                     .handle(command, context, null)
@@ -366,6 +399,116 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
                     .handle(command, context, entity)
                     .<CommandResultMessage>mapMessage(GenericCommandResultMessage::new)
                     .first()));
+        }
+    }
+
+    /**
+     * Bridges annotated {@code @CommandHandlerInterceptor}/{@code @MessageHandlerInterceptor} methods detected by the
+     * given {@code inspected} inspector into a single {@link org.axonframework.modelling.entity.EntityCommandHandlerInterceptor}
+     * registered on the declarative {@code builder}. This is the only entry point annotated interceptors have into
+     * entity command dispatch: ordering, before/surround-style handling, and comparator-based ordering between
+     * multiple annotated interceptor methods are all delegated to the existing
+     * {@link AnnotatedHandlerInspector#chainedInterceptor(Class)} machinery, which already backs
+     * {@code AnnotatedCommandHandlingComponent} for top-level annotated components.
+     * <p>
+     * Two chains are composed, since a creational command is handled without an entity instance. Instance methods
+     * require a target to be invoked on, so only {@code static} interceptor methods take part when there is no entity
+     * yet; every interceptor method takes part once an instance exists. Both chains are composed once, as the set of
+     * annotated interceptor methods is fixed after inspection.
+     */
+    private void registerCommandInterceptors(EntityMetamodelBuilder<E> builder, AnnotatedHandlerInspector<E> inspected) {
+        SortedSet<MessageHandlingMember<? super E>> interceptors =
+                inspected.getAllInterceptors().getOrDefault(entityType, Collections.emptySortedSet());
+        if (interceptors.isEmpty()) {
+            return;
+        }
+        MessageHandlerInterceptorMemberChain<E> instanceChain = inspected.chainedInterceptor(entityType);
+        MessageHandlerInterceptorMemberChain<E> creationalChain = staticInterceptorChain(interceptors);
+        builder.commandHandlerInterceptor((command, entity, context, chain) ->
+                (entity == null ? creationalChain : instanceChain)
+                        .handle(command, context, entity, new EntityDispatchHandlingMember<>(chain))
+                        .mapMessage(this::asCommandResultMessage)
+                        .first()
+                        .cast()
+        );
+    }
+
+    /**
+     * Composes a chain containing only the {@code static} members of the given {@code interceptors}, preserving their
+     * relative order. This is the chain used for creational commands, for which no entity instance exists to invoke
+     * instance methods on.
+     * <p>
+     * Every interceptor left out is logged at debug level, so that an interceptor which unexpectedly does not guard a
+     * creational command can be traced back to it being declared as an instance method.
+     */
+    private MessageHandlerInterceptorMemberChain<E> staticInterceptorChain(
+            SortedSet<MessageHandlingMember<? super E>> interceptors
+    ) {
+        if (logger.isDebugEnabled()) {
+            interceptors.stream()
+                        .filter(interceptor -> !isStaticMember(interceptor))
+                        .forEach(interceptor -> logger.debug(
+                                "Excluded instance interceptor [{}] from creational command dispatch on [{}]. "
+                                        + "Declare it static for it to guard creational commands as well.",
+                                interceptor.signature(), entityType));
+        }
+        List<MessageHandlingMember<? super E>> staticInterceptors = interceptors.stream()
+                                                                               .filter(this::isStaticMember)
+                                                                               .toList();
+        return staticInterceptors.isEmpty()
+                ? NoMoreInterceptors.instance()
+                : new ChainedMessageHandlerInterceptorMember<>(staticInterceptors.iterator());
+    }
+
+    private boolean isStaticMember(MessageHandlingMember<? super E> member) {
+        return member.unwrap(Method.class)
+                     .map(method -> Modifier.isStatic(method.getModifiers()))
+                     .orElse(false);
+    }
+
+    private CommandResultMessage asCommandResultMessage(Message result) {
+        return result instanceof CommandResultMessage commandResultMessage
+                ? commandResultMessage
+                : new GenericCommandResultMessage(result);
+    }
+
+    /**
+     * Bridges an entity's own {@link EntityCommandHandlerInterceptorChain} into the {@link MessageHandlingMember}
+     * shape that a {@link MessageHandlerInterceptorMemberChain} expects as its terminal: once every annotated
+     * interceptor has run (or short-circuited), the chain invokes this member, which simply proceeds the entity's own
+     * dispatch chain, passing the {@code target} threaded through the reflection-side chain along as the entity.
+     */
+    private static final class EntityDispatchHandlingMember<E> implements MessageHandlingMember<E> {
+
+        private final EntityCommandHandlerInterceptorChain<E> chain;
+
+        private EntityDispatchHandlingMember(EntityCommandHandlerInterceptorChain<E> chain) {
+            this.chain = chain;
+        }
+
+        @Override
+        public Class<?> payloadType() {
+            return Object.class;
+        }
+
+        @Override
+        public boolean canHandle(Message message, ProcessingContext context) {
+            return true;
+        }
+
+        @Override
+        public boolean canHandleMessageType(Class<? extends Message> messageType) {
+            return true;
+        }
+
+        @Override
+        public <HT> Optional<HT> unwrap(Class<HT> handlerType) {
+            return Optional.empty();
+        }
+
+        @Override
+        public MessageStream<?> handle(Message message, ProcessingContext context, @Nullable E target) {
+            return chain.proceed((CommandMessage) message, target, context);
         }
     }
 
@@ -493,18 +636,14 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
         }
         Class<?> expectedRepresentation = getExpectedRepresentation(type.qualifiedName());
         if (expectedRepresentation == null) {
-            // Should not happen, since how does a command reach the model without a handler for it.
-            throw new ConversionException(String.format(
-                    "Cannot convert command [%s] for handling since entity [%s] has no handler for this command type.",
-                    type, entityType()
-            ));
+            return MessageStream.failed(new NoHandlerForCommandException(message, entityType()));
         }
         CommandMessage convertedMessage = message.withConvertedPayload(expectedRepresentation, messageConverter);
         return delegateMetamodel.handleCreate(convertedMessage, context);
     }
 
     @Override
-        public MessageStream.Single<CommandResultMessage> handleInstance(CommandMessage message,
+    public MessageStream.Single<CommandResultMessage> handleInstance(CommandMessage message,
                                                                      E entity,
                                                                      ProcessingContext context) {
         MessageType type = message.type();
@@ -514,11 +653,7 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
         }
         Class<?> expectedRepresentation = getExpectedRepresentation(type.qualifiedName());
         if (expectedRepresentation == null) {
-            // Should not happen, since how does a command reach the model without a handler for it.
-            throw new ConversionException(String.format(
-                    "Cannot convert command [%s] for handling since entity [%s] has no handler for this command type.",
-                    type, entityType()
-            ));
+            return MessageStream.failed(new NoHandlerForCommandException(message, entityType()));
         }
         CommandMessage convertedMessage = message.withConvertedPayload(expectedRepresentation, messageConverter);
         return delegateMetamodel.handleInstance(convertedMessage, entity, context);

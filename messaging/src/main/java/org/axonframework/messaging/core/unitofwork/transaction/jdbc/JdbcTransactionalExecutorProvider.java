@@ -17,7 +17,6 @@
 package org.axonframework.messaging.core.unitofwork.transaction.jdbc;
 
 import org.jspecify.annotations.Nullable;
-import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.function.ThrowingFunction;
 import org.axonframework.common.jdbc.ConnectionExecutor;
 import org.axonframework.common.tx.TransactionalExecutor;
@@ -44,13 +43,13 @@ import javax.sql.DataSource;
  * @author John Hendrikx
  * @since 5.0.2
  */
-@Internal
 public class JdbcTransactionalExecutorProvider implements TransactionalExecutorProvider<Connection> {
 
     /**
      * The resource key for the {@link ConnectionExecutor} supplier.
      */
-    public static final ResourceKey<Supplier<ConnectionExecutor>> SUPPLIER_KEY = ResourceKey.withLabel(ConnectionExecutor.class.getSimpleName());
+    public static final ResourceKey<Supplier<ConnectionExecutor>> SUPPLIER_KEY =
+            ResourceKey.withLabel(ConnectionExecutor.class.getSimpleName());
 
     private final DataSource dataSource;
 
@@ -64,15 +63,11 @@ public class JdbcTransactionalExecutorProvider implements TransactionalExecutorP
     }
 
     @Override
-    public TransactionalExecutor<Connection> getTransactionalExecutor(@Nullable ProcessingContext processingContext) {
+    public @Nullable TransactionalExecutor<Connection> findTransactionalExecutor(@Nullable ProcessingContext processingContext) {
         if (processingContext != null) {
             Supplier<ConnectionExecutor> executorSupplier = processingContext.getResource(SUPPLIER_KEY);
 
-            if (executorSupplier == null) {
-                throw new IllegalStateException("A connection executor must be present in the processing context.");
-            }
-
-            return executorSupplier.get();
+            return executorSupplier == null ? null : executorSupplier.get();
         }
 
         return new TransactionalExecutor<>() {

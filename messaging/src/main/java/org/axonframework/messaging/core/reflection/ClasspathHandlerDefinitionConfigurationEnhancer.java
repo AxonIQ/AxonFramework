@@ -16,6 +16,7 @@
 
 package org.axonframework.messaging.core.reflection;
 
+import org.axonframework.common.annotation.RegistrationScope;
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.ConfigurationEnhancer;
 import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
@@ -35,10 +36,19 @@ import org.axonframework.messaging.core.configuration.reflection.HandlerEnhancer
  * injectable bean, is composed with these classpath-discovered defaults rather than replacing them, through
  * {@link HandlerDefinitionUtils#registerToComponentRegistry(ComponentRegistry, java.util.function.Function)} and
  * {@link HandlerEnhancerDefinitionUtils#registerToComponentRegistry(ComponentRegistry, java.util.function.Function)}.
+ * <p>
+ * Registered once at the root and not re-invoked in child module registries. The {@code HandlerDefinition} and
+ * {@code HandlerEnhancerDefinition} components are resolved through the parent chain, so nested modules reuse the
+ * root's classpath-discovered defaults. Re-invoking per nesting level would compose the classpath enhancer set into
+ * the resolved {@code HandlerDefinition} once per level (the {@code flatten} in {@code MultiHandlerEnhancerDefinition}
+ * does not de-duplicate), inflating the enhancer list and applying every enhancer once per level.
  *
  * @author Steven van Beelen
  * @since 5.3.2
  */
+@RegistrationScope("Register the classpath handler definitions once at the root; do not re-invoke in child module "
+        + "registries. They are resolved through the parent chain, and re-registering per nesting level would "
+        + "duplicate the classpath enhancer set in the composed HandlerDefinition.")
 public class ClasspathHandlerDefinitionConfigurationEnhancer implements ConfigurationEnhancer {
 
     @Override

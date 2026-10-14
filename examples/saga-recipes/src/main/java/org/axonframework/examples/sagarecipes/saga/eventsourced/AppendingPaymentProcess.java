@@ -1,0 +1,232 @@
+/*
+ * Copyright (c) 2010-2026. Axon Framework
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.axonframework.examples.sagarecipes.saga.eventsourced;
+
+import org.axonframework.examples.sagarecipes.payment.event.PaymentCancelled;
+import org.axonframework.examples.sagarecipes.payment.event.PaymentConfirmed;
+import org.axonframework.examples.sagarecipes.payment.event.PaymentRejected;
+import org.axonframework.examples.sagarecipes.payment.write.cancelpayment.CancelPayment;
+import org.axonframework.examples.sagarecipes.payment.write.preparepayment.PreparePayment;
+import org.axonframework.examples.sagarecipes.rental.event.BikeRequested;
+import org.axonframework.examples.sagarecipes.rental.event.RequestRejected;
+import org.axonframework.examples.sagarecipes.rental.write.approverequest.ApproveRequest;
+import org.axonframework.examples.sagarecipes.rental.write.rejectrequest.RejectRequest;
+import org.axonframework.examples.sagarecipes.saga.eventsourced.event.RentalPaymentProcessCompleted;
+import org.axonframework.examples.sagarecipes.saga.eventsourced.event.RentalPaymentProcessCompleted.Outcome;
+import org.axonframework.examples.sagarecipes.saga.eventsourced.event.RentalPaymentRequested;
+import org.axonframework.examples.sagarecipes.saga.shared.CancelRentalPayment;
+import org.axonframework.examples.sagarecipes.saga.shared.RentalPaymentIdResolver;
+import org.axonframework.examples.sagarecipes.saga.shared.RentalPaymentReference;
+import org.axonframework.examples.sagarecipes.saga.shared.RentalPaymentSequencingPolicy;
+import org.axonframework.examples.sagarecipes.saga.shared.RentalPricing;
+import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
+import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher;
+import org.axonframework.messaging.core.annotation.SequencingPolicy;
+import org.axonframework.messaging.eventhandling.annotation.EventHandler;
+import org.axonframework.messaging.eventhandling.gateway.EventAppender;
+import org.axonframework.modelling.annotation.InjectEntity;
+import org.jspecify.annotations.Nullable;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.stereotype.Component;
+
+import java.util.concurrent.CompletableFuture;
+
+/**
+ * The event-sourced process again, recording its facts by appending them directly instead of by sending a command.
+ * <p>
+ * {@link PaymentProcess} is the other half of the pair. Both read {@link ProcessState}, share this package's events,
+ * and produce the same commands in the same order; the only difference is the two lines that write a fact down. The
+ * contract test runs against both, which is what turns "these are equivalent" into something the build checks rather
+ * than a claim in a comment.
+ * <p>
+ * <b>What it buys.</b> Half the code, and one dispatch fewer per step.
+ * <p>
+ * <b>What keeps it correct.</b> Not a transaction: events live in Axon Server and tracking tokens in JPA, and nothing
+ * spans the two. {@link ProcessState} is what prevents a second recording of the same fact, because the append
+ * condition covers exactly the events that entity sourced. That makes the entity the consistency boundary, which is
+ * why the trap below matters.
+ * <p>
+ * <b>What it costs.</b> An event now appears without a command behind it, which is what Event Modelling asks you not
+ * to do: the process's own write stops being a write slice on the model. The append condition is also batch-wide,
+ * since everything sourced across the batch is combined into one, so the conflict surface is wider than the
+ * per-command condition of the command-translating variant, and a single conflict fails the whole batch.
+ * <p>
+ * <b>The trap to avoid.</b> Appending is safe here only because {@link InjectEntity} sourced something first. A
+ * handler that appends without having sourced anything gets an unconditional append condition and therefore no
+ * optimistic concurrency at all, silently.
+ *
+ * @author Mateusz Nowak
+ * @since 5.4.0
+ */
+@Component
+@ConditionalOnProperty(name = "saga.recipe", havingValue = "eventsourced-append")
+@SequencingPolicy(type = RentalPaymentSequencingPolicy.class)
+public class AppendingPaymentProcess {
+
+    /**
+     * Asks for payment as soon as a bike is requested, and only then records that it did.
+     *
+     * @param event      the event that started this process
+     * @param state      the process so far, or {@code null} if it has recorded nothing yet
+     * @param dispatcher dispatches the resulting command
+     * @param appender   appends the process's own event
+     * @return completes when the dispatched command has been handled
+     */
+    @EventHandler
+    CompletableFuture<?> on(
+            BikeRequested event,
+            @InjectEntity(idResolver = RentalPaymentIdResolver.class) @Nullable ProcessState state,
+            CommandDispatcher dispatcher,
+            EventAppender appender
+    ) {
+        if (state != null) {
+            return CompletableFuture.completedFuture(null);
+        }
+        var reference = RentalPaymentReference.forRental(event.rentalId());
+        // Same ordering rule as every other recipe: do the work, then record it. Only the medium changed.
+        return dispatcher.send(new PreparePayment(reference, RentalPricing.PRICE))
+                         .getResultMessage()
+                         .thenRun(() -> appender.append(new RentalPaymentRequested(event.rentalId(),
+                                                                                   event.bikeId(),
+                                                                                   event.renter(),
+                                                                                   RentalPricing.PRICE)));
+    }
+
+    /**
+     * Hands over the bike once the payment is in.
+     *
+     * @param event      the payment that came in
+     * @param state      the process so far
+     * @param dispatcher dispatches the resulting command
+     * @param appender   appends the process's own event
+     * @return completes when the dispatched command has been handled
+     */
+    @EventHandler
+    CompletableFuture<?> on(
+            PaymentConfirmed event,
+            @InjectEntity(idResolver = RentalPaymentIdResolver.class) @Nullable ProcessState state,
+            CommandDispatcher dispatcher,
+            EventAppender appender
+    ) {
+        if (state == null || state.completed()) {
+            return CompletableFuture.completedFuture(null);
+        }
+        return dispatcher.send(new ApproveRequest(state.bikeId(), state.renter()))
+                         .getResultMessage()
+                         .thenRun(() -> complete(state, Outcome.APPROVED, appender));
+    }
+
+    /**
+     * Releases the bike when the payment is refused.
+     *
+     * @param event      the refusal
+     * @param state      the process so far
+     * @param dispatcher dispatches the resulting command
+     * @param appender   appends the process's own event
+     * @return completes when the dispatched command has been handled
+     */
+    @EventHandler
+    CompletableFuture<?> on(
+            PaymentRejected event,
+            @InjectEntity(idResolver = RentalPaymentIdResolver.class) @Nullable ProcessState state,
+            CommandDispatcher dispatcher,
+            EventAppender appender
+    ) {
+        return rejectRequest(state, dispatcher, appender);
+    }
+
+    /**
+     * Releases the bike when the payment is called off, which is how a timeout arrives here.
+     *
+     * @param event      the cancellation
+     * @param state      the process so far
+     * @param dispatcher dispatches the resulting command
+     * @param appender   appends the process's own event
+     * @return completes when the dispatched command has been handled
+     */
+    @EventHandler
+    CompletableFuture<?> on(
+            PaymentCancelled event,
+            @InjectEntity(idResolver = RentalPaymentIdResolver.class) @Nullable ProcessState state,
+            CommandDispatcher dispatcher,
+            EventAppender appender
+    ) {
+        return rejectRequest(state, dispatcher, appender);
+    }
+
+    /**
+     * Calls off the payment when the request is turned down for reasons of its own.
+     *
+     * @param event      the rejection
+     * @param state      the process so far
+     * @param dispatcher dispatches the resulting command
+     * @param appender   appends the process's own event
+     * @return completes when the dispatched command has been handled
+     */
+    @EventHandler
+    CompletableFuture<?> on(
+            RequestRejected event,
+            @InjectEntity(idResolver = RentalPaymentIdResolver.class) @Nullable ProcessState state,
+            CommandDispatcher dispatcher,
+            EventAppender appender
+    ) {
+        if (state == null || state.completed()) {
+            return CompletableFuture.completedFuture(null);
+        }
+        return dispatcher.send(new CancelPayment(RentalPaymentReference.forRental(event.rentalId())))
+                         .getResultMessage()
+                         .thenRun(() -> complete(state, Outcome.REJECTED, appender));
+    }
+
+    /**
+     * Gives up waiting for payment, unless the process already finished.
+     *
+     * @param command    the request to give up
+     * @param state      the process so far
+     * @param dispatcher dispatches the resulting command
+     * @return completes when the dispatched command has been handled
+     */
+    @CommandHandler
+    CompletableFuture<?> handle(
+            CancelRentalPayment command,
+            @InjectEntity @Nullable ProcessState state,
+            CommandDispatcher dispatcher
+    ) {
+        if (state == null || state.completed()) {
+            return CompletableFuture.completedFuture(null);
+        }
+        return dispatcher.send(new CancelPayment(RentalPaymentReference.forRental(command.rentalId())))
+                         .getResultMessage();
+    }
+
+    private CompletableFuture<?> rejectRequest(
+            @Nullable ProcessState state,
+            CommandDispatcher dispatcher,
+            EventAppender appender
+    ) {
+        if (state == null || state.completed()) {
+            return CompletableFuture.completedFuture(null);
+        }
+        return dispatcher.send(new RejectRequest(state.bikeId(), state.renter()))
+                         .getResultMessage()
+                         .thenRun(() -> complete(state, Outcome.REJECTED, appender));
+    }
+
+    private void complete(ProcessState state, Outcome outcome, EventAppender appender) {
+        appender.append(new RentalPaymentProcessCompleted(state.rentalId(), outcome));
+    }
+}

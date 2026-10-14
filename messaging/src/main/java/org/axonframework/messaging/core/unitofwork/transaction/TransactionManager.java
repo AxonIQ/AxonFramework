@@ -18,6 +18,7 @@ package org.axonframework.messaging.core.unitofwork.transaction;
 
 import org.axonframework.messaging.core.unitofwork.ProcessingLifecycle;
 
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -65,14 +66,29 @@ public interface TransactionManager {
      * The attached {@code Transaction} will from there {@link Transaction#commit() commit} in the
      * {@link ProcessingLifecycle#runOnCommit(Consumer) commit phase} and {@link Transaction#rollback() rollback}
      * {@link ProcessingLifecycle#onError(ProcessingLifecycle.ErrorHandler) on error}.
+     * <p>
+     * The transaction is concluded (committed or rolled back) exactly once. This guards against a sibling handler
+     * registered in the same commit phase, or a handler in a later phase, failing after this transaction has
+     * already committed -- which would otherwise also invoke the error handler and roll back an already-committed
+     * transaction.
      *
      * @param processingLifecycle the {@code ProcessingLifecycle} to attach a {@link Transaction} to
      */
     default void attachToProcessingLifecycle(ProcessingLifecycle processingLifecycle) {
         processingLifecycle.runOnPreInvocation(pc -> {
             Transaction transaction = startTransaction();
-            pc.runOnCommit(p -> transaction.commit());
-            pc.onError((p, phase, e) -> transaction.rollback());
+            AtomicBoolean concluded = new AtomicBoolean(false);
+
+            pc.runOnCommit(p -> {
+                if (concluded.compareAndSet(false, true)) {
+                    transaction.commit();
+                }
+            });
+            pc.onError((p, phase, e) -> {
+                if (concluded.compareAndSet(false, true)) {
+                    transaction.rollback();
+                }
+            });
         });
     }
 
