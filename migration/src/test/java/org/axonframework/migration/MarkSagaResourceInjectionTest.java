@@ -26,8 +26,9 @@ import static org.openrewrite.java.Assertions.java;
 import static org.openrewrite.kotlin.Assertions.kotlin;
 
 /**
- * Verifies {@link MarkSagaResourceInjection}: injected Saga fields and Axon Framework 4 {@code ResourceInjector} usage
- * get a {@code TODO(axon4to5)} marker, since Axon Framework 5 resolves Saga collaborators as handler parameters.
+ * Verifies {@link MarkSagaResourceInjection}: injected Saga fields and methods, Spring {@code @Value} Saga fields, and
+ * Axon Framework 4 {@code ResourceInjector} usage get a {@code TODO(axon4to5)} marker, since Axon Framework 5 resolves
+ * Saga collaborators as handler parameters.
  */
 class MarkSagaResourceInjectionTest implements RewriteTest {
 
@@ -220,6 +221,218 @@ class MarkSagaResourceInjectionTest implements RewriteTest {
                                 private transient Object paymentService;
 
                                 @SagaEventHandler(associationProperty = "rentalId")
+                                void on(Object event) {
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+    }
+
+    @Nested
+    class InjectedSagaMethods {
+
+        @Test
+        void marksAutowiredSetterOfSaga() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.spring.stereotype.Saga;
+                            import org.springframework.beans.factory.annotation.Autowired;
+
+                            @Saga
+                            class OrderSaga {
+                                private transient Object queryGateway;
+
+                                @Autowired
+                                public void setQueryGateway(Object queryGateway) {
+                                    this.queryGateway = queryGateway;
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.spring.stereotype.Saga;
+                            import org.springframework.beans.factory.annotation.Autowired;
+
+                            @Saga
+                            class OrderSaga {
+                                private transient Object queryGateway;
+
+                                // TODO(axon4to5): add the dependency this method injects as a parameter of each @SagaEventHandler or @DeadlineHandler method that uses it, then remove this method and the field it sets. Axon Framework 5 does not call injection methods of a Saga. Put a DeadlineMessage parameter first on a @DeadlineHandler without parameters, or the dependency becomes its payload.
+                                @Autowired
+                                public void setQueryGateway(Object queryGateway) {
+                                    this.queryGateway = queryGateway;
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void marksInjectMethodThatDoesMoreThanAssignAField() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import javax.inject.Inject;
+
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+
+                            class PaymentSaga {
+                                private transient Object paymentService;
+                                private transient String currency;
+
+                                @Inject
+                                void init(Object paymentService) {
+                                    this.paymentService = paymentService;
+                                    this.currency = paymentService.toString();
+                                }
+
+                                @SagaEventHandler(associationProperty = "rentalId")
+                                void on(Object event) {
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import javax.inject.Inject;
+
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+
+                            class PaymentSaga {
+                                private transient Object paymentService;
+                                private transient String currency;
+
+                                // TODO(axon4to5): add the dependency this method injects as a parameter of each @SagaEventHandler or @DeadlineHandler method that uses it, then remove this method and the field it sets. Axon Framework 5 does not call injection methods of a Saga. Put a DeadlineMessage parameter first on a @DeadlineHandler without parameters, or the dependency becomes its payload.
+                                @Inject
+                                void init(Object paymentService) {
+                                    this.paymentService = paymentService;
+                                    this.currency = paymentService.toString();
+                                }
+
+                                @SagaEventHandler(associationProperty = "rentalId")
+                                void on(Object event) {
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void leavesInjectedSetterOutsideSagasAlone() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.eventhandling.EventHandler;
+                            import org.springframework.beans.factory.annotation.Autowired;
+
+                            class RentalProjection {
+                                private Object repository;
+
+                                @Autowired
+                                void setRepository(Object repository) {
+                                    this.repository = repository;
+                                }
+
+                                @EventHandler
+                                void on(Object event) {
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void leavesAlreadyMarkedSetterAlone() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.spring.stereotype.Saga;
+                            import org.springframework.beans.factory.annotation.Autowired;
+
+                            @Saga
+                            class OrderSaga {
+                                private transient Object queryGateway;
+
+                                // TODO(axon4to5): add the dependency this method injects as a parameter of each @SagaEventHandler or @DeadlineHandler method that uses it, then remove this method and the field it sets. Axon Framework 5 does not call injection methods of a Saga. Put a DeadlineMessage parameter first on a @DeadlineHandler without parameters, or the dependency becomes its payload.
+                                @Autowired
+                                public void setQueryGateway(Object queryGateway) {
+                                    this.queryGateway = queryGateway;
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+    }
+
+    @Nested
+    class ValueSagaFields {
+
+        @Test
+        void marksValueFieldOfSaga() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.spring.stereotype.Saga;
+                            import org.springframework.beans.factory.annotation.Value;
+
+                            @Saga
+                            class OrderSaga {
+                                @Value("${app.testing.deadline:false}")
+                                private boolean isDeadlineTesting;
+                                private String scheduleId;
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.spring.stereotype.Saga;
+                            import org.springframework.beans.factory.annotation.Value;
+
+                            @Saga
+                            class OrderSaga {
+                                // TODO(axon4to5): read this property in each @SagaEventHandler or @DeadlineHandler method that uses it, from a Spring Environment parameter or the configuration. Axon Framework 5 does not inject @Value Saga fields, so the field no longer follows the property.
+                                @Value("${app.testing.deadline:false}")
+                                private boolean isDeadlineTesting;
+                                private String scheduleId;
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void leavesValueFieldOutsideSagasAlone() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.eventhandling.EventHandler;
+                            import org.springframework.beans.factory.annotation.Value;
+
+                            class RentalProjection {
+                                @Value("${app.rental.limit:10}")
+                                private int limit;
+
+                                @EventHandler
                                 void on(Object event) {
                                 }
                             }

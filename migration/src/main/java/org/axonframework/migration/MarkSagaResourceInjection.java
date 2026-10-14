@@ -40,18 +40,21 @@ import java.util.Set;
  * the Axoniq Framework legacy module does not port.
  * <p>
  * Axon Framework 4 injected collaborators into {@code @Autowired} or {@code @Inject} fields of a Saga instance through
- * a {@code ResourceInjector}. Axon Framework 5 resolves those collaborators as parameters of the
+ * a {@code ResourceInjector}, called its {@code @Autowired} or {@code @Inject} methods, such as setters, and set its
+ * Spring {@code @Value} fields. Axon Framework 5 resolves those collaborators as parameters of the
  * {@code @SagaEventHandler} or {@code @DeadlineHandler} method instead. Which handlers need which collaborator is a
- * decision this recipe does not take, so it marks the two places that need manual work:
+ * decision this recipe does not take, so it marks the places that need manual work:
  * <ul>
- *     <li>an {@code @Autowired} or {@code @Inject} field of a Saga, being a class with a {@code @SagaEventHandler}
- *     method or the Spring {@code @Saga} stereotype;</li>
+ *     <li>an {@code @Autowired} or {@code @Inject} field or method of a Saga, being a class with a
+ *     {@code @SagaEventHandler} method or the Spring {@code @Saga} stereotype;</li>
+ *     <li>a Spring {@code @Value} field of a Saga, whose property a handler now reads itself;</li>
  *     <li>a class member, or a class declaration, that uses one of the Axon Framework 4 {@code ResourceInjector}
  *     types, or that calls {@code configureResourceInjector(..)} or {@code registerResourceInjector(..)}.</li>
  * </ul>
- * A {@code CommandGateway} field is not marked when it runs after
- * {@link MigrateCommandGatewayInSagaEventHandler}, which already replaces that field with a handler parameter. The
- * recipe is idempotent: a member that already carries the marker is left alone.
+ * A {@code CommandGateway} field and its injection setter are not marked when it runs after
+ * {@link MigrateCommandGatewayInSagaEventHandler}, which already replaces that field with a handler parameter, and
+ * neither is a field {@link MoveSagaFieldToHandlerParameter} moved before. The recipe is idempotent: a member that
+ * already carries the marker is left alone.
  *
  * @author Mateusz Nowak
  * @since 5.4.0
@@ -60,12 +63,7 @@ public class MarkSagaResourceInjection extends Recipe {
 
     private static final String SAGA_EVENT_HANDLER_FQN = "org.axonframework.modelling.saga.SagaEventHandler";
     private static final String SAGA_STEREOTYPE_FQN = "org.axonframework.spring.stereotype.Saga";
-    private static final Set<String> INJECTION_ANNOTATION_FQNS = Set.of(
-            "org.springframework.beans.factory.annotation.Autowired",
-            "javax.inject.Inject",
-            "jakarta.inject.Inject"
-    );
-    private static final Set<String> INJECTION_ANNOTATION_NAMES = Set.of("Autowired", "Inject");
+    private static final String VALUE_FQN = "org.springframework.beans.factory.annotation.Value";
     private static final Set<String> RESOURCE_INJECTOR_FQNS = Set.of(
             "org.axonframework.modelling.saga.ResourceInjector",
             "org.axonframework.modelling.saga.AbstractResourceInjector",
@@ -87,6 +85,16 @@ public class MarkSagaResourceInjection extends Recipe {
             + " of each @SagaEventHandler or @DeadlineHandler method that uses it, then remove the field."
             + " Axon Framework 5 does not inject Saga fields. Put a DeadlineMessage parameter first on a"
             + " @DeadlineHandler without parameters, or the dependency becomes its payload.";
+    private static final String METHOD_MARKER = "TODO(axon4to5): add the dependency this method injects as a parameter";
+    private static final String METHOD_TODO = " " + METHOD_MARKER
+            + " of each @SagaEventHandler or @DeadlineHandler method that uses it, then remove this method and the"
+            + " field it sets. Axon Framework 5 does not call injection methods of a Saga. Put a DeadlineMessage"
+            + " parameter first on a @DeadlineHandler without parameters, or the dependency becomes its payload.";
+    private static final String VALUE_MARKER = "TODO(axon4to5): read this property";
+    private static final String VALUE_TODO = " " + VALUE_MARKER
+            + " in each @SagaEventHandler or @DeadlineHandler method that uses it, from a Spring Environment"
+            + " parameter or the configuration. Axon Framework 5 does not inject @Value Saga fields, so the field"
+            + " no longer follows the property.";
     private static final String INJECTOR_MARKER = "TODO(axon4to5): ResourceInjector is not ported.";
     private static final String INJECTOR_TODO = " " + INJECTOR_MARKER
             + " Remove it; Saga collaborators are resolved as handler method parameters.";
@@ -98,8 +106,9 @@ public class MarkSagaResourceInjection extends Recipe {
 
     @Override
     public String getDescription() {
-        return "Leaves a `// TODO(axon4to5):` marker on `@Autowired` and `@Inject` fields of Sagas, and on usage of "
-                + "the Axon Framework 4 `ResourceInjector` types. Axon Framework 5 does not inject Saga fields; it "
+        return "Leaves a `// TODO(axon4to5):` marker on `@Autowired` and `@Inject` fields and methods of Sagas, such "
+                + "as setters, on Spring `@Value` fields of Sagas, and on usage of the Axon Framework 4 "
+                + "`ResourceInjector` types. Axon Framework 5 does not inject Saga fields or call Saga setters; it "
                 + "resolves Saga collaborators as `@SagaEventHandler` and `@DeadlineHandler` method parameters "
                 + "instead. Idempotent.";
     }
@@ -117,8 +126,17 @@ public class MarkSagaResourceInjection extends Recipe {
                     if (member instanceof J.ClassDeclaration) {
                         return member;
                     }
-                    if (saga && member instanceof J.VariableDeclarations field && isInjected(field)) {
-                        return mark(member, FIELD_MARKER, FIELD_TODO);
+                    if (saga && member instanceof J.VariableDeclarations field) {
+                        if (SagaInjection.isInjected(field.getLeadingAnnotations())) {
+                            return mark(member, FIELD_MARKER, FIELD_TODO);
+                        }
+                        if (isValueInjected(field)) {
+                            return mark(member, VALUE_MARKER, VALUE_TODO);
+                        }
+                    }
+                    if (saga && member instanceof J.MethodDeclaration method
+                            && SagaInjection.isInjectionMethod(method)) {
+                        return mark(member, METHOD_MARKER, METHOD_TODO);
                     }
                     if (usesResourceInjector(member)) {
                         return mark(member, INJECTOR_MARKER, INJECTOR_TODO);
@@ -148,13 +166,9 @@ public class MarkSagaResourceInjection extends Recipe {
                                                                     "SagaEventHandler"));
     }
 
-    private static boolean isInjected(J.VariableDeclarations field) {
-        return field.getLeadingAnnotations().stream().anyMatch(annotation -> {
-            String type = resolvedName(annotation.getType());
-            return type != null
-                    ? INJECTION_ANNOTATION_FQNS.contains(type)
-                    : INJECTION_ANNOTATION_NAMES.contains(annotation.getSimpleName());
-        });
+    private static boolean isValueInjected(J.VariableDeclarations field) {
+        return field.getLeadingAnnotations().stream()
+                    .anyMatch(annotation -> isAnnotation(annotation, VALUE_FQN, "Value"));
     }
 
     private static boolean isAnnotation(J.Annotation annotation, String fullyQualifiedName, String simpleName) {

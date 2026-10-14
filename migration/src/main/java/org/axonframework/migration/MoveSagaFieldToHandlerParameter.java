@@ -41,7 +41,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -64,7 +63,10 @@ import java.util.UUID;
  *     the payload, so as the first parameter it would become the payload and the handler would stop matching its
  *     deadlines;</li>
  *     <li>adds the same parameter to those private helper methods, and passes it along at their call sites;</li>
- *     <li>removes the field, together with its annotations and leading comments, once nothing refers to it.</li>
+ *     <li>removes the field, together with its annotations and leading comments, once nothing refers to it;</li>
+ *     <li>removes the {@code @Autowired} or {@code @Inject} setter methods through which Axon Framework 4 injected the
+ *     field, being injected methods that only assign their single parameter to it, as the legacy module does not call
+ *     them either.</li>
  * </ul>
  * The calls on the collaborator itself are left as they are. When the field name clashes with a parameter or local
  * variable of a method, the new parameter gets a numeric suffix and the field references in that method are renamed.
@@ -72,16 +74,17 @@ import java.util.UUID;
  * The migration is all-or-nothing per field. A use the recipe cannot move into a handler parameter leaves the field and
  * every one of its uses untouched, rather than producing a half-migrated Saga. Such a use is one in a constructor, a
  * static method, a non-private method that is not a handler (it may be called from outside the class), a field
- * initializer or initializer block, a nested, local or anonymous class, a method reference to an affected method, an
- * assignment to the field, an access through another instance, or a call of a {@code @DeadlineHandler} without
- * parameters, which could not pass on its new {@code DeadlineMessage} parameter. The same applies when the class
- * declares more than one such field.
+ * initializer or initializer block, a nested, local or anonymous class, a method reference to an affected method or to
+ * an injection setter, a call of an injection setter, an assignment to the field outside an injection setter, an access
+ * through another instance, or a call of a {@code @DeadlineHandler} without parameters, which could not pass on its new
+ * {@code DeadlineMessage} parameter. The same applies when the class declares more than one such field.
  * <p>
  * Uses in other classes, such as subclasses, are not visible to the recipe, so only a field no other class can use is
  * moved: a private field, or in Kotlin, where properties are public by default, any property of a final class. A
  * Kotlin class is final unless declared {@code open}, {@code abstract} or {@code sealed}. A protected, package-private
- * or public field stays where it is. A field left in place is marked by {@link MarkSagaResourceInjection} when it is
- * injected; one that is not injected was never populated by Axon Framework 4 either, and needs no marker.
+ * or public field stays where it is. A field left in place is marked by {@link MarkSagaResourceInjection} when it, or
+ * a setter assigning it, is injected; one that is not injected was never populated by Axon Framework 4 either, and
+ * needs no marker.
  * <p>
  * Only Sagas are changed: classes annotated with the Spring {@code @Saga} stereotype or declaring a
  * {@code @SagaEventHandler} method. Other components, such as aggregates or Spring services, keep their fields, because
@@ -135,8 +138,9 @@ public class MoveSagaFieldToHandlerParameter extends Recipe {
     public String getDescription() {
         return "Replaces a private Saga field of the configured type, or a property of a final Kotlin Saga, with a "
                 + "parameter of each `@SagaEventHandler` and `@DeadlineHandler` method that uses it, passing it on to "
-                + "the private helper methods that need it, and removes the field. The Axoniq Framework legacy module "
-                + "does not inject Saga fields. A `@DeadlineHandler` without parameters first gets a "
+                + "the private helper methods that need it, and removes the field together with the `@Autowired` or "
+                + "`@Inject` setter that only assigns it. The Axoniq Framework legacy module does not inject Saga "
+                + "fields or call Saga setters. A `@DeadlineHandler` without parameters first gets a "
                 + "`DeadlineMessage` parameter, so the collaborator does not become its payload. A field other "
                 + "classes may use, or with a use that cannot become a handler parameter, is left untouched entirely.";
     }
@@ -154,7 +158,7 @@ public class MoveSagaFieldToHandlerParameter extends Recipe {
                 }
                 getCursor().putMessage(PLAN_MESSAGE, plan);
                 J.ClassDeclaration migrated = super.visitClassDeclaration(classDeclaration, ctx);
-                migrated = removeField(migrated, plan.fieldId());
+                migrated = removeMembers(migrated, plan.removedMembers());
                 removeUnusedImports(migrated, plan);
                 return migrated;
             }
@@ -262,6 +266,8 @@ public class MoveSagaFieldToHandlerParameter extends Recipe {
         String fieldName = field.getVariables().get(0).getSimpleName();
         Usages usages = new Usages();
         Map<UUID, J.MethodDeclaration> methods = new HashMap<>();
+        Set<UUID> removedMembers = new LinkedHashSet<>();
+        removedMembers.add(field.getId());
         for (Statement statement : classDeclaration.getBody().getStatements()) {
             if (statement == field) {
                 continue;
@@ -269,11 +275,22 @@ public class MoveSagaFieldToHandlerParameter extends Recipe {
             J.MethodDeclaration method = statement instanceof J.MethodDeclaration declaration ? declaration : null;
             if (method != null) {
                 methods.put(method.getId(), method);
+                if (fieldName.equals(SagaInjection.setterField(method))) {
+                    // An injection setter only assigns the field, so it goes together with the field.
+                    removedMembers.add(method.getId());
+                    continue;
+                }
             }
             new UsageCollector(classDeclaration, fieldName, method, usages).visit(statement, 0);
         }
         if (usages.unmigratable) {
             return null;
+        }
+        for (UUID member : removedMembers) {
+            J.MethodDeclaration setter = methods.get(member);
+            if (setter != null && usages.methodReferences.contains(setter.getSimpleName())) {
+                return null;
+            }
         }
 
         Set<UUID> needing = new LinkedHashSet<>();
@@ -285,7 +302,12 @@ public class MoveSagaFieldToHandlerParameter extends Recipe {
         }
         Map<UUID, Set<UUID>> callTargets = new HashMap<>();
         for (CallSite call : usages.calls) {
-            callTargets.put(call.site().id(), targetsOf(call, methods.values()));
+            Set<UUID> targets = targetsOf(call, methods.values());
+            if (!Collections.disjoint(targets, removedMembers)) {
+                // Another member calls an injection setter, which would no longer exist.
+                return null;
+            }
+            callTargets.put(call.site().id(), targets);
         }
         boolean changed = true;
         while (changed) {
@@ -335,7 +357,7 @@ public class MoveSagaFieldToHandlerParameter extends Recipe {
                 calls.add(call.site().id());
             }
         }
-        return new Plan(field.getId(), methodPlans, references, calls);
+        return new Plan(removedMembers, methodPlans, references, calls);
     }
 
     /**
@@ -476,20 +498,21 @@ public class MoveSagaFieldToHandlerParameter extends Recipe {
         return names;
     }
 
-    private static J.ClassDeclaration removeField(J.ClassDeclaration classDeclaration, UUID fieldId) {
+    private static J.ClassDeclaration removeMembers(J.ClassDeclaration classDeclaration, Set<UUID> memberIds) {
         List<Statement> retained = new ArrayList<>();
-        Iterator<Statement> statements = classDeclaration.getBody().getStatements().iterator();
-        while (statements.hasNext()) {
-            Statement statement = statements.next();
-            if (!statement.getId().equals(fieldId)) {
-                retained.add(statement);
+        String firstWhitespace = null;
+        for (Statement statement : classDeclaration.getBody().getStatements()) {
+            if (memberIds.contains(statement.getId())) {
+                if (retained.isEmpty() && firstWhitespace == null) {
+                    firstWhitespace = statement.getPrefix().getWhitespace();
+                }
                 continue;
             }
-            if (retained.isEmpty() && statements.hasNext()) {
+            if (retained.isEmpty() && firstWhitespace != null) {
                 // The first member was removed: its successor takes its line, without a leading blank line.
-                Statement next = statements.next();
-                retained.add(next.withPrefix(next.getPrefix().withWhitespace(statement.getPrefix().getWhitespace())));
+                statement = statement.withPrefix(statement.getPrefix().withWhitespace(firstWhitespace));
             }
+            retained.add(statement);
         }
         return classDeclaration.withBody(classDeclaration.getBody().withStatements(retained));
     }
@@ -735,10 +758,11 @@ public class MoveSagaFieldToHandlerParameter extends Recipe {
     }
 
     /**
-     * The migration of one field: the methods receiving the parameter, the field references to rename to it, and the
-     * calls that must pass it on.
+     * The migration of one field: the members to remove, being the field and its injection setters, the methods
+     * receiving the parameter, the field references to rename to it, and the calls that must pass it on.
      */
-    private record Plan(UUID fieldId, Map<UUID, MethodPlan> methods, Set<UUID> references, Set<UUID> calls) {
+    private record Plan(Set<UUID> removedMembers, Map<UUID, MethodPlan> methods, Set<UUID> references,
+                        Set<UUID> calls) {
 
     }
 }

@@ -717,6 +717,235 @@ class MoveSagaFieldToHandlerParameterTest implements RewriteTest {
     }
 
     @Nested
+    class InjectionSetters {
+
+        @Test
+        void movesSetterInjectedFieldAndRemovesTheSetter() {
+            // The other injected setter keeps its field and the @Autowired import; MarkSagaResourceInjection marks it.
+            rewriteRun(
+                    AUTOWIRED,
+                    java(
+                            """
+                            package com.example;
+
+                            import java.time.Duration;
+
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.axonframework.spring.stereotype.Saga;
+                            import org.springframework.beans.factory.annotation.Autowired;
+
+                            @Saga
+                            public class OrderSaga {
+                                private transient Object queryGateway;
+                                private transient DeadlineManager deadlineManager;
+                                private String scheduleId;
+
+                                @Autowired
+                                public void setDeadlineManager(DeadlineManager deadlineManager) {
+                                    this.deadlineManager = deadlineManager;
+                                }
+
+                                @Autowired
+                                public void setQueryGateway(Object queryGateway) {
+                                    this.queryGateway = queryGateway;
+                                }
+
+                                @SagaEventHandler(associationProperty = "orderId")
+                                public void handle(String event) {
+                                    scheduleId = deadlineManager.schedule(Duration.ofSeconds(4), "payment-deadline", event);
+                                }
+
+                                @DeadlineHandler(deadlineName = "payment-deadline")
+                                public void onPaymentDeadline(String event) {
+                                    cancelDeadline();
+                                }
+
+                                private void cancelDeadline() {
+                                    deadlineManager.cancelSchedule("payment-deadline", scheduleId);
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import java.time.Duration;
+
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.axonframework.spring.stereotype.Saga;
+                            import org.springframework.beans.factory.annotation.Autowired;
+
+                            @Saga
+                            public class OrderSaga {
+                                private transient Object queryGateway;
+                                private String scheduleId;
+
+                                @Autowired
+                                public void setQueryGateway(Object queryGateway) {
+                                    this.queryGateway = queryGateway;
+                                }
+
+                                @SagaEventHandler(associationProperty = "orderId")
+                                public void handle(String event, DeadlineManager deadlineManager) {
+                                    scheduleId = deadlineManager.schedule(Duration.ofSeconds(4), "payment-deadline", event);
+                                }
+
+                                @DeadlineHandler(deadlineName = "payment-deadline")
+                                public void onPaymentDeadline(String event, DeadlineManager deadlineManager) {
+                                    cancelDeadline(deadlineManager);
+                                }
+
+                                private void cancelDeadline(DeadlineManager deadlineManager) {
+                                    deadlineManager.cancelSchedule("payment-deadline", scheduleId);
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void movesFieldAnInjectSetterAssignsWithoutThis() {
+            rewriteRun(
+                    JAVAX_INJECT,
+                    java(
+                            """
+                            package com.example;
+
+                            import javax.inject.Inject;
+
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+
+                            public class RentalSaga {
+                                private DeadlineManager deadlineManager;
+
+                                @Inject
+                                void setDeadlineManager(DeadlineManager manager) {
+                                    deadlineManager = manager;
+                                }
+
+                                @SagaEventHandler(associationProperty = "rentalId")
+                                public void on(String event) {
+                                    deadlineManager.cancelAll("rentalExpired");
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+
+                            public class RentalSaga {
+                                @SagaEventHandler(associationProperty = "rentalId")
+                                public void on(String event, DeadlineManager deadlineManager) {
+                                    deadlineManager.cancelAll("rentalExpired");
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void leavesFieldUntouchedWhenASetterWithoutInjectionAssignsIt() {
+            // Axon Framework 4 did not call this setter, so whatever calls it still needs the field.
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+
+                            public class RentalSaga {
+                                private transient DeadlineManager deadlineManager;
+
+                                public void setDeadlineManager(DeadlineManager deadlineManager) {
+                                    this.deadlineManager = deadlineManager;
+                                }
+
+                                @SagaEventHandler(associationProperty = "rentalId")
+                                public void on(String event) {
+                                    deadlineManager.cancelAll("rentalExpired");
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void leavesFieldUntouchedWhenTheInjectionSetterDoesMoreThanAssignIt() {
+            rewriteRun(
+                    AUTOWIRED,
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.springframework.beans.factory.annotation.Autowired;
+
+                            public class RentalSaga {
+                                private transient DeadlineManager deadlineManager;
+
+                                @Autowired
+                                public void setDeadlineManager(DeadlineManager deadlineManager) {
+                                    this.deadlineManager = deadlineManager;
+                                    deadlineManager.cancelAll("stale");
+                                }
+
+                                @SagaEventHandler(associationProperty = "rentalId")
+                                public void on(String event) {
+                                    deadlineManager.cancelAll("rentalExpired");
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void leavesFieldUntouchedWhenAnotherMethodCallsTheInjectionSetter() {
+            rewriteRun(
+                    AUTOWIRED,
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.DeadlineManager;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.springframework.beans.factory.annotation.Autowired;
+
+                            public class RentalSaga {
+                                private transient DeadlineManager deadlineManager;
+
+                                @Autowired
+                                public void setDeadlineManager(DeadlineManager deadlineManager) {
+                                    this.deadlineManager = deadlineManager;
+                                }
+
+                                @SagaEventHandler(associationProperty = "rentalId")
+                                public void on(String event) {
+                                    deadlineManager.cancelAll("rentalExpired");
+                                }
+
+                                private void replace(DeadlineManager replacement) {
+                                    setDeadlineManager(replacement);
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+    }
+
+    @Nested
     class UnmigratableUses {
 
         @Test

@@ -326,4 +326,129 @@ class Axon4ToAxoniq5LegacyDeadlineSagaTest implements RewriteTest {
                 )
         );
     }
+
+    @Test
+    void movesSetterInjectedCollaboratorsAndMarksTheRemainingInjection() {
+        // Axon Framework 4 called the @Autowired setters and set the @Value field; the legacy module does neither.
+        // The DeadlineManager and CommandGateway become handler parameters and lose their fields and setters. The
+        // setter of the other collaborator and the @Value field stay, marked, so none of them is silently left null.
+        rewriteRun(
+                java(
+                        """
+                        package org.springframework.beans.factory.annotation;
+
+                        public @interface Autowired {
+                        }
+                        """
+                ),
+                java(
+                        """
+                        package com.example;
+
+                        import java.time.Duration;
+
+                        import org.axonframework.commandhandling.gateway.CommandGateway;
+                        import org.axonframework.deadline.DeadlineManager;
+                        import org.axonframework.deadline.annotation.DeadlineHandler;
+                        import org.axonframework.modelling.saga.SagaEventHandler;
+                        import org.axonframework.modelling.saga.StartSaga;
+                        import org.axonframework.spring.stereotype.Saga;
+                        import org.springframework.beans.factory.annotation.Autowired;
+                        import org.springframework.beans.factory.annotation.Value;
+
+                        @Saga
+                        public class OrderSaga {
+                            private transient CommandGateway commandGateway;
+                            private transient PaymentService paymentService;
+                            private transient DeadlineManager deadlineManager;
+
+                            @Value("${app.testing.deadline:false}")
+                            private boolean isDeadlineTesting;
+                            private String scheduleId;
+
+                            @Autowired
+                            public void setCommandGateway(CommandGateway commandGateway) {
+                                this.commandGateway = commandGateway;
+                            }
+
+                            @Autowired
+                            public void setPaymentService(PaymentService paymentService) {
+                                this.paymentService = paymentService;
+                            }
+
+                            @Autowired
+                            public void setDeadlineManager(DeadlineManager deadlineManager) {
+                                this.deadlineManager = deadlineManager;
+                            }
+
+                            @StartSaga
+                            @SagaEventHandler(associationProperty = "orderId")
+                            public void handle(String orderId) {
+                                scheduleId = deadlineManager.schedule(Duration.ofSeconds(4), "payment-deadline", orderId);
+                                if (isDeadlineTesting) return;
+                                paymentService.charge(orderId);
+                            }
+
+                            @DeadlineHandler(deadlineName = "payment-deadline")
+                            public void onPaymentDeadline(String orderId) {
+                                deadlineManager.cancelSchedule("payment-deadline", scheduleId);
+                                commandGateway.send(orderId);
+                            }
+                        }
+                        interface PaymentService { void charge(String orderId); }
+                        """,
+                        """
+                        package com.example;
+
+                        import java.time.Duration;
+
+                        import org.axonframework.deadline.DeadlineManager;
+                        import org.axonframework.deadline.annotation.DeadlineHandler;
+                        import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher;
+                        import org.axonframework.modelling.saga.SagaEventHandler;
+                        import org.axonframework.modelling.saga.StartSaga;
+                        import org.axonframework.spring.stereotype.Saga;
+                        import org.springframework.beans.factory.annotation.Autowired;
+                        import org.springframework.beans.factory.annotation.Value;
+
+                        @Saga
+                        public class OrderSaga {
+                            private transient PaymentService paymentService;
+
+                            // TODO(axon4to5): read this property in each @SagaEventHandler or @DeadlineHandler method \
+                        that uses it, from a Spring Environment parameter or the configuration. Axon Framework 5 does \
+                        not inject @Value Saga fields, so the field no longer follows the property.
+                            @Value("${app.testing.deadline:false}")
+                            private boolean isDeadlineTesting;
+                            private String scheduleId;
+
+                            // TODO(axon4to5): add the dependency this method injects as a parameter of each \
+                        @SagaEventHandler or @DeadlineHandler method that uses it, then remove this method and the \
+                        field it sets. Axon Framework 5 does not call injection methods of a Saga. Put a \
+                        DeadlineMessage parameter first on a @DeadlineHandler without parameters, or the dependency \
+                        becomes its payload.
+                            @Autowired
+                            public void setPaymentService(PaymentService paymentService) {
+                                this.paymentService = paymentService;
+                            }
+
+                            @StartSaga
+                            @SagaEventHandler(associationProperty = "orderId")
+                            public void handle(String orderId, DeadlineManager deadlineManager) {
+                                scheduleId = deadlineManager.schedule(Duration.ofSeconds(4), "payment-deadline", orderId);
+                                if (isDeadlineTesting) return;
+                                paymentService.charge(orderId);
+                            }
+
+                            @DeadlineHandler(deadlineName = "payment-deadline")
+                            public void onPaymentDeadline(String orderId, DeadlineManager deadlineManager, CommandDispatcher commandDispatcher) {
+                                deadlineManager.cancelSchedule("payment-deadline", scheduleId);
+                                commandDispatcher.send(orderId);
+                            }
+                        }
+                        interface PaymentService { void charge(String orderId); }
+                        """
+                )
+        );
+    }
 }

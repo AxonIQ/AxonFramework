@@ -1262,6 +1262,145 @@ class Axon4ToAxoniq5LegacySagaTest implements RewriteTest {
                     )
             );
         }
+
+        @Test
+        void removesTheGatewaySetterWithTheGatewayFieldAndMarksTheOtherInjectedSetter() {
+            // The legacy module calls neither setter: the gateway one goes with its field, the other one is marked.
+            rewriteRun(
+                    java(
+                            """
+                            package org.springframework.beans.factory.annotation;
+
+                            public @interface Autowired {
+                            }
+                            """
+                    ),
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.commandhandling.gateway.CommandGateway;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.springframework.beans.factory.annotation.Autowired;
+
+                            class PaymentSaga {
+                                private transient CommandGateway commandGateway;
+                                private transient PaymentService paymentService;
+
+                                @Autowired
+                                public void setCommandGateway(CommandGateway commandGateway) {
+                                    this.commandGateway = commandGateway;
+                                }
+
+                                @Autowired
+                                public void setPaymentService(PaymentService paymentService) {
+                                    this.paymentService = paymentService;
+                                }
+
+                                @SagaEventHandler(associationProperty = "rentalId")
+                                void on(Object command) {
+                                    paymentService.charge(command);
+                                    commandGateway.send(command);
+                                }
+                            }
+                            interface PaymentService { void charge(Object command); }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.springframework.beans.factory.annotation.Autowired;
+
+                            class PaymentSaga {
+                                private transient PaymentService paymentService;
+
+                                // TODO(axon4to5): add the dependency this method injects as a parameter of each @SagaEventHandler or @DeadlineHandler method that uses it, then remove this method and the field it sets. Axon Framework 5 does not call injection methods of a Saga. Put a DeadlineMessage parameter first on a @DeadlineHandler without parameters, or the dependency becomes its payload.
+                                @Autowired
+                                public void setPaymentService(PaymentService paymentService) {
+                                    this.paymentService = paymentService;
+                                }
+
+                                @SagaEventHandler(associationProperty = "rentalId")
+                                void on(Object command, CommandDispatcher commandDispatcher) {
+                                    paymentService.charge(command);
+                                    commandDispatcher.send(command);
+                                }
+                            }
+                            interface PaymentService { void charge(Object command); }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void keepsAndMarksTheGatewaySetterAnotherMethodCalls() {
+            // Removing the setter would break its caller, so the field and the setter stay and the setter is marked.
+            rewriteRun(
+                    java(
+                            """
+                            package org.springframework.beans.factory.annotation;
+
+                            public @interface Autowired {
+                            }
+                            """
+                    ),
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.commandhandling.gateway.CommandGateway;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.springframework.beans.factory.annotation.Autowired;
+
+                            class PaymentSaga {
+                                private transient CommandGateway commandGateway;
+
+                                @Autowired
+                                public void setCommandGateway(CommandGateway commandGateway) {
+                                    this.commandGateway = commandGateway;
+                                }
+
+                                @SagaEventHandler(associationProperty = "rentalId")
+                                void on(Object command) {
+                                    commandGateway.send(command);
+                                }
+
+                                void reset(CommandGateway replacement) {
+                                    setCommandGateway(replacement);
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.commandhandling.gateway.CommandGateway;
+                            import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.springframework.beans.factory.annotation.Autowired;
+
+                            class PaymentSaga {
+                                private transient CommandGateway commandGateway;
+
+                                // TODO(axon4to5): add the dependency this method injects as a parameter of each @SagaEventHandler or @DeadlineHandler method that uses it, then remove this method and the field it sets. Axon Framework 5 does not call injection methods of a Saga. Put a DeadlineMessage parameter first on a @DeadlineHandler without parameters, or the dependency becomes its payload.
+                                @Autowired
+                                public void setCommandGateway(CommandGateway commandGateway) {
+                                    this.commandGateway = commandGateway;
+                                }
+
+                                @SagaEventHandler(associationProperty = "rentalId")
+                                void on(Object command, CommandDispatcher commandDispatcher) {
+                                    commandDispatcher.send(command);
+                                }
+
+                                void reset(CommandGateway replacement) {
+                                    setCommandGateway(replacement);
+                                }
+                            }
+                            """
+                    )
+            );
+        }
     }
 
     @Nested

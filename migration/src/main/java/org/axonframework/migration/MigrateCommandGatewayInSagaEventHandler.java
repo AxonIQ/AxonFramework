@@ -52,7 +52,9 @@ import java.util.Set;
  * The recipe preserves the dispatch contract of each call. {@code send(...)} remains fire-and-forget.
  * {@code sendAndWait(...)} waits through {@code FutureUtils.joinAndUnwrap(...)} so the Saga handler remains
  * synchronous and command failures retain their original exception type. When no references remain, the obsolete
- * gateway field and its constructor injection are removed.
+ * gateway field and its constructor injection are removed, together with an {@code @Autowired} or {@code @Inject}
+ * setter that only assigns the field, which the legacy module does not call. A call of that setter, or a method
+ * reference to it, keeps the field and the setter in place.
  *
  * @author Mateusz Nowak
  * @since 5.4.0
@@ -469,6 +471,12 @@ public class MigrateCommandGatewayInSagaEventHandler extends Recipe {
             }
 
             private boolean isFieldStillReferenced(J.ClassDeclaration classDeclaration, String fieldName) {
+                Set<String> setters = new HashSet<>();
+                for (Statement statement : classDeclaration.getBody().getStatements()) {
+                    if (statement instanceof J.MethodDeclaration method && isGatewaySetter(method, fieldName)) {
+                        setters.add(method.getSimpleName());
+                    }
+                }
                 boolean[] referenced = {false};
                 new JavaIsoVisitor<ExecutionContext>() {
                     @Override
@@ -485,10 +493,30 @@ public class MigrateCommandGatewayInSagaEventHandler extends Recipe {
                     @Override
                     public J.MethodDeclaration visitMethodDeclaration(J.MethodDeclaration method,
                                                                       ExecutionContext executionContext) {
-                        if (isConstructorWithGatewayParameter(method, fieldName)) {
+                        if (isConstructorWithGatewayParameter(method, fieldName)
+                                || isGatewaySetter(method, fieldName)) {
                             return method;
                         }
                         return super.visitMethodDeclaration(method, executionContext);
+                    }
+
+                    @Override
+                    public J.MethodInvocation visitMethodInvocation(J.MethodInvocation invocation,
+                                                                    ExecutionContext executionContext) {
+                        if (isOwnMethodCall(invocation) && setters.contains(invocation.getSimpleName())) {
+                            // A call of the injection setter, which goes together with the field.
+                            referenced[0] = true;
+                        }
+                        return super.visitMethodInvocation(invocation, executionContext);
+                    }
+
+                    @Override
+                    public J.MemberReference visitMemberReference(J.MemberReference memberReference,
+                                                                  ExecutionContext executionContext) {
+                        if (setters.contains(memberReference.getReference().getSimpleName())) {
+                            referenced[0] = true;
+                        }
+                        return super.visitMemberReference(memberReference, executionContext);
                     }
 
                     @Override
@@ -501,6 +529,14 @@ public class MigrateCommandGatewayInSagaEventHandler extends Recipe {
                     }
                 }.visit(classDeclaration, new InMemoryExecutionContext());
                 return referenced[0];
+            }
+
+            /**
+             * Whether the method is an {@code @Autowired} or {@code @Inject} setter that only assigns the gateway
+             * field. The legacy module does not call it, so it goes together with the field.
+             */
+            private boolean isGatewaySetter(J.MethodDeclaration method, String fieldName) {
+                return fieldName.equals(SagaInjection.setterField(method));
             }
 
             private boolean isConstructorWithGatewayParameter(J.MethodDeclaration method, String fieldName) {
@@ -532,6 +568,10 @@ public class MigrateCommandGatewayInSagaEventHandler extends Recipe {
                             removed = true;
                             continue;
                         }
+                    }
+                    if (statement instanceof J.MethodDeclaration method && isGatewaySetter(method, fieldName)) {
+                        removed = true;
+                        continue;
                     }
                     if (removed && retained.isEmpty() && statement.getPrefix().getComments().isEmpty()
                             && statement.getPrefix().getWhitespace().chars().filter(character -> character == '\n')

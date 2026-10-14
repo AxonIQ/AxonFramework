@@ -38,12 +38,14 @@ description: >-
   `return` with `@EndSaga`, the other static `SagaLifecycle` calls of a
   `@DeadlineHandler` with `SagaLifecycle.forContext(processingContext)` calls on
   a `ProcessingContext` handler parameter, and
-  a `CommandGateway` field with a `CommandDispatcher` handler parameter. Leaves a
+  a `CommandGateway` field, and the `@Autowired` or `@Inject` setter that only
+  assigns it, with a `CommandDispatcher` handler parameter. Leaves a
   `TODO(axon4to5)` marker on static `SagaLifecycle` calls in other Saga methods,
   such as private helpers, which the legacy module cannot inject into. Leaves a
   `TODO(axon4to5)` marker on the other `@Autowired` or `@Inject` Saga fields
-  and on `ResourceInjector` usage, because Axon Framework 5 resolves Saga
-  collaborators as handler parameters instead of injecting fields.
+  and methods, such as setters, on Spring `@Value` Saga fields, and on
+  `ResourceInjector` usage, because Axon Framework 5 resolves Saga
+  collaborators as handler parameters instead of injecting them.
 recipeList:
   # `onlyIfUsing` evaluates the AF4-typed source model before source rewrites run.
   - org.openrewrite.java.dependencies.AddDependency:
@@ -86,5 +88,5 @@ recipeList:
   - org.axonframework.migration.MigrateSagaLifecycle
   - org.axonframework.migration.MigrateCommandGatewayInSagaEventHandler
   # Runs after the CommandGateway migration, which already turned that field into a
-  # handler parameter, so only the remaining injected fields are marked.
+  # handler parameter, so only the remaining injected fields and setters are marked.
   - org.axonframework.migration.MarkSagaResourceInjection
