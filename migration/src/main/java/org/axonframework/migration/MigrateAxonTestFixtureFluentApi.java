@@ -398,7 +398,9 @@ public class MigrateAxonTestFixtureFluentApi extends Recipe {
                 if (!(sourceFile instanceof JavaSourceFile javaSource)) {
                     return false;
                 }
-                Boolean cached = getCursor().getRoot().getMessage(SAGA_FIXTURE_MESSAGE);
+                // Cache on the source file's cursor: the root cursor is shared by every source file in a run.
+                Cursor sourceFileCursor = getCursor().dropParentUntil(SourceFile.class::isInstance);
+                Boolean cached = sourceFileCursor.getMessage(SAGA_FIXTURE_MESSAGE);
                 if (cached != null) {
                     return cached;
                 }
@@ -409,7 +411,7 @@ public class MigrateAxonTestFixtureFluentApi extends Recipe {
                                      .anyMatch(type -> type != null
                                              && SAGA_FIXTURE_PACKAGE.equals(type.getPackageName()))
                         || referencesSagaFixturePackage(javaSource);
-                getCursor().getRoot().putMessage(SAGA_FIXTURE_MESSAGE, uses);
+                sourceFileCursor.putMessage(SAGA_FIXTURE_MESSAGE, uses);
                 return uses;
             }
 

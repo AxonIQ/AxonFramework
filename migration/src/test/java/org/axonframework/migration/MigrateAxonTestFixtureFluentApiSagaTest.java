@@ -16,7 +16,7 @@
 
 package org.axonframework.migration;
 
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.*;
 import org.openrewrite.test.RecipeSpec;
 import org.openrewrite.test.RewriteTest;
 import org.openrewrite.test.TypeValidation;
@@ -210,5 +210,82 @@ class MigrateAxonTestFixtureFluentApiSagaTest implements RewriteTest {
                         """
                 )
         );
+    }
+
+    @Nested
+    class MultiFileRun {
+
+        private static final String SAGA_TEST = """
+                package com.example;
+
+                import org.axonframework.test.saga.SagaTestFixture;
+                import org.junit.jupiter.api.Test;
+
+                class OrderSagaTest {
+                    private final SagaTestFixture<OrderSaga> fixture = new SagaTestFixture<>(OrderSaga.class);
+
+                    @Test
+                    void startsOnOrderPlaced() {
+                        fixture.givenNoPriorActivity()
+                               .whenPublishingA(new OrderPlaced("o-1"))
+                               .expectActiveSagas(1);
+                    }
+                }
+                """;
+
+        private static final String AGGREGATE_TEST_BEFORE = """
+                package com.example;
+
+                import org.axonframework.test.aggregate.AggregateTestFixture;
+                import org.junit.jupiter.api.Test;
+
+                class OrderTest {
+                    private final AggregateTestFixture<Order> fixture = new AggregateTestFixture<>(Order.class);
+
+                    @Test
+                    void placesOrder() {
+                        fixture.givenNoPriorActivity()
+                               .when(new PlaceOrder("o-1"))
+                               .expectEvents(new OrderPlaced("o-1"));
+                    }
+                }
+                """;
+
+        private static final String AGGREGATE_TEST_AFTER = """
+                package com.example;
+
+                import org.axonframework.test.aggregate.AggregateTestFixture;
+                import org.junit.jupiter.api.Test;
+
+                class OrderTest {
+                    private final AggregateTestFixture<Order> fixture = new AggregateTestFixture<>(Order.class);
+
+                    @Test
+                    void placesOrder() {
+                        fixture.given()
+                               .noPriorActivity()
+                               .when()
+                               .command(new PlaceOrder("o-1"))
+                               .then()
+                               .events(new OrderPlaced("o-1"));
+                    }
+                }
+                """;
+
+        @Test
+        void leavesSagaFixtureChainsAloneWhenAnAggregateFixtureFileIsVisitedFirst() {
+            rewriteRun(
+                    java(AGGREGATE_TEST_BEFORE, AGGREGATE_TEST_AFTER),
+                    java(SAGA_TEST)
+            );
+        }
+
+        @Test
+        void stillRewritesAggregateFixtureChainsWhenASagaFixtureFileIsVisitedFirst() {
+            rewriteRun(
+                    java(SAGA_TEST),
+                    java(AGGREGATE_TEST_BEFORE, AGGREGATE_TEST_AFTER)
+            );
+        }
     }
 }
