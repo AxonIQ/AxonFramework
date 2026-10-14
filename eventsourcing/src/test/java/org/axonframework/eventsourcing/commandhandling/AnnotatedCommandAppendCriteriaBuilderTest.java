@@ -73,6 +73,7 @@ class AnnotatedCommandAppendCriteriaBuilderTest {
             // given
             CommonBuilderHandler.receivedCommands.clear();
             CommonBuilderHandler.receivedSourcingCriteria.clear();
+            CommonBuilderHandler.resolvedCriteria.clear();
             Configuration configuration = configuration();
             CommonBuilderHandler target = new CommonBuilderHandler(configuration.getComponent(EventStore.class));
             CommandHandlingComponent component = component(target, configuration);
@@ -88,6 +89,9 @@ class AnnotatedCommandAppendCriteriaBuilderTest {
                     .containsExactly(new UseCredits("one"), new TopUpCredits("one"));
             assertThat(CommonBuilderHandler.receivedSourcingCriteria)
                     .containsExactly(ACCOUNT_CRITERIA, ACCOUNT_CRITERIA);
+            // the sealed switch narrows only UseCredits, TopUpCredits keeps its sourcing criteria
+            assertThat(CommonBuilderHandler.resolvedCriteria)
+                    .containsExactly(ACCOUNT_CRITERIA.replaceEventTypes(CreditsChanged.class), ACCOUNT_CRITERIA);
         }
 
         @Test
@@ -415,7 +419,7 @@ class AnnotatedCommandAppendCriteriaBuilderTest {
         ));
     }
 
-    private interface CreditsCommand {
+    private sealed interface CreditsCommand permits UseCredits, TopUpCredits {
 
         String accountId();
     }
@@ -607,6 +611,7 @@ class AnnotatedCommandAppendCriteriaBuilderTest {
 
         private static final List<CreditsCommand> receivedCommands = new ArrayList<>();
         private static final List<EventCriteria> receivedSourcingCriteria = new ArrayList<>();
+        private static final List<EventCriteria> resolvedCriteria = new ArrayList<>();
         private final EventStore eventStore;
 
         private CommonBuilderHandler(EventStore eventStore) {
@@ -627,9 +632,12 @@ class AnnotatedCommandAppendCriteriaBuilderTest {
         static EventCriteria criteria(CreditsCommand command, EventCriteria sourcingCriteria) {
             receivedCommands.add(command);
             receivedSourcingCriteria.add(sourcingCriteria);
-            return command instanceof UseCredits
-                    ? sourcingCriteria.replaceEventTypes(CreditsChanged.class)
-                    : sourcingCriteria;
+            EventCriteria criteria = switch (command) {
+                case UseCredits ignored -> sourcingCriteria.replaceEventTypes(CreditsChanged.class);
+                case TopUpCredits ignored -> sourcingCriteria;
+            };
+            resolvedCriteria.add(criteria);
+            return criteria;
         }
     }
 
