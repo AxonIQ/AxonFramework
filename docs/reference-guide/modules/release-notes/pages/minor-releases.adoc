@@ -64,6 +64,9 @@ A heartfelt thank you to all contributors who worked on this section:
 
 === Release 5.1.2
 
+NOTE: Non-annotated nested message classes now resolve to `package.SimpleName` instead of `package.Outer$SimpleName`.
+See <<release_5_1_2_nested_message_names,Nested message class names>> for how this affects existing applications.
+
 ==== Features
 
 - feat(migration): preserve AF4 `MessageOriginProvider` metadata key names in AF5 link:https://github.com/AxonIQ/AxonFramework/pull/4613[#4613]
@@ -93,6 +96,48 @@ We'd like to thank all the contributors who worked on this release!
 - link:https://github.com/MateuszNaKodach[@MateuszNaKodach]
 - link:https://github.com/abuijze[@abuijze]
 - link:https://github.com/hatzlj[@hatzlj]
+
+[#release_5_1_2_nested_message_names]
+==== Nested message class names
+
+Up to 5.1.1, a nested class that was *not* annotated with `@Command`, `@Event`, or `@Query` resolved to its binary name (for example `example.DocumentEvent$DocumentCreated`).
+As of 5.1.2, it resolves to `example.DocumentCreated`, as annotated classes already did.
+Top-level and annotated classes are not affected, and neither are names passed as a `String`, such as `new MessageType("example.DocumentEvent$DocumentCreated", version)`.
+Gateways or other components that build a `MessageType` from `Class#getName()` now dispatch under a different name than the handlers are registered under, resulting in a `NoHandlerForCommandException`.
+
+Events stored under the old name are no longer matched by handlers and `EventCriteria` using the new name.
+No stored-data migration is needed, as the stored name remains as-is.
+Instead, pin the old name on the nested class:
+
+[source,java,role=pseudocode]
+----
+public sealed interface DocumentEvent {
+
+    @Event(namespace = "example", name = "DocumentEvent$DocumentCreated", version = "0.0.1")
+    record DocumentCreated(String id) implements DocumentEvent {
+    }
+}
+----
+
+The version must match the one stored with the events.
+Annotations are only honored by the `AnnotationMessageTypeResolver`, the default, so a replaced `MessageTypeResolver` must take them into account.
+
+To keep binary names for all non-annotated classes instead, configure an `AnnotationMessageTypeResolver` with a fallback:
+
+[source,java,role=pseudocode]
+----
+MessagingConfigurer.enhance(applicationConfigurer)
+    .registerMessageTypeResolver(config -> new AnnotationMessageTypeResolver(
+        payloadType -> Optional.of(new MessageType(payloadType.getName(), MessageType.DEFAULT_VERSION))
+    ));
+----
+
+This also applies to events stored after upgrading, so prefer pinning per class when events were already persisted under the new names.
+
+Instances resolving a nested class to different names cannot exchange messages.
+For a rolling upgrade, first pin the old names on the new version, so all instances share identical names, and drop the pinning only when all instances run the new version and no stored events or external consumers rely on the old names.
+Nested classes sharing a simple name within one package collide; disambiguate them through the `name` or `namespace` attribute.
+See xref:messaging-concepts:anatomy-message.adoc#nested_message_classes[Nested message classes] for the current naming rules.
 
 === Release 5.1.1
 
