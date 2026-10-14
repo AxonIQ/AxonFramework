@@ -151,6 +151,181 @@ class Axon4ToAxoniq5LegacyDeadlineSagaTest implements RewriteTest {
     }
 
     @Test
+    void marksTheMovedDeadlineManagerWhenACommandResultCallbackUsesIt() {
+        // The marker on the deadline leg survives the Saga leg turning the CommandGateway into a CommandDispatcher.
+        rewriteRun(
+                java(
+                        """
+                        package org.springframework.beans.factory.annotation;
+
+                        public @interface Autowired {
+                        }
+                        """
+                ),
+                java(
+                        """
+                        package com.example;
+
+                        import java.time.Duration;
+
+                        import org.axonframework.commandhandling.gateway.CommandGateway;
+                        import org.axonframework.deadline.DeadlineManager;
+                        import org.axonframework.deadline.annotation.DeadlineHandler;
+                        import org.axonframework.modelling.saga.SagaEventHandler;
+                        import org.axonframework.spring.stereotype.Saga;
+                        import org.springframework.beans.factory.annotation.Autowired;
+
+                        @Saga
+                        public class PaymentSaga {
+                            @Autowired
+                            private transient CommandGateway commandGateway;
+                            @Autowired
+                            private transient DeadlineManager deadlineManager;
+
+                            @SagaEventHandler(associationProperty = "paymentId")
+                            public void on(String paymentId) {
+                                deadlineManager.schedule(Duration.ofMinutes(1), "cancelPayment", paymentId);
+                            }
+
+                            @DeadlineHandler(deadlineName = "retryPayment")
+                            public void preparePayment(String reference) {
+                                commandGateway.send(reference)
+                                              .whenComplete((result, error) -> {
+                                                  if (error != null) {
+                                                      deadlineManager.schedule(Duration.ofSeconds(5), "retryPayment", reference);
+                                                  }
+                                              });
+                            }
+                        }
+                        """,
+                        """
+                        package com.example;
+
+                        import java.time.Duration;
+
+                        import org.axonframework.deadline.DeadlineManager;
+                        import org.axonframework.deadline.annotation.DeadlineHandler;
+                        import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher;
+                        import org.axonframework.modelling.saga.SagaEventHandler;
+                        import org.axonframework.spring.stereotype.Saga;
+
+                        @Saga
+                        public class PaymentSaga {
+                            @SagaEventHandler(associationProperty = "paymentId")
+                            public void on(String paymentId, DeadlineManager deadlineManager) {
+                                deadlineManager.schedule(Duration.ofMinutes(1), "cancelPayment", paymentId);
+                            }
+
+                            @DeadlineHandler(deadlineName = "retryPayment")
+                            public void preparePayment(String reference, DeadlineManager deadlineManager, CommandDispatcher commandDispatcher) {
+                                // TODO(axon4to5): use the DeadlineManager in the handler, not in a callback. The \
+                        DeadlineManager parameter is bound to the handler: a call from a callback that runs after the \
+                        handler returned fails, and the deadline is never scheduled or cancelled. Wait for the result \
+                        in the handler, for example with .orTimeout(..).join() or .block(..), and call the \
+                        DeadlineManager there.
+                                commandDispatcher.send(reference)
+                                              .whenComplete((result, error) -> {
+                                                  if (error != null) {
+                                                      deadlineManager.schedule(Duration.ofSeconds(5), "retryPayment", reference);
+                                                  }
+                                              });
+                            }
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
+    void marksTheSubscribedChainThatPassesTheMovedDeadlineManagerToAHelper() {
+        // The DeadlineManager argument the field move adds to the helper call has no type attribution, so it is
+        // recognized by the name of the handler's new DeadlineManager parameter.
+        rewriteRun(
+                java(
+                        """
+                        package org.springframework.beans.factory.annotation;
+
+                        public @interface Autowired {
+                        }
+                        """
+                ),
+                java(
+                        """
+                        package reactor.core.publisher;
+
+                        import java.util.function.Function;
+
+                        public abstract class Mono<T> {
+                            public abstract <R> Mono<R> flatMap(Function<? super T, ? extends Mono<? extends R>> mapper);
+                            public abstract void subscribe();
+                        }
+                        """
+                ),
+                java(
+                        """
+                        package com.example;
+
+                        import java.time.Duration;
+                        import java.util.function.Function;
+
+                        import org.axonframework.deadline.DeadlineManager;
+                        import org.axonframework.modelling.saga.SagaEventHandler;
+                        import org.springframework.beans.factory.annotation.Autowired;
+                        import reactor.core.publisher.Mono;
+
+                        public class OrderSaga {
+                            @Autowired
+                            private transient DeadlineManager deadlineManager;
+
+                            @SagaEventHandler(associationProperty = "orderId")
+                            public void on(String orderId, Mono<String> user) {
+                                user.flatMap(processPayment(orderId))
+                                    .subscribe();
+                            }
+
+                            private Function<String, Mono<String>> processPayment(String orderId) {
+                                return userId -> {
+                                    deadlineManager.schedule(Duration.ofSeconds(10), "payment", orderId);
+                                    return null;
+                                };
+                            }
+                        }
+                        """,
+                        """
+                        package com.example;
+
+                        import java.time.Duration;
+                        import java.util.function.Function;
+
+                        import org.axonframework.deadline.DeadlineManager;
+                        import org.axonframework.modelling.saga.SagaEventHandler;
+                        import reactor.core.publisher.Mono;
+
+                        public class OrderSaga {
+                            @SagaEventHandler(associationProperty = "orderId")
+                            public void on(String orderId, Mono<String> user, DeadlineManager deadlineManager) {
+                                // TODO(axon4to5): use the DeadlineManager in the handler, not in a callback. The \
+                        DeadlineManager parameter is bound to the handler: a call from a callback that runs after the \
+                        handler returned fails, and the deadline is never scheduled or cancelled. Wait for the result \
+                        in the handler, for example with .orTimeout(..).join() or .block(..), and call the \
+                        DeadlineManager there.
+                                user.flatMap(processPayment(orderId, deadlineManager))
+                                    .subscribe();
+                            }
+
+                            private Function<String, Mono<String>> processPayment(String orderId, DeadlineManager deadlineManager) {
+                                return userId -> {
+                                    deadlineManager.schedule(Duration.ofSeconds(10), "payment", orderId);
+                                    return null;
+                                };
+                            }
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
     void keepsTheDeadlineMessageFirstWhenBothLegsAddParametersToAParameterlessDeadlineHandler() {
         // The deadline recipe adds the DeadlineMessage with the DeadlineManager, so the ProcessingContext the Saga
         // recipe appends for the conditional end follows them, and neither resolver-ranked parameter is the payload.
