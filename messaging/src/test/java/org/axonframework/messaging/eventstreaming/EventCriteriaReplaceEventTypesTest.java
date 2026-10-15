@@ -169,6 +169,21 @@ class EventCriteriaReplaceEventTypesTest {
             assertThat(result.matches(USED, Set.of())).isTrue();
             assertThat(result.matches(TOPPED_UP, Set.of())).isFalse();
         }
+
+        @Test
+        void unionWithAnUnrestrictedBranchStaysUnrestrictedByTag() {
+            // given a union in which one branch matches every event
+            EventCriteria criteria = EventCriteria.either(EventCriteria.havingAnyTag(),
+                                                          EventCriteria.havingTags(FIRST_ACCOUNT));
+
+            // when
+            EventCriteria result = criteria.replaceEventTypes(Set.of(USED));
+
+            // then events of the requested type match under any tag, as they did before the replacement
+            assertThat(result.matches(USED, Set.of(Tag.of("accountId", "other")))).isTrue();
+            assertThat(result.matches(USED, Set.of())).isTrue();
+            assertThat(result.matches(TOPPED_UP, Set.of(FIRST_ACCOUNT))).isFalse();
+        }
     }
 
     private static class CreditsUsed {
