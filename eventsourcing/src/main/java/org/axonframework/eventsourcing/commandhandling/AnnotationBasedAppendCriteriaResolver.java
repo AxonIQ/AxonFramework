@@ -330,9 +330,7 @@ final class AnnotationBasedAppendCriteriaResolver implements AppendCriteriaResol
         }
 
         private boolean acceptsAsPayload(Class<?> payloadType) {
-            return commandType != CommandMessage.class
-                    && payloadType != Object.class
-                    && commandType.isAssignableFrom(payloadType);
+            return commandType != CommandMessage.class && commandType.isAssignableFrom(payloadType);
         }
 
         private EventCriteria resolve(CommandMessage command,

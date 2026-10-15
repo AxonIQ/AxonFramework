@@ -264,6 +264,22 @@ class AppendCriteriaBuilderTest {
         }
 
         @Test
+        void objectBuilderCoversAHandlerAcceptingAnyPayload() {
+            // given
+            ObjectPayloadHandler.receivedPayloads.clear();
+            Configuration configuration = configuration();
+            CommandHandlingComponent component = component(
+                    new ObjectPayloadHandler(configuration.getComponent(EventStore.class)), configuration
+            );
+
+            // when
+            handleSuccessfully(component, command("credits.Any", new SharedCommand("one"), Map.of()));
+
+            // then
+            assertThat(ObjectPayloadHandler.receivedPayloads).containsExactly(new SharedCommand("one"));
+        }
+
+        @Test
         void commandMessageBuilderDistinguishesQualifiedNamesSharingAPayloadType() {
             // given
             QualifiedBuilderHandler.receivedNames.clear();
@@ -1188,6 +1204,27 @@ class AppendCriteriaBuilderTest {
         @AppendCriteriaBuilder
         static EventCriteria criteria(UseCredits command, EventCriteria sourcingCriteria) {
             receivedCommands.add(command);
+            return sourcingCriteria;
+        }
+    }
+
+    private static class ObjectPayloadHandler {
+
+        private static final List<Object> receivedPayloads = new ArrayList<>();
+        private final EventStore eventStore;
+
+        private ObjectPayloadHandler(EventStore eventStore) {
+            this.eventStore = eventStore;
+        }
+
+        @CommandHandler(commandName = "credits.Any")
+        void handle(Object command, ProcessingContext context) {
+            sourceAndAppend(eventStore, context, "one");
+        }
+
+        @AppendCriteriaBuilder
+        static EventCriteria criteria(Object command, EventCriteria sourcingCriteria) {
+            receivedPayloads.add(command);
             return sourcingCriteria;
         }
     }
