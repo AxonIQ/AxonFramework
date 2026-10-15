@@ -14,12 +14,15 @@
  * limitations under the License.
  */
 
-package org.axonframework.messaging.core.annotation;
+package org.axonframework.messaging.core.reflection;
 
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.common.configuration.DefaultComponentRegistry;
 import org.axonframework.common.configuration.LifecycleRegistry;
-import org.axonframework.messaging.core.reflection.ClasspathHandlerDefinitionConfigurationEnhancer;
+import org.axonframework.messaging.core.annotation.HandlerDefinition;
+import org.axonframework.messaging.core.annotation.HandlerEnhancerDefinition;
+import org.axonframework.messaging.core.annotation.MultiHandlerDefinition;
+import org.axonframework.messaging.core.annotation.MultiHandlerEnhancerDefinition;
 import org.junit.jupiter.api.*;
 
 import static org.assertj.core.api.Assertions.assertThat;
