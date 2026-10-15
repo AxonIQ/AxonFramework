@@ -78,6 +78,32 @@ MessagingConfigurer.enhance(applicationConfigurer)
 
 This also applies to events stored after upgrading, so prefer pinning per class when events were already persisted under the new names.
 
+Pinning alone is not sufficient if events were already stored under the new name (`example.DocumentCreated`).
+Handlers match on the `QualifiedName` only, so after pinning they register solely under `example.DocumentEvent$DocumentCreated`.
+Events stored under the new name are then silently skipped: event processors filter them out, and `evolve` on an event-sourced entity finds no handler and ignores them.
+Nothing fails, so projections and entities simply miss state.
+Events dispatched after pinning use the old name again, leaving the store with a mix of old, new, and old names.
+
+When events exist under both names, either:
+
+. *Add a handler per name.*
+Annotate a second handler with the new name through `@EventHandler(eventName = "example.DocumentCreated")`.
+As `@EventSourcingHandler` has no `eventName` attribute, an entity needs a plain `@EventHandler(eventName = ...)` for the second name.
+Any `@EventCriteriaBuilder` filtering on types needs to list both names.
++
+[source,java,role=pseudocode]
+----
+@EventHandler
+void on(DocumentCreated event) { ... }
+
+@EventHandler(eventName = "example.DocumentCreated")
+void onNew(DocumentCreated event) { ... }
+----
+
+. *Rename the event through an event transformation* (Axoniq Framework 5.2+).
+A link:https://docs.axoniq.io/axon-framework-reference/5.4/message-transformation/defining-transformations/#_renaming_an_event[`rename(from, to)`^] from `example.DocumentCreated` to the pinned name makes the existing handlers work unchanged.
+Type-filtered `EventCriteria` get the old name added automatically.
+
 Instances resolving a nested class to different names cannot exchange messages.
 For a rolling upgrade, first pin the old names on the new version, so all instances share identical names, and drop the pinning only when all instances run the new version and no stored events or external consumers rely on the old names.
 Nested classes sharing a simple name within one package collide; disambiguate them through the `name` or `namespace` attribute.
