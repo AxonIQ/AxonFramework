@@ -12,7 +12,7 @@ import org.axonframework.eventsourcing.annotation.EventCriteriaBuilder;
 import org.axonframework.eventsourcing.annotation.EventSourcedEntity;
 import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
 import org.axonframework.eventsourcing.commandhandling.annotation.AppendCriteriaBuilder;
-import org.axonframework.messaging.core.MessageTypeResolver;
+import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.messaging.eventstreaming.Tag;
 import org.axonframework.modelling.annotation.InjectEntity;
@@ -47,13 +47,10 @@ class SubscribeStudentToCourseCommandHandler {
      * keeps the tags that were used for sourcing without restating them.
      */
     @AppendCriteriaBuilder
-    static EventCriteria appendCriteria(SubscribeStudentToCourse command,
-                                        EventCriteria sourcingCriteria,
-                                        MessageTypeResolver messageTypeResolver) {
+    static EventCriteria appendCriteria(SubscribeStudentToCourse command, EventCriteria sourcingCriteria) {
         return sourcingCriteria.replaceEventTypes(
-                messageTypeResolver,
-                StudentSubscribedToCourse.class,
-                CourseCapacityChanged.class
+                new QualifiedName(StudentSubscribedToCourse.class),
+                new QualifiedName(CourseCapacityChanged.class)
         );
     }
 

@@ -906,14 +906,11 @@ class AppendCriteriaBuilderTest {
         }
 
         @AppendCriteriaBuilder
-        static EventCriteria criteria(CreditsCommand command,
-                                      EventCriteria sourcingCriteria,
-                                      MessageTypeResolver messageTypeResolver) {
+        static EventCriteria criteria(CreditsCommand command, EventCriteria sourcingCriteria) {
             receivedCommands.add(command);
             receivedSourcingCriteria.add(sourcingCriteria);
             EventCriteria criteria = switch (command) {
-                case UseCredits ignored ->
-                        sourcingCriteria.replaceEventTypes(messageTypeResolver, CreditsChanged.class);
+                case UseCredits ignored -> sourcingCriteria.replaceEventTypes(CREDITS_CHANGED);
                 case TopUpCredits ignored -> sourcingCriteria;
             };
             resolvedCriteria.add(criteria);
@@ -1045,11 +1042,9 @@ class AppendCriteriaBuilderTest {
         }
 
         @AppendCriteriaBuilder
-        static EventCriteria use(UseCredits command,
-                                 EventCriteria sourcingCriteria,
-                                 MessageTypeResolver messageTypeResolver) {
+        static EventCriteria use(UseCredits command, EventCriteria sourcingCriteria) {
             receivedCommands.add("use:" + command);
-            return sourcingCriteria.replaceEventTypes(messageTypeResolver, CreditsChanged.class);
+            return sourcingCriteria.replaceEventTypes(CREDITS_CHANGED);
         }
 
         @AppendCriteriaBuilder
@@ -1144,10 +1139,8 @@ class AppendCriteriaBuilderTest {
         }
 
         @AppendCriteriaBuilder
-        static EventCriteria criteria(UseCredits command,
-                                      EventCriteria sourcingCriteria,
-                                      MessageTypeResolver messageTypeResolver) {
-            return sourcingCriteria.replaceEventTypes(messageTypeResolver, CreditsChanged.class);
+        static EventCriteria criteria(UseCredits command, EventCriteria sourcingCriteria) {
+            return sourcingCriteria.replaceEventTypes(CREDITS_CHANGED);
         }
     }
 

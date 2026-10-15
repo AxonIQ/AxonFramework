@@ -23,7 +23,6 @@ import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.messaging.commandhandling.SimpleCommandHandlingComponent;
 import org.axonframework.messaging.commandhandling.configuration.CommandHandlingModule;
 import org.axonframework.messaging.core.MessageStream;
-import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.QualifiedName;
 
 public class CreditCommandConfiguration {
@@ -40,25 +39,21 @@ public class CreditCommandConfiguration {
                                                      .subscribe(new QualifiedName("credits.TopUpCredits"),
                                                                 (command, context) -> MessageStream.empty())
                                      )
-                                     .intercepted(configuration -> {
-                                         MessageTypeResolver messageTypeResolver =
-                                                 configuration.getComponent(MessageTypeResolver.class);
-                                         return new AppendCriteriaInterceptor(
-                                                 configuration.getComponent(EventStore.class),
-                                                 (command, context, sourcingCriteria) ->
-                                                         switch (command.type().qualifiedName().fullName()) {
-                                                             case "credits.UseCredits" ->
-                                                                     sourcingCriteria.replaceEventTypes(
-                                                                             messageTypeResolver, CreditsUsed.class
-                                                                     );
-                                                             case "credits.TopUpCredits" -> sourcingCriteria;
-                                                             default -> throw new IllegalArgumentException(
-                                                                     "Unsupported command: "
-                                                                             + command.type().qualifiedName()
-                                                             );
-                                                         }
-                                         );
-                                     })
+                                     .intercepted(configuration -> new AppendCriteriaInterceptor(
+                                             configuration.getComponent(EventStore.class),
+                                             (command, context, sourcingCriteria) ->
+                                                     switch (command.type().qualifiedName().fullName()) {
+                                                         case "credits.UseCredits" ->
+                                                                 sourcingCriteria.replaceEventTypes(
+                                                                         new QualifiedName(CreditsUsed.class)
+                                                                 );
+                                                         case "credits.TopUpCredits" -> sourcingCriteria;
+                                                         default -> throw new IllegalArgumentException(
+                                                                 "Unsupported command: "
+                                                                         + command.type().qualifiedName()
+                                                         );
+                                                     }
+                                     ))
         );
     }
 }

@@ -30,7 +30,7 @@ import org.axonframework.examples.university.shared.CourseId;
 import org.axonframework.examples.university.shared.FacultyTags;
 import org.axonframework.extension.spring.stereotype.EventSourced;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
-import org.axonframework.messaging.core.MessageTypeResolver;
+import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.messaging.eventstreaming.Tag;
@@ -68,13 +68,10 @@ class SubscribeStudentToCourseCommandHandler {
      * keeps the tags that were used for sourcing without restating them.
      */
     @AppendCriteriaBuilder
-    static EventCriteria appendCriteria(SubscribeStudentToCourse command,
-                                        EventCriteria sourcingCriteria,
-                                        MessageTypeResolver messageTypeResolver) {
+    static EventCriteria appendCriteria(SubscribeStudentToCourse command, EventCriteria sourcingCriteria) {
         return sourcingCriteria.replaceEventTypes(
-                messageTypeResolver,
-                StudentSubscribedToCourse.class,
-                CourseCapacityChanged.class
+                new QualifiedName(StudentSubscribedToCourse.class),
+                new QualifiedName(CourseCapacityChanged.class)
         );
     }
 

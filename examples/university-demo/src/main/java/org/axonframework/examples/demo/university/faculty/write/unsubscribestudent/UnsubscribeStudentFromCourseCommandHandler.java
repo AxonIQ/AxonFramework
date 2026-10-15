@@ -27,7 +27,7 @@ import org.axonframework.examples.demo.university.faculty.events.StudentSubscrib
 import org.axonframework.examples.demo.university.faculty.events.StudentUnsubscribedFromCourse;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.core.Message;
-import org.axonframework.messaging.core.MessageTypeResolver;
+import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.conversion.MessageConverter;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
@@ -68,10 +68,8 @@ class UnsubscribeStudentFromCourseCommandHandler {
      * event types, and which of them threatens the invariant depends on the command, not on the entity.
      */
     @AppendCriteriaBuilder
-    static EventCriteria appendCriteria(UnsubscribeStudentFromCourse command,
-                                        EventCriteria sourcingCriteria,
-                                        MessageTypeResolver messageTypeResolver) {
-        return sourcingCriteria.replaceEventTypes(messageTypeResolver, StudentUnsubscribedFromCourse.class);
+    static EventCriteria appendCriteria(UnsubscribeStudentFromCourse command, EventCriteria sourcingCriteria) {
+        return sourcingCriteria.replaceEventTypes(new QualifiedName(StudentUnsubscribedFromCourse.class));
     }
 
     private List<StudentUnsubscribedFromCourse> decide(UnsubscribeStudentFromCourse command, State state) {
