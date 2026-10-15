@@ -358,6 +358,14 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
     private boolean initialized;
 
     /**
+     * Indicates that this stream was completed by {@link #close()} while it could still produce {@link Entry entries},
+     * or while it could not be determined that it would not.
+     * <p>
+     * Only access while synchronized on this class.
+     */
+    private boolean closedBeforeExhaustion;
+
+    /**
      * Indicates that the consumer is owed a callback invocation, recorded while this stream's lock is held so that the
      * invocation itself can happen after the lock is released. Setting it is idempotent: the consumer is notified once,
      * no matter how many state changes asked for a notification.
@@ -421,6 +429,10 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
      * This method is intended to be invoked by consumers to indicate loss of interest.
      * Implementations should not call this method directly, unless they are acting as
      * a consumer of another (sub)stream they own.
+     * <p>
+     * When {@link #terminalState()} reports that the stream is exhausted or failed, and no peeked entry remains to be
+     * read, the stream completes accordingly, as with {@link #isCompleted()}. Otherwise, it completes as
+     * {@link #isClosedBeforeExhaustion() closed before exhaustion}.
      */
     @Override
     public final void close() {
@@ -433,7 +445,13 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
          */
 
         synchronized (this) {
-            complete();
+            observeTerminalState();
+
+            if (!completed) {
+                this.closedBeforeExhaustion = true;
+
+                complete();
+            }
         }
 
         flushPendingCallback();
@@ -554,6 +572,21 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
                 completeExceptionally(e);
             }
         }
+    }
+
+    /**
+     * Indicates whether this stream was {@link #close() closed} before it was exhausted: while it still held or could
+     * still produce {@link Entry entries}, or while it could not be determined without reading that it would not. A
+     * stream that completed because its source was exhausted or failed returns {@code false}, also when it was
+     * closed afterwards.
+     * <p>
+     * The outcome is final once {@link #onCompleted()} is invoked.
+     *
+     * @return {@code true} if this stream was closed before it was exhausted, {@code false} otherwise
+     * @since 5.5.0
+     */
+    protected final synchronized boolean isClosedBeforeExhaustion() {
+        return closedBeforeExhaustion;
     }
 
     /**

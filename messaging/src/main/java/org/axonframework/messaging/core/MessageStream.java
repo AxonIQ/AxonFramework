@@ -649,6 +649,10 @@ public interface MessageStream<M extends Message> {
     /**
      * Returns a stream that invokes the given {@code completeHandler} when the stream completes normally.
      * Throws an exception if this stream is unbounded.
+     * <p>
+     * The {@code completeHandler} is not invoked when the stream completes with an error, nor when the stream is
+     * {@link #close() closed} by its consumer before it completed, such as while an {@link Entry} remains to be read,
+     * even when that entry was already {@link #peek() peeked}.
      *
      * @param completeHandler The {@link Runnable} to invoke when the stream completes normally.
      * @return A stream that invokes the {@code completeHandler} upon normal completion.
