@@ -36,7 +36,14 @@ import java.lang.annotation.Target;
  * payload type, which also covers the payload's subtypes, or {@link CommandMessage}, which covers every command no
  * payload-typed builder covers. Additional parameters may be the accumulated sourcing {@link EventCriteria},
  * {@link CommandMessage}, {@link Metadata}, a {@code String} annotated with {@link MetadataValue},
- * {@link ProcessingContext}, {@link Configuration}, or a synchronously available configured component.
+ * {@link ProcessingContext}, {@link Configuration}, or a synchronously available configured component. Any other
+ * parameter fails at startup.
+ * <p>
+ * As for {@link org.axonframework.eventsourcing.annotation.EventCriteriaBuilder}, these parameters are not resolved
+ * through the {@link org.axonframework.messaging.core.annotation.ParameterResolverFactory} that resolves message
+ * handler parameters, so custom parameter resolvers do not apply. A builder runs while the append condition is
+ * finalized at commit, where handler parameters such as an event appender, a command dispatcher, or an injected entity
+ * would append events, dispatch commands, or source events from within the commit.
  * <p>
  * The builder runs separately for every command invocation. Its result replaces the complete sourcing-derived append
  * criteria for that command's transaction.
