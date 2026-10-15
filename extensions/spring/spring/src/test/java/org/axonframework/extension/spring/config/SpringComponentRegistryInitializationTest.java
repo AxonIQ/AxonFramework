@@ -18,6 +18,7 @@ package org.axonframework.extension.spring.config;
 
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.ConfigurationEnhancer;
+import org.axonframework.messaging.core.configuration.MessagingConfigurationDefaults;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.support.BeanDefinitionBuilder;
@@ -25,6 +26,7 @@ import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.beans.factory.support.RootBeanDefinition;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 /**
  * Test class validating the initialization of the {@link SpringComponentRegistry}.
@@ -84,6 +86,29 @@ class SpringComponentRegistryInitializationTest {
 
         testSubject.postProcessAfterInitialization(new Object(), "applicationBean");
         assertThat(beanFactory.containsSingleton("testEnhancer")).isTrue();
+    }
+
+    @Test
+    void enhancerBeanReplacesServiceLoadedEnhancerOfTheSameType() {
+        // given
+        DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory();
+        SpringLifecycleRegistry lifecycleRegistry = new SpringLifecycleRegistry();
+        lifecycleRegistry.setBeanFactory(beanFactory);
+        // MessagingConfigurationDefaults is also registered through the ServiceLoader
+        beanFactory.registerBeanDefinition(
+                "customNamedEnhancer",
+                BeanDefinitionBuilder.rootBeanDefinition(MessagingConfigurationDefaults.class).getBeanDefinition()
+        );
+        beanFactory.registerBeanDefinition("applicationBean", new RootBeanDefinition(Object.class));
+
+        SpringComponentRegistry testSubject = new SpringComponentRegistry(beanFactory, lifecycleRegistry);
+        testSubject.postProcessBeanFactory(beanFactory);
+
+        // when
+        testSubject.postProcessAfterInitialization(new Object(), "applicationBean");
+
+        // then
+        assertThatCode(testSubject::copyWithDecoratorsAndEnhancers).doesNotThrowAnyException();
     }
 
     @SuppressWarnings("unused")
