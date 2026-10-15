@@ -16,6 +16,7 @@
 
 package org.axonframework.eventsourcing.commandhandling;
 
+import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.ReflectionUtils;
 import org.axonframework.common.annotation.AnnotationUtils;
 import org.axonframework.common.configuration.Configuration;
@@ -76,6 +77,9 @@ final class AnnotationBasedAppendCriteriaResolver implements AppendCriteriaResol
      * resolved against the builders visible to that supertype.
      *
      * @return the resolver per declared command handler, empty when no builder is visible to {@code declaringType}
+     * @throws AxonConfigurationException if a builder is invalid, two builders on one class cover the same command
+     *                                    type, a payload is accepted by several builders of which none is more
+     *                                    specific, or a declared command handler is matched by no builder
      */
     static Map<Method, AnnotationBasedAppendCriteriaResolver> inspect(Class<?> declaringType,
                                                                       Configuration configuration) {
@@ -114,7 +118,7 @@ final class AnnotationBasedAppendCriteriaResolver implements AppendCriteriaResol
                 BuilderMethod builder = new BuilderMethod(method, configuration);
                 BuilderMethod duplicate = declared.putIfAbsent(builder.commandType, builder);
                 if (duplicate != null) {
-                    throw new IllegalArgumentException(
+                    throw new AxonConfigurationException(
                             ("Command-handling class [%s] declares more than one @AppendCriteriaBuilder for command "
                                     + "type [%s]: %s")
                                     .formatted(type.getName(),
@@ -165,7 +169,7 @@ final class AnnotationBasedAppendCriteriaResolver implements AppendCriteriaResol
                           ))
                           .toList();
         if (mostSpecific.size() != 1) {
-            throw new IllegalArgumentException(
+            throw new AxonConfigurationException(
                     ("Command payload [%s] is accepted by several @AppendCriteriaBuilder methods, none of which is "
                             + "more specific than the others: %s. Declare a builder for [%s] itself.")
                             .formatted(payloadType.getName(), describe(candidates), payloadType.getName())
@@ -174,10 +178,10 @@ final class AnnotationBasedAppendCriteriaResolver implements AppendCriteriaResol
         return Optional.of(mostSpecific.getFirst());
     }
 
-    private static IllegalArgumentException uncovered(Class<?> payloadType,
-                                                      Class<?> declaringType,
-                                                      Collection<BuilderMethod> builders) {
-        return new IllegalArgumentException(
+    private static AxonConfigurationException uncovered(Class<?> payloadType,
+                                                       Class<?> declaringType,
+                                                       Collection<BuilderMethod> builders) {
+        return new AxonConfigurationException(
                 ("No @AppendCriteriaBuilder accepts handled command payload [%s] declared by [%s]. Once a class has a "
                         + "builder, every command it handles needs one, so a command cannot silently keep its "
                         + "sourcing criteria. Builders visible to the class: %s")
@@ -199,13 +203,19 @@ final class AnnotationBasedAppendCriteriaResolver implements AppendCriteriaResol
         return builder.resolve(command, context, sourcingCriteria);
     }
 
-    private static IllegalArgumentException invalid(Method method, String reason) {
-        return new IllegalArgumentException(
-                "@AppendCriteriaBuilder method %s. Violating method: %s#%s"
-                        .formatted(reason,
-                                   method.getDeclaringClass().getName(),
-                                   ReflectionUtils.toDiscernibleSignature(method))
-        );
+    private static AxonConfigurationException invalid(Method method, String reason) {
+        return new AxonConfigurationException(violation(method, reason));
+    }
+
+    private static AxonConfigurationException invalid(Method method, String reason, Throwable cause) {
+        return new AxonConfigurationException(violation(method, reason), cause);
+    }
+
+    private static String violation(Method method, String reason) {
+        return "@AppendCriteriaBuilder method %s. Violating method: %s#%s"
+                .formatted(reason,
+                           method.getDeclaringClass().getName(),
+                           ReflectionUtils.toDiscernibleSignature(method));
     }
 
     private static final class BuilderMethod {
@@ -305,7 +315,7 @@ final class AnnotationBasedAppendCriteriaResolver implements AppendCriteriaResol
          * This covers every type that is not injectable rather than enumerating the types that are not, so a parameter
          * that is meaningless to a criteria builder -- a gateway, an entity, an event appender -- is reported through
          * the same message as any other. A broad type such as {@code Object} matches several components and makes the
-         * lookup itself fail; that detail is folded into the message instead of surfacing as a configuration error.
+         * lookup itself fail; that failure is kept as the cause.
          */
         private static ArgumentResolver componentResolver(Class<?> parameterType,
                                                           Configuration configuration,
@@ -315,7 +325,7 @@ final class AnnotationBasedAppendCriteriaResolver implements AppendCriteriaResol
                 component = configuration.getOptionalComponent(parameterType).orElse(null);
             } catch (RuntimeException e) {
                 throw invalid(method, "declares unsupported parameter type [%s]: %s"
-                        .formatted(parameterType.getName(), e.getMessage()));
+                        .formatted(parameterType.getName(), e.getMessage()), e);
             }
             if (component == null) {
                 throw invalid(method,
@@ -346,7 +356,9 @@ final class AnnotationBasedAppendCriteriaResolver implements AppendCriteriaResol
                 // The return type is validated on construction, so null is the only value that is not EventCriteria.
                 Object result = method.invoke(null, arguments);
                 if (result == null) {
-                    throw invalid(method, "returned null; it must return a non-null EventCriteria");
+                    throw new IllegalStateException(
+                            violation(method, "returned null; it must return a non-null EventCriteria")
+                    );
                 }
                 return (EventCriteria) result;
             } catch (IllegalAccessException e) {

@@ -16,6 +16,7 @@
 
 package org.axonframework.eventsourcing.commandhandling;
 
+import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.conversion.PassThroughConverter;
 import org.axonframework.eventsourcing.commandhandling.annotation.AppendCriteriaBuilder;
@@ -223,7 +224,7 @@ class AppendCriteriaBuilderTest {
 
             // when / then
             assertThatThrownBy(() -> component(new DuplicateTypeBuilderHandler(), configuration))
-                    .isInstanceOf(IllegalArgumentException.class)
+                    .isInstanceOf(AxonConfigurationException.class)
                     .hasMessageContaining("more than one @AppendCriteriaBuilder for command type")
                     .hasMessageContaining(UseCredits.class.getName());
         }
@@ -235,7 +236,7 @@ class AppendCriteriaBuilderTest {
 
             // when / then
             assertThatThrownBy(() -> component(new AmbiguousBuilderHandler(), configuration))
-                    .isInstanceOf(IllegalArgumentException.class)
+                    .isInstanceOf(AxonConfigurationException.class)
                     .hasMessageContaining("none of which is more specific")
                     .hasMessageContaining(AuditedAndBilled.class.getName());
         }
@@ -247,7 +248,7 @@ class AppendCriteriaBuilderTest {
 
             // when / then
             assertThatThrownBy(() -> component(new PartialBuilderHandler(), configuration))
-                    .isInstanceOf(IllegalArgumentException.class)
+                    .isInstanceOf(AxonConfigurationException.class)
                     .hasMessageContaining("No @AppendCriteriaBuilder accepts handled command payload")
                     .hasMessageContaining(TopUpCredits.class.getName());
         }
@@ -259,17 +260,49 @@ class AppendCriteriaBuilderTest {
 
             // when / then
             assertThatThrownBy(() -> component(new NonStaticBuilderHandler(), configuration))
-                    .isInstanceOf(IllegalArgumentException.class)
+                    .isInstanceOf(AxonConfigurationException.class)
                     .hasMessageContaining("must be static");
             assertThatThrownBy(() -> component(new InvalidReturnBuilderHandler(), configuration))
-                    .isInstanceOf(IllegalArgumentException.class)
+                    .isInstanceOf(AxonConfigurationException.class)
                     .hasMessageContaining("must return EventCriteria");
             assertThatThrownBy(() -> component(new EventAppenderBuilderHandler(), configuration))
-                    .isInstanceOf(IllegalArgumentException.class)
+                    .isInstanceOf(AxonConfigurationException.class)
                     .hasMessageContaining("unsupported parameter type");
             assertThatThrownBy(() -> component(new EntityBuilderHandler(), configuration))
-                    .isInstanceOf(IllegalArgumentException.class)
+                    .isInstanceOf(AxonConfigurationException.class)
                     .hasMessageContaining("unsupported parameter type");
+        }
+
+        @Test
+        void unresolvableParameterKeepsTheLookupFailureAsCause() {
+            // given a parameter type that matches several configured components
+            Configuration configuration = configuration();
+
+            // when / then
+            assertThatThrownBy(() -> component(new AmbiguousParameterBuilderHandler(), configuration))
+                    .isInstanceOf(AxonConfigurationException.class)
+                    .hasMessageContaining("unsupported parameter type [java.lang.Object]")
+                    .cause()
+                    .isNotNull();
+        }
+
+        @Test
+        void nullResultFailsTheCommitWithAnIllegalState() {
+            // given
+            Configuration configuration = configuration();
+            CommandHandlingComponent component = component(
+                    new NullBuilderHandler(configuration.getComponent(EventStore.class)), configuration
+            );
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> component.handle(
+                    command(UseCredits.class, new UseCredits("one"), Map.of()), context
+            ));
+
+            // when / then
+            assertThatThrownBy(() -> awaitExceptionalCompletion(uow.execute()))
+                    .isInstanceOf(CompletionException.class)
+                    .hasCauseInstanceOf(IllegalStateException.class)
+                    .hasStackTraceContaining("returned null");
         }
 
         @Test
@@ -299,7 +332,7 @@ class AppendCriteriaBuilderTest {
             assertThatThrownBy(() -> component(
                     new IncompatibleChildHandler(configuration.getComponent(EventStore.class)), configuration
             ))
-                    .isInstanceOf(IllegalArgumentException.class)
+                    .isInstanceOf(AxonConfigurationException.class)
                     .hasMessageContaining("No @AppendCriteriaBuilder accepts handled command payload")
                     .hasMessageContaining(NarrowBuilderParent.class.getName());
         }
@@ -1058,6 +1091,18 @@ class AppendCriteriaBuilderTest {
 
         @AppendCriteriaBuilder
         static EventCriteria criteria(UseCredits command, @InjectEntity Object entity) {
+            return ACCOUNT_CRITERIA;
+        }
+    }
+
+    private static class AmbiguousParameterBuilderHandler {
+
+        @CommandHandler
+        void handle(UseCredits command) {
+        }
+
+        @AppendCriteriaBuilder
+        static EventCriteria criteria(UseCredits command, Object component) {
             return ACCOUNT_CRITERIA;
         }
     }
