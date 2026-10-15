@@ -17,6 +17,8 @@
 package org.axonframework.messaging.eventstreaming;
 
 import org.axonframework.common.annotation.Internal;
+import org.axonframework.messaging.core.MessageType;
+import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.eventhandling.EventMessage;
 
@@ -314,6 +316,19 @@ public sealed interface EventCriteria
     }
 
     /**
+     * Replaces the event types on every branch of this criteria with the given {@code types}.
+     *
+     * @param types the event types used by every branch of the resulting criteria
+     * @return criteria with the given event types on every branch
+     * @see #replaceEventTypes(Set)
+     * @since 5.5.0
+     */
+    default EventCriteria replaceEventTypes(QualifiedName... types) {
+        Objects.requireNonNull(types, "The types cannot be null.");
+        return replaceEventTypes(Set.of(types));
+    }
+
+    /**
      * Replaces the event types on every branch of this criteria with the given fully qualified names.
      *
      * @param types the fully qualified event type names used by every branch of the resulting criteria
@@ -329,23 +344,27 @@ public sealed interface EventCriteria
     }
 
     /**
-     * Replaces the event types on every branch of this criteria with qualified names derived from the given Java event
-     * {@code type} and any {@code additionalTypes}.
+     * Replaces the event types on every branch of this criteria with the names the given {@code messageTypeResolver}
+     * resolves for the given Java event {@code types}.
+     * <p>
+     * Resolving through the {@link MessageTypeResolver} keeps the names equal to the ones events are stored under,
+     * including names customized through annotations such as {@code @Event}. Use the configured resolver, for example
+     * by declaring a {@code MessageTypeResolver} parameter on an
+     * {@code org.axonframework.eventsourcing.commandhandling.annotation.AppendCriteriaBuilder} method.
      *
-     * @param type the first Java event type used by every branch of the resulting criteria
-     * @param additionalTypes any additional Java event types used by every branch of the resulting criteria
-     * @return criteria with the given event types on every branch
+     * @param messageTypeResolver the resolver deriving the event type names from the given {@code types}
+     * @param types               the Java event types used by every branch of the resulting criteria
+     * @return criteria with the resolved event types on every branch
      * @see #replaceEventTypes(Set)
      * @since 5.5.0
      */
-    default EventCriteria replaceEventTypes(Class<?> type, Class<?>... additionalTypes) {
-        Objects.requireNonNull(type, "The type cannot be null.");
-        Objects.requireNonNull(additionalTypes, "The additional types cannot be null.");
-        Set<QualifiedName> types = Arrays.stream(additionalTypes)
-                                         .map(QualifiedName::new)
-                                         .collect(Collectors.toCollection(HashSet::new));
-        types.add(new QualifiedName(type));
-        return replaceEventTypes(types);
+    default EventCriteria replaceEventTypes(MessageTypeResolver messageTypeResolver, Class<?>... types) {
+        Objects.requireNonNull(messageTypeResolver, "The MessageTypeResolver cannot be null.");
+        Objects.requireNonNull(types, "The types cannot be null.");
+        return replaceEventTypes(Arrays.stream(types)
+                                       .map(messageTypeResolver::resolveOrThrow)
+                                       .map(MessageType::qualifiedName)
+                                       .collect(Collectors.toSet()));
     }
 
     /**

@@ -34,7 +34,9 @@ import org.axonframework.messaging.commandhandling.interception.InterceptingComm
 import org.axonframework.messaging.core.FluxUtils;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
+import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.Metadata;
+import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
 import org.axonframework.messaging.core.annotation.HandlerDefinition;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
@@ -76,6 +78,7 @@ class AppendCriteriaBuilderTest {
 
     private static final Tag ACCOUNT_ONE = Tag.of("accountId", "one");
     private static final EventCriteria ACCOUNT_CRITERIA = EventCriteria.havingTags(ACCOUNT_ONE);
+    private static final QualifiedName CREDITS_CHANGED = new QualifiedName(CreditsChanged.class);
 
     @Nested
     class Resolving {
@@ -103,7 +106,7 @@ class AppendCriteriaBuilderTest {
                     .containsExactly(ACCOUNT_CRITERIA, ACCOUNT_CRITERIA);
             // the sealed switch narrows only UseCredits, TopUpCredits keeps its sourcing criteria
             assertThat(CommonBuilderHandler.resolvedCriteria)
-                    .containsExactly(ACCOUNT_CRITERIA.replaceEventTypes(CreditsChanged.class), ACCOUNT_CRITERIA);
+                    .containsExactly(ACCOUNT_CRITERIA.replaceEventTypes(CREDITS_CHANGED), ACCOUNT_CRITERIA);
         }
 
         @Test
@@ -175,7 +178,7 @@ class AppendCriteriaBuilderTest {
 
             // then
             assertThat(finalCondition.get().criteria())
-                    .isEqualTo(ACCOUNT_CRITERIA.replaceEventTypes(CreditsChanged.class));
+                    .isEqualTo(ACCOUNT_CRITERIA.replaceEventTypes(CREDITS_CHANGED));
         }
 
         @Test
@@ -249,7 +252,7 @@ class AppendCriteriaBuilderTest {
                     new PerCommandBuilderHandler(configuration.getComponent(EventStore.class)),
                     configuration.getComponent(ParameterResolverFactory.class),
                     new AppendCriteriaHandlerDefinition(wrapping, configuration),
-                    configuration.getComponent(org.axonframework.messaging.core.MessageTypeResolver.class),
+                    configuration.getComponent(MessageTypeResolver.class),
                     new DelegatingMessageConverter(PassThroughConverter.INSTANCE)
             );
 
@@ -623,7 +626,7 @@ class AppendCriteriaBuilderTest {
                 target,
                 configuration.getComponent(ParameterResolverFactory.class),
                 configuration.getComponent(HandlerDefinition.class),
-                configuration.getComponent(org.axonframework.messaging.core.MessageTypeResolver.class),
+                configuration.getComponent(MessageTypeResolver.class),
                 configuration.getOptionalComponent(MessageConverter.class)
                              .orElseGet(() -> new DelegatingMessageConverter(PassThroughConverter.INSTANCE))
         );
@@ -903,11 +906,14 @@ class AppendCriteriaBuilderTest {
         }
 
         @AppendCriteriaBuilder
-        static EventCriteria criteria(CreditsCommand command, EventCriteria sourcingCriteria) {
+        static EventCriteria criteria(CreditsCommand command,
+                                      EventCriteria sourcingCriteria,
+                                      MessageTypeResolver messageTypeResolver) {
             receivedCommands.add(command);
             receivedSourcingCriteria.add(sourcingCriteria);
             EventCriteria criteria = switch (command) {
-                case UseCredits ignored -> sourcingCriteria.replaceEventTypes(CreditsChanged.class);
+                case UseCredits ignored ->
+                        sourcingCriteria.replaceEventTypes(messageTypeResolver, CreditsChanged.class);
                 case TopUpCredits ignored -> sourcingCriteria;
             };
             resolvedCriteria.add(criteria);
@@ -1039,9 +1045,11 @@ class AppendCriteriaBuilderTest {
         }
 
         @AppendCriteriaBuilder
-        static EventCriteria use(UseCredits command, EventCriteria sourcingCriteria) {
+        static EventCriteria use(UseCredits command,
+                                 EventCriteria sourcingCriteria,
+                                 MessageTypeResolver messageTypeResolver) {
             receivedCommands.add("use:" + command);
-            return sourcingCriteria.replaceEventTypes(CreditsChanged.class);
+            return sourcingCriteria.replaceEventTypes(messageTypeResolver, CreditsChanged.class);
         }
 
         @AppendCriteriaBuilder
@@ -1136,8 +1144,10 @@ class AppendCriteriaBuilderTest {
         }
 
         @AppendCriteriaBuilder
-        static EventCriteria criteria(UseCredits command, EventCriteria sourcingCriteria) {
-            return sourcingCriteria.replaceEventTypes(CreditsChanged.class);
+        static EventCriteria criteria(UseCredits command,
+                                      EventCriteria sourcingCriteria,
+                                      MessageTypeResolver messageTypeResolver) {
+            return sourcingCriteria.replaceEventTypes(messageTypeResolver, CreditsChanged.class);
         }
     }
 

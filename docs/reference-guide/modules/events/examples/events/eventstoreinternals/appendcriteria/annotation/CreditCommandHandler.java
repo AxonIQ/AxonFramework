@@ -19,6 +19,7 @@ package events.eventstoreinternals.appendcriteria.annotation;
 import org.axonframework.eventsourcing.annotation.EventTag;
 import org.axonframework.eventsourcing.commandhandling.annotation.AppendCriteriaBuilder;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
+import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.modelling.annotation.InjectEntity;
@@ -44,8 +45,10 @@ public class CreditCommandHandler {
 
     // a concurrent top-up only raises the balance, so only a concurrent CreditsUsed can invalidate this decision
     @AppendCriteriaBuilder
-    static EventCriteria appendCriteria(UseCredits command, EventCriteria sourcingCriteria) {
-        return sourcingCriteria.replaceEventTypes(CreditsUsed.class);
+    static EventCriteria appendCriteria(UseCredits command,
+                                        EventCriteria sourcingCriteria,
+                                        MessageTypeResolver messageTypeResolver) {
+        return sourcingCriteria.replaceEventTypes(messageTypeResolver, CreditsUsed.class);
     }
 
     // every command the class handles needs a builder, so this one keeps the sourcing criteria explicitly

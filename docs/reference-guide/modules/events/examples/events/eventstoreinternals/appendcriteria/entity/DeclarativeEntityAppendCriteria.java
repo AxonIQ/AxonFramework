@@ -20,6 +20,7 @@ import org.axonframework.eventsourcing.annotation.EventTag;
 import org.axonframework.eventsourcing.commandhandling.AppendCriteriaInterceptor;
 import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.messaging.core.MessageStream;
+import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.modelling.entity.EntityCommandHandlerInterceptor;
 import org.axonframework.modelling.entity.EntityMetamodel;
@@ -31,10 +32,12 @@ public class DeclarativeEntityAppendCriteria {
     //                                 .messagingModel(DeclarativeEntityAppendCriteria::messagingModel)
     public static EntityMetamodel<CreditBalance> messagingModel(Configuration configuration,
                                                                 EntityMetamodelBuilder<CreditBalance> builder) {
+        MessageTypeResolver messageTypeResolver = configuration.getComponent(MessageTypeResolver.class);
         AppendCriteriaInterceptor appendCriteria = new AppendCriteriaInterceptor(
                 configuration.getComponent(EventStore.class),
                 (command, context, sourcingCriteria) -> switch (command.type().qualifiedName().fullName()) {
-                    case "credits.UseCredits" -> sourcingCriteria.replaceEventTypes(CreditsUsed.class);
+                    case "credits.UseCredits" -> sourcingCriteria.replaceEventTypes(messageTypeResolver,
+                                                                                    CreditsUsed.class);
                     case "credits.TopUpCredits" -> sourcingCriteria;
                     default -> throw new IllegalArgumentException(
                             "Unsupported command: " + command.type().qualifiedName()

@@ -147,6 +147,8 @@ The `EventCriteria` parameter contains the complete transaction-wide OR-union ac
 This includes one or several injected entities and other sourcing performed during command handling.
 Returning it unchanged preserves the symmetric default for a command, as the `TopUpCredits` builder does above.
 `replaceEventTypes` preserves each branch's tags and replaces the event types on every OR branch.
+Event classes are passed together with the `MessageTypeResolver`, which a builder declares as a parameter like any other configured component.
+Resolving through it keeps the types equal to the names events are stored under, including names set with `@Event`; `QualifiedName` and `String` overloads take the names directly.
 The replacement may narrow or broaden the events considered conflicting without reconstructing the sourcing tags.
 The builder returns the complete append criteria; it does not add a contribution for one entity.
 

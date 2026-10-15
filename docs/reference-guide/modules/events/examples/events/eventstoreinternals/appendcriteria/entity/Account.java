@@ -22,6 +22,7 @@ import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
 import org.axonframework.eventsourcing.annotation.EventTag;
 import org.axonframework.eventsourcing.commandhandling.annotation.AppendCriteriaBuilder;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
+import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.messaging.eventstreaming.Tag;
@@ -68,8 +69,10 @@ public class Account {
     // Appending: only the events that can invalidate the decision above. A concurrent withdrawal can
     // overdraw the account, a concurrent deposit only ever raises the balance, so deposits are left out.
     @AppendCriteriaBuilder
-    static EventCriteria appendCriteria(WithdrawMoney command, EventCriteria sourcingCriteria) {
-        return sourcingCriteria.replaceEventTypes(MoneyWithdrawn.class);
+    static EventCriteria appendCriteria(WithdrawMoney command,
+                                        EventCriteria sourcingCriteria,
+                                        MessageTypeResolver messageTypeResolver) {
+        return sourcingCriteria.replaceEventTypes(messageTypeResolver, MoneyWithdrawn.class);
     }
 
     static class Card {
@@ -80,8 +83,10 @@ public class Account {
         }
 
         @AppendCriteriaBuilder
-        static EventCriteria appendCriteria(ReplaceCard command, EventCriteria sourcingCriteria) {
-            return sourcingCriteria.replaceEventTypes(CardReplaced.class);
+        static EventCriteria appendCriteria(ReplaceCard command,
+                                            EventCriteria sourcingCriteria,
+                                            MessageTypeResolver messageTypeResolver) {
+            return sourcingCriteria.replaceEventTypes(messageTypeResolver, CardReplaced.class);
         }
     }
 }

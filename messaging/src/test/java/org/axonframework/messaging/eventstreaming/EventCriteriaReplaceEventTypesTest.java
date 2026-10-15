@@ -16,13 +16,17 @@
 
 package org.axonframework.messaging.eventstreaming;
 
+import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.QualifiedName;
+import org.axonframework.messaging.core.annotation.AnnotationMessageTypeResolver;
+import org.axonframework.messaging.eventhandling.annotation.Event;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Test class validating type replacement on complete {@link EventCriteria} instances.
@@ -127,12 +131,29 @@ class EventCriteriaReplaceEventTypesTest {
         }
 
         @Test
-        void acceptsClassesForTheReplacementTypes() {
+        void acceptsQualifiedNamesForTheReplacementTypes() {
             // given
             EventCriteria criteria = EventCriteria.havingTags(FIRST_ACCOUNT).andBeingOneOfTypes(TOPPED_UP);
 
             // when
-            EventCriteria result = criteria.replaceEventTypes(CreditsUsed.class, CreditsExpired.class);
+            EventCriteria result = criteria.replaceEventTypes(USED, CLOSED);
+
+            // then
+            assertThat(result.flatten()).singleElement().satisfies(criterion ->
+                    assertThat(criterion.types()).containsExactlyInAnyOrder(USED, CLOSED)
+            );
+        }
+
+        @Test
+        void resolvesClassesThroughTheGivenMessageTypeResolver() {
+            // given
+            EventCriteria criteria = EventCriteria.havingTags(FIRST_ACCOUNT).andBeingOneOfTypes(TOPPED_UP);
+            MessageTypeResolver messageTypeResolver = new AnnotationMessageTypeResolver();
+
+            // when
+            EventCriteria result = criteria.replaceEventTypes(messageTypeResolver,
+                                                              CreditsUsed.class,
+                                                              CreditsExpired.class);
 
             // then
             assertThat(result.flatten()).singleElement().satisfies(criterion ->
@@ -141,6 +162,33 @@ class EventCriteriaReplaceEventTypesTest {
                             new QualifiedName(CreditsExpired.class)
                     )
             );
+        }
+
+        @Test
+        void resolvedNameFollowsTheNameAnEventIsAnnotatedWith() {
+            // given an event whose stored name differs from its class name
+            EventCriteria criteria = EventCriteria.havingTags(FIRST_ACCOUNT);
+            MessageTypeResolver messageTypeResolver = new AnnotationMessageTypeResolver();
+
+            // when
+            EventCriteria result = criteria.replaceEventTypes(messageTypeResolver, CreditsRefunded.class);
+
+            // then
+            assertThat(result.matches(new QualifiedName("credits", "CreditsRefunded"), Set.of(FIRST_ACCOUNT)))
+                    .isTrue();
+            assertThat(result.matches(new QualifiedName(CreditsRefunded.class), Set.of(FIRST_ACCOUNT))).isFalse();
+        }
+
+        @Test
+        void rejectsANullMessageTypeResolver() {
+            // given
+            EventCriteria criteria = EventCriteria.havingTags(FIRST_ACCOUNT);
+
+            // when / then
+            //noinspection DataFlowIssue
+            assertThatThrownBy(() -> criteria.replaceEventTypes((MessageTypeResolver) null, CreditsUsed.class))
+                    .isInstanceOf(NullPointerException.class)
+                    .hasMessageContaining("MessageTypeResolver");
         }
 
         @Test
@@ -190,5 +238,9 @@ class EventCriteriaReplaceEventTypesTest {
     }
 
     private static class CreditsExpired {
+    }
+
+    @Event(namespace = "credits", name = "CreditsRefunded")
+    private static class CreditsRefunded {
     }
 }
