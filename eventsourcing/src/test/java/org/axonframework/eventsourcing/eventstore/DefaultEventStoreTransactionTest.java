@@ -52,6 +52,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -991,10 +992,10 @@ class DefaultEventStoreTransactionTest {
                         new GenericEventMessage(new MessageType(String.class), "my payload"),
                         Set.of(tag)
                 )
-        ).thenApply(this::castAppendTransaction).join();
+        ).thenApply(this::castAppendTransaction).orTimeout(5, TimeUnit.SECONDS).join();
         return appendTransaction.commit()
                                 .thenCompose(ignored -> appendTransaction.afterCommit(ignored))
-                                .join();
+                                .orTimeout(5, TimeUnit.SECONDS).join();
     }
 
     @SuppressWarnings("unchecked")

@@ -19,6 +19,7 @@ package org.axonframework.messaging.core.reflection;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.common.configuration.DefaultComponentRegistry;
 import org.axonframework.common.configuration.LifecycleRegistry;
+import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
 import org.axonframework.messaging.core.annotation.HandlerDefinition;
 import org.axonframework.messaging.core.annotation.HandlerEnhancerDefinition;
 import org.axonframework.messaging.core.annotation.MultiHandlerDefinition;
@@ -100,7 +101,7 @@ class ClasspathHandlerDefinitionConfigurationEnhancerTest {
         @Test
         void registeredComponentCanBeDecorated() {
             // given
-            HandlerDefinition decoratedDefinition = mock(HandlerDefinition.class);
+            HandlerDefinition decoratedDefinition = ClasspathHandlerDefinition.forClass(getClass());
             componentRegistry.registerEnhancer(new ClasspathHandlerDefinitionConfigurationEnhancer())
                              .registerDecorator(HandlerDefinition.class,
                                                 0,

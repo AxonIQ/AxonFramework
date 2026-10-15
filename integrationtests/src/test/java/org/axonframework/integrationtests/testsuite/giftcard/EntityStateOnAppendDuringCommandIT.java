@@ -35,6 +35,7 @@ import org.junit.jupiter.api.*;
 
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -119,13 +120,15 @@ class EntityStateOnAppendDuringCommandIT {
         @Test
         void oneAppendCriteriaBuilderAppliesSeparatelyToEveryRootEntityHandler() {
             // given
-            commandGateway.send(new CreateCounter("m-2")).getResultMessage().join();
+            commandGateway.send(new CreateCounter("m-2")).getResultMessage().orTimeout(5, TimeUnit.SECONDS).join();
             MUTABLE_APPEND_CRITERIA_COMMANDS.clear();
             MUTABLE_SOURCING_CRITERIA.clear();
 
             // when
-            commandGateway.send(new IncrementTwiceInOneHandler("m-2")).getResultMessage().join();
-            commandGateway.send(new IncrementOnceInOneHandler("m-2")).getResultMessage().join();
+            commandGateway.send(new IncrementTwiceInOneHandler("m-2")).getResultMessage()
+                    .orTimeout(5, TimeUnit.SECONDS).join();
+            commandGateway.send(new IncrementOnceInOneHandler("m-2")).getResultMessage()
+                    .orTimeout(5, TimeUnit.SECONDS).join();
 
             // then
             assertThat(MUTABLE_APPEND_CRITERIA_COMMANDS)

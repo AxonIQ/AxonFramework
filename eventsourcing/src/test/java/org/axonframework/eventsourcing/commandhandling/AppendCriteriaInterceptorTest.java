@@ -38,7 +38,6 @@ import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
-import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.messaging.eventhandling.SimpleEventBus;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.messaging.eventstreaming.Tag;
@@ -63,6 +62,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.axonframework.common.util.AssertUtils.awaitExceptionalCompletion;
 import static org.axonframework.common.util.AssertUtils.awaitSuccessfulCompletion;
 import static org.axonframework.messaging.core.unitofwork.UnitOfWorkTestUtils.aUnitOfWork;
+import static org.axonframework.messaging.eventhandling.EventTestUtils.asEventMessage;
 
 /**
  * Test class validating the {@link AppendCriteriaInterceptor}.
@@ -131,9 +131,7 @@ class AppendCriteriaInterceptorTest {
                                        .source(SourcingCondition.conditionFor(first))).blockLast();
                 FluxUtils.of(eventStore.transaction(context)
                                        .source(SourcingCondition.conditionFor(second))).blockLast();
-                eventStore.transaction(context).appendEvent(new GenericEventMessage(
-                        new MessageType(CreditsChanged.class), new CreditsChanged("one")
-                ));
+                eventStore.transaction(context).appendEvent(asEventMessage(new CreditsChanged("one")));
                 return MessageStream.empty();
             });
             CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
@@ -161,9 +159,8 @@ class AppendCriteriaInterceptorTest {
         void resolvedCriteriaRetainTheConsistencyMarkerEstablishedBySourcing() {
             // given
             var seed = aUnitOfWork();
-            seed.runOnPreInvocation(context -> eventStore.transaction(context).appendEvent(new GenericEventMessage(
-                    new MessageType(CreditsChanged.class), new CreditsChanged("one")
-            )));
+            seed.runOnPreInvocation(context -> eventStore.transaction(context)
+                                                         .appendEvent(asEventMessage(new CreditsChanged("one"))));
             awaitSuccessfulCompletion(seed.execute());
             EventCriteria sourcingCriteria = EventCriteria.havingTags(ACCOUNT_ONE);
             EventCriteria commandCriteria = EventCriteria.havingTags("decision", "use-credits");
@@ -177,9 +174,7 @@ class AppendCriteriaInterceptorTest {
                     finalCondition.set(condition);
                     return condition;
                 });
-                eventStore.transaction(context).appendEvent(new GenericEventMessage(
-                        new MessageType(CreditsChanged.class), new CreditsChanged("one")
-                ));
+                eventStore.transaction(context).appendEvent(asEventMessage(new CreditsChanged("one")));
                 return MessageStream.empty();
             });
             CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
@@ -210,9 +205,7 @@ class AppendCriteriaInterceptorTest {
                     finalCondition.set(condition);
                     return condition;
                 });
-                eventStore.transaction(context).appendEvent(new GenericEventMessage(
-                        new MessageType(CreditsChanged.class), new CreditsChanged("one")
-                ));
+                eventStore.transaction(context).appendEvent(asEventMessage(new CreditsChanged("one")));
                 return MessageStream.empty();
             });
             CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
@@ -245,9 +238,7 @@ class AppendCriteriaInterceptorTest {
                     finalCondition.set(condition);
                     return condition;
                 });
-                eventStore.transaction(context).appendEvent(new GenericEventMessage(
-                        new MessageType(CreditsChanged.class), new CreditsChanged("one")
-                ));
+                eventStore.transaction(context).appendEvent(asEventMessage(new CreditsChanged("one")));
                 return MessageStream.empty();
             });
             CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
@@ -271,9 +262,7 @@ class AppendCriteriaInterceptorTest {
             // given
             SimpleCommandHandlingComponent delegate = SimpleCommandHandlingComponent.create("failing-resolver");
             delegate.subscribe(USE_CREDITS, (command, context) -> {
-                eventStore.transaction(context).appendEvent(new GenericEventMessage(
-                        new MessageType(CreditsChanged.class), new CreditsChanged("one")
-                ));
+                eventStore.transaction(context).appendEvent(asEventMessage(new CreditsChanged("one")));
                 return MessageStream.empty();
             });
             CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
@@ -295,7 +284,7 @@ class AppendCriteriaInterceptorTest {
                     .hasStackTraceContaining("Cannot resolve append criteria");
 
             // then
-            assertThat(storageEngine.latestToken().join().position()).hasValue(-1);
+            assertThat(storageEngine.latestToken().orTimeout(5, TimeUnit.SECONDS).join().position()).hasValue(-1);
         }
 
         @Test
@@ -303,9 +292,7 @@ class AppendCriteriaInterceptorTest {
             // given
             SimpleCommandHandlingComponent delegate = SimpleCommandHandlingComponent.create("null-resolver");
             delegate.subscribe(USE_CREDITS, (command, context) -> {
-                eventStore.transaction(context).appendEvent(new GenericEventMessage(
-                        new MessageType(CreditsChanged.class), new CreditsChanged("one")
-                ));
+                eventStore.transaction(context).appendEvent(asEventMessage(new CreditsChanged("one")));
                 return MessageStream.empty();
             });
             CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
@@ -325,7 +312,7 @@ class AppendCriteriaInterceptorTest {
                     .hasStackTraceContaining("append criteria resolver returned null");
 
             // then
-            assertThat(storageEngine.latestToken().join().position()).hasValue(-1);
+            assertThat(storageEngine.latestToken().orTimeout(5, TimeUnit.SECONDS).join().position()).hasValue(-1);
         }
     }
 
@@ -355,7 +342,7 @@ class AppendCriteriaInterceptorTest {
 
             // when / then
             var result = second.handle(command, new StubProcessingContext());
-            assertThatThrownBy(() -> result.asCompletableFuture().join())
+            assertThatThrownBy(() -> result.asCompletableFuture().orTimeout(5, TimeUnit.SECONDS).join())
                     .isInstanceOf(CompletionException.class)
                     .hasCauseInstanceOf(IllegalStateException.class)
                     .hasStackTraceContaining("Cannot apply append criteria for command [credits.UseCredits]")
@@ -398,7 +385,7 @@ class AppendCriteriaInterceptorTest {
                 // when
                 configuration.getComponent(CommandBus.class).dispatch(use, null)
                              .orTimeout(5, TimeUnit.SECONDS)
-                             .join();
+                             .orTimeout(5, TimeUnit.SECONDS).join();
 
                 // then the resolver ran, and its criteria reached the transaction of the configured event store
                 assertThat(resolvedCommands).containsExactly(use);
@@ -443,9 +430,7 @@ class AppendCriteriaInterceptorTest {
                     .forEntityClass(Balance.class)
                     .creationalCommandHandler(TOP_UP_CREDITS, (command, context) -> {
                         observeFinalCondition(context, finalCondition);
-                        eventStore.transaction(context).appendEvent(new GenericEventMessage(
-                                new MessageType(CreditsChanged.class), new CreditsChanged("new")
-                        ));
+                        eventStore.transaction(context).appendEvent(asEventMessage(new CreditsChanged("new")));
                         return MessageStream.empty().cast();
                     })
                     .commandHandlerInterceptor(EntityCommandHandlerInterceptor.of(new AppendCriteriaInterceptor(
@@ -522,9 +507,7 @@ class AppendCriteriaInterceptorTest {
             SimpleCommandHandlingComponent component = SimpleCommandHandlingComponent.create("configured");
             component.subscribe(USE_CREDITS, (command, context) -> {
                 observeFinalCondition(context, finalCondition);
-                eventStore.transaction(context).appendEvent(new GenericEventMessage(
-                        new MessageType(CreditsChanged.class), new CreditsChanged("one")
-                ));
+                eventStore.transaction(context).appendEvent(asEventMessage(new CreditsChanged("one")));
                 return MessageStream.empty();
             });
             return component;
@@ -563,9 +546,7 @@ class AppendCriteriaInterceptorTest {
         String accountId = ((CreditsCommand) command.payload()).accountId();
         EventCriteria criteria = EventCriteria.havingTags("accountId", accountId);
         FluxUtils.of(eventStore.transaction(context).source(SourcingCondition.conditionFor(criteria))).blockLast();
-        eventStore.transaction(context).appendEvent(new GenericEventMessage(
-                new MessageType(CreditsChanged.class), new CreditsChanged(accountId)
-        ));
+        eventStore.transaction(context).appendEvent(asEventMessage(new CreditsChanged(accountId)));
         return MessageStream.empty();
     }
 

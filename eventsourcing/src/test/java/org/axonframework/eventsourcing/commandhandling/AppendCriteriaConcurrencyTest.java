@@ -42,6 +42,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.axonframework.common.util.AssertUtils.awaitExceptionalCompletion;
@@ -110,7 +111,8 @@ class AppendCriteriaConcurrencyTest {
 
             // when
             CompletableFuture<Void> result = aUnitOfWork().executeWithResult(context -> {
-                eventStore.publish(null, List.of(asEventMessage(new TenantDecision("tenant-one")))).join();
+                eventStore.publish(null, List.of(asEventMessage(new TenantDecision("tenant-one"))))
+                        .orTimeout(5, TimeUnit.SECONDS).join();
                 component.handle(command, context);
                 return CompletableFuture.completedFuture(null);
             });
@@ -127,7 +129,8 @@ class AppendCriteriaConcurrencyTest {
 
             // when an event is stored concurrently
             CompletableFuture<Void> result = aUnitOfWork().executeWithResult(context -> {
-                eventStore.publish(null, List.of(asEventMessage(new TenantDecision("tenant-one")))).join();
+                eventStore.publish(null, List.of(asEventMessage(new TenantDecision("tenant-one"))))
+                        .orTimeout(5, TimeUnit.SECONDS).join();
                 component.handle(command(Map.of("tenantId", "tenant-one")), context);
                 return CompletableFuture.completedFuture(null);
             });
@@ -155,7 +158,8 @@ class AppendCriteriaConcurrencyTest {
 
     private static CompletableFuture<Void> executeCreditDecision(Object concurrentEvent, boolean restrictToUsed) {
         EventStore eventStore = eventStore();
-        eventStore.publish(null, List.of(asEventMessage(new CreditsUsed("account-one")))).join();
+        eventStore.publish(null, List.of(asEventMessage(new CreditsUsed("account-one"))))
+                .orTimeout(5, TimeUnit.SECONDS).join();
         EventCriteria sourcingCriteria = EventCriteria
                 .havingTags("account", "account-one")
                 .andBeingOneOfTypes(
@@ -166,7 +170,7 @@ class AppendCriteriaConcurrencyTest {
         delegate.subscribe(DECIDE, (command, context) -> {
             FluxUtils.of(eventStore.transaction(context).source(SourcingCondition.conditionFor(sourcingCriteria)))
                      .blockLast();
-            eventStore.publish(null, List.of(asEventMessage(concurrentEvent))).join();
+            eventStore.publish(null, List.of(asEventMessage(concurrentEvent))).orTimeout(5, TimeUnit.SECONDS).join();
             eventStore.transaction(context).appendEvent(asEventMessage(new CreditDecision("account-one")));
             return MessageStream.empty();
         });
@@ -191,7 +195,8 @@ class AppendCriteriaConcurrencyTest {
             EventStoreTransaction transaction = eventStore.transaction(context);
             FluxUtils.of(transaction.source(SourcingCondition.conditionFor(first))).blockLast();
             FluxUtils.of(transaction.source(SourcingCondition.conditionFor(second))).blockLast();
-            eventStore.publish(null, List.of(asEventMessage(new CreditsUsed(concurrentAccount)))).join();
+            eventStore.publish(null, List.of(asEventMessage(new CreditsUsed(concurrentAccount))))
+                    .orTimeout(5, TimeUnit.SECONDS).join();
             transaction.appendEvent(asEventMessage(new CreditDecision("account-one")));
             return MessageStream.empty();
         });

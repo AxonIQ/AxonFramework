@@ -45,7 +45,6 @@ import org.axonframework.messaging.core.conversion.DelegatingMessageConverter;
 import org.axonframework.messaging.core.conversion.MessageConverter;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
-import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.messaging.eventstreaming.Tag;
@@ -59,6 +58,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
@@ -67,6 +67,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.axonframework.common.util.AssertUtils.awaitExceptionalCompletion;
 import static org.axonframework.common.util.AssertUtils.awaitSuccessfulCompletion;
 import static org.axonframework.messaging.core.unitofwork.UnitOfWorkTestUtils.aUnitOfWork;
+import static org.axonframework.messaging.eventhandling.EventTestUtils.asEventMessage;
 
 /**
  * Test class validating {@link AppendCriteriaBuilder} on external annotated command-handling classes.
@@ -346,7 +347,8 @@ class AppendCriteriaBuilderTest {
             // when / then
             assertThatThrownBy(() -> component(new UntypedCommandMessageHandler(), configuration))
                     .isInstanceOf(AxonConfigurationException.class)
-                    .hasMessageContaining("No @AppendCriteriaBuilder accepts handled command payload [java.lang.Object]");
+                    .hasMessageContaining("No @AppendCriteriaBuilder accepts handled command payload")
+                    .hasMessageContaining("[java.lang.Object]");
         }
 
         @Test
@@ -440,7 +442,7 @@ class AppendCriteriaBuilderTest {
             // when / then
             assertCommitFails(nullComponent, "returned null");
             assertCommitFails(metadataComponent, "Required metadata value [tenantId] is missing");
-            assertThat(storageEngine.latestToken().join().position()).hasValue(-1);
+            assertThat(storageEngine.latestToken().orTimeout(5, TimeUnit.SECONDS).join().position()).hasValue(-1);
         }
 
         @Test
@@ -479,7 +481,7 @@ class AppendCriteriaBuilderTest {
                                                      new StubProcessingContext()
                                              )
                                              .asCompletableFuture()
-                                             .join())
+                                             .orTimeout(5, TimeUnit.SECONDS).join())
                     .isInstanceOf(CompletionException.class)
                     .hasCauseInstanceOf(IllegalStateException.class)
                     .hasStackTraceContaining("Append criteria have already been defined");
@@ -656,9 +658,7 @@ class AppendCriteriaBuilderTest {
                                         String accountId) {
         EventCriteria criteria = EventCriteria.havingTags("accountId", accountId);
         FluxUtils.of(eventStore.transaction(context).source(SourcingCondition.conditionFor(criteria))).blockLast();
-        eventStore.transaction(context).appendEvent(new GenericEventMessage(
-                new MessageType(CreditsChanged.class), new CreditsChanged(accountId)
-        ));
+        eventStore.transaction(context).appendEvent(asEventMessage(new CreditsChanged(accountId)));
     }
 
     private sealed interface CreditsCommand permits UseCredits, TopUpCredits {
@@ -935,9 +935,7 @@ class AppendCriteriaBuilderTest {
         }
 
         private void append(ProcessingContext context, SharedCommand command) {
-            eventStore.transaction(context).appendEvent(new GenericEventMessage(
-                    new MessageType(CreditsChanged.class), new CreditsChanged(command.accountId())
-            ));
+            eventStore.transaction(context).appendEvent(asEventMessage(new CreditsChanged(command.accountId())));
         }
 
         @AppendCriteriaBuilder
@@ -1355,9 +1353,7 @@ class AppendCriteriaBuilderTest {
 
         @CommandHandler
         void handle(UseCredits command, ProcessingContext context) {
-            eventStore.transaction(context).appendEvent(new GenericEventMessage(
-                    new MessageType(CreditsChanged.class), new CreditsChanged(command.accountId())
-            ));
+            eventStore.transaction(context).appendEvent(asEventMessage(new CreditsChanged(command.accountId())));
         }
 
         @AppendCriteriaBuilder
@@ -1376,9 +1372,7 @@ class AppendCriteriaBuilderTest {
 
         @CommandHandler
         void handle(UseCredits command, ProcessingContext context) {
-            eventStore.transaction(context).appendEvent(new GenericEventMessage(
-                    new MessageType(CreditsChanged.class), new CreditsChanged(command.accountId())
-            ));
+            eventStore.transaction(context).appendEvent(asEventMessage(new CreditsChanged(command.accountId())));
         }
 
         @AppendCriteriaBuilder

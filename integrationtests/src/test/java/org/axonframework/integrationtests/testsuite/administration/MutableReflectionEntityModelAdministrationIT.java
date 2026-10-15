@@ -29,6 +29,8 @@ import org.axonframework.integrationtests.testsuite.administration.state.mutable
 import org.axonframework.modelling.entity.EntityMetamodel;
 import org.junit.jupiter.api.Test;
 
+import java.util.concurrent.TimeUnit;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -46,13 +48,13 @@ public abstract class MutableReflectionEntityModelAdministrationIT extends Abstr
 
         // when commands declared by both MutablePerson and MutableEmployee are handled
         commandGateway.send(new CreateEmployee(identifier, "person@axon.test", "Developer", 1000.0))
-                      .getResultMessage().join();
+                      .getResultMessage().orTimeout(5, TimeUnit.SECONDS).join();
         commandGateway.send(new ChangeEmailAddress(identifier, "updated@axon.test"))
-                      .getResultMessage().join();
+                      .getResultMessage().orTimeout(5, TimeUnit.SECONDS).join();
         commandGateway.send(new AssignTaskCommand(identifier, "task", "Verify ownership"))
-                      .getResultMessage().join();
+                      .getResultMessage().orTimeout(5, TimeUnit.SECONDS).join();
         commandGateway.send(new CompleteTaskCommand(identifier, "task"))
-                      .getResultMessage().join();
+                      .getResultMessage().orTimeout(5, TimeUnit.SECONDS).join();
 
         // then the inherited builder covers the subclass' commands too, without MutableEmployee redeclaring it
         assertThat(MutablePerson.appendCriteriaCommands())
