@@ -75,6 +75,9 @@ public interface MessageStream<M extends Message> {
      * <p>
      * The returned stream will provide the messages as provided by the {@link Iterable#iterator()} call on the given
      * {@code iterable}.
+     * <p>
+     * The {@link java.util.Iterator#hasNext()} of that iterator must answer without blocking, as when iterating an
+     * in-memory collection or buffer.
      *
      * @param iterable The {@link Iterable} providing the {@link Message Messages} to stream.
      * @param <M>      The type of {@link Message} contained in the {@link Entry entries} of this stream.
@@ -103,6 +106,9 @@ public interface MessageStream<M extends Message> {
      * <p>
      * The returned stream will provide the messages as provided by the {@link Iterable#iterator()} call on the given
      * {@code iterable}.
+     * <p>
+     * The {@link java.util.Iterator#hasNext()} of that iterator must answer without blocking, as when iterating an
+     * in-memory collection or buffer.
      *
      * @param iterable        The {@link Iterable} providing the {@link Message Messages} to stream.
      * @param contextSupplier A {@link Function} ingesting each {@link Message} from the given {@code iterable}
@@ -125,6 +131,9 @@ public interface MessageStream<M extends Message> {
     /**
      * Create a stream that provides the {@link Message Messages} returned by the given {@code stream}, automatically
      * wrapped in an {@link Entry}.
+     * <p>
+     * The given {@code stream} must provide its elements without blocking, as when streaming an in-memory collection
+     * or buffer.
      *
      * @param stream The {@link Stream} providing the {@link Message Messages} to stream.
      * @param <M>    The type of {@link Message} contained in the {@link Entry entries} of this stream.
@@ -138,6 +147,9 @@ public interface MessageStream<M extends Message> {
     /**
      * Create a stream that provides the {@link Message Messages} returned by the given {@code stream}, automatically
      * wrapped in an {@link Entry} with the resulting {@link Context} from the {@code contextSupplier}.
+     * <p>
+     * The given {@code stream} must provide its elements without blocking, as when streaming an in-memory collection
+     * or buffer.
      *
      * @param stream          The {@link Stream} providing the {@link Message Messages} to stream.
      * @param contextSupplier A {@link Function} ingesting each {@link Message} from the given {@code stream} returning
@@ -156,6 +168,9 @@ public interface MessageStream<M extends Message> {
      * Create a stream that provides the items of type {@code T} returned by the given {@code stream}, automatically
      * wrapped in an {@link Entry} with the resulting {@link Message} and {@link Context} from the
      * {@code messageSupplier} and the {@code contextSupplier} respectively.
+     * <p>
+     * The given {@code stream} must provide its elements without blocking, as when streaming an in-memory collection
+     * or buffer.
      *
      * @param stream          The {@link Stream} providing the items of type {@code T} to map to a {@link Message} and
      *                        {@link Context}.
@@ -379,9 +394,11 @@ public interface MessageStream<M extends Message> {
      * {@link #next()}, and {@link #hasNextAvailable()} will always return {@code false}. If the stream completed with
      * an error, {@link #error()} will report so.
      * <p>
-     * Returns {@code true} as soon as the stream determines that no further {@link Entry entries} will arrive,
-     * including directly after {@link #next()} returned the last one. Returns {@code false} while an {@link Entry} is
-     * available for reading, and for as long as the outcome cannot be determined without consuming entries.
+     * Returns {@code true} as soon as the stream can determine, without consuming entries, that no further
+     * {@link Entry entries} will arrive, for example directly after {@link #next()} returned the last one. Some
+     * implementations can only detect completion on a subsequent read. Returns {@code false} while an {@link Entry} is
+     * available for reading. Observing completion through this method runs any handlers registered for completion of
+     * this stream, such as those given to {@link #onComplete(Runnable)} and {@link #onClose(Runnable)}.
      *
      * @return {@code true} if the stream completed, otherwise {@code false}.
      */

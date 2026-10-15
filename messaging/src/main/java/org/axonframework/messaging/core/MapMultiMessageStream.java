@@ -99,7 +99,7 @@ class MapMultiMessageStream<M extends Message, N extends Message> extends Abstra
     }
 
     @Override
-    protected FetchResult<Entry<N>> terminalState() {
+    protected FetchResult.NoValue<Entry<N>> terminalState() {
         return buffer.isEmpty() ? terminalStateOf(delegate) : FetchResult.notReady();
     }
 

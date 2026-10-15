@@ -179,7 +179,7 @@ public class QueueMessageStream<M extends Message> extends AbstractMessageStream
     }
 
     @Override
-    protected FetchResult<Entry<M>> terminalState() {
+    protected FetchResult.NoValue<Entry<M>> terminalState() {
         State current = state.get();  // read before the queue, as entries may be added until the stream is sealed
 
         if (!current.sealed() || !queue.isEmpty()) {

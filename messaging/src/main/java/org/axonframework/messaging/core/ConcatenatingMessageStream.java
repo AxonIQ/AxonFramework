@@ -96,8 +96,8 @@ class ConcatenatingMessageStream<M extends Message> extends AbstractMessageStrea
     }
 
     @Override
-    protected FetchResult<Entry<M>> terminalState() {
-        FetchResult<Entry<M>> state = terminalStateOf(active);
+    protected FetchResult.NoValue<Entry<M>> terminalState() {
+        FetchResult.NoValue<Entry<M>> state = terminalStateOf(active);
 
         // With streams left to concatenate, only a failure ends this stream; exhaustion switches to the next.
         return streams.isEmpty() || state instanceof FetchResult.Error ? state : FetchResult.notReady();

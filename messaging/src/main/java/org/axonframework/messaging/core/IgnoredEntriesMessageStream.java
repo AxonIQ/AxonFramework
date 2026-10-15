@@ -74,7 +74,7 @@ class IgnoredEntriesMessageStream<M extends Message> extends AbstractMessageStre
     }
 
     @Override
-    protected FetchResult<Entry<Message>> terminalState() {
+    protected FetchResult.NoValue<Entry<Message>> terminalState() {
         return terminalStateOf(delegate);
     }
 

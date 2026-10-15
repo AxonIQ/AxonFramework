@@ -77,12 +77,12 @@ class FluxMessageStream<M extends Message> extends AbstractMessageStream<M> {
     }
 
     @Override
-    protected FetchResult<Entry<M>> terminalState() {
+    protected FetchResult.NoValue<Entry<M>> terminalState() {
         boolean isSealed = sealed.get();  // read before the buffer, as entries may be added until the stream is sealed
         FetchResult<Entry<M>> head = peeked.peek();
 
-        if (head instanceof FetchResult.Error) {
-            return head;
+        if (head instanceof FetchResult.Error<Entry<M>> error) {
+            return error;
         }
 
         return head == null && isSealed ? FetchResult.completed() : FetchResult.notReady();

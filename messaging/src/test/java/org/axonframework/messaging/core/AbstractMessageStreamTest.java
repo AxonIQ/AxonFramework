@@ -52,7 +52,8 @@ class AbstractMessageStreamTest {
         private RuntimeException thrownExceptionInOnCompleted;
         private int onCompletedCount;
         private int fetchNextCount;
-        private FetchResult<Entry<Message>> terminalState = FetchResult.notReady();
+        private FetchResult.NoValue<Entry<Message>> terminalState = FetchResult.notReady();
+        private RuntimeException thrownExceptionInTerminalState;
 
         void enqueue(FetchResult<Entry<Message>> result) {
             results.add(result);
@@ -70,8 +71,12 @@ class AbstractMessageStreamTest {
             thrownExceptionInOnCompleted = e;
         }
 
-        void reportTerminalState(FetchResult<Entry<Message>> terminalState) {
+        void reportTerminalState(FetchResult.NoValue<Entry<Message>> terminalState) {
             this.terminalState = terminalState;
+        }
+
+        void throwExceptionInTerminalState(RuntimeException e) {
+            thrownExceptionInTerminalState = e;
         }
 
         int fetchNextCount() {
@@ -79,7 +84,11 @@ class AbstractMessageStreamTest {
         }
 
         @Override
-        protected FetchResult<Entry<Message>> terminalState() {
+        protected FetchResult.NoValue<Entry<Message>> terminalState() {
+            if (thrownExceptionInTerminalState != null) {
+                throw thrownExceptionInTerminalState;
+            }
+
             return terminalState;
         }
 
@@ -803,6 +812,19 @@ class AbstractMessageStreamTest {
         }
 
         @Test
+        void withTerminalStateThrowingThenCompletesExceptionallyWithTheException() {
+            // given
+            RuntimeException failure = new RuntimeException("terminal state failed");
+
+            stream.throwExceptionInTerminalState(failure);
+
+            // when / then
+            assertThat(stream.isCompleted()).isTrue();
+            assertThat(stream.error()).contains(failure);
+            assertThat(stream.onCompletedCount()).isEqualTo(1);
+        }
+
+        @Test
         void withTerminalStateNotReadyThenStaysOpen() {
             assertThat(stream.isCompleted()).isFalse();
             assertThat(stream.error()).isEmpty();
@@ -880,6 +902,77 @@ class AbstractMessageStreamTest {
             // when
             stream.isCompleted();
             stream.next();
+
+            // then
+            assertThat(callbackCount).hasValue(1);
+        }
+    }
+
+    @Nested
+    class WhenCompletionObservedBeforeTheProducerSignal {
+
+        ControllableStream inner = new ControllableStream();
+        AtomicInteger callbackCount = new AtomicInteger();
+
+        @Test
+        void withErrorContinuationPendingThenTheSignalStillWakesTheConsumer() {
+            // given: the consumer awaits data from a stream that continues on an error of the inner stream
+            MessageStream<Message> testSubject = inner.onErrorContinue(e -> MessageStream.fromItems(entryOf("alt").message()));
+
+            testSubject.setCallback(callbackCount::incrementAndGet);
+            assertThat(testSubject.next()).isEmpty();
+
+            // when: the inner stream fails, and its completion is observed before the producer signals it
+            inner.reportTerminalState(FetchResult.error(new RuntimeException("inner failed")));
+
+            assertThat(testSubject.isCompleted()).isFalse();
+            assertThat(inner.isCompleted()).isTrue();
+
+            callbackCount.set(0);
+            inner.triggerSignalProgress();
+
+            // then
+            assertThat(callbackCount).hasValue(1);
+            assertThat(testSubject.next()).isPresent();
+        }
+
+        @Test
+        void withStreamsLeftToConcatenateThenTheSignalStillWakesTheConsumer() {
+            // given: the consumer awaits data from a stream concatenating the inner stream with another
+            MessageStream<Message> testSubject = inner.concatWith(MessageStream.fromItems(entryOf("next").message()));
+
+            testSubject.setCallback(callbackCount::incrementAndGet);
+            assertThat(testSubject.next()).isEmpty();
+
+            // when: the inner stream completes, and its completion is observed before the producer signals it
+            inner.reportTerminalState(FetchResult.completed());
+
+            assertThat(testSubject.isCompleted()).isFalse();
+            assertThat(inner.isCompleted()).isTrue();
+
+            callbackCount.set(0);
+            inner.triggerSignalProgress();
+
+            // then
+            assertThat(callbackCount).hasValue(1);
+            assertThat(testSubject.next()).isPresent();
+        }
+
+        @Test
+        void thenTheOwedNotificationIsDeliveredOnlyOnce() {
+            // given
+            inner.setCallback(callbackCount::incrementAndGet);
+            assertThat(inner.next()).isEmpty();
+
+            inner.reportTerminalState(FetchResult.completed());
+            assertThat(inner.isCompleted()).isTrue();
+
+            callbackCount.set(0);
+
+            // when
+            inner.triggerSignalProgress();
+            inner.triggerSignalProgress();
+            assertThat(inner.next()).isEmpty();
 
             // then
             assertThat(callbackCount).hasValue(1);

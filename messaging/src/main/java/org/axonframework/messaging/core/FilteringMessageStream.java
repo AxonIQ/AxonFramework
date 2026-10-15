@@ -70,7 +70,7 @@ class FilteringMessageStream<M extends Message> extends AbstractMessageStream<M>
     }
 
     @Override
-    protected FetchResult<Entry<M>> terminalState() {
+    protected FetchResult.NoValue<Entry<M>> terminalState() {
         return terminalStateOf(delegate);
     }
 

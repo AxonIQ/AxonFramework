@@ -63,7 +63,7 @@ class TruncateFirstMessageStream<M extends Message>
     }
 
     @Override
-    protected FetchResult<Entry<M>> terminalState() {
+    protected FetchResult.NoValue<Entry<M>> terminalState() {
         return consumed ? FetchResult.completed() : terminalStateOf(delegate);
     }
 

@@ -20,6 +20,7 @@ import org.junit.jupiter.api.*;
 
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -97,6 +98,21 @@ class IteratorMessageStreamTest extends MessageStreamTest<Message> {
 
             // then
             assertThat(testSubject.isCompleted()).isFalse();
+        }
+
+        @Test
+        void withASourceFailingOnAnEntryThenCompletesExceptionallyInsteadOfThrowing() {
+            // given
+            RuntimeException failure = new RuntimeException("mapping failed");
+            MessageStream<Message> testSubject = MessageStream.fromStream(Stream.of("item"),
+                                                                          item -> {
+                                                                              throw failure;
+                                                                          },
+                                                                          item -> Context.empty());
+
+            // when / then
+            assertThat(testSubject.isCompleted()).isTrue();
+            assertThat(testSubject.error()).contains(failure);
         }
     }
 }

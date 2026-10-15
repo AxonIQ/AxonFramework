@@ -17,7 +17,9 @@
 package org.axonframework.messaging.core;
 
 import java.util.Objects;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -82,7 +84,7 @@ class SingleValueMessageStream<M extends Message> extends AbstractMessageStream<
         }
 
         if (source.isCompletedExceptionally()) {
-            return FetchResult.error(source.exceptionNow());
+            return FetchResult.error(failureOfSource());
         }
 
         Entry<M> current = source.resultNow();
@@ -91,12 +93,31 @@ class SingleValueMessageStream<M extends Message> extends AbstractMessageStream<
     }
 
     @Override
-    protected FetchResult<Entry<M>> terminalState() {
+    protected FetchResult.NoValue<Entry<M>> terminalState() {
         if (source.isCompletedExceptionally()) {
-            return FetchResult.error(source.exceptionNow());
+            return FetchResult.error(failureOfSource());
         }
 
         return read.get() ? FetchResult.completed() : FetchResult.notReady();
+    }
+
+    /**
+     * Returns the failure of the exceptionally completed {@code source}: its exception when it failed, or the
+     * {@link CancellationException} it holds when it was cancelled.
+     */
+    private Throwable failureOfSource() {
+        if (source.state() != Future.State.CANCELLED) {
+            return source.exceptionNow();
+        }
+
+        try {
+            source.join();
+        } catch (CancellationException e) {
+            return e;
+        }
+
+        // Not reached, as joining a cancelled future throws its CancellationException.
+        return new CancellationException("The source of this stream was cancelled.");
     }
 
     @Override

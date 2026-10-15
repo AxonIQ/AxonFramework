@@ -21,6 +21,9 @@ import java.util.List;
 
 /**
  * A {@link MessageStream} implementation using an {@link Iterator} as the source for {@link Entry entries}.
+ * <p>
+ * The {@link Iterator#hasNext()} of the source must answer without blocking, as when iterating an in-memory collection
+ * or buffer.
  *
  * @param <M> The type of {@link Message} contained in the {@link Entry entries} of this stream.
  * @author Allard Buijze
@@ -47,7 +50,7 @@ class IteratorMessageStream<M extends Message> extends AbstractMessageStream<M> 
     }
 
     @Override
-    protected FetchResult<Entry<M>> terminalState() {
+    protected FetchResult.NoValue<Entry<M>> terminalState() {
         return source.hasNext() ? FetchResult.notReady() : FetchResult.completed();
     }
 

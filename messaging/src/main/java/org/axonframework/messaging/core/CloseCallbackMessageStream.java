@@ -82,7 +82,7 @@ public class CloseCallbackMessageStream<M extends Message> extends AbstractMessa
     }
 
     @Override
-    protected FetchResult<Entry<M>> terminalState() {
+    protected FetchResult.NoValue<Entry<M>> terminalState() {
         return terminalStateOf(delegate);
     }
 

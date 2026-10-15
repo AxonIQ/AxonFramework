@@ -19,12 +19,14 @@ package org.axonframework.messaging.core;
 import org.junit.jupiter.api.*;
 
 import java.util.List;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -217,6 +219,41 @@ class SingleValueMessageStreamTest extends MessageStreamTest<Message> {
         void ensureStreamCompletesAfterPeekCall() {
             assertThat(ms.peek()).isEmpty();
             assertThat(ms.isCompleted()).isTrue();
+        }
+    }
+
+    @Nested
+    class WhenSourceCancelled {
+
+        @Test
+        void thenIsCompletedReportsTheCancellation() {
+            // given
+            SingleValueMessageStream<Message> testSubject = new SingleValueMessageStream<>(new CompletableFuture<>());
+
+            testSubject.asCompletableFuture().cancel(false);
+
+            Throwable cancellation = catchThrowable(() -> testSubject.asCompletableFuture().join());
+
+            // when / then
+            assertThat(testSubject.isCompleted()).isTrue();
+            assertThat(cancellation).isInstanceOf(CancellationException.class);
+            assertThat(testSubject.error()).containsSame(cancellation);
+        }
+
+        @Test
+        void thenNextReportsTheCancellation() {
+            // given
+            SingleValueMessageStream<Message> testSubject = new SingleValueMessageStream<>(new CompletableFuture<>());
+
+            testSubject.asCompletableFuture().cancel(false);
+
+            Throwable cancellation = catchThrowable(() -> testSubject.asCompletableFuture().join());
+
+            // when / then
+            assertThat(testSubject.next()).isEmpty();
+            assertThat(testSubject.isCompleted()).isTrue();
+            assertThat(cancellation).isInstanceOf(CancellationException.class);
+            assertThat(testSubject.error()).containsSame(cancellation);
         }
     }
 }
