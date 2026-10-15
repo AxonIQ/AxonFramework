@@ -22,7 +22,6 @@ import org.axonframework.common.annotation.AnnotationUtils;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.eventsourcing.commandhandling.annotation.AppendCriteriaBuilder;
 import org.axonframework.messaging.commandhandling.CommandMessage;
-import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.Metadata;
 import org.axonframework.messaging.core.annotation.MetadataValue;
@@ -60,47 +59,56 @@ final class AnnotationBasedAppendCriteriaResolver implements AppendCriteriaResol
     }
 
     /**
-     * Resolves, for every command handler declared on {@code declaringType}, the builder that applies to it.
+     * Collects the builders that apply to the command handlers declared on {@code declaringType}.
      * <p>
      * The builders visible to {@code declaringType} are the ones it declares and the ones its superclasses declare,
      * one per command type. When a class and one of its superclasses both declare a builder for the same command type,
      * the closest one wins. Interfaces are not searched, as a builder is required to be {@code static} and static
      * interface methods are not inherited.
      * <p>
-     * A handler is matched with the builder whose command type is the most specific supertype of the handled payload. A
-     * builder accepting {@link CommandMessage} applies to handlers no payload-typed builder accepts. When builders are
-     * visible, every declared handler has to be matched by one, so a command cannot silently keep its sourcing criteria
-     * because its builder was forgotten.
-     * <p>
-     * Only handlers <b>declared</b> on {@code declaringType} are resolved, matching the scope in which the builder is
-     * applied: a handler inherited from a supertype is created against that supertype as its declaring type, and so is
-     * resolved against the builders visible to that supertype.
+     * A handler inherited from a supertype is created against that supertype as its declaring type, and so is matched
+     * against the builders visible to that supertype.
      *
-     * @return the resolver per declared command handler, empty when no builder is visible to {@code declaringType}
-     * @throws AxonConfigurationException if a builder is invalid, two builders on one class cover the same command
-     *                                    type, a payload is accepted by several builders of which none is more
-     *                                    specific, or a declared command handler is matched by no builder
+     * @return the builders visible to {@code declaringType}, or an empty {@code Optional} when it has none
+     * @throws AxonConfigurationException if a builder is invalid, or two builders on one class cover the same command
+     *                                    type
      */
-    static Map<Method, AnnotationBasedAppendCriteriaResolver> inspect(Class<?> declaringType,
-                                                                      Configuration configuration) {
+    static Optional<VisibleBuilders> inspect(Class<?> declaringType, Configuration configuration) {
         Map<Class<?>, BuilderMethod> builders = visibleBuilders(declaringType, configuration);
-        if (builders.isEmpty()) {
-            return Map.of();
+        return builders.isEmpty()
+                ? Optional.empty()
+                : Optional.of(new VisibleBuilders(declaringType, List.copyOf(builders.values())));
+    }
+
+    /**
+     * The builders visible to one command-handling class, matching each of its handlers with the builder that applies.
+     */
+    static final class VisibleBuilders {
+
+        private final Class<?> declaringType;
+        private final List<BuilderMethod> builders;
+
+        private VisibleBuilders(Class<?> declaringType, List<BuilderMethod> builders) {
+            this.declaringType = declaringType;
+            this.builders = builders;
         }
-        Map<BuilderMethod, AnnotationBasedAppendCriteriaResolver> resolvers = new HashMap<>();
-        Map<Method, AnnotationBasedAppendCriteriaResolver> resolverPerHandler = new HashMap<>();
-        for (Method handler : declaringType.getDeclaredMethods()) {
-            Optional<Class<?>> payloadType = handledPayloadType(handler);
-            if (payloadType.isEmpty()) {
-                continue;
-            }
-            BuilderMethod builder = select(payloadType.get(), builders.values())
-                    .orElseThrow(() -> uncovered(payloadType.get(), declaringType, builders.values()));
-            resolverPerHandler.put(
-                    handler, resolvers.computeIfAbsent(builder, AnnotationBasedAppendCriteriaResolver::new)
-            );
+
+        /**
+         * Returns the resolver for a handler of the given {@code payloadType}: the builder whose command type is the
+         * most specific supertype of the payload, or else a builder accepting {@link CommandMessage}. Every handler
+         * has to be matched, so a command cannot silently keep its sourcing criteria because its builder was
+         * forgotten.
+         *
+         * @param payloadType the payload type the handler effectively accepts
+         * @return the resolver for that handler
+         * @throws AxonConfigurationException if no builder accepts the payload, or several do and none of them is more
+         *                                    specific than the others
+         */
+        AnnotationBasedAppendCriteriaResolver resolverFor(Class<?> payloadType) {
+            return select(payloadType, builders)
+                    .map(AnnotationBasedAppendCriteriaResolver::new)
+                    .orElseThrow(() -> uncovered(payloadType, declaringType, builders));
         }
-        return resolverPerHandler;
     }
 
     /**
@@ -131,24 +139,6 @@ final class AnnotationBasedAppendCriteriaResolver implements AppendCriteriaResol
             declared.forEach(builders::putIfAbsent);
         }
         return builders;
-    }
-
-    /**
-     * Returns the payload type a command-handling {@code method} declares, or an empty {@code Optional} when it is not
-     * a command handler. A handler taking the {@link CommandMessage} itself declares {@link Object}.
-     */
-    private static Optional<Class<?>> handledPayloadType(Method method) {
-        Optional<Map<String, Object>> attributes =
-                AnnotationUtils.findAnnotationAttributes(method, CommandHandler.class);
-        if (attributes.isEmpty()) {
-            return Optional.empty();
-        }
-        Class<?> payloadType = (Class<?>) attributes.get().get("payloadType");
-        if (payloadType == Object.class && method.getParameterCount() > 0) {
-            Class<?> firstParameter = method.getParameterTypes()[0];
-            payloadType = firstParameter == CommandMessage.class ? Object.class : firstParameter;
-        }
-        return Optional.of(payloadType);
     }
 
     /**

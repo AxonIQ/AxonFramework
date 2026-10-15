@@ -56,7 +56,7 @@ public final class AppendCriteriaHandlerDefinition implements HandlerDefinition 
 
     private final HandlerDefinition delegate;
     private final Configuration configuration;
-    private final Map<Class<?>, Map<Method, AnnotationBasedAppendCriteriaResolver>> resolvers =
+    private final Map<Class<?>, Optional<AnnotationBasedAppendCriteriaResolver.VisibleBuilders>> builders =
             new ConcurrentHashMap<>();
 
     /**
@@ -80,40 +80,48 @@ public final class AppendCriteriaHandlerDefinition implements HandlerDefinition 
         Optional<MessageHandlingMember<T>> original = delegate.createHandler(
                 declaringType, method, parameterResolverFactory, messageStreamResolver
         );
-        if (original.isEmpty() || !(original.get() instanceof CommandHandlingMember<T> commandHandler)) {
+        // a compiler-generated bridge carries the annotation of the method it bridges, which is matched on its own
+        if (original.isEmpty() || method.isBridge()) {
             return original;
         }
-        AnnotationBasedAppendCriteriaResolver resolver = resolversOf(declaringType).get(method);
-        if (resolver == null) {
+        // other enhancers may already have wrapped the command handler, so look for it rather than at the outer member
+        Optional<CommandHandlingMember<?>> commandHandler =
+                original.get().unwrap(CommandHandlingMember.class).map(member -> member);
+        if (commandHandler.isEmpty()) {
             return original;
         }
+        Optional<AnnotationBasedAppendCriteriaResolver.VisibleBuilders> visibleBuilders = builders.computeIfAbsent(
+                declaringType, type -> AnnotationBasedAppendCriteriaResolver.inspect(type, configuration)
+        );
+        if (visibleBuilders.isEmpty()) {
+            return original;
+        }
+        // the member's payload type is the effective one, narrowed by both the annotation and the parameters
+        AnnotationBasedAppendCriteriaResolver resolver = visibleBuilders.get().resolverFor(original.get().payloadType());
         return Optional.of(new AppendCriteriaCommandHandlingMember<>(
-                commandHandler,
+                original.get(),
+                commandHandler.get(),
                 configuration.getComponent(EventStore.class),
                 resolver
         ));
-    }
-
-    private Map<Method, AnnotationBasedAppendCriteriaResolver> resolversOf(Class<?> declaringType) {
-        return resolvers.computeIfAbsent(
-                declaringType,
-                type -> AnnotationBasedAppendCriteriaResolver.inspect(type, configuration)
-        );
     }
 
     private static final class AppendCriteriaCommandHandlingMember<T>
             extends WrappedMessageHandlingMember<T>
             implements CommandHandlingMember<T> {
 
-        private final CommandHandlingMember<T> delegate;
+        private final MessageHandlingMember<T> delegate;
+        private final CommandHandlingMember<?> commandHandler;
         private final EventStore eventStore;
         private final AnnotationBasedAppendCriteriaResolver resolver;
 
-        private AppendCriteriaCommandHandlingMember(CommandHandlingMember<T> delegate,
+        private AppendCriteriaCommandHandlingMember(MessageHandlingMember<T> delegate,
+                                                    CommandHandlingMember<?> commandHandler,
                                                     EventStore eventStore,
                                                     AnnotationBasedAppendCriteriaResolver resolver) {
             super(delegate);
             this.delegate = delegate;
+            this.commandHandler = commandHandler;
             this.eventStore = eventStore;
             this.resolver = resolver;
         }
@@ -133,17 +141,17 @@ public final class AppendCriteriaHandlerDefinition implements HandlerDefinition 
 
         @Override
         public String commandName() {
-            return delegate.commandName();
+            return commandHandler.commandName();
         }
 
         @Override
         public String routingKey() {
-            return delegate.routingKey();
+            return commandHandler.routingKey();
         }
 
         @Override
         public boolean isFactoryHandler() {
-            return delegate.isFactoryHandler();
+            return commandHandler.isFactoryHandler();
         }
     }
 }

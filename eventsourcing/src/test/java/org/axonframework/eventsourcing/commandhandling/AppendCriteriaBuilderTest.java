@@ -21,6 +21,7 @@ import org.axonframework.common.configuration.Configuration;
 import org.axonframework.conversion.PassThroughConverter;
 import org.axonframework.eventsourcing.commandhandling.annotation.AppendCriteriaBuilder;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
+import org.axonframework.eventsourcing.eventstore.AppendCondition;
 import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.eventsourcing.eventstore.EventStorageEngine;
 import org.axonframework.eventsourcing.eventstore.SourcingCondition;
@@ -31,11 +32,15 @@ import org.axonframework.messaging.commandhandling.annotation.AnnotatedCommandHa
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.commandhandling.interception.InterceptingCommandHandlingComponent;
 import org.axonframework.messaging.core.FluxUtils;
+import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.Metadata;
+import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
 import org.axonframework.messaging.core.annotation.HandlerDefinition;
+import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.core.annotation.MetadataValue;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
+import org.axonframework.messaging.core.annotation.WrappedMessageHandlingMember;
 import org.axonframework.messaging.core.conversion.DelegatingMessageConverter;
 import org.axonframework.messaging.core.conversion.MessageConverter;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
@@ -48,10 +53,14 @@ import org.axonframework.modelling.annotation.InjectEntity;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -151,6 +160,106 @@ class AppendCriteriaBuilderTest {
         }
 
         @Test
+        void builderResultBecomesTheAppendCriteriaOfTheTransaction() {
+            // given
+            AtomicReference<AppendCondition> finalCondition = new AtomicReference<>();
+            Configuration configuration = configuration();
+            CommandHandlingComponent component = component(
+                    new ObservingBuilderHandler(configuration.getComponent(EventStore.class), finalCondition),
+                    configuration
+            );
+
+            // when
+            handleSuccessfully(component, command(UseCredits.class, new UseCredits("one"), Map.of()));
+
+            // then
+            assertThat(finalCondition.get().criteria())
+                    .isEqualTo(ACCOUNT_CRITERIA.replaceEventTypes(CreditsChanged.class));
+        }
+
+        @Test
+        void effectivePayloadTypeDecidesTheBuilderWhenTheAnnotationDeclaresABroaderType() {
+            // given a handler annotated with payloadType CreditsCommand, while its parameter only accepts UseCredits
+            BroaderAnnotatedPayloadHandler.receivedCommands.clear();
+            Configuration configuration = configuration();
+            CommandHandlingComponent component = component(
+                    new BroaderAnnotatedPayloadHandler(configuration.getComponent(EventStore.class)), configuration
+            );
+
+            // when
+            handleSuccessfully(component, command(UseCredits.class, new UseCredits("one"), Map.of()));
+
+            // then the builder for UseCredits applies, as UseCredits is what the handler accepts
+            assertThat(BroaderAnnotatedPayloadHandler.receivedCommands).containsExactly("specific");
+        }
+
+        @Test
+        void annotatedPayloadTypeOfACommandMessageHandlerSelectsTheTypedBuilder() {
+            // given
+            TypedCommandMessageHandler.receivedCommands.clear();
+            Configuration configuration = configuration();
+            CommandHandlingComponent component = component(
+                    new TypedCommandMessageHandler(configuration.getComponent(EventStore.class)), configuration
+            );
+
+            // when
+            handleSuccessfully(component, command(UseCredits.class, new UseCredits("one"), Map.of()));
+
+            // then
+            assertThat(TypedCommandMessageHandler.receivedCommands).containsExactly(new UseCredits("one"));
+        }
+
+        @Test
+        void bridgeMethodOfAGenericHandlerDoesNotNeedABuilderOfItsOwn() {
+            // given a handler implementing a generic method, for which the compiler adds an annotated bridge method
+            BridgedHandler.receivedCommands.clear();
+            Configuration configuration = configuration();
+            CommandHandlingComponent component = component(
+                    new BridgedHandler(configuration.getComponent(EventStore.class)), configuration
+            );
+
+            // when
+            handleSuccessfully(component, command(UseCredits.class, new UseCredits("one"), Map.of()));
+
+            // then
+            assertThat(BridgedHandler.receivedCommands).containsExactly(new UseCredits("one"));
+        }
+
+        @Test
+        void builderAppliesWhenAnotherEnhancerAlreadyWrappedTheCommandHandler() {
+            // given a handler definition whose members are wrapped before this one decorates them
+            PerCommandBuilderHandler.receivedCommands.clear();
+            Configuration configuration = configuration();
+            HandlerDefinition base = ClasspathHandlerDefinition.forClass(AppendCriteriaBuilderTest.class);
+            HandlerDefinition wrapping = new HandlerDefinition() {
+                @Override
+                public <T> Optional<MessageHandlingMember<T>> createHandler(
+                        Class<T> declaringType,
+                        Method method,
+                        ParameterResolverFactory parameterResolverFactory,
+                        Function<Object, MessageStream<?>> messageStreamResolver
+                ) {
+                    return base.createHandler(declaringType, method, parameterResolverFactory, messageStreamResolver)
+                               .map(member -> new WrappedMessageHandlingMember<>(member) {
+                               });
+                }
+            };
+            CommandHandlingComponent component = new AnnotatedCommandHandlingComponent<>(
+                    new PerCommandBuilderHandler(configuration.getComponent(EventStore.class)),
+                    configuration.getComponent(ParameterResolverFactory.class),
+                    new AppendCriteriaHandlerDefinition(wrapping, configuration),
+                    configuration.getComponent(org.axonframework.messaging.core.MessageTypeResolver.class),
+                    new DelegatingMessageConverter(PassThroughConverter.INSTANCE)
+            );
+
+            // when
+            handleSuccessfully(component, command(UseCredits.class, new UseCredits("one"), Map.of()));
+
+            // then
+            assertThat(PerCommandBuilderHandler.receivedCommands).containsExactly("use:" + new UseCredits("one"));
+        }
+
+        @Test
         void commandMessageBuilderDistinguishesQualifiedNamesSharingAPayloadType() {
             // given
             QualifiedBuilderHandler.receivedNames.clear();
@@ -227,6 +336,17 @@ class AppendCriteriaBuilderTest {
                     .isInstanceOf(AxonConfigurationException.class)
                     .hasMessageContaining("more than one @AppendCriteriaBuilder for command type")
                     .hasMessageContaining(UseCredits.class.getName());
+        }
+
+        @Test
+        void rejectsCommandMessageHandlerWithoutAPayloadTypeWhenOnlyTypedBuildersExist() {
+            // given
+            Configuration configuration = configuration();
+
+            // when / then
+            assertThatThrownBy(() -> component(new UntypedCommandMessageHandler(), configuration))
+                    .isInstanceOf(AxonConfigurationException.class)
+                    .hasMessageContaining("No @AppendCriteriaBuilder accepts handled command payload [java.lang.Object]");
         }
 
         @Test
@@ -993,6 +1113,124 @@ class AppendCriteriaBuilderTest {
         @AppendCriteriaBuilder
         static EventCriteria catchAll(CommandMessage command, EventCriteria sourcingCriteria) {
             receivedCommands.add("catchAll:" + command.payload());
+            return sourcingCriteria;
+        }
+    }
+
+    private static class ObservingBuilderHandler {
+
+        private final EventStore eventStore;
+        private final AtomicReference<AppendCondition> finalCondition;
+
+        private ObservingBuilderHandler(EventStore eventStore, AtomicReference<AppendCondition> finalCondition) {
+            this.eventStore = eventStore;
+            this.finalCondition = finalCondition;
+        }
+
+        @CommandHandler
+        void handle(UseCredits command, ProcessingContext context) {
+            // registered after the builder's override, so it observes the condition that override produced
+            eventStore.transaction(context).overrideAppendCondition(condition -> {
+                finalCondition.set(condition);
+                return condition;
+            });
+            sourceAndAppend(eventStore, context, command.accountId());
+        }
+
+        @AppendCriteriaBuilder
+        static EventCriteria criteria(UseCredits command, EventCriteria sourcingCriteria) {
+            return sourcingCriteria.replaceEventTypes(CreditsChanged.class);
+        }
+    }
+
+    private static class BroaderAnnotatedPayloadHandler {
+
+        private static final List<String> receivedCommands = new ArrayList<>();
+        private final EventStore eventStore;
+
+        private BroaderAnnotatedPayloadHandler(EventStore eventStore) {
+            this.eventStore = eventStore;
+        }
+
+        @CommandHandler(payloadType = CreditsCommand.class)
+        void handle(UseCredits command, ProcessingContext context) {
+            sourceAndAppend(eventStore, context, command.accountId());
+        }
+
+        @AppendCriteriaBuilder
+        static EventCriteria general(CreditsCommand command, EventCriteria sourcingCriteria) {
+            receivedCommands.add("general");
+            return sourcingCriteria;
+        }
+
+        @AppendCriteriaBuilder
+        static EventCriteria specific(UseCredits command, EventCriteria sourcingCriteria) {
+            receivedCommands.add("specific");
+            return sourcingCriteria;
+        }
+    }
+
+    private static class TypedCommandMessageHandler {
+
+        private static final List<UseCredits> receivedCommands = new ArrayList<>();
+        private final EventStore eventStore;
+
+        private TypedCommandMessageHandler(EventStore eventStore) {
+            this.eventStore = eventStore;
+        }
+
+        @CommandHandler(payloadType = UseCredits.class)
+        void handle(CommandMessage command, ProcessingContext context) {
+            sourceAndAppend(eventStore, context, "one");
+        }
+
+        @AppendCriteriaBuilder
+        static EventCriteria criteria(UseCredits command, EventCriteria sourcingCriteria) {
+            receivedCommands.add(command);
+            return sourcingCriteria;
+        }
+    }
+
+    private static class UntypedCommandMessageHandler {
+
+        @CommandHandler(commandName = "credits.Any")
+        void handle(CommandMessage command) {
+        }
+
+        @AppendCriteriaBuilder
+        static EventCriteria criteria(UseCredits command) {
+            return ACCOUNT_CRITERIA;
+        }
+    }
+
+    private abstract static class GenericCreditsHandler<C extends CreditsCommand> {
+
+        protected final EventStore eventStore;
+
+        private GenericCreditsHandler(EventStore eventStore) {
+            this.eventStore = eventStore;
+        }
+
+        abstract void handle(C command, ProcessingContext context);
+    }
+
+    private static class BridgedHandler extends GenericCreditsHandler<UseCredits> {
+
+        private static final List<UseCredits> receivedCommands = new ArrayList<>();
+
+        private BridgedHandler(EventStore eventStore) {
+            super(eventStore);
+        }
+
+        @Override
+        @CommandHandler
+        void handle(UseCredits command, ProcessingContext context) {
+            sourceAndAppend(eventStore, context, command.accountId());
+        }
+
+        @AppendCriteriaBuilder
+        static EventCriteria criteria(UseCredits command, EventCriteria sourcingCriteria) {
+            receivedCommands.add(command);
             return sourcingCriteria;
         }
     }
