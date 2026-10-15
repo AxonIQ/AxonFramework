@@ -16,14 +16,12 @@
 
 package org.axonframework.modelling.annotation;
 
-import org.axonframework.common.StringUtils;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.annotation.AnnotatedHandlerInspector;
 import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
 import org.axonframework.messaging.core.annotation.ClasspathParameterResolverFactory;
-import org.axonframework.messaging.core.annotation.HandlerAttributes;
 import org.axonframework.messaging.core.annotation.HandlerDefinition;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
@@ -36,13 +34,11 @@ import org.axonframework.modelling.EntityEvolver;
 import org.axonframework.modelling.EntityEvolvingComponent;
 import org.axonframework.modelling.StateEvolvingException;
 
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import static java.util.Objects.requireNonNull;
 
@@ -193,7 +189,7 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
     ) {
         return handlers.stream()
                        .filter(handler -> handler.canHandleMessageType(EventMessage.class))
-                       .flatMap(handler -> eventNames(handler, messageTypeResolver)
+                       .flatMap(handler -> EventHandlingMember.eventNamesOf(handler, messageTypeResolver)
                                .stream()
                                .map(eventName -> Map.<QualifiedName, MessageHandlingMember<? super E>>entry(
                                        eventName, handler
@@ -205,17 +201,6 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
                                ),
                                Map::copyOf
                        ));
-    }
-
-    private Set<QualifiedName> eventNames(MessageHandlingMember<? super E> handler,
-                                          MessageTypeResolver messageTypeResolver) {
-        Set<QualifiedName> declaredNames = Stream.concat(
-                Arrays.stream(handler.<String[]>attribute(HandlerAttributes.EVENT_HANDLES).orElse(new String[0])),
-                handler.unwrap(EventHandlingMember.class).map(EventHandlingMember::eventName).stream()
-        ).filter(StringUtils::nonEmpty).map(QualifiedName::new).collect(Collectors.toUnmodifiableSet());
-        return declaredNames.isEmpty()
-                ? Set.of(messageTypeResolver.resolveOrThrow(handler.payloadType()).qualifiedName())
-                : declaredNames;
     }
 
     private E entityFromStreamResultOrUpdatedExisting(MessageStream.Entry<?> potentialEntityFromStream, E existing) {

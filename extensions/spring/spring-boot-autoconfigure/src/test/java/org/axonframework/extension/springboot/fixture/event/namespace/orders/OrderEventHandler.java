@@ -16,6 +16,7 @@
 
 package org.axonframework.extension.springboot.fixture.event.namespace.orders;
 
+import org.axonframework.messaging.core.annotation.QualifiedName;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.springframework.stereotype.Component;
 
@@ -26,7 +27,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class OrderEventHandler {
 
-    @EventHandler(eventName = "order-events")
+    @EventHandler(event = @QualifiedName(namespace = "orders", name = "order-events"))
     public void handle(String event) {
         System.out.println("Handling event [" + event + "]");
     }

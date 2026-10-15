@@ -17,11 +17,12 @@
 package org.axonframework.eventsourcing.annotation;
 
 import org.axonframework.messaging.commandhandling.CommandMessage;
+import org.axonframework.messaging.eventhandling.EventMessage;
+import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.Metadata;
-import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.annotation.EventHandler;
+import org.axonframework.messaging.core.annotation.QualifiedName;
 
 import java.lang.annotation.Documented;
 import java.lang.annotation.ElementType;
@@ -81,28 +82,30 @@ import java.lang.annotation.Target;
 public @interface EventSourcingHandler {
 
     /**
-     * The names of the events this sourcing handler listens to, each matching to the
-     * {@link org.axonframework.messaging.core.MessageType#name()} from the {@link EventMessage#type()}.
+     * The names of the events this sourcing handler listens to, each described through its separate
+     * {@link QualifiedName#namespace() namespace} and {@link QualifiedName#name() local name}, mirroring the attributes
+     * of the {@link org.axonframework.messaging.eventhandling.annotation.Event @Event} annotation.
      * <p>
-     * Each entry is a fully qualified name, interpreted the same way as
-     * {@link org.axonframework.messaging.eventhandling.annotation.EventHandler#eventName()}. Use this when a single
-     * sourcing handler method should apply state from events arriving under multiple names, for example when an event
-     * was renamed but older events with the previous name are still in the event store. All listed events are
-     * converted to the payload type of the annotated method.
+     * Interpreted the same way as {@link EventHandler#event()}: an empty {@link QualifiedName#namespace()} or
+     * {@link QualifiedName#name()} defaults to the respective part of the
+     * {@link org.axonframework.messaging.core.QualifiedName} the payload type (thus the <b>first</b> parameter) of the
+     * annotated method resolves to through the {@link org.axonframework.messaging.core.MessageTypeResolver}. When not
+     * defined, the name is derived from the payload type of the annotated method. All listed events are converted to
+     * the payload type of the annotated method.
      * <p>
-     * When not defined, the {@link org.axonframework.messaging.core.MessageTypeResolver} derives the name based on the
-     * payload type (thus the <b>first</b> parameter) of the annotated method.
-     * <p>
-     * Example:
+     * Example, applying state from both the current and a legacy name of an event:
      * <pre>{@code
-     * @EventSourcingHandler(handles = {"com.example.CustomerMoved", "com.example.AddressCorrected"})
-     * void on(AddressChanged event) { ... }
+     * @EventSourcingHandler(event = {
+     *         @QualifiedName(namespace = "com.acme", name = "OrderPlacedEvent"),
+     *         @QualifiedName(namespace = "com.acme.legacy", name = "OrderPlaced")
+     * })
+     * void on(OrderPlacedEvent event) { ... }
      * }</pre>
      *
-     * @return the names of the events this sourcing handler listens to
+     * @return the names of the events this sourcing handler listens to, as namespace and local name pairs
      * @since 5.5.0
      */
-    String[] handles() default {};
+    QualifiedName[] event() default {};
 
     /**
      * The type of event this method handles. If specified, this handler will only be invoked for message that have a

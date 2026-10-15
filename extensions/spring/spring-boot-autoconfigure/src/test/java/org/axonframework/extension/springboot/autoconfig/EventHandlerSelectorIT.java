@@ -75,7 +75,7 @@ class EventHandlerSelectorIT {
 
         @Test
         void foundInventoryNamespaceOnType() {
-            QualifiedName expectedEventHandlerName = new QualifiedName("inventory-events");
+            QualifiedName expectedEventHandlerName = new QualifiedName(INVENTORY_NAMESPACE, "inventory-events");
 
             AxonConfiguration axonConfiguration = context.getBean(AxonConfiguration.class);
             Configuration moduleConfig = axonConfiguration.getModuleConfiguration(INVENTORY_PROCESSOR_NAME)
@@ -96,7 +96,7 @@ class EventHandlerSelectorIT {
 
         @Test
         void foundOrdersNamespaceOnPackageInfo() {
-            QualifiedName expectedEventHandlerName = new QualifiedName("order-events");
+            QualifiedName expectedEventHandlerName = new QualifiedName(ORDERS_NAMESPACE, "order-events");
 
             AxonConfiguration axonConfiguration = context.getBean(AxonConfiguration.class);
             Configuration moduleConfig = axonConfiguration.getModuleConfiguration(ORDERS_PROCESSOR_NAME)
@@ -128,7 +128,7 @@ class EventHandlerSelectorIT {
 
         @Test
         void foundInventoryNamespaceOnType() {
-            QualifiedName expectedEventHandlerName = new QualifiedName("inventory-events");
+            QualifiedName expectedEventHandlerName = new QualifiedName(INVENTORY_NAMESPACE, "inventory-events");
 
             AxonConfiguration axonConfiguration = context.getBean(AxonConfiguration.class);
             Configuration moduleConfig = axonConfiguration.getModuleConfiguration(INVENTORY_PROCESSOR_NAME)
@@ -149,7 +149,7 @@ class EventHandlerSelectorIT {
 
         @Test
         void foundOrdersNamespaceOnPackageInfo() {
-            QualifiedName expectedEventHandlerName = new QualifiedName("order-events");
+            QualifiedName expectedEventHandlerName = new QualifiedName(ORDERS_NAMESPACE, "order-events");
 
             AxonConfiguration axonConfiguration = context.getBean(AxonConfiguration.class);
             Configuration moduleConfig = axonConfiguration.getModuleConfiguration(ORDERS_PROCESSOR_NAME)
@@ -188,7 +188,7 @@ class EventHandlerSelectorIT {
 
         @Test
         void handlerWithNamespaceOnTypeIsAssignedToNamespacedProcessorWithoutExplicitDefinition() {
-            QualifiedName expectedEventHandlerName = new QualifiedName("inventory-events");
+            QualifiedName expectedEventHandlerName = new QualifiedName(INVENTORY_NAMESPACE, "inventory-events");
 
             AxonConfiguration axonConfiguration = context.getBean(AxonConfiguration.class);
             Configuration moduleConfig = axonConfiguration.getModuleConfiguration(INVENTORY_PROCESSOR_NAME)
@@ -206,7 +206,7 @@ class EventHandlerSelectorIT {
 
         @Test
         void handlerWithNamespaceOnPackageIsAssignedToNamespacedProcessorWithoutExplicitDefinition() {
-            QualifiedName expectedEventHandlerName = new QualifiedName("order-events");
+            QualifiedName expectedEventHandlerName = new QualifiedName(ORDERS_NAMESPACE, "order-events");
 
             AxonConfiguration axonConfiguration = context.getBean(AxonConfiguration.class);
             Configuration moduleConfig = axonConfiguration.getModuleConfiguration(ORDERS_PROCESSOR_NAME)

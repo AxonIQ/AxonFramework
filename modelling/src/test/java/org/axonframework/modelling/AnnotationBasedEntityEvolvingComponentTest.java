@@ -20,14 +20,15 @@ import org.axonframework.common.ClockUtils;
 import org.axonframework.conversion.PassThroughConverter;
 import org.axonframework.conversion.jackson.JacksonConverter;
 import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
+import org.axonframework.messaging.core.GenericMessage;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.Metadata;
-import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.annotation.AnnotationMessageTypeResolver;
 import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
 import org.axonframework.messaging.core.annotation.ClasspathParameterResolverFactory;
 import org.axonframework.messaging.core.annotation.MetadataValue;
+import org.axonframework.messaging.core.annotation.QualifiedName;
 import org.axonframework.messaging.core.annotation.SourceId;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
@@ -44,6 +45,7 @@ import org.junit.jupiter.api.*;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
@@ -481,7 +483,7 @@ class AnnotationBasedEntityEvolvingComponentTest {
                     ClasspathHandlerDefinition.forClass(ExplicitNameState.class)
             );
             var state = new ExplicitNameState();
-            var event = new GenericEventMessage(new MessageType("explicit-event"), "payload");
+            var event = new GenericEventMessage(new MessageType("com.acme", "explicit-event", "1"), "payload");
 
             // when
             evolver.evolve(state, event, StubProcessingContext.forMessage(event));
@@ -510,7 +512,7 @@ class AnnotationBasedEntityEvolvingComponentTest {
 
             private int handledCount;
 
-            @EventHandler(eventName = "explicit-event")
+            @EventHandler(event = @QualifiedName(namespace = "com.acme", name = "explicit-event"))
             void handle(String event) {
                 handledCount++;
             }
@@ -518,165 +520,173 @@ class AnnotationBasedEntityEvolvingComponentTest {
     }
 
     @Nested
-    class HandlesAttribute {
+    class DeclaredEventNames {
 
-        private static final EventConverter passThroughConverter =
+        private static final EventConverter PASS_THROUGH_CONVERTER =
                 new DelegatingEventConverter(PassThroughConverter.INSTANCE);
 
-        private static EventMessage eventForName(String qualifiedName) {
-            return new GenericEventMessage(new MessageType(qualifiedName), "payload");
+        @Event(namespace = "com.acme")
+        private record OrderPlacedEvent(String id) {
+
         }
 
-        private static <E> AnnotationBasedEntityEvolvingComponent<E> evolverFor(Class<E> entityType) {
-            return new AnnotationBasedEntityEvolvingComponent<>(
-                    entityType,
-                    passThroughConverter,
-                    messageTypeResolver,
-                    ClasspathParameterResolverFactory.forClass(entityType),
-                    ClasspathHandlerDefinition.forClass(entityType)
-            );
-        }
-
-        @SuppressWarnings("unused")
-        private static class SingleHandlesState {
+        @SuppressWarnings({"unused", "removal"})
+        private static class EventNameState {
 
             int handledCount = 0;
 
-            @EventHandler(handles = "com.example.CustomerMoved")
-            void handle(String event) {
+            @EventHandler(eventName = "com.acme.OrderPlaced")
+            void handle(OrderPlacedEvent event) {
                 handledCount++;
             }
         }
 
         @SuppressWarnings("unused")
-        private static class MultiHandlesState {
+        private static class QualifiedNameState {
 
             int handledCount = 0;
 
-            @EventHandler(handles = {"com.example.CustomerMoved", "com.example.AddressCorrected"})
-            void handle(String event) {
+            @EventHandler(event = {
+                    @QualifiedName(namespace = "com.acme", name = "OrderPlacedEvent"),
+                    @QualifiedName(namespace = "com.acme.legacy", name = "OrderPlaced")
+            })
+            void handle(OrderPlacedEvent event) {
                 handledCount++;
             }
         }
 
         @SuppressWarnings("unused")
-        private static class UnqualifiedHandlesState {
+        private static class PartialQualifiedNameState {
 
-            @EventHandler(handles = "CustomerMoved")
-            void handle(String event) {
-                // no-op - the payload type's package must not be used as namespace
+            @EventHandler(event = {@QualifiedName(name = "OrderPlaced"), @QualifiedName(namespace = "com.acme.legacy")})
+            void handle(OrderPlacedEvent event) {
+                // no-op
             }
         }
 
-        @SuppressWarnings("unused")
-        private static class HandlesAndEventNameState {
+        @SuppressWarnings({"unused", "removal"})
+        private static class CombinedAttributesState {
 
-            @EventHandler(eventName = "com.example.AddressCorrected", handles = "com.example.CustomerMoved")
-            void handle(String event) {
+            @EventHandler(
+                    eventName = "com.acme.OrderPlaced",
+                    event = @QualifiedName(namespace = "com.acme.legacy", name = "OrderPlaced")
+            )
+            void handle(OrderPlacedEvent event) {
                 // no-op
             }
         }
 
         @Nested
-        class WhenHandlesHasSingleEntry {
+        class DeprecatedEventNameAttribute {
 
-            private final AnnotationBasedEntityEvolvingComponent<SingleHandlesState> evolver =
-                    evolverFor(SingleHandlesState.class);
+            private final AnnotationBasedEntityEvolvingComponent<EventNameState> evolver =
+                    evolverFor(EventNameState.class);
 
             @Test
-            void supportedEventsContainsOnlyTheHandlesName() {
+            void supportedEventsContainsDeclaredEventName() {
                 // when
-                var supportedEvents = evolver.supportedEvents();
+                var supportedEvents = namesSupportedBy(evolver);
 
                 // then
-                assertThat(supportedEvents).containsExactly(new QualifiedName("com.example.CustomerMoved"));
+                assertThat(supportedEvents).containsExactly("com.acme.OrderPlaced");
             }
 
             @Test
-            void evolveDispatchesEventWithHandlesNameToHandler() {
+            void evolveDispatchesDeclaredEventNameToTheHandler() {
                 // given
-                var state = new SingleHandlesState();
-                var event = eventForName("com.example.CustomerMoved");
+                var state = new EventNameState();
+                var event = orderPlacedNamed("com.acme.OrderPlaced");
 
                 // when
                 evolver.evolve(state, event, StubProcessingContext.forMessage(event));
 
                 // then
-                assertEquals(1, state.handledCount);
+                assertThat(state.handledCount).isEqualTo(1);
             }
 
             @Test
-            void evolveDoesNotDispatchEventWithPayloadTypeNameWhenHandlesIsSet() {
+            void evolveDoesNotDispatchEventWithPayloadTypeNameWhenEventNameIsDeclared() {
                 // given
-                var state = new SingleHandlesState();
-                // Event named after the payload type (String), not the handles entry
-                var event = new GenericEventMessage(new MessageType(String.class), "payload");
+                var state = new EventNameState();
+                // Named after the payload type, not after a declared event name
+                var event = orderPlacedNamed("com.acme.OrderPlacedEvent");
 
                 // when
                 evolver.evolve(state, event, StubProcessingContext.forMessage(event));
 
                 // then
-                assertEquals(0, state.handledCount);
+                assertThat(state.handledCount).isZero();
             }
         }
 
         @Nested
-        class WhenHandlesHasMultipleEntries {
+        class EventAttribute {
 
-            private final AnnotationBasedEntityEvolvingComponent<MultiHandlesState> evolver =
-                    evolverFor(MultiHandlesState.class);
+            private final AnnotationBasedEntityEvolvingComponent<QualifiedNameState> evolver =
+                    evolverFor(QualifiedNameState.class);
 
             @Test
-            void supportedEventsContainsAllHandlesNames() {
+            void supportedEventsContainsAllQualifiedNames() {
                 // when
-                var supportedEvents = evolver.supportedEvents();
+                var supportedEvents = namesSupportedBy(evolver);
 
                 // then
-                assertThat(supportedEvents).containsExactlyInAnyOrder(
-                        new QualifiedName("com.example.CustomerMoved"),
-                        new QualifiedName("com.example.AddressCorrected")
-                );
+                assertThat(supportedEvents).containsExactlyInAnyOrder("com.acme.OrderPlacedEvent",
+                                                                      "com.acme.legacy.OrderPlaced");
             }
 
             @Test
-            void evolveDispatchesEachHandlesNameToTheSameHandler() {
+            void evolveDispatchesEachQualifiedNameToTheSameHandler() {
                 // given
-                var state = new MultiHandlesState();
-                var customerMoved = eventForName("com.example.CustomerMoved");
-                var addressCorrected = eventForName("com.example.AddressCorrected");
+                var state = new QualifiedNameState();
+                var current = orderPlacedNamed("com.acme.OrderPlacedEvent");
+                var legacy = orderPlacedNamed("com.acme.legacy.OrderPlaced");
 
                 // when
-                evolver.evolve(state, customerMoved, StubProcessingContext.forMessage(customerMoved));
-                evolver.evolve(state, addressCorrected, StubProcessingContext.forMessage(addressCorrected));
+                evolver.evolve(state, current, StubProcessingContext.forMessage(current));
+                evolver.evolve(state, legacy, StubProcessingContext.forMessage(legacy));
 
                 // then
-                assertEquals(2, state.handledCount);
+                assertThat(state.handledCount).isEqualTo(2);
+            }
+
+            @Test
+            void emptyNamespaceOrNameDefaultsToPayloadTypeName() {
+                // when
+                var supportedEvents = namesSupportedBy(evolverFor(PartialQualifiedNameState.class));
+
+                // then
+                assertThat(supportedEvents).containsExactlyInAnyOrder("com.acme.OrderPlaced",
+                                                                      "com.acme.legacy.OrderPlacedEvent");
             }
         }
 
-        @Nested
-        class NameInterpretation {
+        @Test
+        void eventNameAndEventAttributesAreCombined() {
+            // when
+            var supportedEvents = namesSupportedBy(evolverFor(CombinedAttributesState.class));
 
-            @Test
-            void nameWithoutNamespaceIsUsedAsIs() {
-                // when
-                var supportedEvents = evolverFor(UnqualifiedHandlesState.class).supportedEvents();
+            // then
+            assertThat(supportedEvents).containsExactlyInAnyOrder("com.acme.OrderPlaced",
+                                                                  "com.acme.legacy.OrderPlaced");
+        }
 
-                // then
-                assertThat(supportedEvents).containsExactly(new QualifiedName("CustomerMoved"));
-            }
+        private static EventMessage orderPlacedNamed(String qualifiedName) {
+            return asEventMessage(new GenericMessage(new MessageType(qualifiedName), new OrderPlacedEvent("order-1")));
+        }
 
-            @Test
-            void handlesAndEventNameAreCombined() {
-                // when
-                var supportedEvents = evolverFor(HandlesAndEventNameState.class).supportedEvents();
+        private static List<String> namesSupportedBy(EntityEvolvingComponent<?> evolver) {
+            return evolver.supportedEvents().stream().map(name -> name.name()).toList();
+        }
 
-                // then
-                assertThat(supportedEvents).containsExactlyInAnyOrder(
-                        new QualifiedName("com.example.CustomerMoved"),
-                        new QualifiedName("com.example.AddressCorrected")
-                );
-            }
+        private static <E> AnnotationBasedEntityEvolvingComponent<E> evolverFor(Class<E> entityType) {
+            return new AnnotationBasedEntityEvolvingComponent<>(
+                    entityType,
+                    PASS_THROUGH_CONVERTER,
+                    new AnnotationMessageTypeResolver(),
+                    ClasspathParameterResolverFactory.forClass(entityType),
+                    ClasspathHandlerDefinition.forClass(entityType)
+            );
         }
     }
 

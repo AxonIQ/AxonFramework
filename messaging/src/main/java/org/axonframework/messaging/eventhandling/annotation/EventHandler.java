@@ -19,6 +19,7 @@ package org.axonframework.messaging.eventhandling.annotation;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.annotation.MessageHandler;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
+import org.axonframework.messaging.core.annotation.QualifiedName;
 import org.axonframework.messaging.eventhandling.EventMessage;
 
 import java.lang.annotation.Documented;
@@ -77,40 +78,53 @@ public @interface EventHandler {
      * The name of the event this handler listens to, matching to the {@link MessageType#name()} from the
      * {@link EventMessage#type()}.
      * <p>
-     * When not defined the {@link org.axonframework.messaging.core.MessageTypeResolver} will derive the name based on
-     * the payload type (thus the <b>first</b> parameter) of the annotated method.
-     * <p>
-     * Prefer {@link #handles()}, which allows declaring one or more event names. When both are defined, this handler
-     * listens to the combined set of names.
+     * The name is a fully qualified name (namespace and local name concatenated with a dot) and is used as is. When
+     * both this attribute and {@link #event()} are defined, this handler listens to the combined set of names. When
+     * neither is defined, the {@link org.axonframework.messaging.core.MessageTypeResolver} will derive the name based
+     * on the payload type (thus the <b>first</b> parameter) of the annotated method.
      *
-     * @return The name of the event this handler listens to, matching to the {@link MessageType#name()} from the
-     * {@link EventMessage#type()}.
+     * @return the name of the event this handler listens to, matching to the {@link MessageType#name()} from the
+     * {@link EventMessage#type()}
+     * @deprecated in favor of {@link #event()}, which describes the namespace and local name of an event separately
+     * and allows a handler to listen to several event names
      */
+    @Deprecated(since = "5.5.0", forRemoval = true)
     String eventName() default "";
 
     /**
-     * The names of the events this handler listens to, each matching to the {@link MessageType#name()} from the
-     * {@link EventMessage#type()}.
+     * The names of the events this handler listens to, each described through its separate
+     * {@link QualifiedName#namespace() namespace} and {@link QualifiedName#name() local name}, mirroring the attributes
+     * of the {@link Event @Event} annotation.
      * <p>
-     * Each entry is a fully qualified name, interpreted the same way as {@link #eventName()}. Use this when a single
-     * handler method should consume events arriving under multiple names, for example when an event was renamed but
-     * older events with the previous name still need to be handled. All listed events are converted to the payload
-     * type of the annotated method.
+     * An empty {@link QualifiedName#namespace()} or {@link QualifiedName#name()} defaults to the respective part of the
+     * {@link org.axonframework.messaging.core.QualifiedName} the payload type (thus the <b>first</b> parameter) of the
+     * annotated method resolves to through the {@link org.axonframework.messaging.core.MessageTypeResolver}. Thus, only
+     * the parts that differ from the payload type's name have to be defined. Note that the payload type's name is split
+     * into a namespace and local name at its <b>last</b> dot. For example, given a payload type annotated with
+     * {@code @Event(namespace = "orders", name = "v2.OrderPlaced")}, the declaration
+     * {@code @QualifiedName(namespace = "legacy")} resolves to {@code legacy.OrderPlaced}, not to
+     * {@code legacy.v2.OrderPlaced}. Event names always consist of a namespace and a local name.
      * <p>
-     * When {@link #eventName()} is defined as well, this handler listens to the combined set of names. When neither is
-     * defined, the {@link org.axonframework.messaging.core.MessageTypeResolver} will derive the name based on the
-     * payload type (thus the <b>first</b> parameter) of the annotated method.
+     * When neither this attribute nor the deprecated {@link #eventName()} is defined, the {@code MessageTypeResolver}
+     * will derive the name based on the payload type of the annotated method. All listed events are converted to the
+     * payload type of the annotated method.
      * <p>
-     * Example:
+     * Example, handling both the current and a legacy name of an event:
      * <pre>{@code
-     * @EventHandler(handles = {"com.example.CustomerMoved", "com.example.AddressCorrected"})
-     * void on(AddressChanged event) { ... }
+     * @Event(namespace = "com.acme")
+     * public record OrderPlacedEvent(String id) { }
+     *
+     * @EventHandler(event = {
+     *         @QualifiedName(namespace = "com.acme", name = "OrderPlacedEvent"),
+     *         @QualifiedName(namespace = "com.acme.legacy", name = "OrderPlaced")
+     * })
+     * void on(OrderPlacedEvent event) { ... }
      * }</pre>
      *
-     * @return the names of the events this handler listens to
+     * @return the names of the events this handler listens to, as namespace and local name pairs
      * @since 5.5.0
      */
-    String[] handles() default {};
+    QualifiedName[] event() default {};
 
     /**
      * The representation of the event this method requires. This is an indication for the framework to convert the

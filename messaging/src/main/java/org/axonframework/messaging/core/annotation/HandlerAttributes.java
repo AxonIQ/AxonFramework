@@ -63,15 +63,15 @@ public interface HandlerAttributes {
      */
     String EVENT_NAME = "EventHandler.eventName";
     /**
-     * Attribute key referencing the array of event names declared on
-     * {@link org.axonframework.messaging.eventhandling.annotation.EventHandler#handles()}, describing the set of
-     * events the handler listens to. This attribute is also surfaced for methods annotated
-     * with annotations that are meta-annotated with
-     * {@link org.axonframework.messaging.eventhandling.annotation.EventHandler @EventHandler}.
+     * Attribute key referencing the names of the {@link EventMessage EventMessages} the handler can handle, as declared
+     * through {@link org.axonframework.messaging.eventhandling.annotation.EventHandler#event()}.
+     * <p>
+     * The attribute value is an array of {@link org.axonframework.messaging.core.annotation.QualifiedName}
+     * annotations, describing each name through its separate namespace and local name.
      *
      * @since 5.5.0
      */
-    String EVENT_HANDLES = "EventHandler.handles";
+    String EVENT_QUALIFIED_NAMES = "EventHandler.event";
     /**
      * Attribute key referencing the result type the handler can handle.
      */

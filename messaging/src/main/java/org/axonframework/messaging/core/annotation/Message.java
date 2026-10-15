@@ -30,12 +30,16 @@ import java.lang.annotation.Target;
  * {@link org.axonframework.messaging.core.Message} annotation.
  * <p>
  * Furthermore, allows for annotation scanning on a more generic level than per message type.
+ * <p>
+ * This annotation is meta-annotated with {@link org.axonframework.messaging.core.annotation.QualifiedName}, which
+ * defines the {@link #namespace()} and {@link #name()} pairing that handler annotations can mirror when referring to a
+ * message.
  *
  * @author Steven van Beelen
  * @since 5.0.0
  */
 @Internal
-@Namespace
+@org.axonframework.messaging.core.annotation.QualifiedName
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.ANNOTATION_TYPE)
 public @interface Message {

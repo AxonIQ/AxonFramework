@@ -69,7 +69,7 @@ class AnnotatedHandlerAttributesTest {
 
         assertFalse(testSubject.isEmpty());
         assertTrue(testSubject.contains(HandlerAttributes.MESSAGE_TYPE));
-        assertEquals(CommandMessage.class, testSubject.get(HandlerAttributes.MESSAGE_TYPE));
+        assertEquals(testSubject.get(HandlerAttributes.MESSAGE_TYPE), CommandMessage.class);
         assertEquals(expected, testSubject.getAll());
     }
 
@@ -78,8 +78,8 @@ class AnnotatedHandlerAttributesTest {
         Method messageHandlingMember = getClass().getMethod("annotatedAllowReplayAndEventHandler", Object.class);
 
         Map<String, Object> expected = new HashMap<>();
-        expected.put(HandlerAttributes.EVENT_NAME, "custom-event-name");
-        expected.put(HandlerAttributes.EVENT_HANDLES, new String[0]);
+        expected.put(HandlerAttributes.EVENT_NAME, "com.acme.CustomEventName");
+        expected.put(HandlerAttributes.EVENT_QUALIFIED_NAMES, new QualifiedName[0]);
         expected.put(HandlerAttributes.ALLOW_REPLAY, true);
         expected.put(HandlerAttributes.MESSAGE_TYPE, EventMessage.class);
         expected.put(HandlerAttributes.PAYLOAD_TYPE, Boolean.class);
@@ -90,7 +90,7 @@ class AnnotatedHandlerAttributesTest {
         assertFalse(testSubject.isEmpty());
         assertTrue(testSubject.contains(HandlerAttributes.ALLOW_REPLAY));
         assertEquals(true, testSubject.get(HandlerAttributes.ALLOW_REPLAY));
-        // usingRecursiveComparison compares String[] by content rather than reference
+        // usingRecursiveComparison compares arrays by content rather than reference
         assertThat(testSubject.getAll()).usingRecursiveComparison().isEqualTo(expected);
     }
 
@@ -178,9 +178,9 @@ class AnnotatedHandlerAttributesTest {
         // No-op
     }
 
-    @SuppressWarnings("unused")
+    @SuppressWarnings({"unused", "removal"})
     @AllowReplay
-    @EventHandler(eventName = "custom-event-name", payloadType = Boolean.class)
+    @EventHandler(eventName = "com.acme.CustomEventName", payloadType = Boolean.class)
     public void annotatedAllowReplayAndEventHandler(Object event) {
         // No-op
     }
