@@ -18,6 +18,7 @@ package org.axonframework.eventsourcing.commandhandling;
 
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.configuration.Configuration;
+import org.axonframework.eventsourcing.commandhandling.annotation.AppendCriteriaBuilder;
 import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandlingMember;
@@ -31,8 +32,12 @@ import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.jspecify.annotations.Nullable;
 
 import java.lang.reflect.Method;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
@@ -63,6 +68,7 @@ public final class AppendCriteriaHandlerDefinition implements HandlerDefinition 
     private final Configuration configuration;
     private final Map<Class<?>, Optional<AnnotationBasedAppendCriteriaResolver.VisibleBuilders>> builders =
             new ConcurrentHashMap<>();
+    private final Set<Class<?>> checkedForInheritedHandlers = ConcurrentHashMap.newKeySet();
 
     /**
      * Creates a handler-definition decorator.
@@ -82,6 +88,7 @@ public final class AppendCriteriaHandlerDefinition implements HandlerDefinition 
             ParameterResolverFactory parameterResolverFactory,
             Function<Object, MessageStream<?>> messageStreamResolver
     ) {
+        checkBuildersAgainstInheritedHandlers(declaringType, parameterResolverFactory, messageStreamResolver);
         Optional<MessageHandlingMember<T>> original = delegate.createHandler(
                 declaringType, method, parameterResolverFactory, messageStreamResolver
         );
@@ -110,6 +117,61 @@ public final class AppendCriteriaHandlerDefinition implements HandlerDefinition 
                 configuration.getComponent(EventStore.class),
                 resolver
         ));
+    }
+
+    /**
+     * Runs once per class, also for a class declaring builders without any handler of its own, as that is exactly the
+     * class whose builders an inherited handler never reaches. Marked checked only after passing, so a repeated
+     * inspection of an invalid class fails again.
+     */
+    private void checkBuildersAgainstInheritedHandlers(Class<?> declaringType,
+                                                       ParameterResolverFactory parameterResolverFactory,
+                                                       Function<Object, MessageStream<?>> messageStreamResolver) {
+        if (checkedForInheritedHandlers.contains(declaringType)) {
+            return;
+        }
+        boolean declaresBuilders = Arrays.stream(declaringType.getDeclaredMethods())
+                                         .anyMatch(method -> method.isAnnotationPresent(AppendCriteriaBuilder.class));
+        if (declaresBuilders) {
+            Set<Class<?>> redeclaredPayloads = new HashSet<>(
+                    commandHandlers(declaringType, parameterResolverFactory, messageStreamResolver).values()
+            );
+            Map<Method, Class<?>> inheritedHandlers = new HashMap<>();
+            for (Class<?> type = declaringType.getSuperclass();
+                 type != null && type != Object.class;
+                 type = type.getSuperclass()) {
+                commandHandlers(type, parameterResolverFactory, messageStreamResolver).forEach(
+                        (handler, payloadType) -> {
+                            if (!redeclaredPayloads.contains(payloadType)) {
+                                inheritedHandlers.put(handler, payloadType);
+                            }
+                        }
+                );
+            }
+            AnnotationBasedAppendCriteriaResolver.rejectBuildersInheritedHandlersNeverUse(
+                    declaringType, inheritedHandlers, configuration
+            );
+        }
+        checkedForInheritedHandlers.add(declaringType);
+    }
+
+    /**
+     * Creates the members for the methods {@code type} declares through the delegate, the same way the handlers
+     * themselves are created, and returns the command handlers among them with the payload type each one handles.
+     */
+    private <T> Map<Method, Class<?>> commandHandlers(Class<T> type,
+                                                     ParameterResolverFactory parameterResolverFactory,
+                                                     Function<Object, MessageStream<?>> messageStreamResolver) {
+        Map<Method, Class<?>> handlers = new HashMap<>();
+        for (Method method : type.getDeclaredMethods()) {
+            if (method.isBridge()) {
+                continue;
+            }
+            delegate.createHandler(type, method, parameterResolverFactory, messageStreamResolver)
+                    .filter(member -> member.unwrap(CommandHandlingMember.class).isPresent())
+                    .ifPresent(member -> handlers.put(method, member.payloadType()));
+        }
+        return handlers;
     }
 
     private static final class AppendCriteriaCommandHandlingMember<T>

@@ -627,21 +627,64 @@ class AppendCriteriaBuilderTest {
         }
 
         @Test
-        void subclassBuilderForTheSameCommandTypeReplacesTheInheritedOne() {
-            // given parent and subclass both declare a builder for CreditsCommand
-            BuilderParent.receivedCommands.clear();
-            SameTypeOverridingChildHandler.receivedCommands.clear();
+        void rejectsSubclassBuilderForACommandOnlyItsParentHandles() {
+            // given a subclass declaring a builder for the command its parent handles
+            Configuration configuration = configuration();
+
+            // when / then the builder would never run, as the inherited handler is matched with its parent's builders
+            assertThatThrownBy(() -> component(
+                    new ShadowingChildHandler(configuration.getComponent(EventStore.class)), configuration
+            ))
+                    .isInstanceOf(AxonConfigurationException.class)
+                    .hasMessageContaining("never applies to the inherited command handler")
+                    .hasMessageContaining(ShadowingChildHandler.class.getName())
+                    .hasMessageContaining(PlainParent.class.getName());
+        }
+
+        @Test
+        void rejectsSubclassCatchAllBuilderThatAnInheritedHandlerNeverReaches() {
+            // given a subclass whose CommandMessage builder appears to cover every command, including inherited ones
+            Configuration configuration = configuration();
+
+            // when / then
+            assertThatThrownBy(() -> component(
+                    new CatchAllChildHandler(configuration.getComponent(EventStore.class)), configuration
+            ))
+                    .isInstanceOf(AxonConfigurationException.class)
+                    .hasMessageContaining("never applies to the inherited command handler")
+                    .hasMessageContaining(CatchAllChildHandler.class.getName());
+        }
+
+        @Test
+        void rejectsSubclassBuilderReplacingTheBuilderAnInheritedHandlerKeepsUsing() {
+            // given parent and subclass both declare a builder for CreditsCommand, and the parent handles UseCredits
+            Configuration configuration = configuration();
+
+            // when / then the subclass' builder replaces the parent's for the subclass' own handlers only, which would
+            // leave the inherited UseCredits handler on a builder the subclass appears to have replaced
+            assertThatThrownBy(() -> component(
+                    new SameTypeOverridingChildHandler(configuration.getComponent(EventStore.class)), configuration
+            ))
+                    .isInstanceOf(AxonConfigurationException.class)
+                    .hasMessageContaining("never applies to the inherited command handler")
+                    .hasMessageContaining(SameTypeOverridingChildHandler.class.getName())
+                    .hasMessageContaining(BuilderParent.class.getName());
+        }
+
+        @Test
+        void subclassBuilderAppliesToAnInheritedCommandOnceTheSubclassRedeclaresItsHandler() {
+            // given a subclass redeclaring the parent's handler next to a builder for its command
+            RedeclaringChildHandler.receivedCommands.clear();
             Configuration configuration = configuration();
             CommandHandlingComponent component = component(
-                    new SameTypeOverridingChildHandler(configuration.getComponent(EventStore.class)), configuration
+                    new RedeclaringChildHandler(configuration.getComponent(EventStore.class)), configuration
             );
 
-            // when a command the subclass declares is handled
-            handleSuccessfully(component, command(TopUpCredits.class, new TopUpCredits("one"), Map.of()));
+            // when
+            handleSuccessfully(component, command(UseCredits.class, new UseCredits("one"), Map.of()));
 
-            // then the closest declaration wins
-            assertThat(SameTypeOverridingChildHandler.receivedCommands).containsExactly(new TopUpCredits("one"));
-            assertThat(BuilderParent.receivedCommands).isEmpty();
+            // then
+            assertThat(RedeclaringChildHandler.receivedCommands).containsExactly(new UseCredits("one"));
         }
 
         @Test
@@ -784,6 +827,65 @@ class AppendCriteriaBuilderTest {
     }
 
     /**
+     * Declares a builder for the {@code UseCredits} command that only {@link PlainParent} handles.
+     */
+    private static class ShadowingChildHandler extends PlainParent {
+
+        private ShadowingChildHandler(EventStore eventStore) {
+            super(eventStore);
+        }
+
+        @AppendCriteriaBuilder
+        static EventCriteria criteria(UseCredits command, EventCriteria sourcingCriteria) {
+            return sourcingCriteria;
+        }
+    }
+
+    /**
+     * Declares a {@link CommandMessage} builder next to its own handler, while inheriting {@link PlainParent}'s.
+     */
+    private static class CatchAllChildHandler extends PlainParent {
+
+        private CatchAllChildHandler(EventStore eventStore) {
+            super(eventStore);
+        }
+
+        @CommandHandler
+        void handle(TopUpCredits command, ProcessingContext context) {
+            sourceAndAppend(eventStore, context, command.accountId());
+        }
+
+        @AppendCriteriaBuilder
+        static EventCriteria criteria(CommandMessage command, EventCriteria sourcingCriteria) {
+            return sourcingCriteria;
+        }
+    }
+
+    /**
+     * Redeclares {@link PlainParent}'s {@code UseCredits} handler, so its own builder for that command applies.
+     */
+    private static class RedeclaringChildHandler extends PlainParent {
+
+        private static final List<UseCredits> receivedCommands = new ArrayList<>();
+
+        private RedeclaringChildHandler(EventStore eventStore) {
+            super(eventStore);
+        }
+
+        @Override
+        @CommandHandler
+        void handle(UseCredits command, ProcessingContext context) {
+            super.handle(command, context);
+        }
+
+        @AppendCriteriaBuilder
+        static EventCriteria criteria(UseCredits command, EventCriteria sourcingCriteria) {
+            receivedCommands.add(command);
+            return sourcingCriteria;
+        }
+    }
+
+    /**
      * Declares a builder wide enough to cover commands added by subclasses, alongside its own handler.
      */
     private static class BuilderParent {
@@ -846,11 +948,10 @@ class AppendCriteriaBuilderTest {
     }
 
     /**
-     * Declares a builder for the same command type as {@link BuilderParent}, replacing the inherited one.
+     * Declares a builder for the same command type as {@link BuilderParent}, which would replace the inherited one for
+     * its own handler while the inherited {@code UseCredits} handler keeps using {@link BuilderParent}'s.
      */
     private static class SameTypeOverridingChildHandler extends BuilderParent {
-
-        private static final List<CreditsCommand> receivedCommands = new ArrayList<>();
 
         private SameTypeOverridingChildHandler(EventStore eventStore) {
             super(eventStore);
@@ -863,7 +964,6 @@ class AppendCriteriaBuilderTest {
 
         @AppendCriteriaBuilder
         static EventCriteria ownCriteria(CreditsCommand command, EventCriteria sourcingCriteria) {
-            receivedCommands.add(command);
             return sourcingCriteria;
         }
     }

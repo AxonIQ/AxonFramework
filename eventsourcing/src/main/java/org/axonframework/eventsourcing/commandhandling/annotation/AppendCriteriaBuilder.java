@@ -57,7 +57,9 @@ import java.lang.annotation.Target;
  * its superclasses; for the same command type, the closest declaration wins. A base class may contribute builders
  * without declaring any command handler itself. Interfaces are not searched, as the method is required to be
  * {@code static}. Handlers a class inherits are matched against the builders of the class declaring them, so a builder
- * on a subclass does not apply to handlers inherited from its superclass.
+ * on a subclass does not apply to handlers inherited from its superclass. Startup fails when such a builder would be
+ * the one selected for an inherited handler, such as a subclass builder for a command only its superclass handles, as
+ * it would never run. Declare the builder on the superclass instead, or redeclare the handler on the subclass.
  *
  * @author Mateusz Nowak
  * @see AppendCriteriaResolver

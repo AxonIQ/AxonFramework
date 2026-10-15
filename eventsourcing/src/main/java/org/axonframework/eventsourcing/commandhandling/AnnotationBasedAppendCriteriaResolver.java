@@ -67,7 +67,8 @@ final class AnnotationBasedAppendCriteriaResolver implements AppendCriteriaResol
      * interface methods are not inherited.
      * <p>
      * A handler inherited from a supertype is created against that supertype as its declaring type, and so is matched
-     * against the builders visible to that supertype.
+     * against the builders visible to that supertype. {@link #rejectBuildersInheritedHandlersNeverUse} rejects
+     * builders on {@code declaringType} that would appear to cover such a handler.
      *
      * @return the builders visible to {@code declaringType}, or an empty {@code Optional} when it has none
      * @throws AxonConfigurationException if a builder is invalid, or two builders on one class cover the same command
@@ -78,6 +79,39 @@ final class AnnotationBasedAppendCriteriaResolver implements AppendCriteriaResol
         return builders.isEmpty()
                 ? Optional.empty()
                 : Optional.of(new VisibleBuilders(declaringType, List.copyOf(builders.values())));
+    }
+
+    /**
+     * Rejects builders that appear to cover a command handler {@code declaringType} inherits, but never run for it.
+     * <p>
+     * An inherited handler is matched with the builders visible to the class declaring it, so a builder declared on
+     * {@code declaringType} (or on a class between it and the handler's declaring class) never applies to it. Such a
+     * builder is rejected when it is the one that would be selected for the handler, were the handler declared on
+     * {@code declaringType}, as the handler would otherwise silently keep the criteria of its own class.
+     *
+     * @param declaringType     the class whose builders are checked
+     * @param inheritedHandlers the command handlers {@code declaringType} inherits and does not redeclare, mapped to
+     *                          the payload type each of them handles
+     * @param configuration     the configuration used to validate the builders
+     * @throws AxonConfigurationException if a builder would be selected for an inherited handler it never applies to
+     */
+    static void rejectBuildersInheritedHandlersNeverUse(Class<?> declaringType,
+                                                        Map<Method, Class<?>> inheritedHandlers,
+                                                        Configuration configuration) {
+        Collection<BuilderMethod> builders = visibleBuilders(declaringType, configuration).values();
+        inheritedHandlers.forEach((handler, payloadType) -> select(payloadType, builders)
+                .filter(builder -> !builder.method.getDeclaringClass().isAssignableFrom(handler.getDeclaringClass()))
+                .ifPresent(builder -> {
+                    throw invalid(builder.method, (
+                            "never applies to the inherited command handler [%s#%s] for payload [%s], which is "
+                                    + "matched with the builders of [%s] and its superclasses. Declare the builder "
+                                    + "there, or redeclare the handler on [%s]"
+                    ).formatted(handler.getDeclaringClass().getName(),
+                                ReflectionUtils.toDiscernibleSignature(handler),
+                                payloadType.getName(),
+                                handler.getDeclaringClass().getName(),
+                                declaringType.getName()));
+                }));
     }
 
     /**
