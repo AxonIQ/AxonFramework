@@ -173,13 +173,18 @@ Tags on the appended event do not by themselves define append criteria for an ex
 
 A builder on the class does not change that.
 Returning the supplied criteria unchanged adds no restriction, so a command that sourced nothing stays unconditional.
-That is how one class can mix a command with a narrowed boundary and a command with none at all: a top-up that no rule
+That is how one class can mix a command with a narrowed boundary and a command with none at all: a command that no rule
 constrains reads nothing and returns what it was given, while a withdrawal sources a balance and narrows.
 
 Returning the supplied criteria for a command that *did* source keeps the symmetric default instead, since those
 criteria describe what was read.
 Sourcing sets the consistency marker, so a sourced command is always checked from that position; narrowing the criteria
 selects which concurrent events conflict, and cannot remove the check.
+
+Deriving criteria from the supplied ones does restrict a command that sourced nothing, because the result is no longer the empty criteria it was given.
+`replaceEventTypes(...)` on the empty criteria yields "any tag, these types", which the transaction checks from `ConsistencyMarker.ORIGIN` against the complete event history.
+Such a command fails as soon as any event of those types exists.
+This matters most for a builder accepting `CommandMessage` that narrows every command it covers: give commands that source nothing a builder of their own.
 
 An append-criteria builder does not determine whether sourcing occurred.
 For a command that sources no events, it can ignore the supplied sourcing criteria and construct criteria directly from
@@ -223,7 +228,7 @@ Prefer symmetric criteria when the exact explanatory ordering of rejection event
 [IMPORTANT]
 ====
 Custom append criteria require an event store that supports criteria-aware consistency checks.
-Aggregate-based storage keeps its existing default behavior, but replacing an aggregate consistency boundary with unrelated criteria is not supported and fails explicitly.
+Aggregate-based storage keeps its existing default behavior, but its consistency marker tracks a single aggregate sequence: a builder or resolver returning anything other than the supplied sourcing criteria, including a narrowing with `replaceEventTypes`, fails explicitly.
 ====
 
 [#entity_owned_command_append_criteria]
