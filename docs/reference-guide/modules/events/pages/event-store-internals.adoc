@@ -2,12 +2,15 @@
 :navtitle: Event Store Internals
 
 This chapter covers the specifics of working with an Event Store in Axon Framework.
-Most users do not need to interact with these components directly, but understanding them provides valuable insight into how Axon manages event storage and consistency.
-Furthermore, if you do need to customize these parts, it's good to know that they're there.
+Most of these components work without user interaction.
+The exception is <<command_append_criteria,append criteria per command>>, which are declared next to command handlers.
 
-It explains Dynamic Consistency Boundaries (DCB), a flexible approach to organizing events beyond traditional aggregate-based storage.
-You will learn about event tags and the `TagResolver` for attaching metadata to events, as well as `EventCriteria` and the `CriteriaResolver` for querying events based on those tags.
-Finally, the chapter covers consistency markers, which ensure write conflict detection when working with tag-based event groupings.
+The page covers:
+
+* Dynamic Consistency Boundaries (DCB), a flexible approach to organizing events beyond traditional aggregate-based storage.
+* Event tags and the `TagResolver` for attaching metadata to events, and `EventCriteria` and the `CriteriaResolver` for querying events based on those tags.
+* Append criteria per command, which check a different consistency boundary for a command than the one it sourced, including for entity command handlers.
+* Append, source, and stream conditions, and the consistency markers that detect conflicting writes.
 
 [#dynamic_consistency_boundaries_dcb]
 == Dynamic Consistency Boundary
@@ -189,7 +192,7 @@ Reserving a unique key, as in the `UsernameCommandHandler` example, requires a c
 ====
 
 [#entity_owned_command_append_criteria]
-== Entity-owned command handlers
+=== Entity-owned command handlers
 
 An event-sourced entity that handles commands declares append criteria the same way, next to its `@EventCriteriaBuilder`:
 
