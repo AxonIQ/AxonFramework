@@ -61,8 +61,17 @@ public final class AppendCriteriaHandlerDefinition implements HandlerDefinition 
 
     /**
      * Decoration order for the configured {@link HandlerDefinition}.
+     * <p>
+     * A {@code HandlerDefinition} added through
+     * {@link org.axonframework.messaging.core.configuration.reflection.HandlerDefinitionUtils} (order {@code 0} by
+     * default) decorates the component into a
+     * {@link org.axonframework.messaging.core.annotation.MultiHandlerDefinition}. Handlers created by a definition
+     * added outside this decorator would skip builder matching without any error, so
+     * this decorator is applied as late as possible: right before the
+     * {@link org.axonframework.messaging.core.reflection.HierarchicalHandlerDefinitionConfigurationEnhancer} (order
+     * {@code Integer.MAX_VALUE >> 1}), which adds the parent configuration's definitions and has to stay outermost.
      */
-    public static final int DECORATION_ORDER = 100;
+    public static final int DECORATION_ORDER = (Integer.MAX_VALUE >> 1) - 1;
 
     private final HandlerDefinition delegate;
     private final Configuration configuration;

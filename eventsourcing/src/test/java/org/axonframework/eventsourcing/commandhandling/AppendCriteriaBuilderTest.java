@@ -17,7 +17,9 @@
 package org.axonframework.eventsourcing.commandhandling;
 
 import org.axonframework.common.AxonConfigurationException;
+import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.Configuration;
+import org.axonframework.common.configuration.ConfigurationEnhancer;
 import org.axonframework.conversion.PassThroughConverter;
 import org.axonframework.eventsourcing.annotation.EventTag;
 import org.axonframework.eventsourcing.commandhandling.annotation.AppendCriteriaBuilder;
@@ -32,6 +34,7 @@ import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.commandhandling.GenericCommandMessage;
 import org.axonframework.messaging.commandhandling.annotation.AnnotatedCommandHandlingComponent;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
+import org.axonframework.messaging.commandhandling.annotation.CommandHandlingMember;
 import org.axonframework.messaging.commandhandling.interception.InterceptingCommandHandlingComponent;
 import org.axonframework.messaging.core.FluxUtils;
 import org.axonframework.messaging.core.MessageStream;
@@ -43,8 +46,10 @@ import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
 import org.axonframework.messaging.core.annotation.HandlerDefinition;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.core.annotation.MetadataValue;
+import org.axonframework.messaging.core.annotation.MethodInvokingMessageHandlingMember;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
 import org.axonframework.messaging.core.annotation.WrappedMessageHandlingMember;
+import org.axonframework.messaging.core.configuration.reflection.HandlerDefinitionUtils;
 import org.axonframework.messaging.core.conversion.DelegatingMessageConverter;
 import org.axonframework.messaging.core.conversion.MessageConverter;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
@@ -56,6 +61,10 @@ import org.axonframework.modelling.annotation.InjectEntity;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
@@ -554,6 +563,46 @@ class AppendCriteriaBuilderTest {
                     .isInstanceOf(CompletionException.class)
                     .hasCauseInstanceOf(IllegalStateException.class)
                     .hasStackTraceContaining("Append criteria have already been defined");
+        }
+    }
+
+    @Nested
+    class LaterRegisteredHandlerDefinitions {
+
+        @Test
+        void builderAppliesToCommandHandlersCreatedByAHandlerDefinitionRegisteredAfterTheDefaults() {
+            // given an enhancer adding, like an extension does, a handler definition with an order above the
+            // framework's own decorations, creating a handler the default definition does not
+            CustomDefinitionHandler.receivedCommands.clear();
+            ConfigurationEnhancer addsCustomDefinition = new ConfigurationEnhancer() {
+                @Override
+                public void enhance(ComponentRegistry registry) {
+                    HandlerDefinitionUtils.registerToComponentRegistry(
+                            registry, 200, c -> new CustomAnnotationHandlerDefinition()
+                    );
+                }
+
+                @Override
+                public int order() {
+                    // after the default HandlerDefinition component is registered
+                    return 1000;
+                }
+            };
+            Configuration configuration =
+                    EventSourcingConfigurer.create()
+                                           .componentRegistry(registry -> registry.registerEnhancer(
+                                                   addsCustomDefinition
+                                           ))
+                                           .build();
+            CommandHandlingComponent component = component(
+                    new CustomDefinitionHandler(configuration.getComponent(EventStore.class)), configuration
+            );
+
+            // when
+            handleSuccessfully(component, command(UseCredits.class, new UseCredits("one"), Map.of()));
+
+            // then the builder applied, rather than the handler silently keeping its sourcing criteria
+            assertThat(CustomDefinitionHandler.receivedCommands).containsExactly(new UseCredits("one"));
         }
     }
 
@@ -1570,6 +1619,79 @@ class AppendCriteriaBuilderTest {
         @AppendCriteriaBuilder
         static EventCriteria criteria(UseCredits command, @MetadataValue("tenantId") Long tenantId) {
             return EventCriteria.havingAnyTag();
+        }
+    }
+
+    @Retention(RetentionPolicy.RUNTIME)
+    @Target(ElementType.METHOD)
+    private @interface HandledThroughCustomDefinition {
+
+    }
+
+    /**
+     * Creates command handlers for {@link HandledThroughCustomDefinition} methods, which the default
+     * {@link HandlerDefinition} does not recognize, standing in for a user-registered definition.
+     */
+    private static class CustomAnnotationHandlerDefinition implements HandlerDefinition {
+
+        @Override
+        public <T> Optional<MessageHandlingMember<T>> createHandler(
+                Class<T> declaringType,
+                Method method,
+                ParameterResolverFactory parameterResolverFactory,
+                Function<Object, MessageStream<?>> messageStreamResolver
+        ) {
+            if (!method.isAnnotationPresent(HandledThroughCustomDefinition.class)) {
+                return Optional.empty();
+            }
+            return Optional.of(new CustomCommandHandlingMember<>(new MethodInvokingMessageHandlingMember<>(
+                    method, CommandMessage.class, Object.class, parameterResolverFactory, messageStreamResolver
+            )));
+        }
+    }
+
+    private static class CustomCommandHandlingMember<T>
+            extends WrappedMessageHandlingMember<T>
+            implements CommandHandlingMember<T> {
+
+        private CustomCommandHandlingMember(MessageHandlingMember<T> delegate) {
+            super(delegate);
+        }
+
+        @Override
+        public String commandName() {
+            return "";
+        }
+
+        @Override
+        public String routingKey() {
+            return "";
+        }
+
+        @Override
+        public boolean isFactoryHandler() {
+            return false;
+        }
+    }
+
+    private static class CustomDefinitionHandler {
+
+        private static final List<UseCredits> receivedCommands = new ArrayList<>();
+        private final EventStore eventStore;
+
+        private CustomDefinitionHandler(EventStore eventStore) {
+            this.eventStore = eventStore;
+        }
+
+        @HandledThroughCustomDefinition
+        void handle(UseCredits command, ProcessingContext context) {
+            sourceAndAppend(eventStore, context, command.accountId());
+        }
+
+        @AppendCriteriaBuilder
+        static EventCriteria criteria(UseCredits command, EventCriteria sourcingCriteria) {
+            receivedCommands.add(command);
+            return sourcingCriteria;
         }
     }
 
