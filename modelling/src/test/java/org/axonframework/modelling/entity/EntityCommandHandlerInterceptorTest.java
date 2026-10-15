@@ -87,6 +87,22 @@ class EntityCommandHandlerInterceptorTest {
         }
 
         @Test
+        void proceedingWithAReplacedContextForwardsThatContext() {
+            // given
+            ProcessingContext replacement = new StubProcessingContext();
+            MessageHandlerInterceptor<CommandMessage> replacing = (message, ctx, interceptorChain) ->
+                    interceptorChain.proceed(message, replacement);
+            RecordingEntityChain chain = new RecordingEntityChain();
+            EntityCommandHandlerInterceptor<TestEntity> testSubject = EntityCommandHandlerInterceptor.of(replacing);
+
+            // when
+            payloadOf(testSubject.interceptOnHandle(command, entity, context, chain));
+
+            // then
+            assertThat(chain.contexts).containsExactly(replacement);
+        }
+
+        @Test
         void notProceedingShortCircuitsTheEntityChain() {
             // given
             MessageHandlerInterceptor<CommandMessage> shortCircuiting = (message, ctx, interceptorChain) ->

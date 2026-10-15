@@ -427,6 +427,40 @@ class DefaultEventStoreTransactionTest {
                     .hasStackTraceContaining("move the entity to a tag-based event store");
         }
 
+        @Test
+        void acceptsUnchangedAppendCriteriaForAnAggregateBasedConsistencyMarker() {
+            // given a resolver returning the sourcing criteria, the only result an aggregate marker can express
+            EventStore eventStore = new StorageEngineBackedEventStore(
+                    aggregateStorageEngine,
+                    new SimpleEventBus(),
+                    event -> Set.of(new Tag("aggregateIdentifier", (String) event.payload()))
+            );
+            var commandName = new org.axonframework.messaging.core.QualifiedName("test.ChangeAggregate");
+            SimpleCommandHandlingComponent delegate = SimpleCommandHandlingComponent.create("aggregate-handler");
+            delegate.subscribe(commandName, (command, context) -> {
+                EventStoreTransaction transaction = eventStore.transaction(context);
+                FluxUtils.of(transaction.source(sourcingConditionFor(FIRST_AGGREGATE_ID))).blockLast();
+                transaction.appendEvent(eventFor(FIRST_AGGREGATE_ID));
+                return MessageStream.empty();
+            });
+            CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
+                    List.of(new AppendCriteriaInterceptor(
+                            eventStore,
+                            (command, context, sourcingCriteria) -> sourcingCriteria
+                    )),
+                    delegate
+            );
+
+            // when
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> component.handle(
+                    new GenericCommandMessage(new MessageType(commandName), FIRST_AGGREGATE_ID), context
+            ));
+
+            // then
+            awaitSuccessfulCompletion(uow.execute());
+        }
+
         private EventStoreTransaction aggregateBasedTransactionFor(ProcessingContext context) {
             return context.computeResourceIfAbsent(
                     testEventStoreTransactionKey,

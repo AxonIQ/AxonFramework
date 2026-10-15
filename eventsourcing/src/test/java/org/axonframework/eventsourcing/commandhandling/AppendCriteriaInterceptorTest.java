@@ -488,6 +488,42 @@ class AppendCriteriaInterceptorTest {
         }
 
         @Test
+        void interceptorsOnBothParentAndChildEntityFailForAForwardedCommand() {
+            // given the same command reaching an interceptor on the parent and another on the child it is forwarded to
+            AppendCriteriaResolver resolver = (command, context, sourcingCriteria) -> sourcingCriteria;
+            EntityMetamodel<Card> cardMetamodel = ConcreteEntityMetamodel
+                    .forEntityClass(Card.class)
+                    .instanceCommandHandler(REPLACE_CARD, (command, card, context) ->
+                            AppendCriteriaInterceptorTest.this.sourceAccountAndAppend(command, context))
+                    .commandHandlerInterceptor(EntityCommandHandlerInterceptor.of(
+                            new AppendCriteriaInterceptor(eventStore, resolver)
+                    ))
+                    .build();
+            EntityMetamodel<Balance> metamodel = ConcreteEntityMetamodel
+                    .forEntityClass(Balance.class)
+                    .addChild(SingleEntityChildMetamodel
+                                      .forEntityModel(Balance.class, cardMetamodel)
+                                      .childEntityFieldDefinition(ChildEntityFieldDefinition.forGetterEvolver(
+                                              Balance::card, (balance, card) -> balance
+                                      ))
+                                      .build())
+                    .commandHandlerInterceptor(EntityCommandHandlerInterceptor.of(
+                            new AppendCriteriaInterceptor(eventStore, resolver)
+                    ))
+                    .build();
+
+            // when
+            var result = metamodel.handleInstance(command(REPLACE_CARD, "one"), new Balance(),
+                                                  new StubProcessingContext());
+
+            // then
+            assertThatThrownBy(() -> result.asCompletableFuture().orTimeout(5, TimeUnit.SECONDS).join())
+                    .isInstanceOf(CompletionException.class)
+                    .hasCauseInstanceOf(IllegalStateException.class)
+                    .hasStackTraceContaining("Append criteria have already been defined");
+        }
+
+        @Test
         void rejectsNullEventStoreAndResolver() {
             // given
             AppendCriteriaResolver resolver = (command, context, sourcingCriteria) -> sourcingCriteria;
