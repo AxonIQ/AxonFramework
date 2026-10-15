@@ -145,6 +145,20 @@ class EventCriteriaWithEventTypesTest {
         }
 
         @Test
+        void toleratesARepeatedNameLikeTheOtherOverloads() {
+            // given
+            EventCriteria criteria = EventCriteria.havingTags(FIRST_ACCOUNT);
+
+            // when
+            EventCriteria result = criteria.withEventTypes(USED, USED);
+
+            // then
+            assertThat(result.flatten()).singleElement().satisfies(criterion ->
+                    assertThat(criterion.types()).containsExactly(USED)
+            );
+        }
+
+        @Test
         void resolvesClassesThroughTheGivenMessageTypeResolver() {
             // given
             EventCriteria criteria = EventCriteria.havingTags(FIRST_ACCOUNT).andBeingOneOfTypes(TOPPED_UP);

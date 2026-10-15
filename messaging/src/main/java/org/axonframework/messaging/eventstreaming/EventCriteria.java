@@ -301,6 +301,10 @@ public sealed interface EventCriteria
      * Unlike the builder-style {@link EventTypeRestrictableEventCriteria#andBeingOneOfTypes(Set)}, which adds a type
      * restriction to the branch currently being built, this operation sets the types of an already complete criteria.
      * An empty set clears existing type restrictions, allowing any event type that matches a branch's tags.
+     * <p>
+     * Criteria without any restriction, such as {@link #havingAnyTag()}, have no branch to keep tags from: the result
+     * matches every event of the given {@code types}, whatever its tags. That restricts what was unrestricted before,
+     * so used as append criteria for a command that sourced nothing, it is checked against the complete event history.
      *
      * @param types the event types used by every branch of the resulting criteria
      * @return criteria with the given event types on every branch
@@ -324,7 +328,7 @@ public sealed interface EventCriteria
      */
     default EventCriteria withEventTypes(QualifiedName... types) {
         Objects.requireNonNull(types, "The types cannot be null.");
-        return withEventTypes(Set.of(types));
+        return withEventTypes(Arrays.stream(types).collect(Collectors.toSet()));
     }
 
     /**
