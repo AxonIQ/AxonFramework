@@ -53,8 +53,10 @@ import java.util.Set;
  * </ul>
  * A {@code CommandGateway} field and its injection setter are not marked when it runs after
  * {@link MigrateCommandGatewayInSagaEventHandler}, which already replaces that field with a handler parameter, and
- * neither is a field {@link MoveSagaFieldToHandlerParameter} moved before. The recipe is idempotent: a member that
- * already carries the marker is left alone.
+ * neither is a field {@link MoveSagaFieldToHandlerParameter} moved before, together with its injection setter. Without
+ * a configured type, that recipe moves every field an injection setter assigns and a handler uses, so the setters left
+ * to mark here belong to a field no handler uses, or to one that recipe leaves in place. The recipe is idempotent: a
+ * member that already carries the marker is left alone.
  *
  * @author Mateusz Nowak
  * @since 5.4.0

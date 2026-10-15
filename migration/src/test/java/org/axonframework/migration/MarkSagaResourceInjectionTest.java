@@ -28,7 +28,8 @@ import static org.openrewrite.kotlin.Assertions.kotlin;
 /**
  * Verifies {@link MarkSagaResourceInjection}: injected Saga fields and methods, Spring {@code @Value} Saga fields, and
  * Axon Framework 4 {@code ResourceInjector} usage get a {@code TODO(axon4to5)} marker, since Axon Framework 5 resolves
- * Saga collaborators as handler parameters.
+ * Saga collaborators as handler parameters. After {@link MoveSagaFieldToHandlerParameter} moved the setter-injected
+ * fields handlers use, only the setters of the other fields are left to mark.
  */
 class MarkSagaResourceInjectionTest implements RewriteTest {
 
@@ -374,6 +375,74 @@ class MarkSagaResourceInjectionTest implements RewriteTest {
                                     this.queryGateway = queryGateway;
                                 }
                             }
+                            """
+                    )
+            );
+        }
+    }
+
+    @Nested
+    class AfterMovingSetterInjectedFields implements RewriteTest {
+
+        @Override
+        public void defaults(RecipeSpec spec) {
+            // The order of the Saga recipe: setter-injected fields a handler uses move first.
+            spec.recipes(new MoveSagaFieldToHandlerParameter(null), new MarkSagaResourceInjection())
+                .typeValidationOptions(TypeValidation.none());
+        }
+
+        @Test
+        void marksOnlyTheSetterOfTheFieldNoHandlerUses() {
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.springframework.beans.factory.annotation.Autowired;
+
+                            class PaymentSaga {
+                                private transient PaymentService paymentService;
+                                private transient Object queryGateway;
+
+                                @Autowired
+                                public void setPaymentService(PaymentService paymentService) {
+                                    this.paymentService = paymentService;
+                                }
+
+                                @Autowired
+                                public void setQueryGateway(Object queryGateway) {
+                                    this.queryGateway = queryGateway;
+                                }
+
+                                @SagaEventHandler(associationProperty = "rentalId")
+                                void on(String rentalId) {
+                                    paymentService.pay(rentalId);
+                                }
+                            }
+                            interface PaymentService { void pay(String rentalId); }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.springframework.beans.factory.annotation.Autowired;
+
+                            class PaymentSaga {
+                                private transient Object queryGateway;
+
+                                // TODO(axon4to5): add the dependency this method injects as a parameter of each @SagaEventHandler or @DeadlineHandler method that uses it, then remove this method and the field it sets. Axon Framework 5 does not call injection methods of a Saga. Put a DeadlineMessage parameter first on a @DeadlineHandler without parameters, or the dependency becomes its payload.
+                                @Autowired
+                                public void setQueryGateway(Object queryGateway) {
+                                    this.queryGateway = queryGateway;
+                                }
+
+                                @SagaEventHandler(associationProperty = "rentalId")
+                                void on(String rentalId, PaymentService paymentService) {
+                                    paymentService.pay(rentalId);
+                                }
+                            }
+                            interface PaymentService { void pay(String rentalId); }
                             """
                     )
             );

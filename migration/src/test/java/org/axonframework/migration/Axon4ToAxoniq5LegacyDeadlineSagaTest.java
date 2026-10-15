@@ -505,8 +505,8 @@ class Axon4ToAxoniq5LegacyDeadlineSagaTest implements RewriteTest {
     @Test
     void movesSetterInjectedCollaboratorsAndMarksTheRemainingInjection() {
         // Axon Framework 4 called the @Autowired setters and set the @Value field; the legacy module does neither.
-        // The DeadlineManager and CommandGateway become handler parameters and lose their fields and setters. The
-        // setter of the other collaborator and the @Value field stay, marked, so none of them is silently left null.
+        // The DeadlineManager, the CommandGateway and the other collaborator become handler parameters and lose their
+        // fields and setters. The @Value field stays, marked, so it is not silently left unset.
         rewriteRun(
                 java(
                         """
@@ -583,13 +583,10 @@ class Axon4ToAxoniq5LegacyDeadlineSagaTest implements RewriteTest {
                         import org.axonframework.modelling.saga.SagaEventHandler;
                         import org.axonframework.modelling.saga.StartSaga;
                         import org.axonframework.spring.stereotype.Saga;
-                        import org.springframework.beans.factory.annotation.Autowired;
                         import org.springframework.beans.factory.annotation.Value;
 
                         @Saga
                         public class OrderSaga {
-                            private transient PaymentService paymentService;
-
                             // TODO(axon4to5): read this property in each @SagaEventHandler or @DeadlineHandler method \
                         that uses it, from a Spring Environment parameter or the configuration. Axon Framework 5 does \
                         not inject @Value Saga fields, so the field no longer follows the property.
@@ -597,19 +594,9 @@ class Axon4ToAxoniq5LegacyDeadlineSagaTest implements RewriteTest {
                             private boolean isDeadlineTesting;
                             private String scheduleId;
 
-                            // TODO(axon4to5): add the dependency this method injects as a parameter of each \
-                        @SagaEventHandler or @DeadlineHandler method that uses it, then remove this method and the \
-                        field it sets. Axon Framework 5 does not call injection methods of a Saga. Put a \
-                        DeadlineMessage parameter first on a @DeadlineHandler without parameters, or the dependency \
-                        becomes its payload.
-                            @Autowired
-                            public void setPaymentService(PaymentService paymentService) {
-                                this.paymentService = paymentService;
-                            }
-
                             @StartSaga
                             @SagaEventHandler(associationProperty = "orderId")
-                            public void handle(String orderId, DeadlineManager deadlineManager) {
+                            public void handle(String orderId, DeadlineManager deadlineManager, PaymentService paymentService) {
                                 scheduleId = deadlineManager.schedule(Duration.ofSeconds(4), "payment-deadline", orderId);
                                 if (isDeadlineTesting) return;
                                 paymentService.charge(orderId);

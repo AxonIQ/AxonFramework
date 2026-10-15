@@ -1264,8 +1264,9 @@ class Axon4ToAxoniq5LegacySagaTest implements RewriteTest {
         }
 
         @Test
-        void removesTheGatewaySetterWithTheGatewayFieldAndMarksTheOtherInjectedSetter() {
-            // The legacy module calls neither setter: the gateway one goes with its field, the other one is marked.
+        void replacesBothSettersAndTheirFieldsWithHandlerParameters() {
+            // The legacy module calls neither setter: the gateway becomes a CommandDispatcher parameter, and the other
+            // setter-injected field a parameter of its own type, which the configuration or Spring resolves.
             rewriteRun(
                     java(
                             """
@@ -1310,6 +1311,57 @@ class Axon4ToAxoniq5LegacySagaTest implements RewriteTest {
 
                             import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher;
                             import org.axonframework.modelling.saga.SagaEventHandler;
+
+                            class PaymentSaga {
+                                @SagaEventHandler(associationProperty = "rentalId")
+                                void on(Object command, CommandDispatcher commandDispatcher, PaymentService paymentService) {
+                                    paymentService.charge(command);
+                                    commandDispatcher.send(command);
+                                }
+                            }
+                            interface PaymentService { void charge(Object command); }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void marksTheSetterOfAFieldNoHandlerUses() {
+            // Nothing needs the injected field as a parameter, so whether to drop it is left to the application.
+            rewriteRun(
+                    java(
+                            """
+                            package org.springframework.beans.factory.annotation;
+
+                            public @interface Autowired {
+                            }
+                            """
+                    ),
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.springframework.beans.factory.annotation.Autowired;
+
+                            class PaymentSaga {
+                                private transient PaymentService paymentService;
+
+                                @Autowired
+                                public void setPaymentService(PaymentService paymentService) {
+                                    this.paymentService = paymentService;
+                                }
+
+                                @SagaEventHandler(associationProperty = "rentalId")
+                                void on(Object command) {
+                                }
+                            }
+                            interface PaymentService { void charge(Object command); }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.modelling.saga.SagaEventHandler;
                             import org.springframework.beans.factory.annotation.Autowired;
 
                             class PaymentSaga {
@@ -1322,9 +1374,7 @@ class Axon4ToAxoniq5LegacySagaTest implements RewriteTest {
                                 }
 
                                 @SagaEventHandler(associationProperty = "rentalId")
-                                void on(Object command, CommandDispatcher commandDispatcher) {
-                                    paymentService.charge(command);
-                                    commandDispatcher.send(command);
+                                void on(Object command) {
                                 }
                             }
                             interface PaymentService { void charge(Object command); }

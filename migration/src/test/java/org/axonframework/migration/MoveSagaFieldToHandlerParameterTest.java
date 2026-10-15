@@ -27,7 +27,8 @@ import static org.openrewrite.java.Assertions.java;
 import static org.openrewrite.kotlin.Assertions.kotlin;
 
 /**
- * Verifies {@link MoveSagaFieldToHandlerParameter} configured for the Axon Framework 4 {@code DeadlineManager}.
+ * Verifies {@link MoveSagaFieldToHandlerParameter} configured for the Axon Framework 4 {@code DeadlineManager}, and
+ * without a type, for the fields injection setters assign.
  */
 class MoveSagaFieldToHandlerParameterTest implements RewriteTest {
 
@@ -938,6 +939,485 @@ class MoveSagaFieldToHandlerParameterTest implements RewriteTest {
                                 private void replace(DeadlineManager replacement) {
                                     setDeadlineManager(replacement);
                                 }
+                            }
+                            """
+                    )
+            );
+        }
+    }
+
+    @Nested
+    class SetterInjectedFieldsOfAnyType implements RewriteTest {
+
+        @Override
+        public void defaults(RecipeSpec spec) {
+            spec.recipe(new MoveSagaFieldToHandlerParameter(null))
+                .typeValidationOptions(TypeValidation.none());
+        }
+
+        @Test
+        void movesEverySetterInjectedFieldIntoTheHandlersAndHelpersThatUseIt() {
+            // The fields move one after the other, so a handler using both gets both parameters, in field order.
+            rewriteRun(
+                    AUTOWIRED,
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.springframework.beans.factory.annotation.Autowired;
+
+                            public class PaymentSaga {
+                                private transient PaymentService paymentService;
+                                private transient Notifier notifier;
+                                private String paymentId;
+
+                                @Autowired
+                                public void setPaymentService(PaymentService paymentService) {
+                                    this.paymentService = paymentService;
+                                }
+
+                                @Autowired
+                                public void setNotifier(Notifier notifier) {
+                                    this.notifier = notifier;
+                                }
+
+                                @SagaEventHandler(associationProperty = "paymentId")
+                                public void on(String event) {
+                                    paymentId = paymentService.charge(event);
+                                    notifyCustomer(event);
+                                }
+
+                                @DeadlineHandler(deadlineName = "payment-overdue")
+                                public void onOverdue() {
+                                    paymentService.refund(paymentId);
+                                }
+
+                                private void notifyCustomer(String event) {
+                                    notifier.send(event);
+                                }
+                            }
+                            interface PaymentService { String charge(String event); void refund(String paymentId); }
+                            interface Notifier { void send(String event); }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.DeadlineMessage;
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+
+                            public class PaymentSaga {
+                                private String paymentId;
+
+                                @SagaEventHandler(associationProperty = "paymentId")
+                                public void on(String event, PaymentService paymentService, Notifier notifier) {
+                                    paymentId = paymentService.charge(event);
+                                    notifyCustomer(event, notifier);
+                                }
+
+                                @DeadlineHandler(deadlineName = "payment-overdue")
+                                public void onOverdue(DeadlineMessage deadlineMessage, PaymentService paymentService) {
+                                    paymentService.refund(paymentId);
+                                }
+
+                                private void notifyCustomer(String event, Notifier notifier) {
+                                    notifier.send(event);
+                                }
+                            }
+                            interface PaymentService { String charge(String event); void refund(String paymentId); }
+                            interface Notifier { void send(String event); }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void declaresTheParameterLikeTheSetterParameterUnderTheFieldName() {
+            // A @Qualifier on the parameter selects the same Spring bean for the handler parameter.
+            rewriteRun(
+                    JAVAX_INJECT,
+                    java(
+                            """
+                            package org.springframework.beans.factory.annotation;
+
+                            public @interface Qualifier {
+                                String value() default "";
+                            }
+                            """
+                    ),
+                    java(
+                            """
+                            package com.example;
+
+                            import java.util.List;
+
+                            import javax.inject.Inject;
+
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.springframework.beans.factory.annotation.Qualifier;
+
+                            public class PaymentSaga {
+                                private List<PaymentService> paymentServices;
+
+                                @Inject
+                                void setPaymentServices(@Qualifier("card") List<PaymentService> services) {
+                                    paymentServices = services;
+                                }
+
+                                @SagaEventHandler(associationProperty = "paymentId")
+                                public void on(String event) {
+                                    paymentServices.forEach(service -> service.charge(event));
+                                }
+                            }
+                            interface PaymentService { void charge(String event); }
+                            """,
+                            """
+                            package com.example;
+
+                            import java.util.List;
+
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.springframework.beans.factory.annotation.Qualifier;
+
+                            public class PaymentSaga {
+                                @SagaEventHandler(associationProperty = "paymentId")
+                                public void on(String event, @Qualifier("card") List<PaymentService> paymentServices) {
+                                    paymentServices.forEach(service -> service.charge(event));
+                                }
+                            }
+                            interface PaymentService { void charge(String event); }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void addsAParameterEvenWhenTheHandlerDeclaresOneOfTheSameType() {
+            // The payload shares the field's type here, but holds the event rather than the injected collaborator.
+            rewriteRun(
+                    AUTOWIRED,
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.springframework.beans.factory.annotation.Autowired;
+
+                            public class AuditSaga {
+                                private Object auditLog;
+
+                                @Autowired
+                                public void setAuditLog(Object auditLog) {
+                                    this.auditLog = auditLog;
+                                }
+
+                                @SagaEventHandler(associationProperty = "auditId")
+                                public void on(Object event) {
+                                    System.out.println(auditLog + " " + event);
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+
+                            public class AuditSaga {
+                                @SagaEventHandler(associationProperty = "auditId")
+                                public void on(Object event, Object auditLog) {
+                                    System.out.println(auditLog + " " + event);
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void leavesSetterInjectedFieldNoMethodUsesInPlace() {
+            // MarkSagaResourceInjection marks the setter instead.
+            rewriteRun(
+                    AUTOWIRED,
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.springframework.beans.factory.annotation.Autowired;
+
+                            public class PaymentSaga {
+                                private transient PaymentService paymentService;
+
+                                @Autowired
+                                public void setPaymentService(PaymentService paymentService) {
+                                    this.paymentService = paymentService;
+                                }
+
+                                @SagaEventHandler(associationProperty = "paymentId")
+                                public void on(String event) {
+                                }
+                            }
+                            interface PaymentService { void charge(String event); }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void leavesInjectedFieldWithoutSetterInPlace() {
+            rewriteRun(
+                    AUTOWIRED,
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.springframework.beans.factory.annotation.Autowired;
+
+                            public class PaymentSaga {
+                                @Autowired
+                                private transient PaymentService paymentService;
+
+                                @SagaEventHandler(associationProperty = "paymentId")
+                                public void on(String event) {
+                                    paymentService.charge(event);
+                                }
+                            }
+                            interface PaymentService { void charge(String event); }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void leavesFieldsWhoseSetterReceivedADifferentValueThanAHandlerParameterInPlace() {
+            // An optional dependency, a qualified bean, a property and an interface method do not move into a handler
+            // parameter that receives any bean of the type.
+            rewriteRun(
+                    AUTOWIRED,
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.springframework.beans.factory.annotation.Autowired;
+                            import org.springframework.beans.factory.annotation.Qualifier;
+                            import org.springframework.beans.factory.annotation.Value;
+
+                            public class PaymentSaga implements AuditAware {
+                                private transient PaymentService paymentService;
+                                private transient PaymentService refundService;
+                                private String currency;
+                                private transient Object auditLog;
+
+                                @Autowired(required = false)
+                                public void setPaymentService(PaymentService paymentService) {
+                                    this.paymentService = paymentService;
+                                }
+
+                                @Autowired
+                                @Qualifier("refunds")
+                                public void setRefundService(PaymentService refundService) {
+                                    this.refundService = refundService;
+                                }
+
+                                @Autowired
+                                public void setCurrency(@Value("${payment.currency}") String currency) {
+                                    this.currency = currency;
+                                }
+
+                                @Autowired
+                                @Override
+                                public void setAuditLog(Object auditLog) {
+                                    this.auditLog = auditLog;
+                                }
+
+                                @SagaEventHandler(associationProperty = "paymentId")
+                                public void on(String event) {
+                                    paymentService.charge(event + currency + auditLog);
+                                    refundService.charge(event);
+                                }
+                            }
+                            interface PaymentService { void charge(String event); }
+                            interface AuditAware { void setAuditLog(Object auditLog); }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void leavesFieldUntouchedWhenAnotherMethodCallsTheSetter() {
+            rewriteRun(
+                    AUTOWIRED,
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.springframework.beans.factory.annotation.Autowired;
+
+                            public class PaymentSaga {
+                                private transient PaymentService paymentService;
+
+                                @Autowired
+                                public void setPaymentService(PaymentService paymentService) {
+                                    this.paymentService = paymentService;
+                                }
+
+                                @SagaEventHandler(associationProperty = "paymentId")
+                                public void on(String event) {
+                                    paymentService.charge(event);
+                                }
+
+                                private void replace(PaymentService replacement) {
+                                    setPaymentService(replacement);
+                                }
+                            }
+                            interface PaymentService { void charge(String event); }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void leavesFieldUntouchedWhenTheSetterDoesMoreThanAssignIt() {
+            rewriteRun(
+                    AUTOWIRED,
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.springframework.beans.factory.annotation.Autowired;
+
+                            public class PaymentSaga {
+                                private transient PaymentService paymentService;
+
+                                @Autowired
+                                public void setPaymentService(PaymentService paymentService) {
+                                    this.paymentService = paymentService;
+                                    paymentService.charge("setup");
+                                }
+
+                                @SagaEventHandler(associationProperty = "paymentId")
+                                public void on(String event) {
+                                    paymentService.charge(event);
+                                }
+                            }
+                            interface PaymentService { void charge(String event); }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void leavesFieldASubclassMayUseUntouched() {
+            rewriteRun(
+                    AUTOWIRED,
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.springframework.beans.factory.annotation.Autowired;
+
+                            public class PaymentSaga {
+                                protected transient PaymentService paymentService;
+
+                                @Autowired
+                                public void setPaymentService(PaymentService paymentService) {
+                                    this.paymentService = paymentService;
+                                }
+
+                                @SagaEventHandler(associationProperty = "paymentId")
+                                public void on(String event) {
+                                    paymentService.charge(event);
+                                }
+                            }
+                            interface PaymentService { void charge(String event); }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void leavesFieldUsedInPublicNonHandlerMethodUntouched() {
+            rewriteRun(
+                    AUTOWIRED,
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.modelling.saga.SagaEventHandler;
+                            import org.springframework.beans.factory.annotation.Autowired;
+
+                            public class PaymentSaga {
+                                private transient PaymentService paymentService;
+
+                                @Autowired
+                                public void setPaymentService(PaymentService paymentService) {
+                                    this.paymentService = paymentService;
+                                }
+
+                                @SagaEventHandler(associationProperty = "paymentId")
+                                public void on(String event) {
+                                    paymentService.charge(event);
+                                }
+
+                                public void retry(String event) {
+                                    paymentService.charge(event);
+                                }
+                            }
+                            interface PaymentService { void charge(String event); }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void movesSetterInjectedKotlinProperty() {
+            rewriteRun(
+                    kotlin(
+                            """
+                            package com.example
+
+                            import org.axonframework.modelling.saga.SagaEventHandler
+                            import org.springframework.beans.factory.annotation.Autowired
+
+                            class PaymentSaga {
+                                private lateinit var paymentService: PaymentService
+
+                                @Autowired
+                                fun setPaymentService(service: PaymentService) {
+                                    paymentService = service
+                                }
+
+                                @SagaEventHandler(associationProperty = "paymentId")
+                                fun on(event: String) {
+                                    paymentService.charge(event)
+                                }
+                            }
+
+                            interface PaymentService {
+                                fun charge(event: String)
+                            }
+                            """,
+                            """
+                            package com.example
+
+                            import org.axonframework.modelling.saga.SagaEventHandler
+
+                            class PaymentSaga {
+                                @SagaEventHandler(associationProperty = "paymentId")
+                                fun on(event: String, paymentService: PaymentService) {
+                                    paymentService.charge(event)
+                                }
+                            }
+
+                            interface PaymentService {
+                                fun charge(event: String)
                             }
                             """
                     )

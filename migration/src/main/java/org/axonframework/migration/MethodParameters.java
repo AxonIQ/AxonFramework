@@ -36,13 +36,14 @@ import java.util.Set;
 import java.util.stream.Stream;
 
 /**
- * Appends a parameter of a given type to a Java or Kotlin method declaration, leaving the existing parameters as they
- * are, or replaces one Java parameter by a parameter of another type in its place.
+ * Appends a parameter of a given type, or a given parameter declaration, to a Java or Kotlin method declaration,
+ * leaving the existing parameters as they are, or replaces one Java parameter by a parameter of another type in its
+ * place.
  * <p>
- * Only the new parameter is parsed, from a stub method importing its type. The existing parameter trees are kept, so
- * they retain their type attribution, their annotations and their layout. Re-printing and re-parsing them instead
- * would detach them from the source file's classpath: later type-based recipes, such as a type rename or a type
- * argument removal, would then skip them, and the imports they need would be removed as unused.
+ * Only a new parameter of a given type is parsed, from a stub method importing its type. The existing parameter trees
+ * are kept, so they retain their type attribution, their annotations and their layout. Re-printing and re-parsing them
+ * instead would detach them from the source file's classpath: later type-based recipes, such as a type rename or a
+ * type argument removal, would then skip them, and the imports they need would be removed as unused.
  * <p>
  * The new parameter starts on its own line when the existing parameters are laid out one per line, and follows the
  * last parameter on the same line otherwise.
@@ -91,16 +92,32 @@ final class MethodParameters {
      */
     static J.MethodDeclaration appendToHandler(J.MethodDeclaration method, boolean kotlin, String typeFqn,
                                                String parameterName) {
+        return appendToHandler(method, kotlin, declare(kotlin, typeFqn, parameterName));
+    }
+
+    /**
+     * Appends the given parameter declaration to the given handler method, as
+     * {@link #appendToHandler(J.MethodDeclaration, boolean, String, String)} appends a parameter of a type. Suits a
+     * parameter copied from another method, whose type may be generic or need no import.
+     *
+     * @param method    the handler method declaration to extend
+     * @param kotlin    whether the method is declared in a Kotlin source
+     * @param parameter the parameter declaration to append, declaring a single variable
+     * @return the method with the new parameter as its last parameter
+     * @throws IllegalStateException if the stub declaring the {@code DeadlineMessage} parameter cannot be parsed
+     */
+    static J.MethodDeclaration appendToHandler(J.MethodDeclaration method, boolean kotlin,
+                                               J.VariableDeclarations parameter) {
         if (!needsMessageParameter(method)) {
-            return append(method, kotlin, typeFqn, parameterName);
+            return append(method, parameter);
         }
         Set<String> taken = declaredNames(method);
-        taken.add(parameterName);
+        taken.add(parameter.getVariables().get(0).getSimpleName());
         String messageName = DEADLINE_MESSAGE_NAME;
         for (int suffix = 1; taken.contains(messageName); suffix++) {
             messageName = DEADLINE_MESSAGE_NAME + suffix;
         }
-        return append(append(method, kotlin, DEADLINE_MESSAGE_FQN, messageName), kotlin, typeFqn, parameterName);
+        return append(append(method, kotlin, DEADLINE_MESSAGE_FQN, messageName), parameter);
     }
 
     /**
@@ -150,9 +167,17 @@ final class MethodParameters {
      */
     static J.MethodDeclaration append(J.MethodDeclaration method, boolean kotlin, String typeFqn,
                                       String parameterName) {
-        J.VariableDeclarations parameter = kotlin
-                ? kotlinParameter(typeFqn, parameterName)
-                : javaParameter(typeFqn, parameterName);
+        return append(method, declare(kotlin, typeFqn, parameterName));
+    }
+
+    /**
+     * Appends the given parameter declaration to the given method, laid out like the existing parameters.
+     *
+     * @param method    the method declaration to extend
+     * @param parameter the parameter declaration to append
+     * @return the method with the new parameter as its last parameter
+     */
+    static J.MethodDeclaration append(J.MethodDeclaration method, J.VariableDeclarations parameter) {
         List<JRightPadded<Statement>> existing = method.getPadding().getParameters().getPadding().getElements();
         List<JRightPadded<Statement>> parameters = new ArrayList<>();
         if (existing.size() == 1 && existing.get(0).getElement() instanceof J.Empty) {
@@ -243,6 +268,19 @@ final class MethodParameters {
         types.add(parameterType);
         JavaType.Method extended = methodType.withParameterNames(names).withParameterTypes(types);
         return method.withMethodType(extended).withName(method.getName().withType(extended));
+    }
+
+    /**
+     * Declares a parameter of the given type and name, parsed from a stub method importing its type.
+     *
+     * @param kotlin        whether the parameter is for a method in a Kotlin source
+     * @param typeFqn       the fully qualified name of the parameter type
+     * @param parameterName the name of the parameter
+     * @return the parameter declaration
+     * @throws IllegalStateException if the stub declaring the parameter cannot be parsed
+     */
+    static J.VariableDeclarations declare(boolean kotlin, String typeFqn, String parameterName) {
+        return kotlin ? kotlinParameter(typeFqn, parameterName) : javaParameter(typeFqn, parameterName);
     }
 
     private static J.VariableDeclarations javaParameter(String typeFqn, String parameterName) {
