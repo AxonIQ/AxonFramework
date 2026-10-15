@@ -89,9 +89,9 @@ public class ConcreteEntityMetamodel<E> implements DescribableComponent, EntityM
                 requireNonNull(commandHandlerInterceptors, "The commandHandlerInterceptors may not be null.")
         );
         this.creationalHandlerChain = composeInterceptorChain(
-                (command, entity, context) -> doHandleCreate(command, context)
+                this.commandHandlerInterceptors, (command, entity, context) -> doHandleCreate(command, context)
         );
-        this.instanceHandlerChain = composeInterceptorChain(this::doHandleInstance);
+        this.instanceHandlerChain = composeInterceptorChain(this.commandHandlerInterceptors, this::doHandleInstance);
 
         this.children.addAll(requireNonNull(children, "The children may not be null."));
 
@@ -119,32 +119,24 @@ public class ConcreteEntityMetamodel<E> implements DescribableComponent, EntityM
         return new Builder<>(entityType);
     }
 
-    @Override
-    public Set<QualifiedName> supportedCommands() {
-        return Collections.unmodifiableSet(supportedCommandNames);
-    }
-
-    @Override
-    public Set<QualifiedName> supportedCreationalCommands() {
-        return Collections.unmodifiableSet(supportedCreationalCommandNames);
-    }
-
-    @Override
-    public Set<QualifiedName> supportedInstanceCommands() {
-        return Collections.unmodifiableSet(supportedInstanceCommandNames);
-    }
-
-    @Override
-    public MessageStream.Single<CommandResultMessage> handleCreate(CommandMessage message,
-                                                                   ProcessingContext context) {
-        try {
-            return creationalHandlerChain.proceed(message, null, context)
-                                         .mapMessage(this::asCommandResultMessage)
-                                         .first()
-                                         .cast();
-        } catch (Exception e) {
-            return MessageStream.failed(e);
+    /**
+     * Composes the given {@code interceptors} around the given {@code terminal}, in registration order (first
+     * registered is outermost). Since the interceptor list is fixed once a metamodel is built, the composed chain is
+     * built once and reused for every dispatch. Only the entity passed to
+     * {@link EntityCommandHandlerInterceptorChain#proceed(CommandMessage, Object, ProcessingContext)} varies per
+     * invocation.
+     */
+    static <E> EntityCommandHandlerInterceptorChain<E> composeInterceptorChain(
+            List<EntityCommandHandlerInterceptor<E>> interceptors,
+            EntityCommandHandlerInterceptorChain<E> terminal
+    ) {
+        EntityCommandHandlerInterceptorChain<E> chain = terminal;
+        for (int i = interceptors.size() - 1; i >= 0; i--) {
+            EntityCommandHandlerInterceptorChain<E> next = chain;
+            EntityCommandHandlerInterceptor<E> interceptor = interceptors.get(i);
+            chain = (command, entity, context) -> interceptor.interceptOnHandle(command, entity, context, next);
         }
+        return chain;
     }
 
     private MessageStream<?> doHandleCreate(CommandMessage message, ProcessingContext context) {
@@ -161,22 +153,6 @@ public class ConcreteEntityMetamodel<E> implements DescribableComponent, EntityM
         }
 
         return MessageStream.failed(new NoHandlerForCommandException(message, entityType));
-    }
-
-    @Override
-    public MessageStream.Single<CommandResultMessage> handleInstance(
-            CommandMessage message,
-            E entity,
-            ProcessingContext context
-    ) {
-        try {
-            return instanceHandlerChain.proceed(message, entity, context)
-                                       .mapMessage(this::asCommandResultMessage)
-                                       .first()
-                                       .cast();
-        } catch (Exception e) {
-            return MessageStream.failed(e);
-        }
     }
 
     private MessageStream<?> doHandleInstance(CommandMessage message, E entity, ProcessingContext context) {
@@ -202,44 +178,6 @@ public class ConcreteEntityMetamodel<E> implements DescribableComponent, EntityM
         }
 
         return MessageStream.failed(new NoHandlerForCommandException(message, entityType));
-    }
-
-    /**
-     * Composes the {@link #commandHandlerInterceptors} registered on this metamodel around the given
-     * {@code terminal}, in registration order (first registered is outermost). Since the interceptor list is fixed
-     * once this metamodel is built, the composed chain is built once and reused for every dispatch; only the entity
-     * passed to {@link EntityCommandHandlerInterceptorChain#proceed(CommandMessage, Object, ProcessingContext)}
-     * varies per invocation.
-     */
-    private EntityCommandHandlerInterceptorChain<E> composeInterceptorChain(
-            EntityCommandHandlerInterceptorChain<E> terminal
-    ) {
-        EntityCommandHandlerInterceptorChain<E> chain = terminal;
-        for (int i = commandHandlerInterceptors.size() - 1; i >= 0; i--) {
-            EntityCommandHandlerInterceptorChain<E> next = chain;
-            EntityCommandHandlerInterceptor<E> interceptor = commandHandlerInterceptors.get(i);
-            chain = (command, entity, context) -> interceptor.interceptOnHandle(command, entity, context, next);
-        }
-        return chain;
-    }
-
-    private CommandResultMessage asCommandResultMessage(Message result) {
-        return result instanceof CommandResultMessage commandResultMessage
-                ? commandResultMessage
-                : new GenericCommandResultMessage(result);
-    }
-
-    @Nullable
-    @Override
-    public E evolve(E entity, EventMessage event, ProcessingContext context) {
-        var currentEntity = entity;
-        for (EntityChildMetamodel<?, E> child : children) {
-            currentEntity = child.evolve(currentEntity, event, context);
-        }
-        if (entityEvolver == null) {
-            return currentEntity;
-        }
-        return entityEvolver.evolve(currentEntity, event, context);
     }
 
     /**
@@ -274,6 +212,69 @@ public class ConcreteEntityMetamodel<E> implements DescribableComponent, EntityM
                     )));
         }
         return MessageStream.failed(new ChildEntityNotFoundException(message, entity));
+    }
+
+    @Override
+    public Set<QualifiedName> supportedCommands() {
+        return Collections.unmodifiableSet(supportedCommandNames);
+    }
+
+    @Override
+    public Set<QualifiedName> supportedCreationalCommands() {
+        return Collections.unmodifiableSet(supportedCreationalCommandNames);
+    }
+
+    @Override
+    public Set<QualifiedName> supportedInstanceCommands() {
+        return Collections.unmodifiableSet(supportedInstanceCommandNames);
+    }
+
+    @Override
+    public MessageStream.Single<CommandResultMessage> handleCreate(CommandMessage message,
+                                                                   ProcessingContext context) {
+        try {
+            return creationalHandlerChain.proceed(message, null, context)
+                                         .mapMessage(ConcreteEntityMetamodel::asCommandResultMessage)
+                                         .first()
+                                         .cast();
+        } catch (Exception e) {
+            return MessageStream.failed(e);
+        }
+    }
+
+    @Override
+    public MessageStream.Single<CommandResultMessage> handleInstance(
+            CommandMessage message,
+            E entity,
+            ProcessingContext context
+    ) {
+        try {
+            return instanceHandlerChain.proceed(message, entity, context)
+                                       .mapMessage(ConcreteEntityMetamodel::asCommandResultMessage)
+                                       .first()
+                                       .cast();
+        } catch (Exception e) {
+            return MessageStream.failed(e);
+        }
+    }
+
+    static CommandResultMessage asCommandResultMessage(Message result) {
+        return result instanceof CommandResultMessage commandResultMessage
+                ? commandResultMessage
+                : new GenericCommandResultMessage(result);
+    }
+
+    @Nullable
+    @Override
+    public E evolve(E entity, EventMessage event, ProcessingContext context) {
+        var currentEntity = entity;
+        for (EntityChildMetamodel<?, E> child : children) {
+            currentEntity = child.evolve(currentEntity, event, context);
+        }
+        if (entityEvolver == null) {
+            return currentEntity;
+        }
+        return entityEvolver.evolve(currentEntity, event, context);
     }
 
     @Override
