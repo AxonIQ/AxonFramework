@@ -111,165 +111,108 @@ include::example$events/eventstoreinternals/criteria/CustomCriteriaResolver.java
 [#command_append_criteria]
 == Append criteria per command
 
-Sourcing criteria and append criteria serve different purposes.
-Sourcing criteria select the events needed to reconstruct state.
-Append criteria describe the consistency boundary of a command decision by selecting concurrent events that could invalidate that decision.
+Sourcing criteria select the events that rebuild state.
+Append criteria select the concurrent events that conflict with a command's decision.
+By default, the append criteria of a command are its complete sourcing criteria: the OR-union of everything it sourced.
 
-By default, Axon uses the complete sourcing criteria as the append criteria.
-Every sourcing operation in the command transaction contributes with OR semantics.
-This symmetric default is safe and requires no configuration.
+A command can narrow or replace that boundary.
+A narrower boundary avoids conflicts, and retries, on concurrent events the decision does not depend on.
 
-An external command-handling class can declare an `@AppendCriteriaBuilder` per command type when a command needs a different boundary:
+=== Declaring append criteria
+
+Declare an `@AppendCriteriaBuilder` per command type on the command-handling class:
 
 [source,java]
 ----
 include::example$events/eventstoreinternals/appendcriteria/annotation/CreditCommandHandler.java[tag=annotated-append-criteria,indent=0]
 ----
 
-Each builder covers the command type of its first parameter, including subtypes of it.
-Axon matches every `@CommandHandler` at startup with the builder whose command type is the most specific supertype of the payload it handles, and invokes that builder separately for every command.
-A builder for a shared supertype, for example a sealed interface with an exhaustive switch, can cover several commands at once.
-A builder accepting `CommandMessage` covers every command no payload-typed builder covers, which also lets it switch on the qualified command name when several names share a payload type.
-Two builders for the same command type on one class, or a payload accepted by several builders of which none is more specific, are rejected at startup.
+The builder receives the command and the accumulated sourcing criteria, and returns the complete append criteria for that command.
+When the command loads several entities, the supplied criteria are the union of all of them.
+`withEventTypes` keeps the tags of every OR branch and replaces its event types, so a builder narrows the boundary without repeating the sourcing tags.
+Event types are `QualifiedName` or `String` names, and `new QualifiedName(SomeEvent.class)` gives the default name of an event class.
+For events named with `@Event`, or with a custom `MessageTypeResolver`, use `withEventTypes(MessageTypeResolver, Class<?>...)`.
 
-Unlike `@EventCriteriaBuilder`, there is no fallback.
-Once a class declares a builder, every command it handles must be matched by one, or startup fails.
-Falling back to the sourcing criteria would hide a forgotten builder: for a command that sources nothing, it turns a uniqueness check into an unconditional append.
-To keep the sourcing criteria for a command on purpose, declare a builder for it that returns them unchanged, as the `TopUpCredits` builder does above.
+Builder rules:
 
-Builders are inherited.
-The builders that apply to the command handlers a class declares are the ones on that class and on its superclasses; for the same command type, the closest declaration wins.
-A base class may therefore contribute builders without declaring any command handler itself.
-Handlers a class inherits are matched against the builders of the class that declares them, so a builder on a subclass does not apply to handlers inherited from its superclass.
-Adding a command handler that no visible builder accepts is rejected at startup, naming the class declaring the new handler and the builders it can see.
+* A builder covers the command type of its first parameter and its subtypes.
+The most specific matching builder applies, and a builder taking `CommandMessage` covers commands no other builder covers.
+* Once a class declares a builder, every command it handles needs one, or startup fails.
+To keep the default boundary for a command, return the supplied criteria, as the `TopUpCredits` builder does.
+* Builders on superclasses apply to the handlers a class declares, and for the same command type the closest declaration wins.
+A builder does not apply to handlers inherited from a superclass.
+* Further parameters can be `CommandMessage`, `Metadata`, a `@MetadataValue`, `ProcessingContext`, `Configuration`, or a configured component.
+* Two builders for the same command type on one class, or an ambiguous match, fail at startup with an `AxonConfigurationException`.
 
-The `EventCriteria` parameter contains the complete transaction-wide OR-union accumulated through sourcing.
-This includes one or several injected entities and other sourcing performed during command handling.
-Returning it unchanged preserves the symmetric default for a command, as the `TopUpCredits` builder does above.
-`withEventTypes` preserves each branch's tags and replaces the event types on every OR branch.
-The event types are names, given as `QualifiedName` or `String`.
-`new QualifiedName(SomeEvent.class)` gives the name of an event class that keeps the default naming.
-When events set their name with `@Event`, or a custom `MessageTypeResolver` is configured, pass the event classes together with the `MessageTypeResolver` instead, which a builder declares as a parameter like any other configured component.
-The replacement may narrow or broaden the events considered conflicting without reconstructing the sourcing tags.
-The builder returns the complete append criteria; it does not add a contribution for one entity.
+=== Declarative configuration
 
-Without annotations, register an `AppendCriteriaInterceptor` with an `AppendCriteriaResolver` on the command-handling module:
+Without annotations, register an `AppendCriteriaInterceptor` on the command-handling module:
 
 [source,java]
 ----
 include::example$events/eventstoreinternals/appendcriteria/declarative/CreditCommandConfiguration.java[tag=declarative-append-criteria,indent=0]
 ----
 
-The interceptor applies its resolver to every command it intercepts; on a module, that is every command of every component in it.
-The resolver runs once per invocation, when the command's transaction commits, and receives the complete `CommandMessage`, `ProcessingContext`, and accumulated sourcing criteria.
-It receives the command as dispatched, so a command that arrived serialized still carries an unconverted payload; use `payloadAs` with the `MessageConverter` to read it.
-At most one resolver applies per command: a command reaching both an annotation builder and an interceptor, or two interceptors, fails explicitly.
+The interceptor applies its `AppendCriteriaResolver` to every command of every component in the module.
+The resolver receives the command as dispatched, so read a serialized payload with `payloadAs`.
+A command reaching more than one resolver, for example a builder and an interceptor, fails.
 
 === Commands without sourcing
 
-For an external command handler that performs no sourcing and has no append-criteria builder, calling
-`EventAppender.append` does not establish a consistency boundary.
-The event-store transaction uses `AppendCondition.none()`, so the append is unconditional and no concurrent events are
-checked for conflicts.
-This is appropriate only when storing the event is safe regardless of events already present or appended concurrently.
-Tags on the appended event do not by themselves define append criteria for an external handler.
-
-A builder on the class does not change that.
-Returning the supplied criteria unchanged adds no restriction, so a command that sourced nothing stays unconditional.
-That is how one class can mix a command with a narrowed boundary and a command with none at all: a command that no rule
-constrains reads nothing and returns what it was given, while a withdrawal sources a balance and narrows.
-
-Returning the supplied criteria for a command that *did* source keeps the symmetric default instead, since those
-criteria describe what was read.
-Sourcing sets the consistency marker, so a sourced command is always checked from that position; narrowing the criteria
-selects which concurrent events conflict, and cannot remove the check.
-
-Deriving criteria from the supplied ones does restrict a command that sourced nothing, because the result is no longer the empty criteria it was given.
-`withEventTypes(...)` on the empty criteria yields "any tag, these types", which the transaction checks from `ConsistencyMarker.ORIGIN` against the complete event history.
-Such a command fails as soon as any event of those types exists.
-This matters most for a builder accepting `CommandMessage` that narrows every command it covers: give commands that source nothing a builder of their own.
-
-An append-criteria builder does not determine whether sourcing occurred.
-For a command that sources no events, it can ignore the supplied sourcing criteria and construct criteria directly from
-the command or metadata.
-This is particularly useful for creational commands that must atomically reserve a unique business key without first
-loading an entity:
+A command that sources nothing and declares no append criteria appends unconditionally.
+A builder for such a command can return criteria built from the command or its metadata.
+The event store checks them against the complete history, which reserves a unique key without loading anything:
 
 [source,java]
 ----
 include::example$events/eventstoreinternals/appendcriteria/annotation/UsernameCommandHandler.java[tag=metadata-append-criteria,indent=0]
 ----
 
-The event-store transaction retains responsibility for the distinction.
-It preserves the marker established by sourcing, or checks explicit append criteria from `ConsistencyMarker.ORIGIN` when no sourcing occurred.
-In the example, this checks the `tenantId` and `username` combination against the complete event history.
-The append is rejected if a matching registration already exists or is appended concurrently, making the creation
-decision safe without a preliminary sourcing query.
-The builder does not need a source-state flag and should not infer whether sourcing occurred from the supplied criteria.
-Missing required metadata prevents the transaction from committing.
-
-When metadata contributes tags to append criteria, append events with tags derived from the same trusted value.
-The example uses the required `tenantId` metadata both for the criterion and the `UsernameRegistered` event tag.
-This keeps the consistency boundary aligned with stored events.
-
-=== Multi-entity decisions
-
-Loading several entities produces one OR-union of their sourcing criteria.
-The append-criteria builder receives that complete union, without information about which entity contributed a branch.
-Its result must describe the complete consistency boundary for the command decision.
-Apply a positive type restriction to the union when the same event-type rule applies to every branch, or construct the complete criteria explicitly when the decision needs a different boundary.
+* The append fails if a matching event already exists or is appended concurrently.
+* Tag the appended events with the values the criteria use, as the example does with `tenantId`.
+* Returning the supplied criteria keeps the command unconditional.
+* Narrowing the supplied criteria with `withEventTypes` checks every event of those types in the history.
+Give commands that source nothing their own builder when a `CommandMessage` builder narrows every command.
 
 === Choosing a narrower boundary
 
-Narrower append criteria can avoid retries for concurrent events that cannot invalidate a command decision.
-They can also change the explanatory ordering of stored events.
-For example, a rejected payment or fraud decision may describe the state observed before a concurrent event that was intentionally excluded from the append criteria.
-The invariant can remain protected even though the audit trail contains an explanation based on an older view.
-
-Prefer symmetric criteria when the exact explanatory ordering of rejection events, audit records, or other business-meaningful failure events matters more than avoiding retries.
+A narrower boundary can change how stored events explain a decision: a rejection may describe the state before a concurrent event that the boundary excluded.
+Keep the default boundary when that order matters more than avoiding retries, for example for audit records.
 
 [IMPORTANT]
 ====
-Custom append criteria require an event store that supports criteria-aware consistency checks.
-Aggregate-based storage keeps its existing default behavior, but its consistency marker tracks a single aggregate sequence.
-For a command that sourced events, a builder or resolver returning anything other than the supplied sourcing criteria, including a narrowing with `withEventTypes`, fails explicitly.
-For a command that sourced nothing, aggregate-based storage can only check criteria that select, by their tag, the aggregates the command appends to: the first event of such an aggregate claims its first sequence number, which fails if the aggregate already exists.
-Any other criteria are not checked at all, so reserving a unique key such as a username, as in the `UsernameCommandHandler` example, requires a criteria-aware event store.
+Aggregate-based storage detects conflicts only through the sequence numbers of the aggregates it appends to.
+For a command that sourced events, append criteria other than the supplied sourcing criteria fail.
+For a command that sourced nothing, only criteria selecting the appended aggregates by their tag are checked, and other criteria are ignored.
+Reserving a unique key, as in the `UsernameCommandHandler` example, requires a criteria-aware event store.
 ====
 
 [#entity_owned_command_append_criteria]
 == Entity-owned command handlers
 
-Command handlers declared inside event-sourced entity classes can declare append criteria the same way:
+An event-sourced entity that handles commands declares append criteria the same way, next to its `@EventCriteriaBuilder`:
 
 [source,java]
 ----
 include::example$events/eventstoreinternals/appendcriteria/entity/Account.java[tag=entity-owned-append-criteria,indent=0]
 ----
 
-The annotation remains command-oriented.
-It applies because `Account` declares a command handler; it does not configure permanent append criteria for every use of the entity.
-The two annotations pair up: `@EventCriteriaBuilder` selects what the decision reads, `@AppendCriteriaBuilder` selects what it can conflict with.
-Above, a withdrawal reads deposits because they raise the balance, yet a concurrent deposit can never overdraw the account, so deposits are excluded from the boundary.
+`@EventCriteriaBuilder` selects the events the entity reads, and `@AppendCriteriaBuilder` selects the events a command handled by the entity conflicts with.
+Above, a withdrawal reads deposits, but a concurrent deposit cannot overdraw the account, so deposits are not part of the boundary.
 
-Builders belong to the class that declares the command handlers, so the builders on `Account` cover the commands `Account` handles.
-A nested entity class declares builders for its own handlers, as `Card` does above; the parent's builders do not reach into the nested class.
-In a polymorphic hierarchy builders are inherited, so a builder on the root entity also covers command handlers declared by its subclasses, and a subclass can declare a builder for the same command type to replace it.
+* Builders on an entity apply to the commands that entity handles, not to every use of the entity.
+* A nested entity declares builders for its own handlers, as `Card` does.
+* In a polymorphic hierarchy, a builder on the root entity covers the handlers of its subclasses.
 
-Entity classes without an append-criteria builder retain the symmetric sourcing-derived append criteria.
-All marker selection, including no-source handling, remains the responsibility of the event-store transaction.
-
-For a declaratively built entity metamodel, register the same `AppendCriteriaInterceptor` on the metamodel builder, adapted with `EntityCommandHandlerInterceptor.of`:
+For a declaratively built entity, register the `AppendCriteriaInterceptor` on the metamodel builder through `EntityCommandHandlerInterceptor.of`:
 
 [source,java]
 ----
 include::example$events/eventstoreinternals/appendcriteria/entity/DeclarativeEntityAppendCriteria.java[tag=declarative-entity-append-criteria,indent=0]
 ----
 
-The interceptor applies to the creational and instance commands of the entity and to the commands forwarded to its child entities.
-It remains a per-command resolver: it does not contribute criteria per entity or change how entities are sourced.
-For a polymorphic entity, interceptors registered on the polymorphic metamodel only cover the commands its shared supertype handles, so register the interceptor on each concrete type's metamodel as well.
-Combining it with an annotation builder for the same command fails explicitly.
+The interceptor covers the creational and instance commands of the entity, and the commands forwarded to its child entities.
+On a polymorphic entity, it only covers the commands the shared supertype handles, so register it on each concrete type as well.
 
 [#conditions]
 == Append, source, and stream conditions
