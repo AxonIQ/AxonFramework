@@ -77,6 +77,8 @@
         <module>university-multi-tenancy-examples</module>
         <module>saga-recipes</module>
         <module>spring-cloud</module>
+        <module>workflow-bike-rental</module>
+        <module>workflow-simple</module>
     </modules>
 
     <build>
