@@ -74,7 +74,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * the lifecycle.
  * <p>
  * The test runs a licensed Enterprise Edition Axon Server in a container, so it needs Docker. The README
- * explains how the container is licensed, with a license file or an Axoniq Platform token. The test skips
+ * explains how the container is licensed, with a license (from the {@code AXONIQ_LICENSE} environment variable
+ * or a license file) or an Axoniq Platform token. The test skips
  * itself when no license source is available. The container is a fresh instance per run rather than one
  * shared across the class, because both runs enroll the same fixed course identifiers into the same fixed
  * tenant contexts; sharing a container would have the second run collide with events the first run left
@@ -84,6 +85,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @EnabledIf("axonServerLicensable")
 class MultiTenancyDemoIT {
 
+    private static final String LICENSE_ENV = "AXONIQ_LICENSE";
     private static final String LICENSE_RESOURCE = "axon-server.license";
     private static final String TOKEN_ENV_FILE = ".env";
     private static final String PLATFORM_TOKEN_ENV = "AXONIQ_PLATFORM_AUTHENTICATION";
@@ -94,14 +96,25 @@ class MultiTenancyDemoIT {
 
     @SuppressWarnings("unused") // Referenced by @EnabledIf to gate the test on a usable license source.
     static boolean axonServerLicensable() {
-        return licenseAvailable() || platformToken() != null;
+        return licenseContent() != null || platformToken() != null;
     }
 
-    private static boolean licenseAvailable() {
+    // Resolves the license content from the AXONIQ_LICENSE environment variable, or, when that is not set, from
+    // the axon-server.license file next to the demos, which the build copies onto the test classpath. CI sets
+    // the environment variable from a secret, which takes precedence.
+    private static String licenseContent() {
+        String fromEnvironment = System.getenv(LICENSE_ENV);
+        if (fromEnvironment != null && !fromEnvironment.isBlank()) {
+            return fromEnvironment;
+        }
         try (InputStream license = MultiTenancyDemoIT.class.getClassLoader().getResourceAsStream(LICENSE_RESOURCE)) {
-            return license != null && license.read() != -1;
+            if (license == null) {
+                return null;
+            }
+            String content = new String(license.readAllBytes(), StandardCharsets.UTF_8);
+            return content.isBlank() ? null : content;
         } catch (IOException e) {
-            return false;
+            return null;
         }
     }
 
@@ -154,16 +167,17 @@ class MultiTenancyDemoIT {
     @Container
     private final AxonServerContainer axonServer = licensedContainer();
 
-    // The license file wins over the token, so a repository CI run (which writes the license from a
-    // secret) always boots from the license file. The token path is the local fallback for developers
-    // who have an Axoniq Platform token but no license file.
+    // The license wins over the token, so a repository CI run (which sets the license from a secret)
+    // always boots from the license. The token path is the local fallback for developers who have an
+    // Axoniq Platform token but no license.
     private static AxonServerContainer licensedContainer() {
         AxonServerContainer container = new AxonServerContainer()
                 .withAxonServerHostname("localhost")
                 .withDevMode(true)
                 .withDcbContext(true);
-        if (licenseAvailable()) {
-            return container.withLicense(LICENSE_RESOURCE);
+        String license = licenseContent();
+        if (license != null) {
+            return container.withLicenseContent(license);
         }
         String token = platformToken();
         if (token != null) {

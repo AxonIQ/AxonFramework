@@ -116,20 +116,20 @@ per-tenant connector rather than being served locally.
 Because hosting several tenant contexts needs a licensed Enterprise Edition server, the test licenses
 the container in one of two ways, checked in that order:
 
-* **License file** (the path CI uses): the test mounts a license expected on the test classpath as
-  `axon-server.license`. Locally, place your license as `axon-server.license` next to the
-  [parent README](../README.md). It is git-ignored, and the module copies it onto the test classpath. In
-  a repository CI run, the examples workflow writes the license from a secret to the same location before
-  the build.
-* **Axoniq Platform token** (local fallback): if no license file is present, the test uses the token
+* **License** (the path CI uses): the test copies the license content into the container. It takes the content from the
+  `AXONIQ_LICENSE` environment variable. When that is not set, it falls back to a license file on the test classpath
+  named `axon-server.license`. Locally, either export `AXONIQ_LICENSE` with your license content, or place your license
+  as `axon-server.license` next to the [parent README](../README.md). The file is git-ignored, and the module copies it
+  onto the test classpath.
+* **Axoniq Platform token** (local fallback): if no license is available, the test uses the token
   from the `AXONIQ_PLATFORM_AUTHENTICATION` environment variable, or, when that is not set, from the
   `AXONIQ_PLATFORM_AUTHENTICATION` entry in the `.env` file next to the demos. That is the same file
   docker-compose reads, so putting your token in `.env` is enough to run the test, with no shell or IDE
   setup. The test passes the token to the container so it fetches its license from Axoniq Platform. Find
   the token at <https://platform.axoniq.io/resource-center/install/server/download/?version=latest>.
 
-When neither is available (a fork PR, whose CI receives no repository secrets, or a clone with neither
-a license file nor a token), the test skips itself so the build stays green. It runs in the
+When neither is available (a fork PR, whose CI receives no repository secrets, or a clone with neither a license nor a
+token), the test skips itself so the build stays green. It runs in the
 repository's own CI and locally, where the license is present. The test needs Docker (for the
 container). Run it with `mvn verify` (it runs at the `verify` phase).
 

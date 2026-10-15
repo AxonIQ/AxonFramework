@@ -36,13 +36,6 @@
     </description>
 
     <properties>
-        <!--
-        Tenant-aware components (TenantComponentProvider) ship in the 5.3.0 line, which is not released
-        yet, so these demos resolve against 5.3.0-SNAPSHOT rather than the released BOM the examples
-        parent manages. Managed here once, so all three modules stay on the same line.
-        -->
-        <axoniq-framework.version>5.3.3</axoniq-framework.version>
-
         <!-- Runtime libraries -->
         <awaitility.version>4.3.0</awaitility.version>
         <!-- Log4j2 as the single logging solution, matching the other plain-Java examples. -->
@@ -76,18 +69,4 @@
         <module>university-multi-tenancy-declarative</module>
         <module>university-multi-tenancy-springboot</module>
     </modules>
-
-    <dependencyManagement>
-        <dependencies>
-            <!-- Align every Axon module on ${axoniq-framework.version}, overriding the older line the
-                 examples parent manages. -->
-            <dependency>
-                <groupId>io.axoniq.framework</groupId>
-                <artifactId>axoniq-framework-bom</artifactId>
-                <version>${axoniq-framework.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-        </dependencies>
-    </dependencyManagement>
 </project>
