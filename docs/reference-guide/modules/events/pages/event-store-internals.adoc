@@ -193,7 +193,7 @@ include::example$events/eventstoreinternals/appendcriteria/annotation/UsernameCo
 ----
 
 The event-store transaction retains responsibility for the distinction.
-It preserves the marker established by sourcing, or checks explicit command append criteria from `ConsistencyMarker.ORIGIN` when no sourcing occurred.
+It preserves the marker established by sourcing, or checks explicit append criteria from `ConsistencyMarker.ORIGIN` when no sourcing occurred.
 In the example, this checks the `tenantId` and `username` combination against the complete event history.
 The append is rejected if a matching registration already exists or is appended concurrently, making the creation
 decision safe without a preliminary sourcing query.
@@ -222,14 +222,14 @@ Prefer symmetric criteria when the exact explanatory ordering of rejection event
 
 [IMPORTANT]
 ====
-Custom command append criteria require an event store that supports criteria-aware consistency checks.
+Custom append criteria require an event store that supports criteria-aware consistency checks.
 Aggregate-based storage keeps its existing default behavior, but replacing an aggregate consistency boundary with unrelated criteria is not supported and fails explicitly.
 ====
 
 [#entity_owned_command_append_criteria]
 == Entity-owned command handlers
 
-Command handlers declared inside event-sourced entity classes can use the same command append-criteria feature:
+Command handlers declared inside event-sourced entity classes can declare append criteria the same way:
 
 [source,java]
 ----
