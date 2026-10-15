@@ -39,9 +39,6 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadLocalRandom;
 
-/**
- * @since 5.4.0
- */
 @RestController
 @RequestMapping("/")
 public class RentalController {
@@ -90,10 +87,10 @@ public class RentalController {
     }
 
     @PostMapping("/returnBike")
-    public CompletableFuture<String> returnBike(@RequestParam("bikeId") String bikeId,
-                                                @RequestParam("location") String location) {
+    public CompletableFuture<Void> returnBike(@RequestParam("bikeId") String bikeId,
+                                              @RequestParam("location") String location) {
         return commandGateway.send(new ReturnBikeCommand(bikeId, location != null ? location : randomLocation()))
-                             .resultAs(String.class);
+                             .resultAs(Void.class);
     }
 
     @GetMapping("/bikes")

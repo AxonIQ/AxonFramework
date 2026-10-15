@@ -27,9 +27,6 @@ import org.springframework.stereotype.Component;
 
 import static org.axonframework.examples.workflow.bikerental.coreapi.payment.PaymentStatus.Status.PENDING;
 
-/**
- * @since 5.4.0
- */
 @Component
 public class PaymentStatusProjection {
 
@@ -39,19 +36,19 @@ public class PaymentStatusProjection {
         this.paymentStatusRepository = paymentStatusRepository;
     }
 
-    @QueryHandler(queryName = "org.axonframework.examples.workflow.bikerental.coreapi.payment.getPaymentStatus")
+    @QueryHandler(queryName = "payment.getPaymentStatus")
     public PaymentStatus getStatus(GetPaymentStatusQuery q) {
         return paymentStatusRepository.findById(q.paymentId()).orElse(null);
     }
 
-    @QueryHandler(queryName = "org.axonframework.examples.workflow.bikerental.coreapi.payment.getPaymentId")
+    @QueryHandler(queryName = "payment.getPaymentId")
     public String getPaymentId(GetPaymentIdQuery q) {
         return paymentStatusRepository.findByReferenceAndStatus(q.paymentReference(), PENDING)
                                       .map(PaymentStatus::getId)
                                       .orElse(null);
     }
 
-    @QueryHandler(queryName = "org.axonframework.examples.workflow.bikerental.coreapi.payment.getAllPayments")
+    @QueryHandler(queryName = "payment.getAllPayments")
     public Iterable<PaymentStatus> findByStatus(GetAllPaymentsQuery q) {
         if (q.status() != null) {
             return paymentStatusRepository.findAllByStatus(q.status());

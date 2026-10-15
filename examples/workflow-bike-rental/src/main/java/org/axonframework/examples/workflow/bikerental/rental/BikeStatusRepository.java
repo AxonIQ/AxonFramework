@@ -25,9 +25,6 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 
-/**
- * @since 5.4.0
- */
 @Repository
 public interface BikeStatusRepository extends JpaRepository<BikeStatus, String> {
 

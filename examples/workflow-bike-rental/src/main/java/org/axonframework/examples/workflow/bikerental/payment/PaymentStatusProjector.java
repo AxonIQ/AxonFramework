@@ -29,9 +29,6 @@ import org.springframework.stereotype.Component;
 import static org.axonframework.examples.workflow.bikerental.coreapi.payment.PaymentStatus.Status.APPROVED;
 import static org.axonframework.examples.workflow.bikerental.coreapi.payment.PaymentStatus.Status.REJECTED;
 
-/**
- * @since 5.4.0
- */
 @Component
 public class PaymentStatusProjector {
 

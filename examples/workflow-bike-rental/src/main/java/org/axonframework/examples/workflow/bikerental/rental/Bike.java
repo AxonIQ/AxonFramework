@@ -37,9 +37,6 @@ import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 import java.util.Objects;
 import java.util.UUID;
 
-/**
- * @since 5.4.0
- */
 @EventSourced(tagKey = "Bike")
 public class Bike {
 

@@ -64,37 +64,37 @@ class BikeRentalIT {
 
     @Test
     fun `test bike rental process`() {
-        // 1. the application starts (handled by @SpringBootTest)
-
-        // 2. invokes via web the generate-bikes endpoint
         restTemplate.postForEntity("/?bikes=5&bikeType=Mountain", null, Void::class.java)
 
-        // 3. retrieves bikes infos -> get one bike id
-        val bikesResponse = await().atMost(20, TimeUnit.SECONDS).until({
+        val bikes = await().atMost(20, TimeUnit.SECONDS).until({
             restTemplate.exchange("/bikes", HttpMethod.GET, null, object : ParameterizedTypeReference<List<BikeStatus>>() {}).body
         }, { it != null && it.isNotEmpty() })
+        val bikeId = bikes!![0].bikeId!!
 
-        val bikeId = bikesResponse!![0].bikeId
-        assertThat(bikeId).isNotNull()
+        rentBike(bikeId, "Junie")
 
-        // 4. reserves one bike -> by bike id -> get reservation
-        val renter = "Junie"
-        val reservationRef = restTemplate.postForEntity("/requestBike?bikeId=$bikeId&renter=$renter", null, String::class.java).body
-        assertThat(reservationRef).isNotNull()
+        // Each rental starts its own payment workflow, so the same bike can be rented again after its return.
+        restTemplate.postForEntity("/returnBike?bikeId=$bikeId&location=Amsterdam", null, Void::class.java)
+        await().atMost(20, TimeUnit.SECONDS).untilAsserted {
+            assertThat(restTemplate.getForObject("/bikes/$bikeId", BikeStatus::class.java)!!.getStatus())
+                .isEqualTo(RentalStatus.AVAILABLE)
+        }
 
-        // 5. checks the status of payment -> get payment id
+        rentBike(bikeId, "Ada")
+    }
+
+    private fun rentBike(bikeId: String, renter: String) {
+        val rentalReference =
+            restTemplate.postForEntity("/requestBike?bikeId=$bikeId&renter=$renter", null, String::class.java).body
+        assertThat(rentalReference).isNotNull()
+
         val paymentId = await().atMost(20, TimeUnit.SECONDS).until({
-            restTemplate.getForObject("/findPayment?reference=$reservationRef", String::class.java)
+            restTemplate.getForObject("/findPayment?reference=$rentalReference", String::class.java)
         }, { it != null })
-        assertThat(paymentId).isNotNull()
-
-        // 6. confirms payment -> by payment id
         restTemplate.postForEntity("/acceptPayment?id=$paymentId", null, Void::class.java)
 
-        // 7. checks the bike status -> should be rented and in use
         await().atMost(20, TimeUnit.SECONDS).untilAsserted {
             val bikeStatus = restTemplate.getForObject("/bikes/$bikeId", BikeStatus::class.java)
-            assertThat(bikeStatus).isNotNull
             assertThat(bikeStatus!!.getStatus()).isEqualTo(RentalStatus.RENTED)
             assertThat(bikeStatus.renter).isEqualTo(renter)
         }

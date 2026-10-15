@@ -47,7 +47,6 @@ import static io.axoniq.framework.workflow.runtime.association.PayloadPropertyVa
  * Payment workflow of a bike rental, ported from the Bike Rental Saga of the Axon Framework 4 example.
  *
  * @author Simon Zambrovski
- * @since 5.4.0
  */
 @Component
 public class PaymentWorkflow {
@@ -61,7 +60,7 @@ public class PaymentWorkflow {
 
     @Workflow(
             startOnEventClass = BikeRequestedEvent.class,
-            idProperty = "bikeId",
+            idProperty = "rentalReference",
             workflowName = "PaymentWorkflow"
     )
     public void execute(SimpleWorkflowContext ctx) {

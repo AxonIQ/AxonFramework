@@ -22,9 +22,6 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 
 private val logger = KotlinLogging.logger {}
 
-/**
- * @since 5.4.0
- */
 object NotificationService {
     fun sendEmail(): Boolean {
         logger.info { "Sending welcome mail to user." }

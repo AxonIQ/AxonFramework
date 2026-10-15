@@ -21,9 +21,6 @@ package org.axonframework.examples.workflow.simple.user;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/**
- * @since 5.4.0
- */
 public class NotificationService {
 
     static Logger logger = LoggerFactory.getLogger(NotificationService.class);

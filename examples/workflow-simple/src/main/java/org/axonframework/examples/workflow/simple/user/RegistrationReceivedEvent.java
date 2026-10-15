@@ -20,9 +20,6 @@ package org.axonframework.examples.workflow.simple.user;
 
 import org.axonframework.messaging.eventhandling.annotation.Event;
 
-/**
- * @since 5.4.0
- */
 @Event(namespace = "my.custom", name = "RegistrationReceived")
 public record RegistrationReceivedEvent(String id, String email, String status) {
 

@@ -20,9 +20,6 @@ package org.axonframework.examples.workflow.simple.kotlin.user
 
 import com.fasterxml.jackson.annotation.JsonProperty
 
-/**
- * @since 5.4.0
- */
 @JvmRecord
 data class EmailConfirmedEvent(
     @field:JsonProperty("userId")

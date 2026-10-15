@@ -33,7 +33,6 @@ public class SleepUtils {
      * Waits for the requested duration and logs progress every 200 milliseconds.
      *
      * @param millis total timeout in milliseconds
- * @since 5.4.0
      */
     public static void waitWithProgress(long millis) {
         try {

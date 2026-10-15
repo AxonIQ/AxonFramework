@@ -25,9 +25,6 @@ import org.axonframework.examples.workflow.bikerental.coreapi.rental.RentalStatu
 import org.axonframework.messaging.queryhandling.annotation.QueryHandler;
 import org.springframework.stereotype.Component;
 
-/**
- * @since 5.4.0
- */
 @Component
 public class BikeStatusProjection {
 
@@ -37,17 +34,17 @@ public class BikeStatusProjection {
         this.bikeStatusRepository = bikeStatusRepository;
     }
 
-    @QueryHandler(queryName = "org.axonframework.examples.workflow.bikerental.coreapi.rental.findAll")
+    @QueryHandler(queryName = "rental.findAll")
     public Iterable<BikeStatus> findAll() {
         return bikeStatusRepository.findAll();
     }
 
-    @QueryHandler(queryName = "org.axonframework.examples.workflow.bikerental.coreapi.rental.findAvailable")
+    @QueryHandler(queryName = "rental.findAvailable")
     public Iterable<BikeStatus> findAvailable(FindAvailableQuery q) {
         return bikeStatusRepository.findAllByBikeTypeAndStatus(q.bikeType(), RentalStatus.AVAILABLE);
     }
 
-    @QueryHandler(queryName = "org.axonframework.examples.workflow.bikerental.coreapi.rental.findOne")
+    @QueryHandler(queryName = "rental.findOne")
     public BikeStatus findOne(FindRentalByBikeIdQuery q) {
         return bikeStatusRepository.findById(q.bikeId()).orElse(null);
     }

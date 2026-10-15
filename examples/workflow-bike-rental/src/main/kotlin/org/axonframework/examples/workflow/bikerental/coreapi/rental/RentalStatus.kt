@@ -18,9 +18,6 @@
  */
 package org.axonframework.examples.workflow.bikerental.coreapi.rental
 
-/**
- * @since 5.4.0
- */
 enum class RentalStatus {
   AVAILABLE,
   REQUESTED,

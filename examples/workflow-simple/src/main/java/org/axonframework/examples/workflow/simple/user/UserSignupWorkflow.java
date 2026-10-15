@@ -34,8 +34,6 @@ import static io.axoniq.framework.workflow.runtime.association.PayloadPropertyVa
 
 /**
  * Sample user registration.
- *
- * @since 5.4.0
  */
 public class UserSignupWorkflow {
 

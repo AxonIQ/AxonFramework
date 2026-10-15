@@ -30,9 +30,6 @@ import java.util.Map;
 
 import static org.axonframework.examples.workflow.simple.user.SleepUtils.waitWithProgress;
 
-/**
- * @since 5.4.0
- */
 public class UserService {
 
     static Logger logger = LoggerFactory.getLogger(UserService.class);

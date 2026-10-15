@@ -24,9 +24,6 @@ import org.axonframework.messaging.eventhandling.annotation.Event
 import org.axonframework.messaging.queryhandling.annotation.Query
 import org.axonframework.modelling.annotation.TargetEntityId
 
-/**
- * @since 5.4.0
- */
 @Command(routingKey = "paymentReference")
 @JvmRecord
 data class PreparePaymentCommand(
@@ -73,19 +70,19 @@ data class PaymentConfirmedEvent(
     val paymentReference: String
 )
 
-@Query(namespace = "org.axonframework.examples.workflow.bikerental.coreapi.payment", name = "getAllPayments")
+@Query(namespace = "payment", name = "getAllPayments")
 @JvmRecord
 data class GetAllPaymentsQuery(
     val status: PaymentStatus.Status?
 )
 
-@Query(namespace = "org.axonframework.examples.workflow.bikerental.coreapi.payment", name = "getPaymentId")
+@Query(namespace = "payment", name = "getPaymentId")
 @JvmRecord
 data class GetPaymentIdQuery(
     val paymentReference: String
 )
 
-@Query(namespace = "org.axonframework.examples.workflow.bikerental.coreapi.payment", name = "getPaymentStatus")
+@Query(namespace = "payment", name = "getPaymentStatus")
 @JvmRecord
 data class GetPaymentStatusQuery(
     val paymentId: String

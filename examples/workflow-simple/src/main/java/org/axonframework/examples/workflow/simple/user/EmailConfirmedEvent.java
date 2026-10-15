@@ -22,7 +22,6 @@ package org.axonframework.examples.workflow.simple.user;
  * Event that is published when a user confirms their email address.
  *
  * @param userId id of the user that confirmed their email address
- * @since 5.4.0
  */
 public record EmailConfirmedEvent(String userId) {
 

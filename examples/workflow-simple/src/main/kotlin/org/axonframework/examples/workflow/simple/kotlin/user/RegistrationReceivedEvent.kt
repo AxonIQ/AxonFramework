@@ -18,8 +18,5 @@
  */
 package org.axonframework.examples.workflow.simple.kotlin.user
 
-/**
- * @since 5.4.0
- */
 @JvmRecord
 data class RegistrationReceivedEvent(val id: String, val email: String)

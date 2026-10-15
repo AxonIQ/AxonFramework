@@ -31,8 +31,6 @@ private val logger = KotlinLogging.logger {}
 
 /**
  * Sample user registration, using the Kotlin DSL.
- *
- * @since 5.4.0
  */
 class UserSignupWorkflow {
 

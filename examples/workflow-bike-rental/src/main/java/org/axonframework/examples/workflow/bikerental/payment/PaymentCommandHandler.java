@@ -26,9 +26,6 @@ import org.springframework.stereotype.Component;
 
 import java.util.UUID;
 
-/**
- * @since 5.4.0
- */
 @Component
 public class PaymentCommandHandler {
 

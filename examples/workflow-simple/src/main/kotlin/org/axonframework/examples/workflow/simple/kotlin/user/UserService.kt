@@ -27,9 +27,6 @@ import java.time.Instant
 
 private val logger = KotlinLogging.logger {}
 
-/**
- * @since 5.4.0
- */
 object UserService {
     fun createUser(): Boolean {
         logger.info { "Creating user." }

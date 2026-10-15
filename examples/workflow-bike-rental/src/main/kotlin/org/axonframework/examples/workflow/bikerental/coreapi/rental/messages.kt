@@ -24,9 +24,6 @@ import org.axonframework.messaging.eventhandling.annotation.Event
 import org.axonframework.messaging.queryhandling.annotation.Query
 import org.axonframework.modelling.annotation.TargetEntityId
 
-/**
- * @since 5.4.0
- */
 @Command(routingKey = "bikeId")
 @JvmRecord
 data class RegisterBikeCommand(
@@ -111,16 +108,16 @@ data class BikeReturnedEvent(
     val location: String
 )
 
-@Query(namespace = "org.axonframework.examples.workflow.bikerental.coreapi.rental", name = "findAll")
+@Query(namespace = "rental", name = "findAll")
 object FindAllBikeRentalsQuery
 
-@Query(namespace = "org.axonframework.examples.workflow.bikerental.coreapi.rental", name = "findAvailable")
+@Query(namespace = "rental", name = "findAvailable")
 @JvmRecord
 data class FindAvailableQuery(
     val bikeType: String
 )
 
-@Query(namespace = "org.axonframework.examples.workflow.bikerental.coreapi.rental", name = "findOne")
+@Query(namespace = "rental", name = "findOne")
 @JvmRecord
 data class FindRentalByBikeIdQuery(
     val bikeId: String

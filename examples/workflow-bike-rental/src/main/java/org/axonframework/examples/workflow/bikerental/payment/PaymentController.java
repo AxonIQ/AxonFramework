@@ -36,9 +36,6 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
-/**
- * @since 5.4.0
- */
 @RestController
 public class PaymentController {
 

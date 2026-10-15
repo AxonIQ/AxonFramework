@@ -21,9 +21,6 @@ package org.axonframework.examples.workflow.bikerental.coreapi.payment
 import jakarta.persistence.Entity
 import jakarta.persistence.Id
 
-/**
- * @since 5.4.0
- */
 @Entity
 class PaymentStatus {
   @Id
