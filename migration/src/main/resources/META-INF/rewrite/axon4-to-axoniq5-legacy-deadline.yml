@@ -22,7 +22,8 @@
 # Axon Framework 5 forces it:
 #
 # - Sagas: a private `DeadlineManager` field, which the legacy module does not
-#   inject, moves into a parameter of the handlers that use it.
+#   inject, moves into a parameter of the handlers that use it. The
+#   `@Autowired` or `@Inject` setter that only assigns it goes with it.
 # - Aggregates: a deadline fires as a command, so `@DeadlineHandler` becomes the
 #   `@CommandHandler` receiving it, and `DeadlineManager` calls that relied on
 #   the aggregate's scope get an explicit `AggregateScopeDescriptor`.
@@ -51,7 +52,8 @@ description: >-
   module. Adds `io.axoniq.framework:axoniq-legacy` when deadline types are used,
   and `io.axoniq.framework:axoniq-legacy-test` when the deadline test fixtures
   are used. Moves a Saga's private `DeadlineManager` field into a parameter of
-  the handlers that use it. Replaces an aggregate's `@DeadlineHandler` with the
+  the handlers that use it, removing the `@Autowired` or `@Inject` setter that
+  only assigns it. Replaces an aggregate's `@DeadlineHandler` with the
   `@CommandHandler` that receives the fired deadline, and passes the
   `AggregateScopeDescriptor` to aggregate `DeadlineManager` calls that relied
   on the current scope, reading a creation handler's identifier from the
@@ -70,8 +72,9 @@ description: >-
   change depends on the application: a `unitOfWorkFactory(..)` with neither in
   reach, a converter it cannot infer, `configureDeadlineManager(..)`, interceptors
   registered on the `DeadlineManager` interface, a `ScopeAwareProvider` the
-  application registers itself, aggregate deadline handlers no command can
-  reach, aggregate `DeadlineManager` calls without an identifier in reach, and
+  application registers itself, a Saga `DeadlineManager` used in an async
+  callback, which fails once the handler returned, aggregate deadline handlers
+  no command can reach, aggregate `DeadlineManager` calls without an identifier in reach, and
   the deadline and time calls of `AggregateTestFixture`, which `AxonTestFixture`
   does not have, saying how to test the deadline as the command it fires as.
 recipeList:
@@ -90,19 +93,26 @@ recipeList:
 
   # ── Sagas ──────────────────────────────────────────────────────────────────
 
-  # The legacy module does not inject Saga fields, so an @Autowired or @Inject
-  # DeadlineManager field would stay null. Every schedule and cancel overload is
-  # kept, so only the collaborator moves: into a parameter of the handlers (and
-  # the private helpers they call) that use it. Only a private field moves, or a
-  # property of a final Kotlin class: a subclass or another class of the package
-  # may use any other field, and the recipe cannot see or update that code. Runs
-  # before the Saga recipe, whose closing MarkSagaResourceInjection then only
-  # marks the injected fields left in place. A @DeadlineHandler without
+  # The legacy module does not inject Saga fields or call Saga setters, so an
+  # @Autowired or @Inject DeadlineManager field, or one an @Autowired or @Inject
+  # setter assigns, would stay null. Every schedule and cancel overload is kept,
+  # so only the collaborator moves: into a parameter of the handlers (and the
+  # private helpers they call) that use it. The setter is removed with the
+  # field. Only a private field moves, or a property of a final Kotlin class: a
+  # subclass or another class of the package may use any other field, and the
+  # recipe cannot see or update that code. Runs before the Saga recipe, whose
+  # closing MarkSagaResourceInjection then only marks the injected fields and
+  # setters left in place. A @DeadlineHandler without
   # parameters first gets a DeadlineMessage parameter: the DeadlineManager
   # resolves from the configuration, which ranks below the payload resolver,
   # so as the first parameter it would become the payload.
   - org.axonframework.migration.MoveSagaFieldToHandlerParameter:
       fullyQualifiedTypeName: org.axonframework.deadline.DeadlineManager
+  # The DeadlineManager parameter is bound to its handler, so a call from a
+  # callback that runs after the handler returned fails and the deadline is
+  # lost. Runs after the step above, so it also sees the DeadlineManager that
+  # step passes on to helper methods.
+  - org.axonframework.migration.MarkDeadlineManagerCallsInCallbacks
 
   # ── Aggregates ─────────────────────────────────────────────────────────────
 

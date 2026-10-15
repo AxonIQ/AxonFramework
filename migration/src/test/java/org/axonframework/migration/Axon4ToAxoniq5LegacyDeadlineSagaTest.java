@@ -151,6 +151,181 @@ class Axon4ToAxoniq5LegacyDeadlineSagaTest implements RewriteTest {
     }
 
     @Test
+    void marksTheMovedDeadlineManagerWhenACommandResultCallbackUsesIt() {
+        // The marker on the deadline leg survives the Saga leg turning the CommandGateway into a CommandDispatcher.
+        rewriteRun(
+                java(
+                        """
+                        package org.springframework.beans.factory.annotation;
+
+                        public @interface Autowired {
+                        }
+                        """
+                ),
+                java(
+                        """
+                        package com.example;
+
+                        import java.time.Duration;
+
+                        import org.axonframework.commandhandling.gateway.CommandGateway;
+                        import org.axonframework.deadline.DeadlineManager;
+                        import org.axonframework.deadline.annotation.DeadlineHandler;
+                        import org.axonframework.modelling.saga.SagaEventHandler;
+                        import org.axonframework.spring.stereotype.Saga;
+                        import org.springframework.beans.factory.annotation.Autowired;
+
+                        @Saga
+                        public class PaymentSaga {
+                            @Autowired
+                            private transient CommandGateway commandGateway;
+                            @Autowired
+                            private transient DeadlineManager deadlineManager;
+
+                            @SagaEventHandler(associationProperty = "paymentId")
+                            public void on(String paymentId) {
+                                deadlineManager.schedule(Duration.ofMinutes(1), "cancelPayment", paymentId);
+                            }
+
+                            @DeadlineHandler(deadlineName = "retryPayment")
+                            public void preparePayment(String reference) {
+                                commandGateway.send(reference)
+                                              .whenComplete((result, error) -> {
+                                                  if (error != null) {
+                                                      deadlineManager.schedule(Duration.ofSeconds(5), "retryPayment", reference);
+                                                  }
+                                              });
+                            }
+                        }
+                        """,
+                        """
+                        package com.example;
+
+                        import java.time.Duration;
+
+                        import org.axonframework.deadline.DeadlineManager;
+                        import org.axonframework.deadline.annotation.DeadlineHandler;
+                        import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher;
+                        import org.axonframework.modelling.saga.SagaEventHandler;
+                        import org.axonframework.spring.stereotype.Saga;
+
+                        @Saga
+                        public class PaymentSaga {
+                            @SagaEventHandler(associationProperty = "paymentId")
+                            public void on(String paymentId, DeadlineManager deadlineManager) {
+                                deadlineManager.schedule(Duration.ofMinutes(1), "cancelPayment", paymentId);
+                            }
+
+                            @DeadlineHandler(deadlineName = "retryPayment")
+                            public void preparePayment(String reference, DeadlineManager deadlineManager, CommandDispatcher commandDispatcher) {
+                                // TODO(axon4to5): use the DeadlineManager in the handler, not in a callback. The \
+                        DeadlineManager parameter is bound to the handler: a call from a callback that runs after the \
+                        handler returned fails, and the deadline is never scheduled or cancelled. Wait for the result \
+                        in the handler, for example with .orTimeout(..).join() or .block(..), and call the \
+                        DeadlineManager there.
+                                commandDispatcher.send(reference)
+                                              .whenComplete((result, error) -> {
+                                                  if (error != null) {
+                                                      deadlineManager.schedule(Duration.ofSeconds(5), "retryPayment", reference);
+                                                  }
+                                              });
+                            }
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
+    void marksTheSubscribedChainThatPassesTheMovedDeadlineManagerToAHelper() {
+        // The DeadlineManager argument the field move adds to the helper call has no type attribution, so it is
+        // recognized by the name of the handler's new DeadlineManager parameter.
+        rewriteRun(
+                java(
+                        """
+                        package org.springframework.beans.factory.annotation;
+
+                        public @interface Autowired {
+                        }
+                        """
+                ),
+                java(
+                        """
+                        package reactor.core.publisher;
+
+                        import java.util.function.Function;
+
+                        public abstract class Mono<T> {
+                            public abstract <R> Mono<R> flatMap(Function<? super T, ? extends Mono<? extends R>> mapper);
+                            public abstract void subscribe();
+                        }
+                        """
+                ),
+                java(
+                        """
+                        package com.example;
+
+                        import java.time.Duration;
+                        import java.util.function.Function;
+
+                        import org.axonframework.deadline.DeadlineManager;
+                        import org.axonframework.modelling.saga.SagaEventHandler;
+                        import org.springframework.beans.factory.annotation.Autowired;
+                        import reactor.core.publisher.Mono;
+
+                        public class OrderSaga {
+                            @Autowired
+                            private transient DeadlineManager deadlineManager;
+
+                            @SagaEventHandler(associationProperty = "orderId")
+                            public void on(String orderId, Mono<String> user) {
+                                user.flatMap(processPayment(orderId))
+                                    .subscribe();
+                            }
+
+                            private Function<String, Mono<String>> processPayment(String orderId) {
+                                return userId -> {
+                                    deadlineManager.schedule(Duration.ofSeconds(10), "payment", orderId);
+                                    return null;
+                                };
+                            }
+                        }
+                        """,
+                        """
+                        package com.example;
+
+                        import java.time.Duration;
+                        import java.util.function.Function;
+
+                        import org.axonframework.deadline.DeadlineManager;
+                        import org.axonframework.modelling.saga.SagaEventHandler;
+                        import reactor.core.publisher.Mono;
+
+                        public class OrderSaga {
+                            @SagaEventHandler(associationProperty = "orderId")
+                            public void on(String orderId, Mono<String> user, DeadlineManager deadlineManager) {
+                                // TODO(axon4to5): use the DeadlineManager in the handler, not in a callback. The \
+                        DeadlineManager parameter is bound to the handler: a call from a callback that runs after the \
+                        handler returned fails, and the deadline is never scheduled or cancelled. Wait for the result \
+                        in the handler, for example with .orTimeout(..).join() or .block(..), and call the \
+                        DeadlineManager there.
+                                user.flatMap(processPayment(orderId, deadlineManager))
+                                    .subscribe();
+                            }
+
+                            private Function<String, Mono<String>> processPayment(String orderId, DeadlineManager deadlineManager) {
+                                return userId -> {
+                                    deadlineManager.schedule(Duration.ofSeconds(10), "payment", orderId);
+                                    return null;
+                                };
+                            }
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
     void keepsTheDeadlineMessageFirstWhenBothLegsAddParametersToAParameterlessDeadlineHandler() {
         // The deadline recipe adds the DeadlineMessage with the DeadlineManager, so the ProcessingContext the Saga
         // recipe appends for the conditional end follows them, and neither resolver-ranked parameter is the payload.
@@ -322,6 +497,118 @@ class Axon4ToAxoniq5LegacyDeadlineSagaTest implements RewriteTest {
                                 deadlineManager.cancelAll("orderExpired");
                             }
                         }
+                        """
+                )
+        );
+    }
+
+    @Test
+    void movesSetterInjectedCollaboratorsAndMarksTheRemainingInjection() {
+        // Axon Framework 4 called the @Autowired setters and set the @Value field; the legacy module does neither.
+        // The DeadlineManager, the CommandGateway and the other collaborator become handler parameters and lose their
+        // fields and setters. The @Value field stays, marked, so it is not silently left unset.
+        rewriteRun(
+                java(
+                        """
+                        package org.springframework.beans.factory.annotation;
+
+                        public @interface Autowired {
+                        }
+                        """
+                ),
+                java(
+                        """
+                        package com.example;
+
+                        import java.time.Duration;
+
+                        import org.axonframework.commandhandling.gateway.CommandGateway;
+                        import org.axonframework.deadline.DeadlineManager;
+                        import org.axonframework.deadline.annotation.DeadlineHandler;
+                        import org.axonframework.modelling.saga.SagaEventHandler;
+                        import org.axonframework.modelling.saga.StartSaga;
+                        import org.axonframework.spring.stereotype.Saga;
+                        import org.springframework.beans.factory.annotation.Autowired;
+                        import org.springframework.beans.factory.annotation.Value;
+
+                        @Saga
+                        public class OrderSaga {
+                            private transient CommandGateway commandGateway;
+                            private transient PaymentService paymentService;
+                            private transient DeadlineManager deadlineManager;
+
+                            @Value("${app.testing.deadline:false}")
+                            private boolean isDeadlineTesting;
+                            private String scheduleId;
+
+                            @Autowired
+                            public void setCommandGateway(CommandGateway commandGateway) {
+                                this.commandGateway = commandGateway;
+                            }
+
+                            @Autowired
+                            public void setPaymentService(PaymentService paymentService) {
+                                this.paymentService = paymentService;
+                            }
+
+                            @Autowired
+                            public void setDeadlineManager(DeadlineManager deadlineManager) {
+                                this.deadlineManager = deadlineManager;
+                            }
+
+                            @StartSaga
+                            @SagaEventHandler(associationProperty = "orderId")
+                            public void handle(String orderId) {
+                                scheduleId = deadlineManager.schedule(Duration.ofSeconds(4), "payment-deadline", orderId);
+                                if (isDeadlineTesting) return;
+                                paymentService.charge(orderId);
+                            }
+
+                            @DeadlineHandler(deadlineName = "payment-deadline")
+                            public void onPaymentDeadline(String orderId) {
+                                deadlineManager.cancelSchedule("payment-deadline", scheduleId);
+                                commandGateway.send(orderId);
+                            }
+                        }
+                        interface PaymentService { void charge(String orderId); }
+                        """,
+                        """
+                        package com.example;
+
+                        import java.time.Duration;
+
+                        import org.axonframework.deadline.DeadlineManager;
+                        import org.axonframework.deadline.annotation.DeadlineHandler;
+                        import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher;
+                        import org.axonframework.modelling.saga.SagaEventHandler;
+                        import org.axonframework.modelling.saga.StartSaga;
+                        import org.axonframework.spring.stereotype.Saga;
+                        import org.springframework.beans.factory.annotation.Value;
+
+                        @Saga
+                        public class OrderSaga {
+                            // TODO(axon4to5): read this property in each @SagaEventHandler or @DeadlineHandler method \
+                        that uses it, from a Spring Environment parameter or the configuration. Axon Framework 5 does \
+                        not inject @Value Saga fields, so the field no longer follows the property.
+                            @Value("${app.testing.deadline:false}")
+                            private boolean isDeadlineTesting;
+                            private String scheduleId;
+
+                            @StartSaga
+                            @SagaEventHandler(associationProperty = "orderId")
+                            public void handle(String orderId, DeadlineManager deadlineManager, PaymentService paymentService) {
+                                scheduleId = deadlineManager.schedule(Duration.ofSeconds(4), "payment-deadline", orderId);
+                                if (isDeadlineTesting) return;
+                                paymentService.charge(orderId);
+                            }
+
+                            @DeadlineHandler(deadlineName = "payment-deadline")
+                            public void onPaymentDeadline(String orderId, DeadlineManager deadlineManager, CommandDispatcher commandDispatcher) {
+                                deadlineManager.cancelSchedule("payment-deadline", scheduleId);
+                                commandDispatcher.send(orderId);
+                            }
+                        }
+                        interface PaymentService { void charge(String orderId); }
                         """
                 )
         );

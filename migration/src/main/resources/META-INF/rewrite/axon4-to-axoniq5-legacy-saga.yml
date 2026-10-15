@@ -38,12 +38,17 @@ description: >-
   `return` with `@EndSaga`, the other static `SagaLifecycle` calls of a
   `@DeadlineHandler` with `SagaLifecycle.forContext(processingContext)` calls on
   a `ProcessingContext` handler parameter, and
-  a `CommandGateway` field with a `CommandDispatcher` handler parameter. Leaves a
+  a `CommandGateway` field, and the `@Autowired` or `@Inject` setter that only
+  assigns it, with a `CommandDispatcher` handler parameter. Moves every other
+  private field such a setter assigns, whatever its type, into a parameter of
+  the handlers that use it, removing the field and the setter. Leaves a
   `TODO(axon4to5)` marker on static `SagaLifecycle` calls in other Saga methods,
   such as private helpers, which the legacy module cannot inject into. Leaves a
   `TODO(axon4to5)` marker on the other `@Autowired` or `@Inject` Saga fields
-  and on `ResourceInjector` usage, because Axon Framework 5 resolves Saga
-  collaborators as handler parameters instead of injecting fields.
+  and methods, such as the setter of a field no handler uses, on Spring
+  `@Value` Saga fields, and on `ResourceInjector` usage, because Axon Framework
+  5 resolves Saga collaborators as handler parameters instead of injecting
+  them.
 recipeList:
   # `onlyIfUsing` evaluates the AF4-typed source model before source rewrites run.
   - org.openrewrite.java.dependencies.AddDependency:
@@ -85,6 +90,17 @@ recipeList:
   # handler reaches it through its `ProcessingContext` instead, a helper is marked.
   - org.axonframework.migration.MigrateSagaLifecycle
   - org.axonframework.migration.MigrateCommandGatewayInSagaEventHandler
-  # Runs after the CommandGateway migration, which already turned that field into a
-  # handler parameter, so only the remaining injected fields are marked.
+  # The legacy module calls no Saga setters, so a field an @Autowired or @Inject
+  # setter only assigns would stay null. Without a type, this step moves every such
+  # private field a method uses into a parameter of the handlers (and the private
+  # helpers they call) that use it, and removes the field and the setter. The
+  # parameter is declared like the setter's, so it resolves the same component or,
+  # with Spring, the same bean. Runs after the CommandGateway migration, which
+  # turns that field into a CommandDispatcher parameter instead. A field no method
+  # uses keeps its setter, as does a setter whose bean a handler parameter may not
+  # receive, such as one with `@Qualifier` on the method or `required = false`.
+  - org.axonframework.migration.MoveSagaFieldToHandlerParameter
+  # Runs after the steps above, which already turned the CommandGateway field and
+  # the used setter-injected fields into handler parameters, so only the remaining
+  # injected fields and setters are marked.
   - org.axonframework.migration.MarkSagaResourceInjection

@@ -116,11 +116,20 @@ final class StatementTodoMarker {
                 return element;
             }
         }
+        TextComment comment = new TextComment(false, todo.text(), "\n" + indentOf(prefix), Markers.EMPTY);
+        return element.withPrefix(prefix.withComments(ListUtils.concat(prefix.getComments(), comment)));
+    }
+
+    /**
+     * Returns the indent of the element the given prefix precedes: the whitespace after the last line break.
+     *
+     * @param prefix the prefix of the element
+     * @return the indent of the element, empty when the element does not start a line
+     */
+    static String indentOf(Space prefix) {
         String leading = prefix.getComments().isEmpty()
                 ? prefix.getWhitespace()
                 : prefix.getComments().getLast().getSuffix();
-        String indent = leading.contains("\n") ? leading.substring(leading.lastIndexOf('\n') + 1) : "";
-        TextComment comment = new TextComment(false, todo.text(), "\n" + indent, Markers.EMPTY);
-        return element.withPrefix(prefix.withComments(ListUtils.concat(prefix.getComments(), comment)));
+        return leading.contains("\n") ? leading.substring(leading.lastIndexOf('\n') + 1) : "";
     }
 }

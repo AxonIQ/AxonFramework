@@ -26,6 +26,7 @@ import org.openrewrite.Recipe;
 import org.openrewrite.SourceFile;
 import org.openrewrite.Tree;
 import org.openrewrite.TreeVisitor;
+import org.openrewrite.internal.ListUtils;
 import org.openrewrite.java.JavaIsoVisitor;
 import org.openrewrite.java.JavaVisitor;
 import org.openrewrite.java.tree.Expression;
@@ -41,30 +42,43 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
 /**
- * Moves a Saga field of a configured type into a parameter of the Saga methods that use it, because the Axoniq
- * Framework legacy module does not inject Saga fields.
+ * Moves a Saga field into a parameter of the Saga methods that use it, because the Axoniq Framework legacy module does
+ * not inject Saga fields.
  * <p>
  * Axon Framework 4 populated {@code @Autowired} or {@code @Inject} fields of a Saga instance through a
- * {@code ResourceInjector}. The legacy module resolves Saga collaborators as handler method parameters instead, so an
- * injected field stays {@code null}. For a private field of the configured {@link #getFullyQualifiedTypeName() type},
- * this recipe:
+ * {@code ResourceInjector}, and called its {@code @Autowired} or {@code @Inject} setters. The legacy module resolves
+ * Saga collaborators as handler method parameters instead, from the configuration or, with Spring, from the application
+ * context, so an injected field stays {@code null}. Which fields move depends on the
+ * {@link #getFullyQualifiedTypeName() type} option:
  * <ul>
- *     <li>adds a parameter of that type, named after the field, to every {@code @SagaEventHandler} and
- *     {@code @DeadlineHandler} method that uses the field, directly or through private helper methods. A parameter of
- *     that type the method already declares is reused instead. A {@code @DeadlineHandler} without parameters first
- *     gets a {@code DeadlineMessage} parameter: the collaborator resolves from the configuration, which ranks below
- *     the payload, so as the first parameter it would become the payload and the handler would stop matching its
- *     deadlines;</li>
+ *     <li>with a type, the private field of that type, injected directly or through a setter. Such a field that no
+ *     method uses is removed;</li>
+ *     <li>without a type, every private field an injection setter assigns, whatever its type, when a method uses it.
+ *     Its parameters are declared like the parameter of the setter, annotations such as {@code @Qualifier} included.
+ *     Such a field that no method uses stays, together with its setter, for {@link MarkSagaResourceInjection} to
+ *     mark.</li>
+ * </ul>
+ * For each field it moves, this recipe:
+ * <ul>
+ *     <li>adds a parameter of the field's type, named after the field, to every {@code @SagaEventHandler} and
+ *     {@code @DeadlineHandler} method that uses the field, directly or through private helper methods. With a type, a
+ *     parameter of that type the method already declares is reused instead. A {@code @DeadlineHandler} without
+ *     parameters first gets a {@code DeadlineMessage} parameter: the collaborator resolves from the configuration,
+ *     which ranks below the payload, so as the first parameter it would become the payload and the handler would stop
+ *     matching its deadlines;</li>
  *     <li>adds the same parameter to those private helper methods, and passes it along at their call sites;</li>
- *     <li>removes the field, together with its annotations and leading comments, once nothing refers to it.</li>
+ *     <li>removes the field, together with its annotations and leading comments, once nothing refers to it;</li>
+ *     <li>removes the {@code @Autowired} or {@code @Inject} setter methods through which Axon Framework 4 injected the
+ *     field, being injected methods that only assign their single parameter to it, as the legacy module does not call
+ *     them either.</li>
  * </ul>
  * The calls on the collaborator itself are left as they are. When the field name clashes with a parameter or local
  * variable of a method, the new parameter gets a numeric suffix and the field references in that method are renamed.
@@ -72,16 +86,20 @@ import java.util.UUID;
  * The migration is all-or-nothing per field. A use the recipe cannot move into a handler parameter leaves the field and
  * every one of its uses untouched, rather than producing a half-migrated Saga. Such a use is one in a constructor, a
  * static method, a non-private method that is not a handler (it may be called from outside the class), a field
- * initializer or initializer block, a nested, local or anonymous class, a method reference to an affected method, an
- * assignment to the field, an access through another instance, or a call of a {@code @DeadlineHandler} without
- * parameters, which could not pass on its new {@code DeadlineMessage} parameter. The same applies when the class
- * declares more than one such field.
+ * initializer or initializer block, a nested, local or anonymous class, a method reference to an affected method or to
+ * an injection setter, a call of an injection setter, an assignment to the field outside an injection setter, an access
+ * through another instance, or a call of a {@code @DeadlineHandler} without parameters, which could not pass on its new
+ * {@code DeadlineMessage} parameter. The same applies when the class declares more than one field of the configured
+ * type. Without a type, a field also stays when a handler parameter would not receive what Axon Framework 4 passed its
+ * setter: a setter with another annotation, such as {@code @Qualifier} or {@code @Override}, with an annotation
+ * argument, such as {@code required = false}, overriding a supertype method, or with a {@code @Value} parameter.
  * <p>
  * Uses in other classes, such as subclasses, are not visible to the recipe, so only a field no other class can use is
  * moved: a private field, or in Kotlin, where properties are public by default, any property of a final class. A
  * Kotlin class is final unless declared {@code open}, {@code abstract} or {@code sealed}. A protected, package-private
- * or public field stays where it is. A field left in place is marked by {@link MarkSagaResourceInjection} when it is
- * injected; one that is not injected was never populated by Axon Framework 4 either, and needs no marker.
+ * or public field stays where it is. A field left in place is marked by {@link MarkSagaResourceInjection} when it, or
+ * a setter assigning it, is injected; one that is not injected was never populated by Axon Framework 4 either, and
+ * needs no marker.
  * <p>
  * Only Sagas are changed: classes annotated with the Spring {@code @Saga} stereotype or declaring a
  * {@code @SagaEventHandler} method. Other components, such as aggregates or Spring services, keep their fields, because
@@ -95,34 +113,41 @@ public class MoveSagaFieldToHandlerParameter extends Recipe {
     private static final String SAGA_EVENT_HANDLER_FQN = "org.axonframework.modelling.saga.SagaEventHandler";
     private static final String DEADLINE_HANDLER_FQN = "org.axonframework.deadline.annotation.DeadlineHandler";
     private static final String SAGA_STEREOTYPE_FQN = "org.axonframework.spring.stereotype.Saga";
+    private static final String VALUE_FQN = "org.springframework.beans.factory.annotation.Value";
     private static final Map<String, String> INJECTION_ANNOTATIONS = Map.of(
             "org.springframework.beans.factory.annotation.Autowired", "Autowired",
             "javax.inject.Inject", "Inject",
             "jakarta.inject.Inject", "Inject"
     );
-    private static final String PLAN_MESSAGE = "axon.moveSagaFieldToHandlerParameter";
 
     @Option(displayName = "Fully-qualified type name",
-            description = "The type of the Saga field to move into handler method parameters.",
-            example = "org.axonframework.deadline.DeadlineManager")
-    private final String fullyQualifiedTypeName;
+            description = "The type of the Saga field to move into handler method parameters. When omitted, every "
+                    + "field an `@Autowired` or `@Inject` setter only assigns moves, whatever its type, provided a "
+                    + "method uses it.",
+            example = "org.axonframework.deadline.DeadlineManager",
+            required = false)
+    private final @Nullable String fullyQualifiedTypeName;
 
     /**
-     * Creates the recipe for Saga fields of the given type.
+     * Creates the recipe for Saga fields of the given type, or for the fields injection setters assign.
      *
-     * @param fullyQualifiedTypeName the fully qualified name of the field type to move into handler parameters
+     * @param fullyQualifiedTypeName the fully qualified name of the field type to move into handler parameters, or
+     *                               {@code null} to move every field an injection setter assigns, whatever its type
      */
     @JsonCreator
-    public MoveSagaFieldToHandlerParameter(@JsonProperty("fullyQualifiedTypeName") String fullyQualifiedTypeName) {
+    public MoveSagaFieldToHandlerParameter(
+            @JsonProperty("fullyQualifiedTypeName") @Nullable String fullyQualifiedTypeName
+    ) {
         this.fullyQualifiedTypeName = fullyQualifiedTypeName;
     }
 
     /**
      * Returns the fully qualified name of the field type this recipe moves into handler parameters.
      *
-     * @return the fully qualified name of the field type
+     * @return the fully qualified name of the field type, or {@code null} when the recipe moves every field an
+     * injection setter assigns
      */
-    public String getFullyQualifiedTypeName() {
+    public @Nullable String getFullyQualifiedTypeName() {
         return fullyQualifiedTypeName;
     }
 
@@ -133,12 +158,15 @@ public class MoveSagaFieldToHandlerParameter extends Recipe {
 
     @Override
     public String getDescription() {
-        return "Replaces a private Saga field of the configured type, or a property of a final Kotlin Saga, with a "
-                + "parameter of each `@SagaEventHandler` and `@DeadlineHandler` method that uses it, passing it on to "
-                + "the private helper methods that need it, and removes the field. The Axoniq Framework legacy module "
-                + "does not inject Saga fields. A `@DeadlineHandler` without parameters first gets a "
-                + "`DeadlineMessage` parameter, so the collaborator does not become its payload. A field other "
-                + "classes may use, or with a use that cannot become a handler parameter, is left untouched entirely.";
+        return "Replaces a private Saga field, or a property of a final Kotlin Saga, with a parameter of each "
+                + "`@SagaEventHandler` and `@DeadlineHandler` method that uses it, passing it on to the private "
+                + "helper methods that need it, and removes the field together with the `@Autowired` or `@Inject` "
+                + "setter that only assigns it. Moves the field of the configured type or, without a type, every "
+                + "field such a setter assigns that a method uses, declaring the parameter like the setter does. The "
+                + "Axoniq Framework legacy module does not inject Saga fields or call Saga setters. A "
+                + "`@DeadlineHandler` without parameters first gets a `DeadlineMessage` parameter, so the "
+                + "collaborator does not become its payload. A field other classes may use, or with a use that "
+                + "cannot become a handler parameter, is left untouched entirely.";
     }
 
     @Override
@@ -147,29 +175,52 @@ public class MoveSagaFieldToHandlerParameter extends Recipe {
             @Override
             public J.ClassDeclaration visitClassDeclaration(J.ClassDeclaration classDeclaration,
                                                              ExecutionContext ctx) {
-                boolean kotlin = getCursor().firstEnclosing(SourceFile.class) instanceof K.CompilationUnit;
-                Plan plan = isSaga(classDeclaration) ? planFor(classDeclaration, kotlin) : null;
-                if (plan == null) {
-                    return super.visitClassDeclaration(classDeclaration, ctx);
-                }
-                getCursor().putMessage(PLAN_MESSAGE, plan);
+                // Nested classes are migrated first, each on its own fields.
                 J.ClassDeclaration migrated = super.visitClassDeclaration(classDeclaration, ctx);
-                migrated = removeField(migrated, plan.fieldId());
+                if (!isSaga(migrated)) {
+                    return migrated;
+                }
+                boolean kotlin = getCursor().firstEnclosing(SourceFile.class) instanceof K.CompilationUnit;
+                for (Target target : targets(migrated, kotlin)) {
+                    // Planned on the class as the previous move left it, so it sees the parameters that move added.
+                    Plan plan = planFor(migrated, target);
+                    if (plan != null) {
+                        migrated = migrate(migrated, plan, kotlin, ctx);
+                    }
+                }
+                return migrated;
+            }
+
+            private J.ClassDeclaration migrate(J.ClassDeclaration classDeclaration, Plan plan, boolean kotlin,
+                                               ExecutionContext ctx) {
+                List<Statement> members = ListUtils.map(classDeclaration.getBody().getStatements(), member ->
+                        member instanceof J.MethodDeclaration method && plan.methods().containsKey(method.getId())
+                                ? migrate(method, plan, kotlin, ctx)
+                                : member);
+                J.ClassDeclaration migrated = removeMembers(
+                        classDeclaration.withBody(classDeclaration.getBody().withStatements(members)),
+                        plan.removedMembers()
+                );
                 removeUnusedImports(migrated, plan);
                 return migrated;
             }
 
-            @Override
-            public J.MethodDeclaration visitMethodDeclaration(J.MethodDeclaration method, ExecutionContext ctx) {
-                Plan plan = getCursor().getNearestMessage(PLAN_MESSAGE);
-                MethodPlan methodPlan = plan == null ? null : plan.methods().get(method.getId());
-                if (methodPlan == null) {
-                    return super.visitMethodDeclaration(method, ctx);
+            private J.MethodDeclaration migrate(J.MethodDeclaration method, Plan plan, boolean kotlin,
+                                                ExecutionContext ctx) {
+                MethodPlan methodPlan = plan.methods().get(method.getId());
+                J.MethodDeclaration migrated = method;
+                if (methodPlan.addsParameter()) {
+                    migrated = MethodParameters.appendToHandler(
+                            method, kotlin, declareParameter(plan, kotlin, methodPlan.parameterName())
+                    );
+                    if (plan.template() == null) {
+                        maybeAddImport(fullyQualifiedTypeName, null, false);
+                    }
+                    if (MethodParameters.needsMessageParameter(method)) {
+                        maybeAddImport(MethodParameters.DEADLINE_MESSAGE_FQN, null, false);
+                    }
                 }
-                J.MethodDeclaration migrated = methodPlan.addsParameter()
-                        ? addParameter(method, methodPlan.parameterName())
-                        : method;
-                migrated = (J.MethodDeclaration) new JavaVisitor<ExecutionContext>() {
+                return (J.MethodDeclaration) new JavaVisitor<ExecutionContext>() {
                     @Override
                     public J visitIdentifier(J.Identifier identifier, ExecutionContext executionContext) {
                         return plan.references().contains(identifier.getId())
@@ -194,24 +245,7 @@ public class MoveSagaFieldToHandlerParameter extends Recipe {
                                 ? withArgument(call, methodPlan.parameterName())
                                 : visited;
                     }
-                }.visitNonNull(migrated, ctx, getCursor().getParentOrThrow());
-                if (methodPlan.addsParameter()) {
-                    maybeAddImport(fullyQualifiedTypeName, null, false);
-                    if (MethodParameters.needsMessageParameter(method)) {
-                        maybeAddImport(MethodParameters.DEADLINE_MESSAGE_FQN, null, false);
-                    }
-                }
-                return migrated;
-            }
-
-            /**
-             * Adds the parameter behind a {@code DeadlineMessage} one on a deadline handler without parameters: the
-             * collaborator is resolved from the configuration, which ranks below the payload resolver, so as the
-             * only parameter it would become the payload.
-             */
-            private J.MethodDeclaration addParameter(J.MethodDeclaration method, String parameterName) {
-                boolean kotlin = getCursor().firstEnclosing(SourceFile.class) instanceof K.CompilationUnit;
-                return MethodParameters.appendToHandler(method, kotlin, fullyQualifiedTypeName, parameterName);
+                }.visitNonNull(migrated, ctx, getCursor());
             }
 
             private J.MethodInvocation withArgument(J.MethodInvocation invocation, String name) {
@@ -227,13 +261,13 @@ public class MoveSagaFieldToHandlerParameter extends Recipe {
             }
 
             /**
-             * Removes the import of the moved type and of the injection annotations once the class no longer needs
-             * them. An annotation import is only offered for removal when no annotation of that simple name remains in
-             * the source file, because an unresolved annotation type would otherwise lose an import another field still
-             * needs.
+             * Removes the import of the configured type once no method needs it, and of the injection annotations once
+             * the class no longer needs them. An annotation import is only offered for removal when no annotation of
+             * that simple name remains in the source file, because an unresolved annotation type would otherwise lose
+             * an import another field still needs.
              */
             private void removeUnusedImports(J.ClassDeclaration migrated, Plan plan) {
-                if (plan.methods().isEmpty()) {
+                if (plan.template() == null && plan.methods().isEmpty()) {
                     maybeRemoveImport(fullyQualifiedTypeName);
                 }
                 SourceFile sourceFile = getCursor().firstEnclosing(SourceFile.class);
@@ -251,17 +285,120 @@ public class MoveSagaFieldToHandlerParameter extends Recipe {
     }
 
     /**
-     * Analyses the class for the single field of the configured type and returns how to move it, or {@code null} when
-     * the class has no such field or the field has a use that cannot become a handler parameter.
+     * Declares the parameter a method receives the moved field as: a copy of the setter parameter without a configured
+     * type, or a parameter of the configured type otherwise.
      */
-    private @Nullable Plan planFor(J.ClassDeclaration classDeclaration, boolean kotlin) {
-        J.VariableDeclarations field = candidateField(classDeclaration, kotlin);
+    private J.VariableDeclarations declareParameter(Plan plan, boolean kotlin, String parameterName) {
+        J.VariableDeclarations template = plan.template();
+        return template != null
+                ? copyNamed(template, parameterName)
+                : MethodParameters.declare(kotlin, Objects.requireNonNull(fullyQualifiedTypeName), parameterName);
+    }
+
+    /**
+     * Copies the given setter parameter under the given name. Every copy gets fresh ids, as a parsed parameter would,
+     * since the copies of one setter parameter end up in several methods.
+     */
+    private static J.VariableDeclarations copyNamed(J.VariableDeclarations template, String name) {
+        J.VariableDeclarations.NamedVariable variable = template.getVariables().get(0);
+        J.Identifier identifier = variable.getName().withSimpleName(name);
+        JavaType.Variable fieldType = identifier.getFieldType();
+        JavaType.Variable variableType = variable.getVariableType();
+        J.VariableDeclarations parameter = template.withVariables(Collections.singletonList(
+                variable.withName(fieldType == null ? identifier : identifier.withFieldType(fieldType.withName(name)))
+                        .withVariableType(variableType == null ? null : variableType.withName(name))
+        ));
+        return (J.VariableDeclarations) new JavaVisitor<Integer>() {
+            @Override
+            public J postVisit(J tree, Integer p) {
+                return tree.withId(Tree.randomId());
+            }
+        }.visitNonNull(parameter, 0);
+    }
+
+    /**
+     * Returns the fields to move: the one field of the configured type or, without a type, every field an injection
+     * setter assigns, each with the setter parameter its new parameters copy.
+     */
+    private List<Target> targets(J.ClassDeclaration classDeclaration, boolean kotlin) {
+        if (fullyQualifiedTypeName != null) {
+            J.VariableDeclarations field = candidateField(classDeclaration, kotlin);
+            return field == null ? List.of() : List.of(new Target(field.getId(), null));
+        }
+        Map<String, List<J.MethodDeclaration>> setters = new HashMap<>();
+        for (Statement statement : classDeclaration.getBody().getStatements()) {
+            String field = statement instanceof J.MethodDeclaration method ? SagaInjection.setterField(method) : null;
+            if (field != null) {
+                setters.computeIfAbsent(field, name -> new ArrayList<>()).add((J.MethodDeclaration) statement);
+            }
+        }
+        List<Target> targets = new ArrayList<>();
+        for (Statement statement : classDeclaration.getBody().getStatements()) {
+            if (!(statement instanceof J.VariableDeclarations field)
+                    || field.hasModifier(J.Modifier.Type.Static)
+                    || field.getVariables().size() != 1
+                    || field.getVariables().get(0).getInitializer() != null
+                    || isVisibleOutsideTheClass(field, classDeclaration, kotlin)) {
+                continue;
+            }
+            List<J.MethodDeclaration> fieldSetters = setters.get(field.getVariables().get(0).getSimpleName());
+            if (fieldSetters != null
+                    && fieldSetters.stream().allMatch(MoveSagaFieldToHandlerParameter::injectsAnyBean)) {
+                targets.add(new Target(field.getId(), setterParameter(fieldSetters.get(0))));
+            }
+        }
+        return targets;
+    }
+
+    /**
+     * Whether Axon Framework 4 passed the injection setter any bean of its parameter type, as a handler parameter of
+     * that type receives one. Another annotation, such as {@code @Qualifier} on the method, or an annotation argument,
+     * such as {@code required = false}, changes which bean the setter received, or whether it received one. A
+     * {@code @Value} parameter received a property rather than a bean, and an overriding setter is still needed by its
+     * supertype.
+     */
+    private static boolean injectsAnyBean(J.MethodDeclaration setter) {
+        return setter.getLeadingAnnotations().stream().allMatch(
+                annotation -> SagaInjection.isInjected(List.of(annotation)) && hasNoArguments(annotation)
+        ) && setter.getModifiers().stream().noneMatch(
+                modifier -> "override".equals(modifier.getKeyword())
+        ) && setterParameter(setter).getLeadingAnnotations().stream().noneMatch(
+                annotation -> SagaClasses.isAnnotation(annotation, VALUE_FQN, "Value")
+        );
+    }
+
+    private static boolean hasNoArguments(J.Annotation annotation) {
+        List<Expression> arguments = annotation.getArguments();
+        return arguments == null || arguments.stream().allMatch(J.Empty.class::isInstance);
+    }
+
+    /**
+     * Returns the single parameter of an injection setter, as {@link SagaInjection#setterField(J.MethodDeclaration)}
+     * guarantees there is one.
+     */
+    private static J.VariableDeclarations setterParameter(J.MethodDeclaration setter) {
+        return (J.VariableDeclarations) setter.getParameters().get(0);
+    }
+
+    /**
+     * Analyses the class for the given field and returns how to move it, or {@code null} when the field has a use that
+     * cannot become a handler parameter or, without a configured type, no use at all.
+     */
+    private @Nullable Plan planFor(J.ClassDeclaration classDeclaration, Target target) {
+        J.VariableDeclarations field = null;
+        for (Statement statement : classDeclaration.getBody().getStatements()) {
+            if (statement.getId().equals(target.field()) && statement instanceof J.VariableDeclarations declarations) {
+                field = declarations;
+            }
+        }
         if (field == null) {
             return null;
         }
         String fieldName = field.getVariables().get(0).getSimpleName();
         Usages usages = new Usages();
         Map<UUID, J.MethodDeclaration> methods = new HashMap<>();
+        Set<UUID> removedMembers = new LinkedHashSet<>();
+        removedMembers.add(field.getId());
         for (Statement statement : classDeclaration.getBody().getStatements()) {
             if (statement == field) {
                 continue;
@@ -269,11 +406,22 @@ public class MoveSagaFieldToHandlerParameter extends Recipe {
             J.MethodDeclaration method = statement instanceof J.MethodDeclaration declaration ? declaration : null;
             if (method != null) {
                 methods.put(method.getId(), method);
+                if (fieldName.equals(SagaInjection.setterField(method))) {
+                    // An injection setter only assigns the field, so it goes together with the field.
+                    removedMembers.add(method.getId());
+                    continue;
+                }
             }
             new UsageCollector(classDeclaration, fieldName, method, usages).visit(statement, 0);
         }
         if (usages.unmigratable) {
             return null;
+        }
+        for (UUID member : removedMembers) {
+            J.MethodDeclaration setter = methods.get(member);
+            if (setter != null && usages.methodReferences.contains(setter.getSimpleName())) {
+                return null;
+            }
         }
 
         Set<UUID> needing = new LinkedHashSet<>();
@@ -285,7 +433,12 @@ public class MoveSagaFieldToHandlerParameter extends Recipe {
         }
         Map<UUID, Set<UUID>> callTargets = new HashMap<>();
         for (CallSite call : usages.calls) {
-            callTargets.put(call.site().id(), targetsOf(call, methods.values()));
+            Set<UUID> targets = targetsOf(call, methods.values());
+            if (!Collections.disjoint(targets, removedMembers)) {
+                // Another member calls an injection setter, which would no longer exist.
+                return null;
+            }
+            callTargets.put(call.site().id(), targets);
         }
         boolean changed = true;
         while (changed) {
@@ -311,10 +464,15 @@ public class MoveSagaFieldToHandlerParameter extends Recipe {
             }
         }
 
+        if (target.template() != null && needing.isEmpty()) {
+            // Unused, so it stays with its setter, which MarkSagaResourceInjection marks.
+            return null;
+        }
         Map<UUID, MethodPlan> methodPlans = new HashMap<>();
         for (UUID id : needing) {
             J.MethodDeclaration method = methods.get(id);
-            String existing = parameterOfType(method);
+            // Without a configured type, a parameter of that type may hold something else, such as the payload.
+            String existing = target.template() == null ? parameterOfType(method) : null;
             methodPlans.put(id, existing != null
                     ? new MethodPlan(existing, false)
                     : new MethodPlan(availableName(fieldName, MethodParameters.declaredNames(method)), true));
@@ -335,7 +493,7 @@ public class MoveSagaFieldToHandlerParameter extends Recipe {
                 calls.add(call.site().id());
             }
         }
-        return new Plan(field.getId(), methodPlans, references, calls);
+        return new Plan(removedMembers, methodPlans, references, calls, target.template());
     }
 
     /**
@@ -476,20 +634,21 @@ public class MoveSagaFieldToHandlerParameter extends Recipe {
         return names;
     }
 
-    private static J.ClassDeclaration removeField(J.ClassDeclaration classDeclaration, UUID fieldId) {
+    private static J.ClassDeclaration removeMembers(J.ClassDeclaration classDeclaration, Set<UUID> memberIds) {
         List<Statement> retained = new ArrayList<>();
-        Iterator<Statement> statements = classDeclaration.getBody().getStatements().iterator();
-        while (statements.hasNext()) {
-            Statement statement = statements.next();
-            if (!statement.getId().equals(fieldId)) {
-                retained.add(statement);
+        String firstWhitespace = null;
+        for (Statement statement : classDeclaration.getBody().getStatements()) {
+            if (memberIds.contains(statement.getId())) {
+                if (retained.isEmpty() && firstWhitespace == null) {
+                    firstWhitespace = statement.getPrefix().getWhitespace();
+                }
                 continue;
             }
-            if (retained.isEmpty() && statements.hasNext()) {
+            if (retained.isEmpty() && firstWhitespace != null) {
                 // The first member was removed: its successor takes its line, without a leading blank line.
-                Statement next = statements.next();
-                retained.add(next.withPrefix(next.getPrefix().withWhitespace(statement.getPrefix().getWhitespace())));
+                statement = statement.withPrefix(statement.getPrefix().withWhitespace(firstWhitespace));
             }
+            retained.add(statement);
         }
         return classDeclaration.withBody(classDeclaration.getBody().withStatements(retained));
     }
@@ -735,10 +894,20 @@ public class MoveSagaFieldToHandlerParameter extends Recipe {
     }
 
     /**
-     * The migration of one field: the methods receiving the parameter, the field references to rename to it, and the
-     * calls that must pass it on.
+     * A field to move, with the parameter of its injection setter that the new parameters copy, or {@code null} for a
+     * field of the configured type, whose new parameters are declared from that type.
      */
-    private record Plan(UUID fieldId, Map<UUID, MethodPlan> methods, Set<UUID> references, Set<UUID> calls) {
+    private record Target(UUID field, J.@Nullable VariableDeclarations template) {
+
+    }
+
+    /**
+     * The migration of one field: the members to remove, being the field and its injection setters, the methods
+     * receiving the parameter, the field references to rename to it, the calls that must pass it on, and the setter
+     * parameter the new parameters copy, if any.
+     */
+    private record Plan(Set<UUID> removedMembers, Map<UUID, MethodPlan> methods, Set<UUID> references,
+                        Set<UUID> calls, J.@Nullable VariableDeclarations template) {
 
     }
 }

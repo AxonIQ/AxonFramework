@@ -22,10 +22,18 @@ name: org.axonframework.migration.Axon4ToAxon5Conversion
 displayName: Apply Axon Framework 5 serialization → conversion rename
 description: >-
   Migrates the Serializer-based `org.axonframework.serialization` namespace
-  to the new Converter-based `org.axonframework.conversion` namespace.
+  to the new Converter-based `org.axonframework.conversion` namespace, and
+  comments out Axon Framework 4 serializer configuration under a
+  `TODO(axon4to5)` marker to define a Converter with the equivalent settings.
   Note: this is a package rename; concrete renames such as `JacksonSerializer`
   to `JacksonConverter` are NOT applied here and must be handled separately.
 recipeList:
+  # Axon Framework 5 has no Serializer types, and a serializer's configuration,
+  # such as ObjectMapper visibility or default typing, is not ported to a
+  # Converter, which reads what Axon Framework 4 stored. Commented out, with the
+  # imports only it used, before the package rename, while the Axon Framework 4
+  # types still resolve, so the rename does not import types that do not exist.
+  - org.axonframework.migration.CommentOutSerializerConfiguration
   - org.openrewrite.java.ChangePackage:
       oldPackageName: org.axonframework.serialization
       newPackageName: org.axonframework.conversion
