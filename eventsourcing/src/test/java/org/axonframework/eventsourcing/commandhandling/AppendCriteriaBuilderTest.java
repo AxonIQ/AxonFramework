@@ -19,9 +19,11 @@ package org.axonframework.eventsourcing.commandhandling;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.conversion.PassThroughConverter;
+import org.axonframework.eventsourcing.annotation.EventTag;
 import org.axonframework.eventsourcing.commandhandling.annotation.AppendCriteriaBuilder;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
 import org.axonframework.eventsourcing.eventstore.AppendCondition;
+import org.axonframework.eventsourcing.eventstore.AppendEventsTransactionRejectedException;
 import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.eventsourcing.eventstore.EventStorageEngine;
 import org.axonframework.eventsourcing.eventstore.SourcingCondition;
@@ -277,6 +279,40 @@ class AppendCriteriaBuilderTest {
 
             // then
             assertThat(ObjectPayloadHandler.receivedPayloads).containsExactly(new SharedCommand("one"));
+        }
+
+        @Test
+        void builderCriteriaOfACommandThatSourcesNothingRejectASecondRegistrationOfTheSameKey() {
+            // given a handler that loads nothing and reserves a username through its builder's criteria
+            Configuration configuration = configuration();
+            CommandHandlingComponent component = component(
+                    new RegistrationHandler(configuration.getComponent(EventStore.class)), configuration
+            );
+            handleSuccessfully(component, command(RegisterUsername.class, new RegisterUsername("jane"), Map.of()));
+
+            // when the same username is registered again
+            var uow = aUnitOfWork();
+            uow.runOnPreInvocation(context -> component.handle(
+                    command(RegisterUsername.class, new RegisterUsername("jane"), Map.of()), context
+            ));
+
+            // then the criteria, checked against the whole history, find the first registration
+            assertThatThrownBy(() -> awaitExceptionalCompletion(uow.execute()))
+                    .isInstanceOf(CompletionException.class)
+                    .hasCauseInstanceOf(AppendEventsTransactionRejectedException.class);
+        }
+
+        @Test
+        void builderCriteriaOfACommandThatSourcesNothingAcceptADifferentKey() {
+            // given
+            Configuration configuration = configuration();
+            CommandHandlingComponent component = component(
+                    new RegistrationHandler(configuration.getComponent(EventStore.class)), configuration
+            );
+            handleSuccessfully(component, command(RegisterUsername.class, new RegisterUsername("jane"), Map.of()));
+
+            // when / then
+            handleSuccessfully(component, command(RegisterUsername.class, new RegisterUsername("john"), Map.of()));
         }
 
         @Test
@@ -1131,6 +1167,34 @@ class AppendCriteriaBuilderTest {
         static EventCriteria catchAll(CommandMessage command, EventCriteria sourcingCriteria) {
             receivedCommands.add("catchAll:" + command.payload());
             return sourcingCriteria;
+        }
+    }
+
+    private record RegisterUsername(String username) {
+    }
+
+    private record UsernameRegistered(@EventTag(key = "username") String username) {
+    }
+
+    /**
+     * Reserves a username without loading anything, the uniqueness pattern the reference guide recommends.
+     */
+    private static class RegistrationHandler {
+
+        private final EventStore eventStore;
+
+        private RegistrationHandler(EventStore eventStore) {
+            this.eventStore = eventStore;
+        }
+
+        @CommandHandler
+        void handle(RegisterUsername command, ProcessingContext context) {
+            eventStore.transaction(context).appendEvent(asEventMessage(new UsernameRegistered(command.username())));
+        }
+
+        @AppendCriteriaBuilder
+        static EventCriteria criteria(RegisterUsername command, EventCriteria sourcingCriteria) {
+            return EventCriteria.havingTags("username", command.username());
         }
     }
 
