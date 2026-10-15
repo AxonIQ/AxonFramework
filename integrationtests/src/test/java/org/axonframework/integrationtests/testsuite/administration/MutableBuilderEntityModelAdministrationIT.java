@@ -18,8 +18,10 @@ package org.axonframework.integrationtests.testsuite.administration;
 
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.eventsourcing.EventSourcedEntityFactory;
+import org.axonframework.eventsourcing.commandhandling.AppendCriteriaInterceptor;
 import org.axonframework.eventsourcing.configuration.EventSourcedEntityModule;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
+import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.integrationtests.testsuite.administration.commands.AssignTaskCommand;
 import org.axonframework.integrationtests.testsuite.administration.commands.ChangeEmailAddress;
 import org.axonframework.integrationtests.testsuite.administration.commands.CompleteTaskCommand;
@@ -51,17 +53,42 @@ import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.modelling.annotation.AnnotationBasedEntityEvolvingComponent;
 import org.axonframework.modelling.entity.ConcreteEntityMetamodel;
+import org.axonframework.modelling.entity.EntityCommandHandlerInterceptor;
 import org.axonframework.modelling.entity.EntityMetamodel;
 import org.axonframework.modelling.entity.EntityMetamodelBuilder;
 import org.axonframework.modelling.entity.child.ChildEntityFieldDefinition;
 import org.axonframework.modelling.entity.child.EntityChildMetamodel;
+import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Runs the administration test suite using the builders of {@link EntityMetamodel} and related classes.
  */
 public abstract class MutableBuilderEntityModelAdministrationIT extends AbstractAdministrationIT {
+
+    private static final List<Class<?>> appendCriteriaCommands = new CopyOnWriteArrayList<>();
+
+    @Test
+    void appendCriteriaInterceptorAppliesToCreationalAndInstanceCommandsOfADeclarativeEntity() {
+        // given
+        PersonIdentifier identifier = new PersonIdentifier(PersonType.EMPLOYEE, createId("declarative-builder"));
+        appendCriteriaCommands.clear();
+
+        // when
+        commandGateway.send(new CreateEmployee(identifier, "person@axon.test", "Developer", 1000.0))
+                      .getResultMessage().orTimeout(5, TimeUnit.SECONDS).join();
+        commandGateway.send(new ChangeEmailAddress(identifier, "updated@axon.test"))
+                      .getResultMessage().orTimeout(5, TimeUnit.SECONDS).join();
+
+        // then
+        assertThat(appendCriteriaCommands).containsExactly(CreateEmployee.class, ChangeEmailAddress.class);
+    }
 
     EntityMetamodel<MutablePerson> buildEntityMetamodel(Configuration configuration,
                                                         EntityMetamodelBuilder<MutablePerson> builder) {
@@ -69,6 +96,15 @@ public abstract class MutableBuilderEntityModelAdministrationIT extends Abstract
         ParameterResolverFactory parameterResolverFactory = configuration.getComponent(ParameterResolverFactory.class);
         HandlerDefinition handlerDefinition = configuration.getComponent(HandlerDefinition.class);
         EventConverter eventConverter = configuration.getComponent(EventConverter.class);
+        // Polymorphic metamodel interceptors only cover the commands its supertype handles, so the concrete types that
+        // handle their own commands register the same interceptor as well.
+        AppendCriteriaInterceptor appendCriteria = new AppendCriteriaInterceptor(
+                configuration.getComponent(EventStore.class),
+                (command, context, sourcingCriteria) -> {
+                    appendCriteriaCommands.add(command.payloadType());
+                    return sourcingCriteria;
+                }
+        );
 
         // Task is the list-based child-model of Employee
         EntityMetamodel<MutableTask> taskMetamodel = ConcreteEntityMetamodel
@@ -245,6 +281,7 @@ public abstract class MutableBuilderEntityModelAdministrationIT extends Abstract
                                   ))
                                   .build()
                 )
+                .commandHandlerInterceptor(EntityCommandHandlerInterceptor.of(appendCriteria))
                 .build();
 
         // Customer is a concrete entity type
@@ -267,6 +304,7 @@ public abstract class MutableBuilderEntityModelAdministrationIT extends Abstract
                             return MessageStream.empty().cast();
                         })
                 )
+                .commandHandlerInterceptor(EntityCommandHandlerInterceptor.of(appendCriteria))
                 .build();
 
         // Person is the polymorphic entity type
@@ -289,6 +327,7 @@ public abstract class MutableBuilderEntityModelAdministrationIT extends Abstract
                                             entity.handle(convertedPayload, eventAppender);
                                             return MessageStream.empty().cast();
                                         })
+                .commandHandlerInterceptor(EntityCommandHandlerInterceptor.of(appendCriteria))
                 .build();
     }
 

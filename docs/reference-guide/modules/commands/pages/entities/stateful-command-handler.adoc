@@ -158,6 +158,9 @@ The command in this example has no `@TargetEntityId` because there is no single 
 include::example$commands/entities/statefulcommandhandler/SubscribeStudentToCourse.java[tag=subscribe-student-to-course,indent=0]
 ----
 
+The events appended by this handler are checked against everything sourced for both entities.
+To check only the events that can invalidate the decision, see xref:events:event-store-internals.adoc#command_append_criteria[Append criteria per command].
+
 == Vertical slice architecture
 
 Stateful command handlers are the natural fit for https://www.jimmybogard.com/vertical-slice-architecture/[Vertical Slice Architecture] in Axon Framework.

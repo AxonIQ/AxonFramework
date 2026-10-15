@@ -22,16 +22,20 @@ import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
 import org.axonframework.eventsourcing.annotation.EventTag;
 import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
 import org.axonframework.eventsourcing.annotation.reflection.InjectEntityId;
+import org.axonframework.eventsourcing.commandhandling.annotation.AppendCriteriaBuilder;
 import org.axonframework.eventsourcing.configuration.EventSourcedEntityModule;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
+import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
+import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.modelling.annotation.TargetEntityId;
 import org.junit.jupiter.api.*;
 
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -59,6 +63,8 @@ class EntityStateOnAppendDuringCommandIT {
     // Captures what count the entity observes on `this` AFTER the first append, still inside the same handler method.
     private static final List<Integer> MUTABLE_INTRA_METHOD_READS = new CopyOnWriteArrayList<>();
     private static final List<Integer> IMMUTABLE_INTRA_METHOD_READS = new CopyOnWriteArrayList<>();
+    private static final List<Class<?>> MUTABLE_APPEND_CRITERIA_COMMANDS = new CopyOnWriteArrayList<>();
+    private static final List<EventCriteria> MUTABLE_SOURCING_CRITERIA = new CopyOnWriteArrayList<>();
 
     // FQCN of the AxonServer enhancer, disabled to keep the in-memory defaults in place.
     private static final String AXON_SERVER_ENHANCER_FQCN =
@@ -71,6 +77,8 @@ class EntityStateOnAppendDuringCommandIT {
     void tearDown() {
         MUTABLE_INTRA_METHOD_READS.clear();
         IMMUTABLE_INTRA_METHOD_READS.clear();
+        MUTABLE_APPEND_CRITERIA_COMMANDS.clear();
+        MUTABLE_SOURCING_CRITERIA.clear();
         if (configuration != null) {
             configuration.shutdown();
         }
@@ -108,6 +116,27 @@ class EntityStateOnAppendDuringCommandIT {
             Integer count = commandGateway.send(new GetCount("m-1"), Integer.class).join();
             assertThat(count).isEqualTo(2);
         }
+
+        @Test
+        void oneAppendCriteriaBuilderAppliesSeparatelyToEveryRootEntityHandler() {
+            // given
+            commandGateway.send(new CreateCounter("m-2")).getResultMessage().orTimeout(5, TimeUnit.SECONDS).join();
+            MUTABLE_APPEND_CRITERIA_COMMANDS.clear();
+            MUTABLE_SOURCING_CRITERIA.clear();
+
+            // when
+            commandGateway.send(new IncrementTwiceInOneHandler("m-2")).getResultMessage()
+                    .orTimeout(5, TimeUnit.SECONDS).join();
+            commandGateway.send(new IncrementOnceInOneHandler("m-2")).getResultMessage()
+                    .orTimeout(5, TimeUnit.SECONDS).join();
+
+            // then
+            assertThat(MUTABLE_APPEND_CRITERIA_COMMANDS)
+                    .containsExactly(IncrementTwiceInOneHandler.class, IncrementOnceInOneHandler.class);
+            assertThat(MUTABLE_SOURCING_CRITERIA)
+                    .allSatisfy(criteria -> assertThat(criteria.flatten())
+                            .containsExactlyElementsOf(EventCriteria.havingTags("Counter", "m-2").flatten()));
+        }
     }
 
     @Nested
@@ -141,6 +170,10 @@ class EntityStateOnAppendDuringCommandIT {
     }
 
     record IncrementTwiceInOneHandler(@TargetEntityId String counterId) {
+
+    }
+
+    record IncrementOnceInOneHandler(@TargetEntityId String counterId) {
 
     }
 
@@ -185,8 +218,20 @@ class EntityStateOnAppendDuringCommandIT {
         }
 
         @CommandHandler
+        void handle(IncrementOnceInOneHandler command, EventAppender appender) {
+            appender.append(new Incremented(counterId));
+        }
+
+        @CommandHandler
         int handle(GetCount command) {
             return count;
+        }
+
+        @AppendCriteriaBuilder
+        static EventCriteria appendCriteria(CommandMessage command, EventCriteria sourcingCriteria) {
+            MUTABLE_APPEND_CRITERIA_COMMANDS.add(command.payloadType());
+            MUTABLE_SOURCING_CRITERIA.add(sourcingCriteria);
+            return sourcingCriteria;
         }
 
         @EventSourcingHandler

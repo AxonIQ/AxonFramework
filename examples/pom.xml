@@ -50,6 +50,20 @@
 
     <dependencyManagement>
         <dependencies>
+            <!--
+            This reactor's own BOM, imported first so that its entries win over the released
+            axoniq-framework-bom below. The examples therefore build against the framework version
+            under development in this reactor, which is what makes them demonstrate APIs before
+            they are released. Artifacts not built here, such as axon-server-connector, keep coming
+            from the released BOM.
+            -->
+            <dependency>
+                <groupId>org.axonframework</groupId>
+                <artifactId>axon-framework-bom</artifactId>
+                <version>${project.version}</version>
+                <scope>import</scope>
+                <type>pom</type>
+            </dependency>
             <!-- The axoniq-bom provides the framework-bom plus -->
             <!-- additional components needed to run examples against axon-server -->
             <dependency>

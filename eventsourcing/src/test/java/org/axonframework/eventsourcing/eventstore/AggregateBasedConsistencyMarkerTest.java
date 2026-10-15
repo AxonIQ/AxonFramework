@@ -16,6 +16,7 @@
 
 package org.axonframework.eventsourcing.eventstore;
 
+import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.junit.jupiter.api.*;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -171,6 +172,33 @@ class AggregateBasedConsistencyMarkerTest {
             // when / then
             assertThat(testSubject.upperBound(ConsistencyMarker.ORIGIN)).isEqualTo(testSubject);
             assertThat(testSubject.upperBound(ConsistencyMarker.INFINITY)).isEqualTo(ConsistencyMarker.INFINITY);
+        }
+    }
+
+    @Nested
+    class FromAppendCondition {
+
+        private final EventCriteria criteria = EventCriteria.havingTags("username", "jane");
+
+        @Test
+        void keepsConvertingCriteriaAtOriginToAnEmptyMarker() {
+            // given the released combination, also reached by sourcing whose stream was not read to the end
+            AppendCondition condition = AppendCondition.withCriteria(criteria);
+
+            // when
+            AggregateBasedConsistencyMarker result = AggregateBasedConsistencyMarker.from(condition);
+
+            // then the first event of an aggregate still gets sequence number 0
+            assertThat(nextSequenceOf(result, AGGREGATE_ID)).isZero();
+        }
+
+        @Test
+        void keepsAcceptingAnUnconditionalAppend() {
+            // when
+            AggregateBasedConsistencyMarker result = AggregateBasedConsistencyMarker.from(AppendCondition.none());
+
+            // then
+            assertThat(nextSequenceOf(result, AGGREGATE_ID)).isZero();
         }
     }
 }

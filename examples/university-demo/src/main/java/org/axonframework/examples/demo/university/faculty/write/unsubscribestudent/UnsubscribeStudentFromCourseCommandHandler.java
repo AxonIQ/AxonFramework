@@ -20,12 +20,14 @@ import org.axonframework.eventsourcing.annotation.EventCriteriaBuilder;
 import org.axonframework.eventsourcing.annotation.EventSourcedEntity;
 import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
 import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
+import org.axonframework.eventsourcing.commandhandling.annotation.AppendCriteriaBuilder;
 import org.axonframework.examples.demo.university.faculty.FacultyTags;
 import org.axonframework.examples.demo.university.faculty.Ids;
 import org.axonframework.examples.demo.university.faculty.events.StudentSubscribedToCourse;
 import org.axonframework.examples.demo.university.faculty.events.StudentUnsubscribedFromCourse;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.core.Message;
+import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.conversion.MessageConverter;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
@@ -52,6 +54,22 @@ class UnsubscribeStudentFromCourseCommandHandler {
         }
         var events = decide(command, state);
         eventAppender.append(events);
+    }
+
+    /**
+     * Narrows the consistency boundary of this decision to the events that can actually invalidate it.
+     * <p>
+     * This decision rests on the student still being subscribed. Only a concurrent
+     * {@code StudentUnsubscribedFromCourse} can make that false, turning this unsubscription into a duplicate. A
+     * concurrent {@code StudentSubscribedToCourse} leaves the student subscribed, so it cannot invalidate the decision
+     * and is left out.
+     * <p>
+     * Note the mirror image of the subscribe side, which guards {@code StudentSubscribedToCourse} instead: the same two
+     * event types, and which of them threatens the invariant depends on the command, not on the entity.
+     */
+    @AppendCriteriaBuilder
+    static EventCriteria appendCriteria(UnsubscribeStudentFromCourse command, EventCriteria sourcingCriteria) {
+        return sourcingCriteria.withEventTypes(new QualifiedName(StudentUnsubscribedFromCourse.class));
     }
 
     private List<StudentUnsubscribedFromCourse> decide(UnsubscribeStudentFromCourse command, State state) {
