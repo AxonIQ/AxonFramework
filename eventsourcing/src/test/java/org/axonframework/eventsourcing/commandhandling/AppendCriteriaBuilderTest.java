@@ -451,6 +451,20 @@ class AppendCriteriaBuilderTest {
         }
 
         @Test
+        void rejectsMetadataValueOfATypeMetadataCannotHold() {
+            // given builders declaring metadata values as numbers, while metadata only ever holds strings
+            Configuration configuration = configuration();
+
+            // when / then they are rejected at startup instead of failing every commit that carries the value
+            assertThatThrownBy(() -> component(new PrimitiveMetadataValueBuilderHandler(), configuration))
+                    .isInstanceOf(AxonConfigurationException.class)
+                    .hasMessageContaining("@MetadataValue parameter of type [long]");
+            assertThatThrownBy(() -> component(new BoxedMetadataValueBuilderHandler(), configuration))
+                    .isInstanceOf(AxonConfigurationException.class)
+                    .hasMessageContaining("@MetadataValue parameter of type [java.lang.Long]");
+        }
+
+        @Test
         void unresolvableParameterKeepsTheLookupFailureAsCause() {
             // given a parameter type that matches several configured components
             Configuration configuration = configuration();
@@ -1532,6 +1546,30 @@ class AppendCriteriaBuilderTest {
         @AppendCriteriaBuilder
         static EventCriteria criteria(UseCredits command, @InjectEntity Object entity) {
             return ACCOUNT_CRITERIA;
+        }
+    }
+
+    private static class PrimitiveMetadataValueBuilderHandler {
+
+        @CommandHandler
+        void handle(UseCredits command) {
+        }
+
+        @AppendCriteriaBuilder
+        static EventCriteria criteria(UseCredits command, @MetadataValue("tenantId") long tenantId) {
+            return EventCriteria.havingAnyTag();
+        }
+    }
+
+    private static class BoxedMetadataValueBuilderHandler {
+
+        @CommandHandler
+        void handle(UseCredits command) {
+        }
+
+        @AppendCriteriaBuilder
+        static EventCriteria criteria(UseCredits command, @MetadataValue("tenantId") Long tenantId) {
+            return EventCriteria.havingAnyTag();
         }
     }
 

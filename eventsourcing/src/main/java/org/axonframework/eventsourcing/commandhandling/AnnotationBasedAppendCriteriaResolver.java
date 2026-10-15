@@ -292,22 +292,19 @@ final class AnnotationBasedAppendCriteriaResolver implements AppendCriteriaResol
             Optional<Map<String, Object>> metadataValue =
                     AnnotationUtils.findAnnotationAttributes(parameter, MetadataValue.class);
             if (metadataValue.isPresent()) {
+                // metadata only holds strings, so any other type would fail every commit that carries the value
+                if (!parameter.getType().isAssignableFrom(String.class)) {
+                    throw invalid(method, ("declares a @MetadataValue parameter of type [%s], while metadata values "
+                            + "are strings").formatted(parameter.getType().getName()));
+                }
                 String key = metadataValue.get().get("metadataValue").toString();
-                boolean required = parameter.getType().isPrimitive()
-                        || (boolean) metadataValue.get().get("required");
+                boolean required = (boolean) metadataValue.get().get("required");
                 return (command, context, sourcingCriteria) -> {
-                    Object value = command.metadata().get(key);
+                    String value = command.metadata().get(key);
                     if (value == null && required) {
                         throw new IllegalArgumentException(
                                 "Required metadata value [%s] is missing for @AppendCriteriaBuilder method [%s]."
                                         .formatted(key, ReflectionUtils.toDiscernibleSignature(method))
-                        );
-                    }
-                    if (value != null && !boxed(parameter.getType()).isInstance(value)) {
-                        throw new IllegalArgumentException(
-                                "Metadata value [%s] is not assignable to parameter type [%s] on method [%s]."
-                                        .formatted(key, parameter.getType().getName(),
-                                                   ReflectionUtils.toDiscernibleSignature(method))
                         );
                     }
                     return value;
@@ -357,10 +354,6 @@ final class AnnotationBasedAppendCriteriaResolver implements AppendCriteriaResol
             }
             Object resolved = component;
             return (command, context, sourcingCriteria) -> resolved;
-        }
-
-        private static Class<?> boxed(Class<?> type) {
-            return type.isPrimitive() ? ReflectionUtils.resolvePrimitiveWrapperType(type) : type;
         }
 
         private boolean acceptsAsPayload(Class<?> payloadType) {

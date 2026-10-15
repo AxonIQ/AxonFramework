@@ -142,7 +142,7 @@ To keep the default boundary for a command, return the supplied criteria, as the
 * Builders on superclasses apply to the handlers a class declares, and for the same command type the closest declaration wins.
 A builder does not apply to handlers inherited from a superclass, and startup fails when one would be selected for such a handler.
 Declare the builder on the superclass, or redeclare the handler.
-* Further parameters can be `CommandMessage`, `Metadata`, a `@MetadataValue`, `ProcessingContext`, `Configuration`, or a configured component.
+* Further parameters can be `CommandMessage`, `Metadata`, a `String` annotated with `@MetadataValue`, `ProcessingContext`, `Configuration`, or a configured component.
 * Two builders for the same command type on one class, or an ambiguous match, fail at startup with an `AxonConfigurationException`.
 
 === Declarative configuration

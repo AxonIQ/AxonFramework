@@ -35,8 +35,8 @@ import java.lang.annotation.Target;
  * The method must return a non-null {@link EventCriteria}. Its first parameter is the command type it covers: a command
  * payload type, which also covers the payload's subtypes, or {@link CommandMessage}, which covers every command no
  * payload-typed builder covers. Additional parameters may be the accumulated sourcing {@link EventCriteria},
- * {@link CommandMessage}, {@link Metadata}, a value annotated with {@link MetadataValue}, {@link ProcessingContext},
- * {@link Configuration}, or a synchronously available configured component.
+ * {@link CommandMessage}, {@link Metadata}, a {@code String} annotated with {@link MetadataValue},
+ * {@link ProcessingContext}, {@link Configuration}, or a synchronously available configured component.
  * <p>
  * The builder runs separately for every command invocation. Its result replaces the complete sourcing-derived append
  * criteria for that command's transaction.
