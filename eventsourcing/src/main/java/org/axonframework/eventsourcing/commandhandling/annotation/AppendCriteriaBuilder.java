@@ -67,6 +67,36 @@ import java.lang.annotation.Target;
  * on a subclass does not apply to handlers inherited from its superclass. Startup fails when such a builder would be
  * the one selected for an inherited handler, such as a subclass builder for a command only its superclass handles, as
  * it would never run. Declare the builder on the superclass instead, or redeclare the handler on the subclass.
+ * <p>
+ * Example of a command-handling class narrowing the boundary of one command and keeping it for another:
+ * <pre>
+ * class AccountCommandHandler {
+ *
+ *     {@literal @}CommandHandler
+ *     void handle(WithdrawMoney command, {@literal @}InjectEntity Account account, EventAppender appender) {
+ *         // decides against the balance sourced from deposits and withdrawals
+ *     }
+ *
+ *     {@literal @}CommandHandler
+ *     void handle(DepositMoney command, {@literal @}InjectEntity Account account, EventAppender appender) {
+ *         // decides against the same sourced state
+ *     }
+ *
+ *     // A concurrent deposit only raises the balance, so only a concurrent withdrawal rejects the append.
+ *     {@literal @}AppendCriteriaBuilder
+ *     static EventCriteria withdrawals(WithdrawMoney command,
+ *                                      EventCriteria sourcingCriteria,
+ *                                      MessageTypeResolver messageTypeResolver) {
+ *         return sourcingCriteria.withEventTypes(messageTypeResolver, MoneyWithdrawn.class);
+ *     }
+ *
+ *     // Every handler needs a builder, so this one keeps the sourcing criteria on purpose.
+ *     {@literal @}AppendCriteriaBuilder
+ *     static EventCriteria deposits(DepositMoney command, EventCriteria sourcingCriteria) {
+ *         return sourcingCriteria;
+ *     }
+ * }
+ * </pre>
  *
  * @author Mateusz Nowak
  * @see AppendCriteriaResolver
