@@ -28,7 +28,11 @@ import org.axonframework.messaging.eventstreaming.EventCriteria;
  * complete criteria accumulated through sourcing in that transaction, across every entity the command loaded, and its
  * result becomes the command's consistency boundary. Sourcing itself is unaffected. This is what sets it apart from an
  * {@link org.axonframework.eventsourcing.CriteriaResolver}, which resolves sourcing criteria for one entity identifier.
- * Resolution is synchronous.
+ * <p>
+ * Resolution is synchronous, like that of a {@code CriteriaResolver}. A resolver computes criteria from what it is
+ * given, and it runs while the transaction's append condition is finalized, which
+ * {@link org.axonframework.eventsourcing.eventstore.EventStoreTransaction#overrideAppendCondition} does
+ * synchronously. A resolver must therefore not perform blocking work such as I/O.
  * <p>
  * Register a resolver through an {@link AppendCriteriaInterceptor}, or declare it with an
  * {@link org.axonframework.eventsourcing.commandhandling.annotation.AppendCriteriaBuilder} method on the
