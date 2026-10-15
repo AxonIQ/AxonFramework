@@ -20,19 +20,19 @@ import org.junit.jupiter.api.Test;
 import org.openrewrite.config.Environment;
 import org.openrewrite.test.RecipeSpec;
 import org.openrewrite.test.RewriteTest;
+import org.openrewrite.test.SourceSpecs;
 import org.openrewrite.test.TypeValidation;
 
 import static org.openrewrite.java.Assertions.java;
 
 /**
  * Verifies the conversion-module migration: the {@code org.axonframework.serialization} package moves to
- * {@code org.axonframework.conversion}, and serializer configuration is marked before that move.
+ * {@code org.axonframework.conversion}, and serializer configuration is commented out before that move.
  */
 class Axon4ToAxon5ConversionTest implements RewriteTest {
 
     @Override
     public void defaults(RecipeSpec spec) {
-        // Spring is not on the test classpath, so its annotations do not resolve.
         spec.recipe(Environment.builder()
                                .scanRuntimeClasspath("org.axonframework.migration")
                                .build()
@@ -40,9 +40,26 @@ class Axon4ToAxon5ConversionTest implements RewriteTest {
             .typeValidationOptions(TypeValidation.none());
     }
 
+    /**
+     * Declares a Spring annotation, which is not on the test classpath, so it resolves and its import is removed with
+     * the code using it.
+     */
+    private static SourceSpecs springAnnotation(String name) {
+        return java(
+                """
+                package org.springframework.context.annotation;
+
+                public @interface %s {
+                }
+                """.formatted(name)
+        );
+    }
+
     @Test
-    void marksSerializerBeanAndRenamesSerializationPackage() {
+    void commentsOutSerializerBeanWithoutImportingTypesAxonFramework5DoesNotHave() {
         rewriteRun(
+                springAnnotation("Bean"),
+                springAnnotation("Primary"),
                 java(
                         """
                         package com.example;
@@ -69,23 +86,48 @@ class Axon4ToAxon5ConversionTest implements RewriteTest {
                         """
                         package com.example;
 
-                        import com.fasterxml.jackson.annotation.JsonAutoDetect;
-                        import com.fasterxml.jackson.annotation.PropertyAccessor;
-                        import org.axonframework.conversion.Serializer;
-                        import org.axonframework.conversion.json.JacksonSerializer;
-                        import org.springframework.context.annotation.Bean;
-                        import org.springframework.context.annotation.Primary;
-
                         class SerializerConfig {
 
-                            // TODO(axon4to5): Axon Framework 5 uses a Converter instead of a Serializer. Compare this serializer's configuration, such as ObjectMapper visibility or default typing, with your Converter configuration: sagas, tokens and deadlines stored by Axon Framework 4 are read with it.
-                            @Bean
-                            @Primary
-                            public Serializer buildSerializer() {
-                                var jacksonSerializer = JacksonSerializer.builder().defaultTyping().build();
-                                var objectMapper = jacksonSerializer.getObjectMapper();
-                                objectMapper.setVisibility(PropertyAccessor.FIELD, JsonAutoDetect.Visibility.ANY);
-                                return jacksonSerializer;
+                            // TODO(axon4to5): Axon Framework 5 uses a Converter instead of a Serializer. Define a Converter, for example a JacksonConverter bean, with the settings of the serializer configuration commented out below, such as ObjectMapper visibility or default typing. Check that it reads the sagas, tokens and deadlines Axon Framework 4 stored.
+                            // @Bean
+                            // @Primary
+                            // public Serializer buildSerializer() {
+                            //     var jacksonSerializer = JacksonSerializer.builder().defaultTyping().build();
+                            //     var objectMapper = jacksonSerializer.getObjectMapper();
+                            //     objectMapper.setVisibility(PropertyAccessor.FIELD, JsonAutoDetect.Visibility.ANY);
+                            //     return jacksonSerializer;
+                            // }
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
+    void renamesSerializationPackage() {
+        rewriteRun(
+                java(
+                        """
+                        package com.example;
+
+                        import org.axonframework.serialization.ContentTypeConverter;
+
+                        class Conversions {
+
+                            String convert(ContentTypeConverter<byte[], String> converter, byte[] bytes) {
+                                return converter.convert(bytes);
+                            }
+                        }
+                        """,
+                        """
+                        package com.example;
+
+                        import org.axonframework.conversion.ContentTypeConverter;
+
+                        class Conversions {
+
+                            String convert(ContentTypeConverter<byte[], String> converter, byte[] bytes) {
+                                return converter.convert(bytes);
                             }
                         }
                         """

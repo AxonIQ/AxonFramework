@@ -130,8 +130,8 @@ public class MigrateDeadlineManagerBuilders extends Recipe {
             + " or the UnitOfWorkFactory Spring bean. The legacy deadline managers require it in place of"
             + " transactionManager(..): a fired deadline runs in a unit of work, and transaction, of that factory.";
     /**
-     * The key of the marker on a deadline manager builder's {@code serializer(..)} call, which
-     * {@link MarkSerializerConfiguration} does not mark again.
+     * The key of the marker on a deadline manager builder's {@code serializer(..)} call.
+     * {@link CommentOutSerializerConfiguration} leaves a statement carrying it alone.
      */
     static final String SERIALIZER_MARKER = "TODO(axon4to5): replace serializer(..) with converter(";
     private static final String SERIALIZER_TODO = " " + SERIALIZER_MARKER
