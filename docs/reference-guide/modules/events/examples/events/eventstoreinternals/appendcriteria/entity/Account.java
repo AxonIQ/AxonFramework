@@ -19,6 +19,7 @@ package events.eventstoreinternals.appendcriteria.entity;
 import org.axonframework.eventsourcing.annotation.EventCriteriaBuilder;
 import org.axonframework.eventsourcing.annotation.EventSourcedEntity;
 import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
+import org.axonframework.eventsourcing.annotation.EventTag;
 import org.axonframework.eventsourcing.commandhandling.annotation.AppendCriteriaBuilder;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
@@ -92,11 +93,11 @@ record WithdrawMoney(String accountId, int amount) {
 record ReplaceCard(String accountId, String cardId) {
 }
 
-record MoneyDeposited(String accountId, int amount) {
+record MoneyDeposited(@EventTag(key = "accountId") String accountId, int amount) {
 }
 
-record MoneyWithdrawn(String accountId, int amount) {
+record MoneyWithdrawn(@EventTag(key = "accountId") String accountId, int amount) {
 }
 
-record CardReplaced(String accountId, String cardId) {
+record CardReplaced(@EventTag(key = "accountId") String accountId, String cardId) {
 }

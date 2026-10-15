@@ -16,6 +16,7 @@
 package events.eventstoreinternals.appendcriteria.entity;
 // tag::declarative-entity-append-criteria[]
 import org.axonframework.common.configuration.Configuration;
+import org.axonframework.eventsourcing.annotation.EventTag;
 import org.axonframework.eventsourcing.commandhandling.AppendCriteriaInterceptor;
 import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.messaging.core.MessageStream;
@@ -54,5 +55,5 @@ public class DeclarativeEntityAppendCriteria {
 class CreditBalance {
 }
 
-record CreditsUsed(String accountId, int amount) {
+record CreditsUsed(@EventTag(key = "accountId") String accountId, int amount) {
 }

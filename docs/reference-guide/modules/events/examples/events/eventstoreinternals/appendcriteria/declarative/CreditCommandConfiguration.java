@@ -16,6 +16,7 @@
 package events.eventstoreinternals.appendcriteria.declarative;
 
 // tag::declarative-append-criteria[]
+import org.axonframework.eventsourcing.annotation.EventTag;
 import org.axonframework.eventsourcing.commandhandling.AppendCriteriaInterceptor;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
 import org.axonframework.eventsourcing.eventstore.EventStore;
@@ -23,7 +24,6 @@ import org.axonframework.messaging.commandhandling.SimpleCommandHandlingComponen
 import org.axonframework.messaging.commandhandling.configuration.CommandHandlingModule;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.QualifiedName;
-import org.axonframework.messaging.core.conversion.MessageConverter;
 
 public class CreditCommandConfiguration {
 
@@ -41,29 +41,21 @@ public class CreditCommandConfiguration {
                                      )
                                      .intercepted(configuration -> new AppendCriteriaInterceptor(
                                              configuration.getComponent(EventStore.class),
-                                             (command, context, sourcingCriteria) -> {
-                                                 MessageConverter converter =
-                                                         context.component(MessageConverter.class);
-                                                 return switch (command.type().qualifiedName().fullName()) {
-                                                     case "credits.UseCredits" -> {
-                                                         // the payload may still be serialized, so convert it
-                                                         command.payloadAs(UseCredits.class, converter);
-                                                         yield sourcingCriteria.replaceEventTypes(CreditsUsed.class);
+                                             (command, context, sourcingCriteria) ->
+                                                     switch (command.type().qualifiedName().fullName()) {
+                                                         case "credits.UseCredits" ->
+                                                                 sourcingCriteria.replaceEventTypes(CreditsUsed.class);
+                                                         case "credits.TopUpCredits" -> sourcingCriteria;
+                                                         default -> throw new IllegalArgumentException(
+                                                                 "Unsupported command: "
+                                                                         + command.type().qualifiedName()
+                                                         );
                                                      }
-                                                     case "credits.TopUpCredits" -> sourcingCriteria;
-                                                     default -> throw new IllegalArgumentException(
-                                                             "Unsupported command: " + command.type().qualifiedName()
-                                                     );
-                                                 };
-                                             }
                                      ))
         );
     }
 }
 // end::declarative-append-criteria[]
 
-record UseCredits(String accountId, int amount) {
-}
-
-record CreditsUsed(String accountId, int amount) {
+record CreditsUsed(@EventTag(key = "accountId") String accountId, int amount) {
 }
