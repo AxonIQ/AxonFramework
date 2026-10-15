@@ -16,14 +16,22 @@
 
 package org.axonframework.extension.metrics.micrometer.springboot;
 
+import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.axonframework.extension.metrics.micrometer.MetricsConfigurationEnhancer;
+import org.axonframework.messaging.eventhandling.annotation.EventHandler;
+import org.axonframework.messaging.eventhandling.gateway.EventGateway;
+import org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore;
+import org.axonframework.messaging.eventhandling.processing.streaming.token.store.inmemory.InMemoryTokenStore;
 import org.junit.jupiter.api.*;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.stereotype.Component;
+
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -69,6 +77,32 @@ class MicrometerMetricsAutoConfigurationTest {
     }
 
     @Test
+    void eventProcessorRecordsItsMetricsInTheApplicationsMeterRegistry() {
+        new ApplicationContextRunner().withUserConfiguration(EventHandlingContext.class)
+                                      .run(context -> {
+                                          assertThat(context).hasNotFailed();
+                                          MeterRegistry meterRegistry = context.getBean(MeterRegistry.class);
+
+                                          context.getBean(EventGateway.class).publish(null, "event").join();
+
+                                          assertThat(successfullyHandled(meterRegistry)).isEqualTo(1);
+                                      });
+    }
+
+    private static double successfullyHandled(MeterRegistry meterRegistry) throws InterruptedException {
+        String counterName = EventHandlingContext.class.getPackageName() + ".messageCounter.success";
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (System.nanoTime() < deadline) {
+            Counter counter = meterRegistry.find(counterName).counter();
+            if (counter != null && counter.count() > 0) {
+                return counter.count();
+            }
+            Thread.sleep(10);
+        }
+        return 0;
+    }
+
+    @Test
     void metricsConfigurationEnhancerReusesUserSuppliedMeterRegistry() {
         new ApplicationContextRunner().withUserConfiguration(UserMeterRegistryContext.class)
                                       .run(context -> {
@@ -83,6 +117,30 @@ class MicrometerMetricsAutoConfigurationTest {
     @EnableAutoConfiguration
     public static class TestContext {
 
+    }
+
+    /**
+     * An event processor is a module with its own component registry, which receives a copy of every enhancer.
+     */
+    @Configuration
+    @EnableAutoConfiguration
+    public static class EventHandlingContext {
+
+        @Bean
+        public TokenStore tokenStore() {
+            return new InMemoryTokenStore();
+        }
+
+        @SuppressWarnings("unused")
+        @Component
+        public static class EventHandlingComponent {
+
+            @SuppressWarnings("unused")
+            @EventHandler
+            public void on(String event) {
+                // a handler is required for an event processor to be constructed at all
+            }
+        }
     }
 
     @Configuration
