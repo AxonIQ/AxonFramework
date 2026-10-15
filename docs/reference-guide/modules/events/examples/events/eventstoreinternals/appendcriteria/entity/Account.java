@@ -43,9 +43,10 @@ public class Account {
     @EventCriteriaBuilder
     static EventCriteria sourcingCriteria(String accountId) {
         return EventCriteria.havingTags(Tag.of("accountId", accountId))
-                            .andBeingOneOfTypes(MoneyDeposited.class.getName(),
-                                                MoneyWithdrawn.class.getName(),
-                                                CardReplaced.class.getName());
+                            .andBeingOneOfTypes(new QualifiedName(MoneyDeposited.class),
+                                                new QualifiedName(MoneyWithdrawn.class),
+                                                new QualifiedName(CardIssued.class),
+                                                new QualifiedName(CardReplaced.class));
     }
 
     @EventSourcingHandler
@@ -56,6 +57,11 @@ public class Account {
     @EventSourcingHandler
     void evolve(MoneyWithdrawn event) {
         balance -= event.amount();
+    }
+
+    @EventSourcingHandler
+    void evolve(CardIssued event) {
+        cards.add(new Card(event.cardId()));
     }
 
     @CommandHandler
@@ -74,6 +80,18 @@ public class Account {
     }
 
     static class Card {
+
+        private final String cardId;
+        private int replacements = 0;
+
+        Card(String cardId) {
+            this.cardId = cardId;
+        }
+
+        @EventSourcingHandler
+        void evolve(CardReplaced event) {
+            replacements++;
+        }
 
         @CommandHandler
         void handle(ReplaceCard command, EventAppender eventAppender) {
@@ -98,6 +116,9 @@ record MoneyDeposited(@EventTag(key = "accountId") String accountId, int amount)
 }
 
 record MoneyWithdrawn(@EventTag(key = "accountId") String accountId, int amount) {
+}
+
+record CardIssued(@EventTag(key = "accountId") String accountId, String cardId) {
 }
 
 record CardReplaced(@EventTag(key = "accountId") String accountId, String cardId) {

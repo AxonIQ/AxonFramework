@@ -231,7 +231,10 @@ Prefer symmetric criteria when the exact explanatory ordering of rejection event
 [IMPORTANT]
 ====
 Custom append criteria require an event store that supports criteria-aware consistency checks.
-Aggregate-based storage keeps its existing default behavior, but its consistency marker tracks a single aggregate sequence: a builder or resolver returning anything other than the supplied sourcing criteria, including a narrowing with `withEventTypes`, fails explicitly.
+Aggregate-based storage keeps its existing default behavior, but its consistency marker tracks a single aggregate sequence.
+For a command that sourced events, a builder or resolver returning anything other than the supplied sourcing criteria, including a narrowing with `withEventTypes`, fails explicitly.
+For a command that sourced nothing, aggregate-based storage cannot check criteria at all: explicit criteria are not enforced and the append is unconditional.
+Reserving a unique key without sourcing, as in the `UsernameCommandHandler` example, therefore requires a criteria-aware event store.
 ====
 
 [#entity_owned_command_append_criteria]
