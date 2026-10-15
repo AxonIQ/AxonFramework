@@ -40,6 +40,51 @@ class EventCriteriaWithEventTypesTest {
     private static final Tag SECOND_ACCOUNT = Tag.of("accountId", "two");
 
     @Nested
+    class ResultShape {
+
+        @Test
+        void singleCriterionResultEqualsTheBuilderStyleCriteria() {
+            // given
+            EventCriteria criteria = EventCriteria.havingTags(FIRST_ACCOUNT).andBeingOneOfTypes(TOPPED_UP, USED);
+
+            // when
+            EventCriteria result = criteria.withEventTypes(USED);
+
+            // then
+            assertThat(result).isEqualTo(EventCriteria.havingTags(FIRST_ACCOUNT).andBeingOneOfTypes(USED));
+        }
+
+        @Test
+        void unionWhoseBranchesCollapseIntoOneResultsInThatSingleCriteria() {
+            // given branches on the same tags that differ only in their types
+            EventCriteria criteria = EventCriteria.havingTags(FIRST_ACCOUNT).andBeingOneOfTypes(TOPPED_UP)
+                                                  .or(EventCriteria.havingTags(FIRST_ACCOUNT).andBeingOneOfTypes(USED));
+
+            // when
+            EventCriteria result = criteria.withEventTypes(USED, CLOSED);
+
+            // then
+            assertThat(result).isEqualTo(EventCriteria.havingTags(FIRST_ACCOUNT).andBeingOneOfTypes(USED, CLOSED));
+        }
+
+        @Test
+        void unionOfDistinctTagsStaysAUnionOfTheRetypedBranches() {
+            // given
+            EventCriteria criteria = EventCriteria.havingTags(FIRST_ACCOUNT)
+                                                  .or(EventCriteria.havingTags(SECOND_ACCOUNT));
+
+            // when
+            EventCriteria result = criteria.withEventTypes(USED);
+
+            // then
+            assertThat(result).isEqualTo(EventCriteria.either(
+                    EventCriteria.havingTags(FIRST_ACCOUNT).andBeingOneOfTypes(USED),
+                    EventCriteria.havingTags(SECOND_ACCOUNT).andBeingOneOfTypes(USED)
+            ));
+        }
+    }
+
+    @Nested
     class WithEventTypes {
 
         @Test

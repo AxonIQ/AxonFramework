@@ -315,7 +315,11 @@ public sealed interface EventCriteria
         if (!hasCriteria()) {
             return havingAnyTag().andBeingOneOfTypes(requestedTypes);
         }
-        return mapEachCriterion(criterion -> havingTags(criterion.tags()).andBeingOneOfTypes(requestedTypes));
+        Set<EventCriteria> branches = flatten().stream()
+                                               .map(criterion -> havingTags(criterion.tags())
+                                                       .andBeingOneOfTypes(requestedTypes))
+                                               .collect(Collectors.toSet());
+        return branches.size() == 1 ? branches.iterator().next() : either(branches);
     }
 
     /**
