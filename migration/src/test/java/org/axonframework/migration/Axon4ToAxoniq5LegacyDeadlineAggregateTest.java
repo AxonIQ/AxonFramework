@@ -164,16 +164,76 @@ class Axon4ToAxoniq5LegacyDeadlineAggregateTest implements RewriteTest {
                     .contains("deadlineManager.schedule(Duration.ofHours(1), \"reminder\", null, " + scope + ");")
                     .contains("deadlineManager.cancelAllWithinScope(\"paymentDeadline\", " + scope + ");")
                     .contains("""
-                                      @CommandHandler
+                                      @CommandHandler(commandName = "Order.paymentDeadline")
                                           public void on(PaymentDeadline deadline, EventAppender eventAppender) {
                                               eventAppender.append(new OrderCancelled(orderId));""")
                     .contains("""
-                                      @CommandHandler(commandName = "reminder")
+                                      @CommandHandler(commandName = "Order.reminder")
                                           public void onReminder(EventAppender eventAppender) {
                                               eventAppender.append(new ReminderSent(orderId));""")
                     .doesNotContain("DeadlineHandler")
                     .doesNotContain("TODO(axon4to5)")
                     .doesNotContain("org.axonframework.modelling.entity.AggregateScopeDescriptor");
+        }
+
+        @Test
+        void migratesDeadlineHandlersOfKotlinAggregate() {
+            rewriteRun(
+                    mavenProject(
+                            "order",
+                            pomXml(POM, pom -> pom.after(actual -> actual)),
+                            srcMainKotlin(kotlin(
+                                    """
+                                            package com.example
+                                            
+                                            import org.axonframework.commandhandling.CommandHandler
+                                            import org.axonframework.deadline.DeadlineManager
+                                            import org.axonframework.deadline.annotation.DeadlineHandler
+                                            import org.axonframework.modelling.command.AggregateIdentifier
+                                            import org.axonframework.modelling.command.AggregateScopeDescriptor
+                                            import org.axonframework.spring.stereotype.Aggregate
+                                            import java.time.Duration
+                                            import java.util.UUID
+                                            
+                                            @Aggregate
+                                            class Order {
+                                            
+                                                @AggregateIdentifier
+                                                private lateinit var orderId: String
+                                            
+                                                @CommandHandler
+                                                fun handle(command: String, deadlineManager: DeadlineManager) {
+                                                    val scope = AggregateScopeDescriptor("Order", orderId)
+                                                    deadlineManager.schedule(Duration.ofDays(1), "payment", UUID.randomUUID(), scope)
+                                                    deadlineManager.schedule(Duration.ofHours(1), "reminder", null, scope)
+                                                }
+                                            
+                                                @DeadlineHandler(deadlineName = "payment")
+                                                fun on(orderId: UUID) {
+                                                }
+                                            
+                                                @DeadlineHandler(deadlineName = "reminder")
+                                                fun onReminder() {
+                                                }
+                                            }
+                                            """,
+                                    source -> source.after(actual -> {
+                                        assertThat(actual)
+                                                .contains("import org.axonframework.messaging.commandhandling"
+                                                                  + ".annotation.CommandHandler")
+                                                .contains("""
+                                                                  @CommandHandler(commandName = "Order.payment")
+                                                                      fun on(orderId: UUID) {""")
+                                                .contains("""
+                                                                  @CommandHandler(commandName = "Order.reminder")
+                                                                      fun onReminder() {""")
+                                                .doesNotContain("DeadlineHandler")
+                                                .doesNotContain("TODO(axon4to5)");
+                                        return actual;
+                                    })
+                            ))
+                    )
+            );
         }
 
         @Test
