@@ -34,6 +34,10 @@ import org.axonframework.modelling.annotation.InjectEntity;
 import org.assertj.core.api.ThrowableAssert;
 import org.junit.jupiter.api.*;
 
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -44,87 +48,118 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * still conflicts with, and which consistency checks a command that loads nothing gets.
  * <p>
  * Every scenario that shows a benefit is paired with the same scenario without append criteria, so the difference is
- * the feature. A concurrent write is simulated by storing an event in its own unit of work after the command loaded its
- * entities and before it appends.
+ * the feature. Two commands interleave the way concurrent ones on different nodes do: the first loads its entities and
+ * is held, a second command commits, and only then does the first append. Latches make that order deterministic.
  */
 public abstract class AppendCriteriaIT extends AbstractCommandHandlingStudentIT {
 
     private static final QualifiedName STUDENT_ENROLLED = new QualifiedName(StudentEnrolledEvent.class);
+    private static final QualifiedName ENROLL_STUDENT = new QualifiedName(EnrollStudent.class);
 
     private final String studentId = createId("student");
     private final String courseId = createId("course");
+    private final Interleaving interleaving = new Interleaving();
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+
+    @AfterEach
+    void shutDownExecutor() {
+        executor.shutdownNow();
+    }
 
     @Nested
     class NarrowedBoundary {
 
         @Test
         void withoutAppendCriteriaAConcurrentEventOfAnyTypeOnALoadedEntityRejectsTheCommand() {
-            // given the default boundary: everything the command sourced
-            registerCommandHandlers(handlerPhase -> handlerPhase.autodetectedCommandHandlingComponent(
-                    c -> new SymmetricEnrollmentHandler(concurrentNameChange())
-            ));
+            // given the default boundary: everything the enrollment sourced
+            registerCommandHandlers(handlerPhase -> handlerPhase
+                    .autodetectedCommandHandlingComponent(c -> new SymmetricEnrollmentHandler(interleaving))
+                    .autodetectedCommandHandlingComponent(c -> new ConcurrentWriterHandler()));
             startApp();
 
-            // when a name change, irrelevant to the enrollment decision, is stored concurrently
-            // then the command conflicts anyway
-            assertRejectedAsConflict(() -> sendCommand(new EnrollStudent(studentId, courseId)));
+            // when a rename, irrelevant to the enrollment decision, commits while the enrollment is in progress
+            CompletableFuture<Object> enrollment = sendWhileAnotherCommandCommits(
+                    new EnrollStudent(studentId, courseId), new RenameStudent(studentId, "Jane")
+            );
+
+            // then the enrollment conflicts anyway
+            assertRejectedAsConflict(() -> enrollment.orTimeout(5, TimeUnit.SECONDS).join());
             assertThat(enrollmentsOf(studentId)).isZero();
         }
 
         @Test
         void narrowedCriteriaAcceptAConcurrentEventOfATypeTheDecisionDoesNotDependOn() {
             // given the boundary narrowed to enrollments
-            registerCommandHandlers(handlerPhase -> handlerPhase.autodetectedCommandHandlingComponent(
-                    c -> new NarrowedEnrollmentHandler(concurrentNameChange())
-            ));
+            registerCommandHandlers(handlerPhase -> handlerPhase
+                    .autodetectedCommandHandlingComponent(c -> new NarrowedEnrollmentHandler(interleaving))
+                    .autodetectedCommandHandlingComponent(c -> new ConcurrentWriterHandler()));
             startApp();
 
-            // when the same irrelevant name change is stored concurrently
-            sendCommand(new EnrollStudent(studentId, courseId));
+            // when the same irrelevant rename commits while the enrollment is in progress
+            CompletableFuture<Object> enrollment = sendWhileAnotherCommandCommits(
+                    new EnrollStudent(studentId, courseId), new RenameStudent(studentId, "Jane")
+            );
 
             // then the enrollment is stored instead of being rejected and retried
+            enrollment.orTimeout(5, TimeUnit.SECONDS).join();
             assertThat(enrollmentsOf(studentId)).isOne();
         }
 
         @Test
         void narrowedCriteriaStillRejectAConcurrentEventTheDecisionDependsOn() {
             // given the boundary narrowed to enrollments
-            String otherCourseId = createId("other-course");
-            registerCommandHandlers(handlerPhase -> handlerPhase.autodetectedCommandHandlingComponent(
-                    c -> new NarrowedEnrollmentHandler(
-                            () -> storeEvent(StudentEnrolledEvent.class,
-                                             new StudentEnrolledEvent(studentId, otherCourseId))
-                    )
-            ));
+            registerCommandHandlers(handlerPhase -> handlerPhase
+                    .autodetectedCommandHandlingComponent(c -> new NarrowedEnrollmentHandler(interleaving))
+                    .autodetectedCommandHandlingComponent(c -> new ConcurrentWriterHandler()));
             startApp();
 
-            // when an enrollment of the same student is stored concurrently
-            // then the command conflicts, so the invariant stays protected
-            assertRejectedAsConflict(() -> sendCommand(new EnrollStudent(studentId, courseId)));
+            // when an enrollment of the same student commits while this enrollment is in progress
+            CompletableFuture<Object> enrollment = sendWhileAnotherCommandCommits(
+                    new EnrollStudent(studentId, courseId), new RecordEnrollment(studentId, createId("other-course"))
+            );
+
+            // then this enrollment conflicts, so the invariant stays protected
+            assertRejectedAsConflict(() -> enrollment.orTimeout(5, TimeUnit.SECONDS).join());
             assertThat(enrollmentsOf(studentId)).isOne();
         }
 
         @Test
         void declarativeInterceptorNarrowsTheBoundaryLikeTheAnnotation() {
-            // given the boundary narrowed through an AppendCriteriaInterceptor instead of an annotation
+            // given the boundary narrowed through an AppendCriteriaInterceptor instead of an annotation; it intercepts
+            // every command of the module, so it narrows the enrollment and leaves other commands as they are
             registerCommandHandlers(handlerPhase -> handlerPhase
-                    .autodetectedCommandHandlingComponent(c -> new SymmetricEnrollmentHandler(concurrentNameChange()))
+                    .autodetectedCommandHandlingComponent(c -> new SymmetricEnrollmentHandler(interleaving))
+                    .autodetectedCommandHandlingComponent(c -> new ConcurrentWriterHandler())
                     .intercepted(c -> new AppendCriteriaInterceptor(
                             c.getComponent(EventStore.class),
-                            (command, context, sourcingCriteria) -> sourcingCriteria.withEventTypes(STUDENT_ENROLLED)
-                    ))
-            );
+                            (command, context, sourcingCriteria) ->
+                                    ENROLL_STUDENT.equals(command.type().qualifiedName())
+                                            ? sourcingCriteria.withEventTypes(STUDENT_ENROLLED)
+                                            : sourcingCriteria
+                    )));
             startApp();
 
-            // when an irrelevant name change is stored concurrently
-            sendCommand(new EnrollStudent(studentId, courseId));
+            // when an irrelevant rename commits while the enrollment is in progress
+            CompletableFuture<Object> enrollment = sendWhileAnotherCommandCommits(
+                    new EnrollStudent(studentId, courseId), new RenameStudent(studentId, "Jane")
+            );
 
             // then
+            enrollment.orTimeout(5, TimeUnit.SECONDS).join();
             assertThat(enrollmentsOf(studentId)).isOne();
         }
 
-        private Runnable concurrentNameChange() {
-            return () -> storeEvent(StudentNameChangedEvent.class, new StudentNameChangedEvent(studentId, "Jane"));
+        /**
+         * Sends {@code command} from another thread, lets {@code concurrentCommand} commit once {@code command} loaded
+         * its entities, and only then lets {@code command} append, the way two commands interleave on different nodes.
+         */
+        private CompletableFuture<Object> sendWhileAnotherCommandCommits(Object command, Object concurrentCommand) {
+            CompletableFuture<Object> result =
+                    CompletableFuture.supplyAsync(() -> commandGateway.sendAndWait(command), executor);
+            interleaving.awaitLoaded();
+            sendCommand(concurrentCommand);
+            interleaving.release();
+            return result;
         }
     }
 
@@ -216,16 +251,74 @@ public abstract class AppendCriteriaIT extends AbstractCommandHandlingStudentIT 
 
     }
 
+    record RenameStudent(String studentId, String name) {
+
+    }
+
+    record RecordEnrollment(String studentId, String courseId) {
+
+    }
+
     /**
-     * Loads the student and the course, lets {@code concurrentWrite} store an event as if another node did, and then
-     * enrolls the student. Without append criteria, its boundary is everything it loaded.
+     * Holds a command after it loaded its entities until the test released it, failing the command rather than
+     * waiting forever when it is never released.
+     */
+    static final class Interleaving {
+
+        private final CountDownLatch loaded = new CountDownLatch(1);
+        private final CountDownLatch released = new CountDownLatch(1);
+
+        void afterLoading() {
+            loaded.countDown();
+            await(released, "released by the test");
+        }
+
+        void awaitLoaded() {
+            await(loaded, "loaded by the command");
+        }
+
+        void release() {
+            released.countDown();
+        }
+
+        private static void await(CountDownLatch latch, String what) {
+            try {
+                if (!latch.await(5, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("Timed out waiting to be " + what);
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("Interrupted waiting to be " + what, e);
+            }
+        }
+    }
+
+    /**
+     * Stands in for another node, appending without loading anything, so its commands always commit.
+     */
+    static class ConcurrentWriterHandler {
+
+        @CommandHandler
+        void handle(RenameStudent command, EventAppender eventAppender) {
+            eventAppender.append(new StudentNameChangedEvent(command.studentId(), command.name()));
+        }
+
+        @CommandHandler
+        void handle(RecordEnrollment command, EventAppender eventAppender) {
+            eventAppender.append(new StudentEnrolledEvent(command.studentId(), command.courseId()));
+        }
+    }
+
+    /**
+     * Loads the student and the course, waits for the test to let a concurrent command commit, and then enrolls the
+     * student. Without append criteria, its boundary is everything it loaded.
      */
     static class SymmetricEnrollmentHandler {
 
-        private final Runnable concurrentWrite;
+        private final Interleaving interleaving;
 
-        SymmetricEnrollmentHandler(Runnable concurrentWrite) {
-            this.concurrentWrite = concurrentWrite;
+        SymmetricEnrollmentHandler(Interleaving interleaving) {
+            this.interleaving = interleaving;
         }
 
         @CommandHandler
@@ -233,7 +326,7 @@ public abstract class AppendCriteriaIT extends AbstractCommandHandlingStudentIT 
                     @InjectEntity(idProperty = "studentId") Student student,
                     @InjectEntity(idProperty = "courseId") Course course,
                     EventAppender eventAppender) {
-            concurrentWrite.run();
+            interleaving.afterLoading();
             eventAppender.append(new StudentEnrolledEvent(command.studentId(), command.courseId()));
         }
     }
@@ -244,10 +337,10 @@ public abstract class AppendCriteriaIT extends AbstractCommandHandlingStudentIT 
      */
     static class NarrowedEnrollmentHandler {
 
-        private final Runnable concurrentWrite;
+        private final Interleaving interleaving;
 
-        NarrowedEnrollmentHandler(Runnable concurrentWrite) {
-            this.concurrentWrite = concurrentWrite;
+        NarrowedEnrollmentHandler(Interleaving interleaving) {
+            this.interleaving = interleaving;
         }
 
         @CommandHandler
@@ -255,7 +348,7 @@ public abstract class AppendCriteriaIT extends AbstractCommandHandlingStudentIT 
                     @InjectEntity(idProperty = "studentId") Student student,
                     @InjectEntity(idProperty = "courseId") Course course,
                     EventAppender eventAppender) {
-            concurrentWrite.run();
+            interleaving.afterLoading();
             eventAppender.append(new StudentEnrolledEvent(command.studentId(), command.courseId()));
         }
 
