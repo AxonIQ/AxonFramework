@@ -70,7 +70,7 @@ public class Account {
     // overdraw the account, a concurrent deposit only ever raises the balance, so deposits are left out.
     @AppendCriteriaBuilder
     static EventCriteria appendCriteria(WithdrawMoney command, EventCriteria sourcingCriteria) {
-        return sourcingCriteria.replaceEventTypes(new QualifiedName(MoneyWithdrawn.class));
+        return sourcingCriteria.withEventTypes(new QualifiedName(MoneyWithdrawn.class));
     }
 
     static class Card {
@@ -82,7 +82,7 @@ public class Account {
 
         @AppendCriteriaBuilder
         static EventCriteria appendCriteria(ReplaceCard command, EventCriteria sourcingCriteria) {
-            return sourcingCriteria.replaceEventTypes(new QualifiedName(CardReplaced.class));
+            return sourcingCriteria.withEventTypes(new QualifiedName(CardReplaced.class));
         }
     }
 }

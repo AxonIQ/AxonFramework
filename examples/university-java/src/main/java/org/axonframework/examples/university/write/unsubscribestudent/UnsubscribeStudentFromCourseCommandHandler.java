@@ -63,7 +63,7 @@ class UnsubscribeStudentFromCourseCommandHandler {
      */
     @AppendCriteriaBuilder
     static EventCriteria appendCriteria(UnsubscribeStudentFromCourse command, EventCriteria sourcingCriteria) {
-        return sourcingCriteria.replaceEventTypes(new QualifiedName(StudentUnsubscribedFromCourse.class));
+        return sourcingCriteria.withEventTypes(new QualifiedName(StudentUnsubscribedFromCourse.class));
     }
 
     private List<StudentUnsubscribedFromCourse> decide(UnsubscribeStudentFromCourse command, State state) {

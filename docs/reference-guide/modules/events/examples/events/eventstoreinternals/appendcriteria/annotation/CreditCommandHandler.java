@@ -46,7 +46,7 @@ public class CreditCommandHandler {
     // a concurrent top-up only raises the balance, so only a concurrent CreditsUsed can invalidate this decision
     @AppendCriteriaBuilder
     static EventCriteria appendCriteria(UseCredits command, EventCriteria sourcingCriteria) {
-        return sourcingCriteria.replaceEventTypes(new QualifiedName(CreditsUsed.class));
+        return sourcingCriteria.withEventTypes(new QualifiedName(CreditsUsed.class));
     }
 
     // every command the class handles needs a builder, so this one keeps the sourcing criteria explicitly

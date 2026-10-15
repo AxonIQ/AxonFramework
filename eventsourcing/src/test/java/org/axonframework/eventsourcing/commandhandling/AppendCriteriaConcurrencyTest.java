@@ -178,7 +178,7 @@ class AppendCriteriaConcurrencyTest {
                 List.of(new AppendCriteriaInterceptor(
                         eventStore,
                         (command, context, accumulatedCriteria) -> restrictToUsed
-                                ? accumulatedCriteria.replaceEventTypes(Set.of(new QualifiedName(CreditsUsed.class)))
+                                ? accumulatedCriteria.withEventTypes(Set.of(new QualifiedName(CreditsUsed.class)))
                                 : accumulatedCriteria
                 )),
                 delegate
@@ -204,7 +204,7 @@ class AppendCriteriaConcurrencyTest {
                 List.of(new AppendCriteriaInterceptor(
                         eventStore,
                         (command, context, accumulatedCriteria) ->
-                                accumulatedCriteria.replaceEventTypes(Set.of(new QualifiedName(CreditsUsed.class)))
+                                accumulatedCriteria.withEventTypes(Set.of(new QualifiedName(CreditsUsed.class)))
                 )),
                 delegate
         );

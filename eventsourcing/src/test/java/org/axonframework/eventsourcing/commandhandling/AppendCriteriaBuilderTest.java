@@ -106,7 +106,7 @@ class AppendCriteriaBuilderTest {
                     .containsExactly(ACCOUNT_CRITERIA, ACCOUNT_CRITERIA);
             // the sealed switch narrows only UseCredits, TopUpCredits keeps its sourcing criteria
             assertThat(CommonBuilderHandler.resolvedCriteria)
-                    .containsExactly(ACCOUNT_CRITERIA.replaceEventTypes(CREDITS_CHANGED), ACCOUNT_CRITERIA);
+                    .containsExactly(ACCOUNT_CRITERIA.withEventTypes(CREDITS_CHANGED), ACCOUNT_CRITERIA);
         }
 
         @Test
@@ -178,7 +178,7 @@ class AppendCriteriaBuilderTest {
 
             // then
             assertThat(finalCondition.get().criteria())
-                    .isEqualTo(ACCOUNT_CRITERIA.replaceEventTypes(CREDITS_CHANGED));
+                    .isEqualTo(ACCOUNT_CRITERIA.withEventTypes(CREDITS_CHANGED));
         }
 
         @Test
@@ -910,7 +910,7 @@ class AppendCriteriaBuilderTest {
             receivedCommands.add(command);
             receivedSourcingCriteria.add(sourcingCriteria);
             EventCriteria criteria = switch (command) {
-                case UseCredits ignored -> sourcingCriteria.replaceEventTypes(CREDITS_CHANGED);
+                case UseCredits ignored -> sourcingCriteria.withEventTypes(CREDITS_CHANGED);
                 case TopUpCredits ignored -> sourcingCriteria;
             };
             resolvedCriteria.add(criteria);
@@ -1044,7 +1044,7 @@ class AppendCriteriaBuilderTest {
         @AppendCriteriaBuilder
         static EventCriteria use(UseCredits command, EventCriteria sourcingCriteria) {
             receivedCommands.add("use:" + command);
-            return sourcingCriteria.replaceEventTypes(CREDITS_CHANGED);
+            return sourcingCriteria.withEventTypes(CREDITS_CHANGED);
         }
 
         @AppendCriteriaBuilder
@@ -1140,7 +1140,7 @@ class AppendCriteriaBuilderTest {
 
         @AppendCriteriaBuilder
         static EventCriteria criteria(UseCredits command, EventCriteria sourcingCriteria) {
-            return sourcingCriteria.replaceEventTypes(CREDITS_CHANGED);
+            return sourcingCriteria.withEventTypes(CREDITS_CHANGED);
         }
     }
 

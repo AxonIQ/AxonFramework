@@ -44,7 +44,7 @@ public class CreditCommandConfiguration {
                                              (command, context, sourcingCriteria) ->
                                                      switch (command.type().qualifiedName().fullName()) {
                                                          case "credits.UseCredits" ->
-                                                                 sourcingCriteria.replaceEventTypes(
+                                                                 sourcingCriteria.withEventTypes(
                                                                          new QualifiedName(CreditsUsed.class)
                                                                  );
                                                          case "credits.TopUpCredits" -> sourcingCriteria;

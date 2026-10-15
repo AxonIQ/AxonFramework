@@ -294,20 +294,19 @@ public sealed interface EventCriteria
     }
 
     /**
-     * Replaces the event types on every branch of this criteria with the given {@code types}. Each branch's tags and
-     * the criteria's OR semantics are preserved. Existing type restrictions are replaced, so the resulting type set
-     * may be either narrower or broader than the original set.
+     * Returns a copy of this criteria with the given event {@code types} on every branch, in place of the types it had.
+     * Each branch's tags and the criteria's OR semantics are preserved. As existing type restrictions are discarded,
+     * the resulting type set may be either narrower or broader than the original set.
      * <p>
-     * Unlike the builder-style
-     * {@link EventTypeRestrictableEventCriteria#andBeingOneOfTypes(Set)}, this operation applies to an already complete
-     * criteria rather than only the branch currently being built. An empty set clears existing type restrictions,
-     * allowing any event type that matches a branch's tags.
+     * Unlike the builder-style {@link EventTypeRestrictableEventCriteria#andBeingOneOfTypes(Set)}, which adds a type
+     * restriction to the branch currently being built, this operation sets the types of an already complete criteria.
+     * An empty set clears existing type restrictions, allowing any event type that matches a branch's tags.
      *
      * @param types the event types used by every branch of the resulting criteria
      * @return criteria with the given event types on every branch
      * @since 5.5.0
      */
-    default EventCriteria replaceEventTypes(Set<QualifiedName> types) {
+    default EventCriteria withEventTypes(Set<QualifiedName> types) {
         Set<QualifiedName> requestedTypes = Set.copyOf(Objects.requireNonNull(types, "The types cannot be null."));
         if (!hasCriteria()) {
             return havingAnyTag().andBeingOneOfTypes(requestedTypes);
@@ -316,36 +315,36 @@ public sealed interface EventCriteria
     }
 
     /**
-     * Replaces the event types on every branch of this criteria with the given {@code types}.
+     * Returns a copy of this criteria with the given event {@code types} on every branch.
      *
      * @param types the event types used by every branch of the resulting criteria
      * @return criteria with the given event types on every branch
-     * @see #replaceEventTypes(Set)
+     * @see #withEventTypes(Set)
      * @since 5.5.0
      */
-    default EventCriteria replaceEventTypes(QualifiedName... types) {
+    default EventCriteria withEventTypes(QualifiedName... types) {
         Objects.requireNonNull(types, "The types cannot be null.");
-        return replaceEventTypes(Set.of(types));
+        return withEventTypes(Set.of(types));
     }
 
     /**
-     * Replaces the event types on every branch of this criteria with the given fully qualified names.
+     * Returns a copy of this criteria with the given fully qualified event type names on every branch.
      *
      * @param types the fully qualified event type names used by every branch of the resulting criteria
      * @return criteria with the given event types on every branch
-     * @see #replaceEventTypes(Set)
+     * @see #withEventTypes(Set)
      * @since 5.5.0
      */
-    default EventCriteria replaceEventTypes(String... types) {
+    default EventCriteria withEventTypes(String... types) {
         Objects.requireNonNull(types, "The types cannot be null.");
-        return replaceEventTypes(Arrays.stream(types)
-                                       .map(QualifiedName::new)
-                                       .collect(Collectors.toSet()));
+        return withEventTypes(Arrays.stream(types)
+                                    .map(QualifiedName::new)
+                                    .collect(Collectors.toSet()));
     }
 
     /**
-     * Replaces the event types on every branch of this criteria with the names the given {@code messageTypeResolver}
-     * resolves for the given Java event {@code types}.
+     * Returns a copy of this criteria with, on every branch, the event type names the given
+     * {@code messageTypeResolver} resolves for the given Java event {@code types}.
      * <p>
      * Resolving through the {@link MessageTypeResolver} keeps the names equal to the ones events are stored under,
      * including names customized through annotations such as {@code @Event}. Use the configured resolver, for example
@@ -355,16 +354,16 @@ public sealed interface EventCriteria
      * @param messageTypeResolver the resolver deriving the event type names from the given {@code types}
      * @param types               the Java event types used by every branch of the resulting criteria
      * @return criteria with the resolved event types on every branch
-     * @see #replaceEventTypes(Set)
+     * @see #withEventTypes(Set)
      * @since 5.5.0
      */
-    default EventCriteria replaceEventTypes(MessageTypeResolver messageTypeResolver, Class<?>... types) {
+    default EventCriteria withEventTypes(MessageTypeResolver messageTypeResolver, Class<?>... types) {
         Objects.requireNonNull(messageTypeResolver, "The MessageTypeResolver cannot be null.");
         Objects.requireNonNull(types, "The types cannot be null.");
-        return replaceEventTypes(Arrays.stream(types)
-                                       .map(messageTypeResolver::resolveOrThrow)
-                                       .map(MessageType::qualifiedName)
-                                       .collect(Collectors.toSet()));
+        return withEventTypes(Arrays.stream(types)
+                                    .map(messageTypeResolver::resolveOrThrow)
+                                    .map(MessageType::qualifiedName)
+                                    .collect(Collectors.toSet()));
     }
 
     /**

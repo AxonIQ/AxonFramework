@@ -48,7 +48,7 @@ class SubscribeStudentToCourseCommandHandler {
      */
     @AppendCriteriaBuilder
     static EventCriteria appendCriteria(SubscribeStudentToCourse command, EventCriteria sourcingCriteria) {
-        return sourcingCriteria.replaceEventTypes(
+        return sourcingCriteria.withEventTypes(
                 new QualifiedName(StudentSubscribedToCourse.class),
                 new QualifiedName(CourseCapacityChanged.class)
         );

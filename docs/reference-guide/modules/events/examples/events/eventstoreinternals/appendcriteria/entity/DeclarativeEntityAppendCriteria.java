@@ -35,7 +35,7 @@ public class DeclarativeEntityAppendCriteria {
                 configuration.getComponent(EventStore.class),
                 (command, context, sourcingCriteria) -> switch (command.type().qualifiedName().fullName()) {
                     case "credits.UseCredits" ->
-                            sourcingCriteria.replaceEventTypes(new QualifiedName(CreditsUsed.class));
+                            sourcingCriteria.withEventTypes(new QualifiedName(CreditsUsed.class));
                     case "credits.TopUpCredits" -> sourcingCriteria;
                     default -> throw new IllegalArgumentException(
                             "Unsupported command: " + command.type().qualifiedName()
