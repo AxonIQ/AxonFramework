@@ -23,19 +23,38 @@ import org.axonframework.common.jdbc.PersistenceExceptionResolver;
 import org.axonframework.common.jpa.EntityManagerProvider;
 import org.axonframework.common.jpa.FactoryBasedEntityManagerProvider;
 import org.axonframework.common.jpa.SimpleEntityManagerProvider;
+import org.axonframework.eventsourcing.annotation.EventTag;
+import org.axonframework.eventsourcing.commandhandling.AppendCriteriaInterceptor;
+import org.axonframework.eventsourcing.commandhandling.AppendCriteriaResolver;
+import org.axonframework.eventsourcing.eventstore.AppendCondition;
+import org.axonframework.eventsourcing.eventstore.EventStoreTransaction;
+import org.axonframework.eventsourcing.eventstore.SourcingCondition;
 import org.axonframework.eventsourcing.eventstore.StorageEngineBackedEventStoreTestSuite;
 import org.axonframework.eventsourcing.eventstore.jpa.AggregateBasedJpaEventStorageEngine;
 import org.axonframework.eventsourcing.eventstore.jpa.JpaPollingEventCoordinator;
 import org.axonframework.extension.spring.messaging.unitofwork.SpringTransactionManager;
 import org.axonframework.extension.springboot.autoconfig.JpaTransactionAutoConfiguration;
 import org.axonframework.extension.springboot.eventsourcing.eventstore.jpa.AggregateBasedJpaStorageEngineBackedEventStoreIT.TestConfig;
+import org.axonframework.messaging.commandhandling.CommandHandlingComponent;
+import org.axonframework.messaging.commandhandling.GenericCommandMessage;
+import org.axonframework.messaging.commandhandling.SimpleCommandHandlingComponent;
+import org.axonframework.messaging.commandhandling.interception.InterceptingCommandHandlingComponent;
 import org.axonframework.messaging.core.EmptyApplicationContext;
+import org.axonframework.messaging.core.FluxUtils;
+import org.axonframework.messaging.core.MessageStream;
+import org.axonframework.messaging.core.MessageType;
+import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.unitofwork.SimpleUnitOfWorkFactory;
 import org.axonframework.messaging.core.unitofwork.TransactionalUnitOfWorkFactory;
 import org.axonframework.messaging.core.unitofwork.UnitOfWork;
 import org.axonframework.messaging.core.unitofwork.transaction.jpa.JpaTransactionalExecutorProvider;
+import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.conversion.EventConverter;
+import org.axonframework.messaging.eventstreaming.EventCriteria;
+import org.axonframework.messaging.eventstreaming.Tag;
 import org.jspecify.annotations.NonNull;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -48,7 +67,14 @@ import org.springframework.orm.jpa.support.PersistenceAnnotationBeanPostProcesso
 import org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter;
 
 import java.time.Duration;
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Test class validating the {@link AggregateBasedJpaEventStorageEngine}.
@@ -111,6 +137,150 @@ class AggregateBasedJpaStorageEngineBackedEventStoreIT extends
     @Override
     protected boolean supportsDynamicConsistencyBoundaries() {
         return false;
+    }
+
+    /**
+     * Pins how append criteria behave on aggregate-based storage, which detects conflicts by aggregate sequence numbers
+     * only and never checks the criteria of an {@link AppendCondition}.
+     */
+    @Nested
+    class AppendCriteria {
+
+        private static final QualifiedName REGISTER_USER = new QualifiedName("test.RegisterUser");
+
+        @Test
+        void criteriaOfACommandThatSourcedNothingAreRejectedInsteadOfIgnored() {
+            // given a uniqueness reservation: a command that loads nothing and declares explicit criteria
+            String userId = UUID.randomUUID().toString();
+            CommandHandlingComponent component = registration(
+                    false, (command, context, sourcingCriteria) -> userCriteria(userId)
+            );
+
+            // when
+            CompletableFuture<Void> result = execute(component, userId);
+
+            // then aggregate-based storage cannot check those criteria, so it refuses instead of appending
+            assertThatThrownBy(() -> result.orTimeout(5, TimeUnit.SECONDS).join())
+                    .hasStackTraceContaining("cannot check the append criteria");
+            assertThat(storedEventCount(userId)).isZero();
+        }
+
+        @Test
+        void unchangedCriteriaOfASourcedCommandAreAccepted() {
+            // given
+            String userId = UUID.randomUUID().toString();
+            CommandHandlingComponent component = registration(
+                    true, (command, context, sourcingCriteria) -> sourcingCriteria
+            );
+
+            // when
+            CompletableFuture<Void> result = execute(component, userId);
+
+            // then
+            result.orTimeout(5, TimeUnit.SECONDS).join();
+            assertThat(storedEventCount(userId)).isOne();
+        }
+
+        @Test
+        void narrowedCriteriaOfASourcedCommandAreRejected() {
+            // given
+            String userId = UUID.randomUUID().toString();
+            CommandHandlingComponent component = registration(
+                    true,
+                    (command, context, sourcingCriteria) ->
+                            sourcingCriteria.withEventTypes(new QualifiedName("test.OtherEvent"))
+            );
+
+            // when
+            CompletableFuture<Void> result = execute(component, userId);
+
+            // then
+            assertThatThrownBy(() -> result.orTimeout(5, TimeUnit.SECONDS).join())
+                    .hasStackTraceContaining("aggregate-based consistency marker");
+            assertThat(storedEventCount(userId)).isZero();
+        }
+
+        @Test
+        void sourcingThatIsNotReadToTheEndStillAppendsToANewAggregate() {
+            // given a transaction that starts sourcing but never reads the stream, so its marker stays at ORIGIN
+            String userId = UUID.randomUUID().toString();
+
+            // when
+            CompletableFuture<Void> result = unitOfWork().executeWithResult(context -> {
+                EventStoreTransaction transaction = eventStore.transaction(context);
+                transaction.source(SourcingCondition.conditionFor(userCriteria(userId)));
+                transaction.appendEvent(registered(userId));
+                return CompletableFuture.completedFuture(null);
+            });
+
+            // then the append goes through, as it does on main: only criteria from append criteria are refused
+            result.orTimeout(5, TimeUnit.SECONDS).join();
+            assertThat(storedEventCount(userId)).isOne();
+        }
+
+        @Test
+        void explicitOverrideOfTheAppendConditionKeepsAppendingUnconditionally() {
+            // given the released EventStoreTransaction#overrideAppendCondition with explicit criteria, nothing sourced
+            String userId = UUID.randomUUID().toString();
+
+            // when
+            CompletableFuture<Void> result = unitOfWork().executeWithResult(context -> {
+                EventStoreTransaction transaction = eventStore.transaction(context);
+                transaction.overrideAppendCondition(condition -> AppendCondition.withCriteria(userCriteria(userId)));
+                transaction.appendEvent(registered(userId));
+                return CompletableFuture.completedFuture(null);
+            });
+
+            // then the released behaviour is kept: the criteria are not checked and the event is appended
+            result.orTimeout(5, TimeUnit.SECONDS).join();
+            assertThat(storedEventCount(userId)).isOne();
+        }
+
+        private CommandHandlingComponent registration(boolean sourceFirst, AppendCriteriaResolver resolver) {
+            SimpleCommandHandlingComponent handler = SimpleCommandHandlingComponent.create("registration");
+            handler.subscribe(REGISTER_USER, (command, context) -> {
+                String userId = (String) command.payload();
+                EventStoreTransaction transaction = eventStore.transaction(context);
+                if (sourceFirst) {
+                    FluxUtils.of(transaction.source(SourcingCondition.conditionFor(userCriteria(userId)))).blockLast();
+                }
+                transaction.appendEvent(registered(userId));
+                return MessageStream.empty();
+            });
+            return new InterceptingCommandHandlingComponent(
+                    List.of(new AppendCriteriaInterceptor(eventStore, resolver)), handler
+            );
+        }
+
+        private CompletableFuture<Void> execute(CommandHandlingComponent component, String userId) {
+            return unitOfWork().executeWithResult(context -> {
+                component.handle(new GenericCommandMessage(new MessageType(REGISTER_USER), userId), context);
+                return CompletableFuture.completedFuture(null);
+            });
+        }
+
+        private long storedEventCount(String userId) {
+            return unitOfWork().executeWithResult(context -> FluxUtils
+                                       .of(eventStore.transaction(context).source(
+                                               SourcingCondition.conditionFor(userCriteria(userId))
+                                       ))
+                                       .count()
+                                       .toFuture())
+                               .orTimeout(5, TimeUnit.SECONDS)
+                               .join();
+        }
+
+        private static EventCriteria userCriteria(String userId) {
+            return EventCriteria.havingTags(new Tag("User", userId));
+        }
+
+        // the suite's message(...) keeps event timestamps in the range the shared store's other tests expect
+        private EventMessage registered(String userId) {
+            return message(new UserRegistered(userId));
+        }
+    }
+
+    private record UserRegistered(@EventTag(key = "User") String userId) {
     }
 
     @Configuration

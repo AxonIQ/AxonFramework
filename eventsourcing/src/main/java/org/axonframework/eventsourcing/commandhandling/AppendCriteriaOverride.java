@@ -67,7 +67,7 @@ final class AppendCriteriaOverride {
                 // into a condition would check every event from ORIGIN, the strictest check there is, when what was
                 // expressed was the absence of one.
                 return commandCriteria.hasCriteria()
-                        ? AppendCondition.withCriteria(commandCriteria)
+                        ? AppendCondition.withUnsourcedCriteria(commandCriteria)
                         : AppendCondition.none();
             }
             if (current.consistencyMarker() instanceof AggregateBasedConsistencyMarker
