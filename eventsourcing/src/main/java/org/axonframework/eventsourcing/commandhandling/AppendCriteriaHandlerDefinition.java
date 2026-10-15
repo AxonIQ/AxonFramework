@@ -42,6 +42,11 @@ import static java.util.Objects.requireNonNull;
  * Handler-definition decorator that adapts
  * {@link org.axonframework.eventsourcing.commandhandling.annotation.AppendCriteriaBuilder} methods to annotated
  * external and entity-owned command handlers, matching each handler with the builder for its command type.
+ * <p>
+ * This class is internal because the framework wires it: the event sourcing configuration registers it as a decorator
+ * of the configured {@link HandlerDefinition}, so annotated handlers pick up their builders without user setup. Users
+ * declare builders with the annotation, or register an {@link AppendCriteriaInterceptor}, rather than creating this
+ * definition themselves.
  *
  * @author Mateusz Nowak
  * @since 5.5.0
@@ -62,7 +67,7 @@ public final class AppendCriteriaHandlerDefinition implements HandlerDefinition 
     /**
      * Creates a handler-definition decorator.
      *
-     * @param delegate the definition used to create the original handler
+     * @param delegate      the definition used to create the original handler
      * @param configuration the configuration used to resolve builder components and the event store
      */
     public AppendCriteriaHandlerDefinition(HandlerDefinition delegate, Configuration configuration) {
@@ -97,7 +102,8 @@ public final class AppendCriteriaHandlerDefinition implements HandlerDefinition 
             return original;
         }
         // the member's payload type is the effective one, narrowed by both the annotation and the parameters
-        AnnotationBasedAppendCriteriaResolver resolver = visibleBuilders.get().resolverFor(original.get().payloadType());
+        AnnotationBasedAppendCriteriaResolver resolver =
+                visibleBuilders.get().resolverFor(original.get().payloadType());
         return Optional.of(new AppendCriteriaCommandHandlingMember<>(
                 original.get(),
                 commandHandler.get(),

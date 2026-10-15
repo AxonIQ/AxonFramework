@@ -55,8 +55,8 @@ import java.util.List;
  *     <li>The {@link EventStore} in a {@link InterceptingEventStore} <b>if</b> there are any
  *     {@link MessageDispatchInterceptor MessageDispatchInterceptors} present in the {@link DispatchInterceptorRegistry}.</li>
  *     <li>The {@link HandlerDefinition} in a {@link AppendCriteriaHandlerDefinition}, adding support for
- *     {@link org.axonframework.eventsourcing.commandhandling.annotation.AppendCriteriaBuilder} on annotated command handlers. The
- *     {@code HandlerDefinition} component itself is registered by
+ *     {@link org.axonframework.eventsourcing.commandhandling.annotation.AppendCriteriaBuilder} on annotated command
+ *     handlers. The {@code HandlerDefinition} component itself is registered by
  *     {@link org.axonframework.messaging.core.reflection.ClasspathHandlerDefinitionConfigurationEnhancer} in the
  *     messaging module.</li>
  * </ul>

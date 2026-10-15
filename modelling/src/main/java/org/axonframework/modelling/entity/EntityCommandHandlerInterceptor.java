@@ -79,8 +79,8 @@ public interface EntityCommandHandlerInterceptor<E> {
                                        EntityCommandHandlerInterceptorChain<E> chain);
 
     /**
-     * Adapts the given generic command {@code interceptor} into an {@code EntityCommandHandlerInterceptor}, so it can be
-     * registered on an entity through
+     * Adapts the given generic command {@code interceptor} into an {@code EntityCommandHandlerInterceptor}, so it can
+     * be registered on an entity through
      * {@link EntityMetamodelBuilder#commandHandlerInterceptor(EntityCommandHandlerInterceptor)}.
      * <p>
      * The adapted {@code interceptor} is invoked with the command and the {@link ProcessingContext}, and never sees the
