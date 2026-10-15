@@ -62,22 +62,11 @@ public class AggregateBasedConsistencyMarker extends AbstractConsistencyMarker<A
      * @param appendCondition The condition to create an {@code AggregateBasedConsistencyMarker} for
      * @return an {@code AggregateBasedConsistencyMarker} that represents the given {@code appendCondition}
      * @throws IllegalArgumentException when the consistency marker of given append condition cannot be safely converted
-     *                                  to an {@code AggregateBasedConsistencyMarker}, or when it carries criteria
-     *                                  declared through {@link AppendCondition#withUnsourcedCriteria(EventCriteria)},
-     *                                  which aggregate-based storage cannot check.
+     *                                  to an {@code AggregateBasedConsistencyMarker}.
      */
     public static AggregateBasedConsistencyMarker from(AppendCondition appendCondition) {
         if (appendCondition.consistencyMarker() instanceof AggregateBasedConsistencyMarker abcm) {
             return abcm;
-        }
-        if (appendCondition instanceof DefaultAppendCondition condition
-                && condition.unsourced()
-                && condition.criteria().hasCriteria()) {
-            throw new IllegalArgumentException(
-                    "Aggregate-based storage cannot check the append criteria of events whose appending sourced "
-                            + "nothing, as it only detects conflicts through the sequence of each aggregate. Use a "
-                            + "criteria-aware event store for these criteria, or source the aggregates involved."
-            );
         }
         if (appendCondition.criteria().hasCriteria() && appendCondition.consistencyMarker() == INFINITY) {
             throw new IllegalArgumentException("Consistency marker must not be infinity when criteria are provided");

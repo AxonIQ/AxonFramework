@@ -156,6 +156,10 @@ public interface EventStoreTransaction {
      * <p>
      * Returning {@link AppendCondition#none()} (or {@code null}) from the override function bypasses conflict detection
      * entirely.
+     * <p>
+     * Aggregate-based storage checks conflicts only through the sequence of each aggregate it appends to. For an
+     * append that sourced nothing, it therefore only enforces criteria selecting those aggregates by their tag; any
+     * other criteria are not checked.
      *
      * @param conditionOverride a {@link UnaryOperator} that transforms the current {@link AppendCondition}
      */

@@ -20,7 +20,6 @@ import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.junit.jupiter.api.*;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Test class validating the {@link AggregateBasedConsistencyMarker}.
@@ -180,17 +179,6 @@ class AggregateBasedConsistencyMarkerTest {
     class FromAppendCondition {
 
         private final EventCriteria criteria = EventCriteria.havingTags("username", "jane");
-
-        @Test
-        void rejectsCriteriaDeclaredForAnAppendThatSourcedNothing() {
-            // given criteria that are meant to be checked against the whole history
-            AppendCondition condition = AppendCondition.withUnsourcedCriteria(criteria);
-
-            // when / then aggregate-based storage cannot check them, so it refuses instead of appending unconditionally
-            assertThatThrownBy(() -> AggregateBasedConsistencyMarker.from(condition))
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("cannot check the append criteria");
-        }
 
         @Test
         void keepsConvertingCriteriaAtOriginToAnEmptyMarker() {

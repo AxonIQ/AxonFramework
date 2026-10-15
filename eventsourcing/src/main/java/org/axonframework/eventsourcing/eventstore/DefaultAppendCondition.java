@@ -26,15 +26,12 @@ import static java.util.Objects.requireNonNull;
  *
  * @param consistencyMarker The consistency marker obtained while sourcing events.
  * @param criteria          The criteria set defining which changes are considered conflicting.
- * @param unsourced         whether the criteria were declared rather than obtained through sourcing, so that storage
- *                          unable to check criteria rejects them instead of ignoring them
  * @author Steven van Beelen
  * @since 5.0.0
  */
 record DefaultAppendCondition(
         ConsistencyMarker consistencyMarker,
-        EventCriteria criteria,
-        boolean unsourced
+        EventCriteria criteria
 ) implements AppendCondition {
 
     DefaultAppendCondition {
@@ -42,22 +39,18 @@ record DefaultAppendCondition(
         requireNonNull(criteria, "The EventCriteria cannot be null");
     }
 
-    DefaultAppendCondition(ConsistencyMarker consistencyMarker, EventCriteria criteria) {
-        this(consistencyMarker, criteria, false);
-    }
-
     @Override
     public AppendCondition withMarker(ConsistencyMarker consistencyMarker) {
         if (this.consistencyMarker.equals(consistencyMarker)) {
             return this;
         }
-        return new DefaultAppendCondition(consistencyMarker, criteria, unsourced);
+        return new DefaultAppendCondition(consistencyMarker, criteria);
     }
 
     @Override
     public AppendCondition replaceCriteria(EventCriteria criteria) {
         return this.criteria.equals(criteria)
                 ? this
-                : new DefaultAppendCondition(consistencyMarker, criteria, unsourced);
+                : new DefaultAppendCondition(consistencyMarker, criteria);
     }
 }

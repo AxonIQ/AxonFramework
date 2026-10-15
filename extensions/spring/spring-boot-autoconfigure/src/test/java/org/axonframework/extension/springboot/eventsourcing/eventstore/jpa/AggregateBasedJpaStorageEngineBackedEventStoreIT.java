@@ -27,6 +27,7 @@ import org.axonframework.eventsourcing.annotation.EventTag;
 import org.axonframework.eventsourcing.commandhandling.AppendCriteriaInterceptor;
 import org.axonframework.eventsourcing.commandhandling.AppendCriteriaResolver;
 import org.axonframework.eventsourcing.eventstore.AppendCondition;
+import org.axonframework.eventsourcing.eventstore.AppendEventsTransactionRejectedException;
 import org.axonframework.eventsourcing.eventstore.EventStoreTransaction;
 import org.axonframework.eventsourcing.eventstore.SourcingCondition;
 import org.axonframework.eventsourcing.eventstore.StorageEngineBackedEventStoreTestSuite;
@@ -149,20 +150,39 @@ class AggregateBasedJpaStorageEngineBackedEventStoreIT extends
         private static final QualifiedName REGISTER_USER = new QualifiedName("test.RegisterUser");
 
         @Test
-        void criteriaOfACommandThatSourcedNothingAreRejectedInsteadOfIgnored() {
-            // given a uniqueness reservation: a command that loads nothing and declares explicit criteria
+        void criteriaSelectingSomethingOtherThanTheAppendedAggregateAreNotChecked() {
+            // given a uniqueness reservation: a command that loads nothing and declares criteria on another tag
             String userId = UUID.randomUUID().toString();
             CommandHandlingComponent component = registration(
-                    false, (command, context, sourcingCriteria) -> userCriteria(userId)
+                    false,
+                    (command, context, sourcingCriteria) -> EventCriteria.havingTags(new Tag("username", userId))
             );
 
             // when
             CompletableFuture<Void> result = execute(component, userId);
 
-            // then aggregate-based storage cannot check those criteria, so it refuses instead of appending
+            // then aggregate-based storage only checks the sequence of the appended aggregate, so these criteria are
+            // not checked and the event is appended; the reference guide states this limitation
+            result.orTimeout(5, TimeUnit.SECONDS).join();
+            assertThat(storedEventCount(userId)).isOne();
+        }
+
+        @Test
+        void criteriaSelectingTheAppendedAggregateAreEnforcedThroughItsSequence() {
+            // given a command that loads nothing and declares criteria selecting the aggregate it creates
+            String userId = UUID.randomUUID().toString();
+            CommandHandlingComponent component = registration(
+                    false, (command, context, sourcingCriteria) -> userCriteria(userId)
+            );
+            execute(component, userId).orTimeout(5, TimeUnit.SECONDS).join();
+
+            // when the same aggregate is created again
+            CompletableFuture<Void> result = execute(component, userId);
+
+            // then its first sequence number is taken, so the second creation is rejected
             assertThatThrownBy(() -> result.orTimeout(5, TimeUnit.SECONDS).join())
-                    .hasStackTraceContaining("cannot check the append criteria");
-            assertThat(storedEventCount(userId)).isZero();
+                    .hasStackTraceContaining(AppendEventsTransactionRejectedException.class.getSimpleName());
+            assertThat(storedEventCount(userId)).isOne();
         }
 
         @Test
@@ -213,27 +233,45 @@ class AggregateBasedJpaStorageEngineBackedEventStoreIT extends
                 return CompletableFuture.completedFuture(null);
             });
 
-            // then the append goes through, as it does on main: only criteria from append criteria are refused
+            // then the append goes through, as on main: the criteria select the aggregate being appended to
             result.orTimeout(5, TimeUnit.SECONDS).join();
             assertThat(storedEventCount(userId)).isOne();
         }
 
         @Test
-        void explicitOverrideOfTheAppendConditionKeepsAppendingUnconditionally() {
-            // given the released EventStoreTransaction#overrideAppendCondition with explicit criteria, nothing sourced
+        void overriddenAppendConditionSelectingTheAppendedAggregateKeepsAppending() {
+            // given the released EventStoreTransaction#overrideAppendCondition, used the way aggregate storage supports
             String userId = UUID.randomUUID().toString();
 
             // when
-            CompletableFuture<Void> result = unitOfWork().executeWithResult(context -> {
+            CompletableFuture<Void> result = appendWithOverriddenCriteria(userId, userCriteria(userId));
+
+            // then
+            result.orTimeout(5, TimeUnit.SECONDS).join();
+            assertThat(storedEventCount(userId)).isOne();
+        }
+
+        @Test
+        void overriddenAppendConditionWithCriteriaOnAnotherTagIsNotChecked() {
+            // given the released overrideAppendCondition with criteria on a tag other than the appended aggregate's
+            String userId = UUID.randomUUID().toString();
+
+            // when
+            CompletableFuture<Void> result =
+                    appendWithOverriddenCriteria(userId, EventCriteria.havingTags(new Tag("username", userId)));
+
+            // then, as for append criteria, the criteria are not checked and the event is appended
+            result.orTimeout(5, TimeUnit.SECONDS).join();
+            assertThat(storedEventCount(userId)).isOne();
+        }
+
+        private CompletableFuture<Void> appendWithOverriddenCriteria(String userId, EventCriteria criteria) {
+            return unitOfWork().executeWithResult(context -> {
                 EventStoreTransaction transaction = eventStore.transaction(context);
-                transaction.overrideAppendCondition(condition -> AppendCondition.withCriteria(userCriteria(userId)));
+                transaction.overrideAppendCondition(condition -> AppendCondition.withCriteria(criteria));
                 transaction.appendEvent(registered(userId));
                 return CompletableFuture.completedFuture(null);
             });
-
-            // then the released behaviour is kept: the criteria are not checked and the event is appended
-            result.orTimeout(5, TimeUnit.SECONDS).join();
-            assertThat(storedEventCount(userId)).isOne();
         }
 
         private CommandHandlingComponent registration(boolean sourceFirst, AppendCriteriaResolver resolver) {

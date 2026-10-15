@@ -58,22 +58,6 @@ public sealed interface AppendCondition extends EventsCondition permits NoAppend
     }
 
     /**
-     * Creates an AppendCondition to append events only if no events matching the given {@code criteria} are available,
-     * for criteria that were declared rather than obtained through sourcing.
-     * <p>
-     * It is checked like {@link #withCriteria(EventCriteria)}, from {@link ConsistencyMarker#ORIGIN} against the
-     * complete event history. It differs in what happens on storage that cannot check criteria: aggregate-based storage
-     * rejects it, rather than appending unconditionally, as it does for a condition from {@code withCriteria}.
-     *
-     * @param criteria the declared criteria that no available event may match
-     * @return a condition checking the given {@code criteria} against the complete event history
-     * @since 5.5.0
-     */
-    static AppendCondition withUnsourcedCriteria(EventCriteria criteria) {
-        return new DefaultAppendCondition(ConsistencyMarker.ORIGIN, criteria, true);
-    }
-
-    /**
      * Returns an AppendCondition with a condition that represents this AppendCondition's criteria or the given
      * {@code criteria}.
      *
