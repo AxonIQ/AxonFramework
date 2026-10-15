@@ -51,7 +51,9 @@ The annotation parameters control the `MessageType`:
 * `name` - The business name (defaults to the simple class name)
 * `version` - The message version (defaults to `0.0.1`)
 
-If you don't specify these annotations, Axon will use the fully qualified class name as the `QualifiedName` and `0.0.1` as the version, maintaining backward compatibility.
+If you don't specify these annotations, Axon derives the `QualifiedName` from the class's package name and simple name, and uses `0.0.1` as the version.
+For nested classes, the simple name does not include the enclosing class(es).
+See xref:#nested_message_classes[nested message classes] for the consequences of this.
 
 [TIP]
 ====
@@ -200,6 +202,36 @@ The fallback for when that is not present too is the package name of the class.
 * If you don't specify a `name`, Axon uses the simple class name.
 * If you don't specify a `version`, Axon uses `0.0.1` as the version.
 * The fully qualified name is always: `namespace + "." + name`.
+
+[#nested_message_classes]
+==== Nested message classes
+
+The default `MessageTypeResolver` derives the qualified name of a message class as the package name, a dot, and the class's simple name.
+It does so for annotated and non-annotated classes alike.
+However, it is important to note that for a nested class, the simple name does **not** include the enclosing class:
+
+[source,java,role=pseudocode]
+----
+package example;
+
+public sealed interface DocumentCommand {
+
+    // Resolves to the qualified name "example.CreateDocument", not "example.DocumentCommand$CreateDocument"
+    record CreateDocument(String id) implements DocumentCommand {
+    }
+}
+----
+
+This particular style is common in Kotlin, where commands and events are often grouped in a sealed interface.
+Be aware of the following:
+
+* **Name collisions**: two enclosing types in the same package that each contain a nested class with the same simple name (for example, two nested `Started` events) resolve to the same qualified name.
+Disambiguate them by setting the `name` or `namespace` attribute on `@Command`, `@Event`, or `@Query`, or by placing a `@Namespace` annotation on the enclosing class.
+* **String-based names are used verbatim**: `new MessageType("example.DocumentCommand$CreateDocument", version)` and `new QualifiedName(String)` are never altered.
+When you dispatch a message with a hand-built `MessageType`, make sure it matches the name the handler is registered under.
+Preferably, obtain the type from the configured `MessageTypeResolver` or `new MessageType(DocumentCommand.CreateDocument.class)`.
+In Kotlin, pass `CreateDocument::class.java`, as `KClass.qualifiedName` renders nested classes with yet another (dotted) spelling.
+* **Classes without a simple name**, such as anonymous classes, fall back to `Class#getName()`.
 
 ==== Custom message type resolution
 
