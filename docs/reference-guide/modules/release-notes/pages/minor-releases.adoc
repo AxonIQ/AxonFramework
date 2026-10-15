@@ -100,8 +100,8 @@ void on(DocumentCreated event) { ... }
 void onNew(DocumentCreated event) { ... }
 ----
 
-. *Rename the event through an event transformation* (Axoniq Framework 5.2+).
-A xref:message-transformation:defining-transformations.adoc#_renaming_an_event[`rename(from, to)`] from `example.DocumentCreated` to the pinned name makes the existing handlers work unchanged.
+. *Move to Axoniq Framework 5.2 or higher.*
+From 5.2 onwards, Message Transformation can rename `example.DocumentCreated` to the pinned name, so the existing handlers work unchanged.
 Type-filtered `EventCriteria` get the old name added automatically.
 
 Instances resolving a nested class to different names cannot exchange messages.
