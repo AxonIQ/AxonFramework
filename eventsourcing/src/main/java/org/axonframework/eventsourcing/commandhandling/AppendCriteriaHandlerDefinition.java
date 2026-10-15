@@ -39,9 +39,9 @@ import java.util.function.Function;
 import static java.util.Objects.requireNonNull;
 
 /**
- * Handler-definition decorator that adapts a class-level
- * {@link org.axonframework.eventsourcing.commandhandling.annotation.AppendCriteriaBuilder} to annotated external and
- * entity-owned command handlers.
+ * Handler-definition decorator that adapts
+ * {@link org.axonframework.eventsourcing.commandhandling.annotation.AppendCriteriaBuilder} methods to annotated
+ * external and entity-owned command handlers, matching each handler with the builder for its command type.
  *
  * @author Mateusz Nowak
  * @since 5.5.0
@@ -56,7 +56,7 @@ public final class AppendCriteriaHandlerDefinition implements HandlerDefinition 
 
     private final HandlerDefinition delegate;
     private final Configuration configuration;
-    private final Map<Class<?>, Optional<AnnotationBasedAppendCriteriaResolver>> resolvers =
+    private final Map<Class<?>, Map<Method, AnnotationBasedAppendCriteriaResolver>> resolvers =
             new ConcurrentHashMap<>();
 
     /**
@@ -83,18 +83,18 @@ public final class AppendCriteriaHandlerDefinition implements HandlerDefinition 
         if (original.isEmpty() || !(original.get() instanceof CommandHandlingMember<T> commandHandler)) {
             return original;
         }
-        Optional<AnnotationBasedAppendCriteriaResolver> resolver = resolverFor(declaringType);
-        if (resolver.isEmpty()) {
+        AnnotationBasedAppendCriteriaResolver resolver = resolversOf(declaringType).get(method);
+        if (resolver == null) {
             return original;
         }
         return Optional.of(new AppendCriteriaCommandHandlingMember<>(
                 commandHandler,
                 configuration.getComponent(EventStore.class),
-                resolver.get()
+                resolver
         ));
     }
 
-    private Optional<AnnotationBasedAppendCriteriaResolver> resolverFor(Class<?> declaringType) {
+    private Map<Method, AnnotationBasedAppendCriteriaResolver> resolversOf(Class<?> declaringType) {
         return resolvers.computeIfAbsent(
                 declaringType,
                 type -> AnnotationBasedAppendCriteriaResolver.inspect(type, configuration)

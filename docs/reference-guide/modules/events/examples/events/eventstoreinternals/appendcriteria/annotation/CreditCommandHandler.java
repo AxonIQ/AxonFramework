@@ -42,24 +42,24 @@ public class CreditCommandHandler {
         eventAppender.append(new CreditsToppedUp(command.accountId(), command.amount()));
     }
 
+    // a concurrent top-up only raises the balance, so only a concurrent CreditsUsed can invalidate this decision
     @AppendCriteriaBuilder
-    static EventCriteria appendCriteria(AccountCommand command, EventCriteria sourcingCriteria) {
-        return switch (command) {
-            case UseCredits ignored ->
-                    sourcingCriteria.replaceEventTypes(CreditsUsed.class);
-            case TopUpCredits ignored -> sourcingCriteria;
-        };
+    static EventCriteria appendCriteria(UseCredits command, EventCriteria sourcingCriteria) {
+        return sourcingCriteria.replaceEventTypes(CreditsUsed.class);
+    }
+
+    // every command the class handles needs a builder, so this one keeps the sourcing criteria explicitly
+    @AppendCriteriaBuilder
+    static EventCriteria appendCriteria(TopUpCredits command, EventCriteria sourcingCriteria) {
+        return sourcingCriteria;
     }
 }
 // end::annotated-append-criteria[]
 
-sealed interface AccountCommand permits UseCredits, TopUpCredits {
+record UseCredits(String accountId, int amount) {
 }
 
-record UseCredits(String accountId, int amount) implements AccountCommand {
-}
-
-record TopUpCredits(String accountId, int amount) implements AccountCommand {
+record TopUpCredits(String accountId, int amount) {
 }
 
 record CreditsUsed(@EventTag(key = "accountId") String accountId, int amount) {

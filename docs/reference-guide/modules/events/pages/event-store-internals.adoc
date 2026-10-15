@@ -109,7 +109,7 @@ include::example$events/eventstoreinternals/criteria/CustomCriteriaResolver.java
 ----
 
 [#command_append_criteria]
-== Command append criteria
+== Append criteria per command
 
 Sourcing criteria and append criteria serve different purposes.
 Sourcing criteria select the events needed to reconstruct state.
@@ -119,30 +119,33 @@ By default, Axon uses the complete sourcing criteria as the append criteria.
 Every sourcing operation in the command transaction contributes with OR semantics.
 This symmetric default is safe and requires no configuration.
 
-An external command-handling class can declare one `@AppendCriteriaBuilder` when a command needs a different boundary:
+An external command-handling class can declare an `@AppendCriteriaBuilder` per command type when a command needs a different boundary:
 
 [source,java]
 ----
 include::example$events/eventstoreinternals/appendcriteria/annotation/CreditCommandHandler.java[tag=annotated-append-criteria,indent=0]
 ----
 
-The builder is declared once for the command-handling class and applies to every `@CommandHandler` declared on that class.
-Axon invokes it separately for every command.
-Its command parameter must accept every command handled by the class, so a shared supertype supports an exhaustive switch.
-For unrelated payload types, accept `CommandMessage` and switch on `command.payload()` or the qualified command name.
-For a single-command class, the builder can accept that concrete command type.
+Each builder covers the command type of its first parameter, including subtypes of it.
+Axon matches every `@CommandHandler` at startup with the builder whose command type is the most specific supertype of the payload it handles, and invokes that builder separately for every command.
+A builder for a shared supertype, for example a sealed interface with an exhaustive switch, can cover several commands at once.
+A builder accepting `CommandMessage` covers every command no payload-typed builder covers, which also lets it switch on the qualified command name when several names share a payload type.
+Two builders for the same command type on one class, or a payload accepted by several builders of which none is more specific, are rejected at startup.
 
-The builder is inherited by subclasses, and the closest one wins.
-For the command handlers a class declares, Axon looks for a builder on that class first and then on its superclasses, so a subclass declaring its own shadows the one it would otherwise inherit.
-Declaring a builder on the root of a hierarchy therefore covers every subclass, and a base class may contribute a builder without declaring any command handler itself.
+Unlike `@EventCriteriaBuilder`, there is no fallback.
+Once a class declares a builder, every command it handles must be matched by one, or startup fails.
+Falling back to the sourcing criteria would hide a forgotten builder: for a command that sources nothing, it turns a uniqueness check into an unconditional append.
+To keep the sourcing criteria for a command on purpose, declare a builder for it that returns them unchanged, as the `TopUpCredits` builder does above.
 
-An inherited builder is validated separately against each subclass that declares command handlers, and must accept the commands of each.
-Adding a command handler that the inherited builder cannot accept is rejected at startup, naming both the builder and the class declaring the new handler.
-Either widen that builder's command parameter, or declare a builder on the subclass.
+Builders are inherited.
+The builders that apply to the command handlers a class declares are the ones on that class and on its superclasses; for the same command type, the closest declaration wins.
+A base class may therefore contribute builders without declaring any command handler itself.
+Handlers a class inherits are matched against the builders of the class that declares them, so a builder on a subclass does not apply to handlers inherited from its superclass.
+Adding a command handler that no visible builder accepts is rejected at startup, naming the class declaring the new handler and the builders it can see.
 
 The `EventCriteria` parameter contains the complete transaction-wide OR-union accumulated through sourcing.
 This includes one or several injected entities and other sourcing performed during command handling.
-Returning it unchanged preserves the symmetric default for a command, as the `TopUpCredits` branch does above.
+Returning it unchanged preserves the symmetric default for a command, as the `TopUpCredits` builder does above.
 `replaceEventTypes` preserves each branch's tags and replaces the event types on every OR branch.
 The replacement may narrow or broaden the events considered conflicting without reconstructing the sourcing tags.
 The builder returns the complete append criteria; it does not add a contribution for one entity.
@@ -238,10 +241,9 @@ It applies because `Account` declares a command handler; it does not configure p
 The two annotations pair up: `@EventCriteriaBuilder` selects what the decision reads, `@AppendCriteriaBuilder` selects what it can conflict with.
 Above, a withdrawal reads deposits because they raise the balance, yet a concurrent deposit can never overdraw the account, so deposits are excluded from the boundary.
 
-Builder ownership follows the class that declares the effective command handler, so one builder covers every command that class handles.
-A nested entity class can declare its own builder for its own handlers, as `Card` does above; the parent's builder does not reach into the nested class.
-In a polymorphic hierarchy the builder is inherited, so a builder on the root entity also covers command handlers declared by its subclasses, and a subclass declaring its own shadows it.
-Every effective command-handling class resolves zero or one builder.
+Builders belong to the class that declares the command handlers, so the builders on `Account` cover the commands `Account` handles.
+A nested entity class declares builders for its own handlers, as `Card` does above; the parent's builders do not reach into the nested class.
+In a polymorphic hierarchy builders are inherited, so a builder on the root entity also covers command handlers declared by its subclasses, and a subclass can declare a builder for the same command type to replace it.
 
 Entity classes without an append-criteria builder retain the symmetric sourcing-derived append criteria.
 All marker selection, including no-source handling, remains the responsibility of the event-store transaction.

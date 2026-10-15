@@ -32,15 +32,15 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Parameter;
-import java.util.ArrayList;
-import java.util.HashSet;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 
 /**
- * Adapts a class-level {@link AppendCriteriaBuilder} method to the {@link AppendCriteriaResolver} contract.
+ * Adapts an {@link AppendCriteriaBuilder} method to the {@link AppendCriteriaResolver} contract.
  * <p>
  * Resolution is synchronous, matching the resolver contract: the builder's parameters come from the command, the
  * accumulated sourcing criteria, and the {@link Configuration}, none of which require awaiting. The command is passed
@@ -59,79 +59,137 @@ final class AnnotationBasedAppendCriteriaResolver implements AppendCriteriaResol
     }
 
     /**
-     * Resolves the builder that applies to the command handlers declared on {@code declaringType}.
+     * Resolves, for every command handler declared on {@code declaringType}, the builder that applies to it.
      * <p>
-     * The search starts at {@code declaringType} and walks up its superclasses, so the closest builder wins and a
-     * subclass declaring its own shadows the one it would otherwise inherit. Interfaces are not searched, as a builder
-     * is required to be {@code static} and static interface methods are not inherited.
+     * The builders visible to {@code declaringType} are the ones it declares and the ones its superclasses declare,
+     * one per command type. When a class and one of its superclasses both declare a builder for the same command type,
+     * the closest one wins. Interfaces are not searched, as a builder is required to be {@code static} and static
+     * interface methods are not inherited.
+     * <p>
+     * A handler is matched with the builder whose command type is the most specific supertype of the handled payload. A
+     * builder accepting {@link CommandMessage} applies to handlers no payload-typed builder accepts. When builders are
+     * visible, every declared handler has to be matched by one, so a command cannot silently keep its sourcing criteria
+     * because its builder was forgotten.
+     * <p>
+     * Only handlers <b>declared</b> on {@code declaringType} are resolved, matching the scope in which the builder is
+     * applied: a handler inherited from a supertype is created against that supertype as its declaring type, and so is
+     * resolved against the builders visible to that supertype.
+     *
+     * @return the resolver per declared command handler, empty when no builder is visible to {@code declaringType}
      */
-    static Optional<AnnotationBasedAppendCriteriaResolver> inspect(Class<?> declaringType,
-                                                                     Configuration configuration) {
-        for (Class<?> type = declaringType; type != null && type != Object.class; type = type.getSuperclass()) {
-            List<Method> builders = declaredBuilders(type);
-            if (builders.isEmpty()) {
+    static Map<Method, AnnotationBasedAppendCriteriaResolver> inspect(Class<?> declaringType,
+                                                                      Configuration configuration) {
+        Map<Class<?>, BuilderMethod> builders = visibleBuilders(declaringType, configuration);
+        if (builders.isEmpty()) {
+            return Map.of();
+        }
+        Map<BuilderMethod, AnnotationBasedAppendCriteriaResolver> resolvers = new HashMap<>();
+        Map<Method, AnnotationBasedAppendCriteriaResolver> resolverPerHandler = new HashMap<>();
+        for (Method handler : declaringType.getDeclaredMethods()) {
+            Optional<Class<?>> payloadType = handledPayloadType(handler);
+            if (payloadType.isEmpty()) {
                 continue;
             }
-            if (builders.size() > 1) {
-                throw new IllegalArgumentException(
-                        "Command-handling class [%s] declares more than one @AppendCriteriaBuilder: %s"
-                                .formatted(type.getName(), builders.stream()
-                                                                   .map(ReflectionUtils::toDiscernibleSignature)
-                                                                   .toList())
-                );
-            }
-            BuilderMethod builder = new BuilderMethod(builders.getFirst(), configuration);
-            validateCompleteCoverage(declaringType, builder);
-            return Optional.of(new AnnotationBasedAppendCriteriaResolver(builder));
+            BuilderMethod builder = select(payloadType.get(), builders.values())
+                    .orElseThrow(() -> uncovered(payloadType.get(), declaringType, builders.values()));
+            resolverPerHandler.put(
+                    handler, resolvers.computeIfAbsent(builder, AnnotationBasedAppendCriteriaResolver::new)
+            );
         }
-        return Optional.empty();
+        return resolverPerHandler;
     }
 
-    private static List<Method> declaredBuilders(Class<?> type) {
-        List<Method> builders = new ArrayList<>();
-        for (Method method : type.getDeclaredMethods()) {
-            if (method.isAnnotationPresent(AppendCriteriaBuilder.class)) {
-                builders.add(method);
+    /**
+     * Collects the builders declared on {@code declaringType} and its superclasses, keyed by command type, with the
+     * closest declaration winning per type.
+     */
+    private static Map<Class<?>, BuilderMethod> visibleBuilders(Class<?> declaringType, Configuration configuration) {
+        Map<Class<?>, BuilderMethod> builders = new LinkedHashMap<>();
+        for (Class<?> type = declaringType; type != null && type != Object.class; type = type.getSuperclass()) {
+            Map<Class<?>, BuilderMethod> declared = new HashMap<>();
+            for (Method method : type.getDeclaredMethods()) {
+                if (!method.isAnnotationPresent(AppendCriteriaBuilder.class)) {
+                    continue;
+                }
+                BuilderMethod builder = new BuilderMethod(method, configuration);
+                BuilderMethod duplicate = declared.putIfAbsent(builder.commandType, builder);
+                if (duplicate != null) {
+                    throw new IllegalArgumentException(
+                            ("Command-handling class [%s] declares more than one @AppendCriteriaBuilder for command "
+                                    + "type [%s]: %s")
+                                    .formatted(type.getName(),
+                                               builder.commandType.getName(),
+                                               List.of(ReflectionUtils.toDiscernibleSignature(duplicate.method),
+                                                       ReflectionUtils.toDiscernibleSignature(builder.method)))
+                    );
+                }
             }
+            declared.forEach(builders::putIfAbsent);
         }
         return builders;
     }
 
     /**
-     * Validates the resolved {@code builder} against the command handlers <b>declared</b> on {@code declaringType}.
-     * <p>
-     * The scope is the declared handlers, matching the scope in which the builder is applied: a handler inherited from
-     * a supertype is created against that supertype as its declaring type, and so is validated separately against
-     * whichever builder that supertype resolves. An inherited builder is therefore validated once per subclass that
-     * declares handlers, and has to accept the commands of each.
+     * Returns the payload type a command-handling {@code method} declares, or an empty {@code Optional} when it is not
+     * a command handler. A handler taking the {@link CommandMessage} itself declares {@link Object}.
      */
-    private static void validateCompleteCoverage(Class<?> declaringType, BuilderMethod builder) {
-        Set<Class<?>> commandPayloadTypes = new HashSet<>();
-        for (Method method : declaringType.getDeclaredMethods()) {
-            Optional<Map<String, Object>> attributes =
-                    AnnotationUtils.findAnnotationAttributes(method, CommandHandler.class);
-            if (attributes.isEmpty()) {
-                continue;
-            }
-            Class<?> payloadType = (Class<?>) attributes.get().get("payloadType");
-            if (payloadType == Object.class && method.getParameterCount() > 0) {
-                Class<?> firstParameter = method.getParameterTypes()[0];
-                payloadType = firstParameter == CommandMessage.class ? Object.class : firstParameter;
-            }
-            commandPayloadTypes.add(payloadType);
+    private static Optional<Class<?>> handledPayloadType(Method method) {
+        Optional<Map<String, Object>> attributes =
+                AnnotationUtils.findAnnotationAttributes(method, CommandHandler.class);
+        if (attributes.isEmpty()) {
+            return Optional.empty();
         }
-        for (Class<?> payloadType : commandPayloadTypes) {
-            if (!builder.accepts(payloadType)) {
-                throw invalid(
-                        builder.method,
-                        ("declares command parameter [%s], which cannot accept handled command payload [%s] "
-                                + "declared by [%s]")
-                                .formatted(builder.commandType.getName(),
-                                           payloadType.getName(),
-                                           declaringType.getName())
-                );
-            }
+        Class<?> payloadType = (Class<?>) attributes.get().get("payloadType");
+        if (payloadType == Object.class && method.getParameterCount() > 0) {
+            Class<?> firstParameter = method.getParameterTypes()[0];
+            payloadType = firstParameter == CommandMessage.class ? Object.class : firstParameter;
         }
+        return Optional.of(payloadType);
+    }
+
+    /**
+     * Selects the builder with the most specific command type accepting {@code payloadType}, falling back to a builder
+     * accepting {@link CommandMessage}.
+     */
+    private static Optional<BuilderMethod> select(Class<?> payloadType, Collection<BuilderMethod> builders) {
+        List<BuilderMethod> candidates = builders.stream()
+                                                 .filter(builder -> builder.acceptsAsPayload(payloadType))
+                                                 .toList();
+        if (candidates.isEmpty()) {
+            return builders.stream().filter(builder -> builder.commandType == CommandMessage.class).findFirst();
+        }
+        List<BuilderMethod> mostSpecific =
+                candidates.stream()
+                          .filter(candidate -> candidates.stream().allMatch(
+                                  other -> other.commandType.isAssignableFrom(candidate.commandType)
+                          ))
+                          .toList();
+        if (mostSpecific.size() != 1) {
+            throw new IllegalArgumentException(
+                    ("Command payload [%s] is accepted by several @AppendCriteriaBuilder methods, none of which is "
+                            + "more specific than the others: %s. Declare a builder for [%s] itself.")
+                            .formatted(payloadType.getName(), describe(candidates), payloadType.getName())
+            );
+        }
+        return Optional.of(mostSpecific.getFirst());
+    }
+
+    private static IllegalArgumentException uncovered(Class<?> payloadType,
+                                                      Class<?> declaringType,
+                                                      Collection<BuilderMethod> builders) {
+        return new IllegalArgumentException(
+                ("No @AppendCriteriaBuilder accepts handled command payload [%s] declared by [%s]. Once a class has a "
+                        + "builder, every command it handles needs one, so a command cannot silently keep its "
+                        + "sourcing criteria. Builders visible to the class: %s")
+                        .formatted(payloadType.getName(), declaringType.getName(), describe(builders))
+        );
+    }
+
+    private static List<String> describe(Collection<BuilderMethod> builders) {
+        return builders.stream()
+                       .map(builder -> builder.method.getDeclaringClass().getName() + "#"
+                               + ReflectionUtils.toDiscernibleSignature(builder.method))
+                       .toList();
     }
 
     @Override
@@ -271,11 +329,10 @@ final class AnnotationBasedAppendCriteriaResolver implements AppendCriteriaResol
             return type.isPrimitive() ? ReflectionUtils.resolvePrimitiveWrapperType(type) : type;
         }
 
-        private boolean accepts(Class<?> payloadType) {
-            if (payloadType == Object.class) {
-                return commandType == CommandMessage.class;
-            }
-            return commandType == CommandMessage.class || commandType.isAssignableFrom(payloadType);
+        private boolean acceptsAsPayload(Class<?> payloadType) {
+            return commandType != CommandMessage.class
+                    && payloadType != Object.class
+                    && commandType.isAssignableFrom(payloadType);
         }
 
         private EventCriteria resolve(CommandMessage command,

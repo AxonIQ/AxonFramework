@@ -30,26 +30,34 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Marks the single static method that resolves append criteria for every command handler on its declaring class.
+ * Marks a static method that resolves the append criteria for the commands of one type handled by its declaring class.
  * <p>
- * The method must return a non-null {@link EventCriteria}. Its first parameter is a command payload type that accepts
- * every command handled by the class, or {@link CommandMessage}. Additional parameters may be the accumulated sourcing
- * {@link EventCriteria}, {@link CommandMessage}, {@link Metadata}, a value annotated with {@link MetadataValue},
- * {@link ProcessingContext}, {@link Configuration}, or a synchronously available configured component.
+ * The method must return a non-null {@link EventCriteria}. Its first parameter is the command type it covers: a command
+ * payload type, which also covers the payload's subtypes, or {@link CommandMessage}, which covers every command no
+ * payload-typed builder covers. Additional parameters may be the accumulated sourcing {@link EventCriteria},
+ * {@link CommandMessage}, {@link Metadata}, a value annotated with {@link MetadataValue}, {@link ProcessingContext},
+ * {@link Configuration}, or a synchronously available configured component.
  * <p>
  * The builder runs separately for every command invocation. Its result replaces the complete sourcing-derived append
  * criteria for that command's transaction.
  * <p>
- * The builder is inherited by subclasses, and the closest one wins. For the
- * {@link org.axonframework.messaging.commandhandling.annotation.CommandHandler CommandHandlers} a class declares, the
- * builder is looked up on that class first and then on its superclasses, so a subclass declaring its own shadows the
- * one it would otherwise inherit. Declaring a builder on the root of a hierarchy therefore covers every subclass, and
- * a base class may contribute a builder without declaring any command handler itself. Interfaces are not searched, as
- * the method is required to be {@code static}.
+ * A class may declare several builders, one per command type, like
+ * {@link org.axonframework.eventsourcing.annotation.EventCriteriaBuilder} allows one per identifier type. Each
+ * {@link org.axonframework.messaging.commandhandling.annotation.CommandHandler} is matched at startup with the builder
+ * whose command type is the most specific supertype of the payload it handles. Two builders for the same command type
+ * on one class are rejected, and so is a payload accepted by several builders of which none is more specific than the
+ * others.
  * <p>
- * An inherited builder is validated separately against each subclass that declares command handlers, and has to accept
- * the commands of each. Adding a command handler that the inherited builder cannot accept is rejected at startup;
- * either widen that builder's command parameter or declare a builder on the subclass.
+ * <b>Unlike {@code @EventCriteriaBuilder}, there is no fallback.</b> Once a class has a builder, every command handler
+ * on it has to be matched by one, and startup fails otherwise. Falling back to the sourcing criteria would be silent:
+ * for a command that sources nothing, a forgotten builder turns a uniqueness check into an unconditional append. To
+ * keep the sourcing criteria for a command on purpose, declare a builder for it that returns them unchanged.
+ * <p>
+ * Builders are inherited. The builders that apply to the handlers a class declares are the ones on that class and on
+ * its superclasses; for the same command type, the closest declaration wins. A base class may contribute builders
+ * without declaring any command handler itself. Interfaces are not searched, as the method is required to be
+ * {@code static}. Handlers a class inherits are matched against the builders of the class declaring them, so a builder
+ * on a subclass does not apply to handlers inherited from its superclass.
  *
  * @author Mateusz Nowak
  * @see AppendCriteriaResolver

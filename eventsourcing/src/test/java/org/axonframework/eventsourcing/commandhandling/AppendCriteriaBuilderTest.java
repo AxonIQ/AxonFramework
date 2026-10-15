@@ -70,7 +70,7 @@ class AppendCriteriaBuilderTest {
     class Resolving {
 
         @Test
-        void oneBuilderAppliesSeparatelyToEveryHandlerOnTheClass() {
+        void builderForASharedSupertypeAppliesSeparatelyToEveryHandlerOnTheClass() {
             // given
             CommonBuilderHandler.receivedCommands.clear();
             CommonBuilderHandler.receivedSourcingCriteria.clear();
@@ -93,6 +93,60 @@ class AppendCriteriaBuilderTest {
             // the sealed switch narrows only UseCredits, TopUpCredits keeps its sourcing criteria
             assertThat(CommonBuilderHandler.resolvedCriteria)
                     .containsExactly(ACCOUNT_CRITERIA.replaceEventTypes(CreditsChanged.class), ACCOUNT_CRITERIA);
+        }
+
+        @Test
+        void eachBuilderAppliesToTheCommandTypeItDeclares() {
+            // given a class declaring one builder per command type
+            PerCommandBuilderHandler.receivedCommands.clear();
+            Configuration configuration = configuration();
+            CommandHandlingComponent component = component(
+                    new PerCommandBuilderHandler(configuration.getComponent(EventStore.class)), configuration
+            );
+
+            // when
+            handleSuccessfully(component, command(UseCredits.class, new UseCredits("one"), Map.of()));
+            handleSuccessfully(component, command(TopUpCredits.class, new TopUpCredits("one"), Map.of()));
+
+            // then
+            assertThat(PerCommandBuilderHandler.receivedCommands)
+                    .containsExactly("use:" + new UseCredits("one"), "topUp:" + new TopUpCredits("one"));
+        }
+
+        @Test
+        void mostSpecificBuilderWinsOverABuilderForASupertype() {
+            // given a builder for UseCredits next to one for the CreditsCommand supertype
+            SpecificAndGeneralBuilderHandler.receivedCommands.clear();
+            Configuration configuration = configuration();
+            CommandHandlingComponent component = component(
+                    new SpecificAndGeneralBuilderHandler(configuration.getComponent(EventStore.class)), configuration
+            );
+
+            // when
+            handleSuccessfully(component, command(UseCredits.class, new UseCredits("one"), Map.of()));
+            handleSuccessfully(component, command(TopUpCredits.class, new TopUpCredits("one"), Map.of()));
+
+            // then UseCredits gets its own builder, TopUpCredits the supertype's
+            assertThat(SpecificAndGeneralBuilderHandler.receivedCommands)
+                    .containsExactly("specific:" + new UseCredits("one"), "general:" + new TopUpCredits("one"));
+        }
+
+        @Test
+        void commandMessageBuilderCoversCommandsWithoutAPayloadTypedBuilder() {
+            // given
+            TypedAndCatchAllBuilderHandler.receivedCommands.clear();
+            Configuration configuration = configuration();
+            CommandHandlingComponent component = component(
+                    new TypedAndCatchAllBuilderHandler(configuration.getComponent(EventStore.class)), configuration
+            );
+
+            // when
+            handleSuccessfully(component, command(UseCredits.class, new UseCredits("one"), Map.of()));
+            handleSuccessfully(component, command(TopUpCredits.class, new TopUpCredits("one"), Map.of()));
+
+            // then
+            assertThat(TypedAndCatchAllBuilderHandler.receivedCommands)
+                    .containsExactly("typed:" + new UseCredits("one"), "catchAll:" + new TopUpCredits("one"));
         }
 
         @Test
@@ -163,14 +217,27 @@ class AppendCriteriaBuilderTest {
     class Validation {
 
         @Test
-        void rejectsMoreThanOneBuilderEvenWhenCommandTypesDoNotOverlap() {
+        void rejectsTwoBuildersForTheSameCommandTypeOnOneClass() {
             // given
             Configuration configuration = configuration();
 
             // when / then
-            assertThatThrownBy(() -> component(new TwoBuilderHandler(), configuration))
+            assertThatThrownBy(() -> component(new DuplicateTypeBuilderHandler(), configuration))
                     .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("more than one @AppendCriteriaBuilder");
+                    .hasMessageContaining("more than one @AppendCriteriaBuilder for command type")
+                    .hasMessageContaining(UseCredits.class.getName());
+        }
+
+        @Test
+        void rejectsPayloadAcceptedByBuildersOfWhichNoneIsMoreSpecific() {
+            // given a payload implementing two unrelated interfaces, each with its own builder
+            Configuration configuration = configuration();
+
+            // when / then
+            assertThatThrownBy(() -> component(new AmbiguousBuilderHandler(), configuration))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("none of which is more specific")
+                    .hasMessageContaining(AuditedAndBilled.class.getName());
         }
 
         @Test
@@ -181,7 +248,8 @@ class AppendCriteriaBuilderTest {
             // when / then
             assertThatThrownBy(() -> component(new PartialBuilderHandler(), configuration))
                     .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("cannot accept handled command payload");
+                    .hasMessageContaining("No @AppendCriteriaBuilder accepts handled command payload")
+                    .hasMessageContaining(TopUpCredits.class.getName());
         }
 
         @Test
@@ -232,7 +300,7 @@ class AppendCriteriaBuilderTest {
                     new IncompatibleChildHandler(configuration.getComponent(EventStore.class)), configuration
             ))
                     .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("cannot accept handled command payload")
+                    .hasMessageContaining("No @AppendCriteriaBuilder accepts handled command payload")
                     .hasMessageContaining(NarrowBuilderParent.class.getName());
         }
 
@@ -343,8 +411,26 @@ class AppendCriteriaBuilderTest {
             // when a command the subclass declares is handled
             handleSuccessfully(component, command(TopUpCredits.class, new TopUpCredits("one"), Map.of()));
 
-            // then the closest builder wins
+            // then the subclass' builder for TopUpCredits is more specific than the parent's for CreditsCommand
             assertThat(OverridingChildHandler.receivedCommands).containsExactly(new TopUpCredits("one"));
+            assertThat(BuilderParent.receivedCommands).isEmpty();
+        }
+
+        @Test
+        void subclassBuilderForTheSameCommandTypeReplacesTheInheritedOne() {
+            // given parent and subclass both declare a builder for CreditsCommand
+            BuilderParent.receivedCommands.clear();
+            SameTypeOverridingChildHandler.receivedCommands.clear();
+            Configuration configuration = configuration();
+            CommandHandlingComponent component = component(
+                    new SameTypeOverridingChildHandler(configuration.getComponent(EventStore.class)), configuration
+            );
+
+            // when a command the subclass declares is handled
+            handleSuccessfully(component, command(TopUpCredits.class, new TopUpCredits("one"), Map.of()));
+
+            // then the closest declaration wins
+            assertThat(SameTypeOverridingChildHandler.receivedCommands).containsExactly(new TopUpCredits("one"));
             assertThat(BuilderParent.receivedCommands).isEmpty();
         }
 
@@ -436,6 +522,15 @@ class AppendCriteriaBuilderTest {
     private record SharedCommand(String accountId) {
     }
 
+    private interface Audited {
+    }
+
+    private interface Billed {
+    }
+
+    private record AuditedAndBilled(String accountId) implements Audited, Billed {
+    }
+
     private record CreditsChanged(String accountId) {
     }
 
@@ -520,7 +615,7 @@ class AppendCriteriaBuilderTest {
     }
 
     /**
-     * Declares its own builder, shadowing the one it would otherwise inherit from {@link BuilderParent}.
+     * Declares a builder for its own command, more specific than the one it inherits from {@link BuilderParent}.
      */
     private static class OverridingChildHandler extends BuilderParent {
 
@@ -537,6 +632,29 @@ class AppendCriteriaBuilderTest {
 
         @AppendCriteriaBuilder
         static EventCriteria ownCriteria(TopUpCredits command, EventCriteria sourcingCriteria) {
+            receivedCommands.add(command);
+            return sourcingCriteria;
+        }
+    }
+
+    /**
+     * Declares a builder for the same command type as {@link BuilderParent}, replacing the inherited one.
+     */
+    private static class SameTypeOverridingChildHandler extends BuilderParent {
+
+        private static final List<CreditsCommand> receivedCommands = new ArrayList<>();
+
+        private SameTypeOverridingChildHandler(EventStore eventStore) {
+            super(eventStore);
+        }
+
+        @CommandHandler
+        void handle(TopUpCredits command, ProcessingContext context) {
+            sourceAndAppend(eventStore, context, command.accountId());
+        }
+
+        @AppendCriteriaBuilder
+        static EventCriteria ownCriteria(CreditsCommand command, EventCriteria sourcingCriteria) {
             receivedCommands.add(command);
             return sourcingCriteria;
         }
@@ -750,19 +868,132 @@ class AppendCriteriaBuilderTest {
         }
     }
 
-    private static class TwoBuilderHandler {
+    private static class PerCommandBuilderHandler {
+
+        private static final List<String> receivedCommands = new ArrayList<>();
+        private final EventStore eventStore;
+
+        private PerCommandBuilderHandler(EventStore eventStore) {
+            this.eventStore = eventStore;
+        }
+
+        @CommandHandler
+        void handle(UseCredits command, ProcessingContext context) {
+            sourceAndAppend(eventStore, context, command.accountId());
+        }
+
+        @CommandHandler
+        void handle(TopUpCredits command, ProcessingContext context) {
+            sourceAndAppend(eventStore, context, command.accountId());
+        }
+
+        @AppendCriteriaBuilder
+        static EventCriteria use(UseCredits command, EventCriteria sourcingCriteria) {
+            receivedCommands.add("use:" + command);
+            return sourcingCriteria.replaceEventTypes(CreditsChanged.class);
+        }
+
+        @AppendCriteriaBuilder
+        static EventCriteria topUp(TopUpCredits command, EventCriteria sourcingCriteria) {
+            receivedCommands.add("topUp:" + command);
+            return sourcingCriteria;
+        }
+    }
+
+    private static class SpecificAndGeneralBuilderHandler {
+
+        private static final List<String> receivedCommands = new ArrayList<>();
+        private final EventStore eventStore;
+
+        private SpecificAndGeneralBuilderHandler(EventStore eventStore) {
+            this.eventStore = eventStore;
+        }
+
+        @CommandHandler
+        void handle(UseCredits command, ProcessingContext context) {
+            sourceAndAppend(eventStore, context, command.accountId());
+        }
+
+        @CommandHandler
+        void handle(TopUpCredits command, ProcessingContext context) {
+            sourceAndAppend(eventStore, context, command.accountId());
+        }
+
+        @AppendCriteriaBuilder
+        static EventCriteria general(CreditsCommand command, EventCriteria sourcingCriteria) {
+            receivedCommands.add("general:" + command);
+            return sourcingCriteria;
+        }
+
+        @AppendCriteriaBuilder
+        static EventCriteria specific(UseCredits command, EventCriteria sourcingCriteria) {
+            receivedCommands.add("specific:" + command);
+            return sourcingCriteria;
+        }
+    }
+
+    private static class TypedAndCatchAllBuilderHandler {
+
+        private static final List<String> receivedCommands = new ArrayList<>();
+        private final EventStore eventStore;
+
+        private TypedAndCatchAllBuilderHandler(EventStore eventStore) {
+            this.eventStore = eventStore;
+        }
+
+        @CommandHandler
+        void handle(UseCredits command, ProcessingContext context) {
+            sourceAndAppend(eventStore, context, command.accountId());
+        }
+
+        @CommandHandler
+        void handle(TopUpCredits command, ProcessingContext context) {
+            sourceAndAppend(eventStore, context, command.accountId());
+        }
+
+        @AppendCriteriaBuilder
+        static EventCriteria typed(UseCredits command, EventCriteria sourcingCriteria) {
+            receivedCommands.add("typed:" + command);
+            return sourcingCriteria;
+        }
+
+        @AppendCriteriaBuilder
+        static EventCriteria catchAll(CommandMessage command, EventCriteria sourcingCriteria) {
+            receivedCommands.add("catchAll:" + command.payload());
+            return sourcingCriteria;
+        }
+    }
+
+    private static class DuplicateTypeBuilderHandler {
 
         @CommandHandler
         void handle(UseCredits command) {
         }
 
         @AppendCriteriaBuilder
-        static EventCriteria use(UseCredits command) {
+        static EventCriteria first(UseCredits command) {
             return ACCOUNT_CRITERIA;
         }
 
         @AppendCriteriaBuilder
-        static EventCriteria topUp(TopUpCredits command) {
+        static EventCriteria second(UseCredits command, EventCriteria sourcingCriteria) {
+            return sourcingCriteria;
+        }
+    }
+
+    private static class AmbiguousBuilderHandler {
+
+        @CommandHandler
+        void handle(AuditedAndBilled command) {
+        }
+
+        @AppendCriteriaBuilder
+        static EventCriteria audited(Audited command) {
+            return ACCOUNT_CRITERIA;
+        }
+
+        @AppendCriteriaBuilder
+        static EventCriteria billed(Billed command) {
             return ACCOUNT_CRITERIA;
         }
     }
