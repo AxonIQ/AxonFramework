@@ -68,10 +68,6 @@ public class MicrometerMetricsAutoConfiguration {
      * Bean creation method constructing a {@link MetricsConfigurationEnhancer} with the given {@code registry}, which
      * will attach a default set of {@link org.axonframework.messaging.monitoring.MessageMonitor MessageMonitors} to
      * Axon's infrastructure components.
-     * <p>
-     * The bean is named after the {@link MetricsConfigurationEnhancer} class, which is the name the
-     * {@link java.util.ServiceLoader} registration of the same enhancer is registered under. This bean thus replaces that
-     * registration, instead of being a second enhancer of the same type.
      *
      * @param registry   the {@link MeterRegistry} to be used by the {@link MetricsConfigurationEnhancer} to register
      *                   metrics with
@@ -80,7 +76,7 @@ public class MicrometerMetricsAutoConfiguration {
      * {@link org.axonframework.messaging.monitoring.MessageMonitor MessageMonitors} to Axon's infrastructure
      * components
      */
-    @Bean("org.axonframework.extension.metrics.micrometer.MetricsConfigurationEnhancer")
+    @Bean
     @ConditionalOnMissingBean
     @ConditionalOnProperty(value = "axon.metrics.enabled", havingValue = "true", matchIfMissing = true)
     public MetricsConfigurationEnhancer metricsConfigurationEnhancer(MeterRegistry registry,
