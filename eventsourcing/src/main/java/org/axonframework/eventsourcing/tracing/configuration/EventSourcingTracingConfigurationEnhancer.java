@@ -18,16 +18,13 @@ package org.axonframework.eventsourcing.tracing.configuration;
 
 import org.axonframework.messaging.tracing.SpanFactory;
 import org.axonframework.messaging.tracing.configuration.TracingConfigurationOrder;
-import org.axonframework.eventsourcing.eventstore.tracing.TracingEventStore;
 import org.axonframework.eventsourcing.eventstore.tracing.TracingEventStorageEngine;
 import org.axonframework.eventsourcing.snapshot.store.tracing.TracingSnapshotStore;
-import org.axonframework.messaging.tracing.configuration.MessagingTracingSettings;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.annotation.RegistrationScope;
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.common.configuration.ConfigurationEnhancer;
-import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.eventsourcing.eventstore.EventStorageEngine;
 import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
 import org.jspecify.annotations.Nullable;
@@ -83,23 +80,9 @@ public final class EventSourcingTracingConfigurationEnhancer implements Configur
                     return new TracingSnapshotStore(delegate, spanFactory);
                 }
         );
-        // Type-preserving decorator for EventStore: the messaging module's EventSink/EventBus decorators skip the
-        // EventStore subtype (see MessagingTracingConfigurationEnhancer#isEventStore), so this enhancer owns the
-        // EventStore.class slot and produces an EventStore-typed wrapper that survives the component-registry
-        // assignment check.
-        registry.registerDecorator(
-                EventStore.class,
-                TRACING_DECORATOR_ORDER,
-                (config, name, delegate) -> {
-                    SpanFactory spanFactory = spanFactory(config);
-                    // Gated on the same event-sink.enabled toggle as the messaging-side EventSink wrappers: they
-                    // trace the same publish path, just on a different slot.
-                    if (spanFactory == null || !messagingSettings(config).eventSinkEnabled()) {
-                        return delegate;
-                    }
-                    return new TracingEventStore(delegate, spanFactory);
-                }
-        );
+        // No dedicated EventStore.class decorator here: MessagingTracingConfigurationEnhancer's EventSink.class
+        // decorator, wrapped in CapabilityPreservingDecorator, already reaches EventStore components too
+        // (assignability-based matching) without narrowing them.
     }
 
     /**
@@ -123,13 +106,5 @@ public final class EventSourcingTracingConfigurationEnhancer implements Configur
     @Override
     public int order() {
         return TracingConfigurationOrder.TRACING_DEFAULTS_ENHANCER_ORDER;
-    }
-
-    /**
-     * Resolves the {@link MessagingTracingSettings} component. Always present: {@code axon-messaging} registers the
-     * default via {@code registerIfNotPresent}.
-     */
-    private static MessagingTracingSettings messagingSettings(Configuration config) {
-        return config.getComponent(MessagingTracingSettings.class);
     }
 }
