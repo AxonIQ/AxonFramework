@@ -223,9 +223,11 @@ class DelayedMessageStreamTest extends MessageStreamTest<Message> {
             future.complete(MessageStream.just(createRandomMessage()));
 
             assertTrue(testSubject.next().isPresent());
-            assertFalse(testSubject.isCompleted());  // streams never complete on non-empty next() as more data could be available
-            assertFalse(testSubject.hasNextAvailable());  // perform action that must determine presence of next element
-            assertTrue(testSubject.isCompleted());  // completes as it was proven there is no next element
+
+            // the resolved stream handed out its single value, so it is completed
+            assertTrue(testSubject.isCompleted());
+            assertFalse(testSubject.hasNextAvailable());
+            assertTrue(testSubject.isCompleted());
         }
     }
 
@@ -383,9 +385,11 @@ class DelayedMessageStreamTest extends MessageStreamTest<Message> {
             future.complete(MessageStream.just(createRandomMessage()));
 
             assertTrue(testSubject.next().isPresent());
-            assertFalse(testSubject.isCompleted());  // streams never complete on non-empty next() as more data could be available
-            assertFalse(testSubject.hasNextAvailable());  // perform action that must determine presence of next element
-            assertTrue(testSubject.isCompleted());  // completes as it was proven there is no next element
+
+            // the resolved stream handed out its single value, so it is completed
+            assertTrue(testSubject.isCompleted());
+            assertFalse(testSubject.hasNextAvailable());
+            assertTrue(testSubject.isCompleted());
         }
     }
 }

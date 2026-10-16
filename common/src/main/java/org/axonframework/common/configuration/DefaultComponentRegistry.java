@@ -528,7 +528,12 @@ public class DefaultComponentRegistry implements ComponentRegistry {
         // not create it, or anything it depends on.
         @Override
         public boolean hasComponent(Class<?> type, @Nullable String name) {
-            if (components.get(new Identifier<>(type, name)).isPresent()) {
+            try {
+                if (components.get(new Identifier<>(type, name)).isPresent()) {
+                    return true;
+                }
+            } catch (AmbiguousComponentMatchException e) {
+                // Several components match, so a component is present, even though it cannot be retrieved.
                 return true;
             }
             Optional<? extends Component<?>> factoryComponent = fromFactory(type, name);
@@ -552,6 +557,12 @@ public class DefaultComponentRegistry implements ComponentRegistry {
                                   @Nullable String name,
                                   Supplier<C> defaultImpl) {
             Identifier<C> identifier = new Identifier<>(type, name);
+            // Like getOptionalComponent, a component registered under a subtype counts as present, so the default
+            // never shadows it. Only when no component matches is the default registered under the given identifier.
+            Optional<Component<C>> registered = components.get(identifier);
+            if (registered.isPresent()) {
+                return type.cast(registered.get().resolve(this));
+            }
             Object component = components.computeIfAbsent(
                                                  identifier,
                                                  () -> fromFactory(type, name).orElseGet(

@@ -22,7 +22,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
 
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -114,7 +114,7 @@ public final class FluxUtils {
 
     static class FluxStreamAdapter<M extends Message> {
 
-        private final AtomicBoolean processingGate = new AtomicBoolean(false);
+        private final AtomicInteger pendingSignals = new AtomicInteger();
         private final MessageStream<M> source;
         private final FluxSink<MessageStream.Entry<M>> emitter;
 
@@ -124,8 +124,20 @@ public final class FluxUtils {
             this.emitter = emitter;
         }
 
+        /**
+         * Emits the entries the {@link MessageStream} has available, as far as downstream demand allows. Invoked on
+         * every new demand and on every progress signal of the source.
+         * <p>
+         * A signal that arrives while another invocation is emitting, such as a subscriber requesting more from within
+         * {@code onNext}, is not dropped: the emitting invocation drains again until no signal is left unhandled.
+         * Dropping it would stall the stream, as the source only signals progress again after it was found empty.
+         */
         public void process() {
-            if (!processingGate.getAndSet(true)) {
+            if (pendingSignals.getAndIncrement() != 0) {
+                return;
+            }
+            int missed = 1;
+            do {
                 try {
                     long remaining = emitter.requestedFromDownstream();
 
@@ -140,10 +152,10 @@ public final class FluxUtils {
                     // The emitter's onDispose(source::close) closes the source once the error terminates the
                     // sink, so no explicit close() is needed here (avoids a duplicate close).
                     emitter.error(e);
-                } finally {
-                    processingGate.set(false);
+                    return;
                 }
-            }
+                missed = pendingSignals.addAndGet(-missed);
+            } while (missed != 0);
         }
     }
 }
