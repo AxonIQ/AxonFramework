@@ -66,6 +66,11 @@
 
     <dependencies>
         <dependency>
+            <groupId>org.axonframework.examples</groupId>
+            <artifactId>university-springcloud-domain</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
             <groupId>io.axoniq.framework</groupId>
             <artifactId>axoniq-spring-boot-starter</artifactId>
             <version>${project.version}</version>
