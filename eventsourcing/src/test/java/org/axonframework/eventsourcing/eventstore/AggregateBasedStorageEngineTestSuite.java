@@ -167,6 +167,42 @@ public abstract class AggregateBasedStorageEngineTestSuite<ESE extends EventStor
     }
 
     @Test
+    void streamingFromFirstTrackingTokenReturnsAllEvents() {
+        TaggedEventMessage<?> expectedEventOne = taggedEventMessage("event-0", TEST_AGGREGATE_TAGS);
+        TaggedEventMessage<?> expectedEventTwo = taggedEventMessage("event-1", TEST_AGGREGATE_TAGS);
+        appendEvents(AppendCondition.withCriteria(TEST_AGGREGATE_CRITERIA), expectedEventOne, expectedEventTwo);
+
+        MessageStream<EventMessage> result = testSubject.stream(StreamingCondition.startingFrom(TrackingToken.FIRST));
+
+        StepVerifier.create(FluxUtils.of(result))
+                    .assertNext(entry -> assertTrackedEntry(entry, expectedEventOne.event(), 1))
+                    .assertNext(entry -> assertTrackedEntry(entry, expectedEventTwo.event(), 2))
+                    .thenCancel()
+                    .verify();
+    }
+
+    @Test
+    void streamingFromLatestTrackingTokenSkipsExistingEvents() {
+        ConsistencyMarker marker = appendEvents(
+                AppendCondition.withCriteria(TEST_AGGREGATE_CRITERIA),
+                taggedEventMessage("event-0", TEST_AGGREGATE_TAGS),
+                taggedEventMessage("event-1", TEST_AGGREGATE_TAGS)
+        );
+
+        MessageStream<EventMessage> stream = testSubject.stream(StreamingCondition.startingFrom(TrackingToken.LATEST));
+
+        assertFalse(stream.hasNextAvailable());
+
+        TaggedEventMessage<?> expectedEvent = taggedEventMessage("event-2", TEST_AGGREGATE_TAGS);
+        appendEvents(AppendCondition.withCriteria(TEST_AGGREGATE_CRITERIA).withMarker(marker), expectedEvent);
+
+        await().untilAsserted(() -> assertTrue(stream.hasNextAvailable()));
+        Optional<Entry<EventMessage>> next = stream.next();
+        assertTrue(next.isPresent());
+        assertTrackedEntry(next.get(), expectedEvent.event(), 3);
+    }
+
+    @Test
     void streamingFromSpecificPositionSkipsMessages() {
         TaggedEventMessage<?> expectedEventOne = taggedEventMessage("event-0", TEST_AGGREGATE_TAGS);
         TaggedEventMessage<?> expectedEventTwo = taggedEventMessage("event-1", TEST_AGGREGATE_TAGS);
