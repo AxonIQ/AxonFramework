@@ -29,6 +29,7 @@ By default, `@CommandHandler` annotated methods allow the following parameter ty
 |type: `String` annotated with `@MessageIdentifier` |Will resolve the identifier of the handled `CommandMessage`.
 |type: `EventAppender` |Will inject the `EventAppender` for publishing events from within a command handler. This is useful when you need to publish events within an entity's context. Ensures xref:message-correlation.adoc[correlation data] is taken care of as the `EventAppender` is processing context aware.
 |type: `CommandDispatcher` |Will inject the `CommandDispatcher` for dispatching commands from within a command handler. This is useful for command orchestration or dispatching follow-up commands. Ensures xref:message-correlation.adoc[correlation data] is taken care of as the `CommandDispatcher` is processing context aware.
+|annotated with `@InjectComponent` |Will resolve to a component from the `Configuration`, selected by the parameter type and, optionally, by `name`. See <<inject-component,Injecting components with `@InjectComponent`>>.
 |Spring Bean |If the application runs in a Spring environment, any Spring Bean can be resolved. The parameter can be annotated with `@Qualifier` if a specific version of the bean should be wired.
 |===
 
@@ -54,6 +55,7 @@ By default, `@EventHandler` annotated methods allow the following parameter type
 |type: `CommandDispatcher` |Will inject the `CommandDispatcher` for dispatching commands from within an event handler. This is useful when events should trigger command execution. Ensures xref:message-correlation.adoc[correlation data] is taken care of as the `CommandDispatcher` is processing context aware.
 |type: `EventAppender` |Will inject the `EventAppender` for publishing events from within an event handler. This is useful when an event handler needs to publish new events in response to the event being handled. Ensures xref:message-correlation.adoc[correlation data] is taken care of as the `EventAppender` is processing context aware.
 |type: `QueryUpdateEmitter` |Will inject the `QueryUpdateEmitter` for emitting updates to subscription queries. This is useful when query handlers need to push incremental updates or notify subscribers of changes. Ensures xref:message-correlation.adoc[correlation data] is taken care of as the `QueryUpdateEmitter` is processing context aware.
+|annotated with `@InjectComponent` |Will resolve to a component from the `Configuration`, selected by the parameter type and, optionally, by `name`. See <<inject-component,Injecting components with `@InjectComponent`>>.
 |Spring Bean |If the application runs in a Spring environment, any Spring Bean can be resolved. The parameter can be annotated with `@Qualifier` if a specific version of the bean should be wired.
 |===
 
@@ -85,8 +87,56 @@ By default, `@QueryHandler` annotated methods allow the following parameter type
 |type: `String` annotated with `@MessageIdentifier` |Will resolve the identifier of the handled `QueryMessage`.
 |type: `CommandDispatcher` |Will inject the `CommandDispatcher` for dispatching commands from within a query handler. While generally discouraged (queries should not have side effects), this may be useful in specific scenarios. Ensures xref:message-correlation.adoc[correlation data] is taken care of as the `CommandDispatcher` is processing context aware.
 |type: `EventAppender` |Will inject the `EventAppender` for publishing events from within a query handler. While generally discouraged (queries should not have side effects), this may be useful in specific scenarios. Ensures xref:message-correlation.adoc[correlation data] is taken care of as the `EventAppender` is processing context aware.
+|annotated with `@InjectComponent` |Will resolve to a component from the `Configuration`, selected by the parameter type and, optionally, by `name`. See <<inject-component,Injecting components with `@InjectComponent`>>.
 |Spring Bean |If the application runs in a Spring environment, any Spring Bean can be resolved. The parameter can be annotated with `@Qualifier` if a specific version of the bean should be wired.
 |===
+
+[[inject-component]]
+== Injecting components with `@InjectComponent`
+
+A parameter annotated with `@InjectComponent` resolves to a component from the `Configuration`.
+Use it when a handler needs one of several components of the same type, such as one of several named `EventSink` instances.
+
+* Without a `name`, the parameter resolves to the component registered for the parameter type.
+* With a `name`, the parameter resolves to the component registered for the parameter type under that name.
+In a Spring environment, the name matches a bean name or the value of a `@Qualifier` on the bean.
+If no bean has that name and several beans carry it as their qualifier, startup fails with an `AmbiguousComponentMatchException`.
+
+For a generic parameter type, such as `Repository<Order>`, the type arguments are part of the lookup.
+The parameter resolves to a component registered with that generic type, not to a component registered with the raw type `Repository`.
+To inject a component registered with a raw type, declare the parameter with that raw type.
+You can also use `@InjectComponent` as a meta-annotation, to define your own annotation, for example `@AuditSink`, for a frequently injected component.
+
+`@InjectComponent` takes precedence over all other parameter resolution based on the parameter type, including Spring bean resolution.
+Axon Framework resolves the component when it inspects the handler, which happens during application startup.
+If no matching component exists, startup fails with a `ComponentNotFoundException` that names the type and, if given, the name.
+
+The following event handler publishes to the `EventSink` named `auditSink`, instead of the default `EventSink`:
+
+[source,java]
+----
+include::example$messagingconcepts/supportedparameters/EventHandlerInjectComponentExample.java[tag=event-handler-inject-component,indent=0]
+----
+
+With the Configuration API, register the named `EventSink` with the `ComponentRegistry`:
+
+[source,java]
+----
+include::example$messagingconcepts/supportedparameters/EventHandlerInjectComponentExample.java[tag=register-named-event-sink,indent=0]
+----
+
+With Spring, declare a bean named `auditSink`, or a bean qualified with `@Qualifier("auditSink")`:
+
+[source,java]
+----
+include::example$messagingconcepts/supportedparameters/EventHandlerInjectComponentExample.java[tag=spring-named-event-sink,indent=0]
+----
+
+[NOTE]
+====
+In an event processor, a Spring `@Qualifier` on a handler parameter does not select the bean when Axon Framework can resolve a component of the parameter type itself, as it can for the `EventSink`.
+`@InjectComponent` selects the named component in every handler.
+====
 
 == Examples
 
