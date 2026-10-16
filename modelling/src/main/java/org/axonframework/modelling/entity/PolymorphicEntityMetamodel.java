@@ -49,6 +49,10 @@ import java.util.Set;
  * commands.
  * <p>
  * Events are delegates to both the super type and the concrete type.
+ * <p>
+ * {@link EntityCommandHandlerInterceptor EntityCommandHandlerInterceptors} registered on this metamodel wrap every
+ * command of the polymorphic entity, including those handled by a concrete type. They are invoked before the concrete
+ * type's own interceptors, in registration order.
  *
  * @param <E> The type of polymorphic entity this metamodel represents.
  * @author Mitchell Herrijgers
@@ -61,13 +65,29 @@ public class PolymorphicEntityMetamodel<E> implements EntityMetamodel<E>, Descri
     private final Set<QualifiedName> supportedCommandNames = new HashSet<>();
     private final Set<QualifiedName> supportedInstanceCommandNames = new HashSet<>();
     private final Set<QualifiedName> supportedCreationalCommandNames = new HashSet<>();
+    private final List<EntityCommandHandlerInterceptor<E>> commandHandlerInterceptors;
+    private final EntityCommandHandlerInterceptorChain<E> creationalHandlerChain;
+    private final EntityCommandHandlerInterceptorChain<E> instanceHandlerChain;
 
+    @SuppressWarnings("DataFlowIssue") // Suppresses non-null doHandleInstance, which always needs a non-null entity.
     private PolymorphicEntityMetamodel(
             EntityMetamodel<E> superTypeMetamodel,
-            List<EntityMetamodel<? extends E>> concreteMetamodels
+            List<EntityMetamodel<? extends E>> concreteMetamodels,
+            List<EntityCommandHandlerInterceptor<E>> commandHandlerInterceptors
     ) {
         this.superTypeMetamodel = Objects.requireNonNull(superTypeMetamodel, "The superTypeMetamodel may not be null.");
         Objects.requireNonNull(concreteMetamodels, "The concreteMetamodels may not be null.");
+        this.commandHandlerInterceptors = List.copyOf(
+                Objects.requireNonNull(commandHandlerInterceptors, "The commandHandlerInterceptors may not be null.")
+        );
+        this.creationalHandlerChain = ConcreteEntityMetamodel.composeInterceptorChain(
+                this.commandHandlerInterceptors,
+                (command, entity, context) -> doHandleCreate(command, context)
+        );
+        this.instanceHandlerChain = ConcreteEntityMetamodel.composeInterceptorChain(
+                this.commandHandlerInterceptors,
+                this::doHandleInstance
+        );
         this.concreteMetamodels = new HashMap<>();
         this.supportedCommandNames.addAll(superTypeMetamodel.supportedCommands());
         this.supportedInstanceCommandNames.addAll(this.superTypeMetamodel.supportedInstanceCommands());
@@ -126,6 +146,17 @@ public class PolymorphicEntityMetamodel<E> implements EntityMetamodel<E>, Descri
     @Override
     public MessageStream.Single<CommandResultMessage> handleCreate(CommandMessage message,
                                                                    ProcessingContext context) {
+        try {
+            return creationalHandlerChain.proceed(message, null, context)
+                                         .mapMessage(ConcreteEntityMetamodel::asCommandResultMessage)
+                                         .first()
+                                         .cast();
+        } catch (Exception e) {
+            return MessageStream.failed(e);
+        }
+    }
+
+    private MessageStream<?> doHandleCreate(CommandMessage message, ProcessingContext context) {
         if (isInstanceCommand(message) && !isCreationalCommand(message)) {
             return MessageStream.failed(new EntityMissingForInstanceCommandHandlerException(message));
         }
@@ -142,8 +173,19 @@ public class PolymorphicEntityMetamodel<E> implements EntityMetamodel<E>, Descri
 
     @Override
     public MessageStream.Single<CommandResultMessage> handleInstance(CommandMessage message,
-                                                                              E entity,
-                                                                              ProcessingContext context) {
+                                                                     E entity,
+                                                                     ProcessingContext context) {
+        try {
+            return instanceHandlerChain.proceed(message, entity, context)
+                                       .mapMessage(ConcreteEntityMetamodel::asCommandResultMessage)
+                                       .first()
+                                       .cast();
+        } catch (Exception e) {
+            return MessageStream.failed(e);
+        }
+    }
+
+    private MessageStream<?> doHandleInstance(CommandMessage message, E entity, ProcessingContext context) {
         if (isCreationalCommand(message) && !isInstanceCommand(message)) {
             return MessageStream.failed(new EntityAlreadyExistsForCreationalCommandHandlerException(message, entity));
         }
@@ -185,6 +227,7 @@ public class PolymorphicEntityMetamodel<E> implements EntityMetamodel<E>, Descri
     public void describeTo(ComponentDescriptor descriptor) {
         descriptor.describeProperty("entityType", entityType());
         descriptor.describeProperty("superTypeMetamodel", superTypeMetamodel);
+        descriptor.describeProperty("commandHandlerInterceptors", commandHandlerInterceptors);
         descriptor.describeProperty("polymorphicMetamodels", concreteMetamodels);
     }
 
@@ -203,6 +246,7 @@ public class PolymorphicEntityMetamodel<E> implements EntityMetamodel<E>, Descri
 
         private final EntityMetamodelBuilder<E> superTypeBuilder;
         private final List<EntityMetamodel<? extends E>> polymorphicMetamodels = new ArrayList<>();
+        private final List<EntityCommandHandlerInterceptor<E>> commandHandlerInterceptors = new ArrayList<>();
 
         private Builder(Class<E> entityType) {
             this.superTypeBuilder = ConcreteEntityMetamodel.forEntityClass(entityType);
@@ -230,7 +274,8 @@ public class PolymorphicEntityMetamodel<E> implements EntityMetamodel<E>, Descri
 
         @Override
         public Builder<E> commandHandlerInterceptor(EntityCommandHandlerInterceptor<E> interceptor) {
-            superTypeBuilder.commandHandlerInterceptor(interceptor);
+            Objects.requireNonNull(interceptor, "The interceptor may not be null.");
+            commandHandlerInterceptors.add(interceptor);
             return this;
         }
 
@@ -265,7 +310,7 @@ public class PolymorphicEntityMetamodel<E> implements EntityMetamodel<E>, Descri
         @Override
         public EntityMetamodel<E> build() {
             EntityMetamodel<E> metamodel = superTypeBuilder.build();
-            return new PolymorphicEntityMetamodel<>(metamodel, polymorphicMetamodels);
+            return new PolymorphicEntityMetamodel<>(metamodel, polymorphicMetamodels, commandHandlerInterceptors);
         }
     }
 }
