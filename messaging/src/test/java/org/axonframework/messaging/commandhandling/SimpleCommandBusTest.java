@@ -228,7 +228,9 @@ class SimpleCommandBusTest {
     @Test
     void duplicateRegistrationIsRejected() {
         var handler1 = mock(CommandHandler.class);
+        when(handler1.supportedVersions()).thenReturn(org.axonframework.messaging.core.VersionSpecifier.any());
         var handler2 = mock(CommandHandler.class);
+        when(handler2.supportedVersions()).thenReturn(org.axonframework.messaging.core.VersionSpecifier.any());
         testSubject.subscribe(COMMAND_NAME, handler1);
         assertThrows(DuplicateCommandHandlerSubscriptionException.class,
                      () -> testSubject.subscribe(COMMAND_NAME, handler2));
@@ -237,6 +239,7 @@ class SimpleCommandBusTest {
     @Test
     void duplicateRegistrationForSameHandlerIsAllowed() {
         var handler = mock(CommandHandler.class);
+        when(handler.supportedVersions()).thenReturn(org.axonframework.messaging.core.VersionSpecifier.any());
         testSubject.subscribe(COMMAND_NAME, handler);
         assertDoesNotThrow(() -> testSubject.subscribe(COMMAND_NAME, handler));
     }
@@ -256,7 +259,54 @@ class SimpleCommandBusTest {
 
         verify(mockComponentDescriptor).describeProperty("unitOfWorkFactory", unitOfWorkFactory);
         verify(mockComponentDescriptor)
-                .describeProperty("subscriptions", Map.of(COMMAND_NAME, handler1, handlerTwoName, handler2));
+                .describeProperty("subscriptions", Map.of(COMMAND_NAME, java.util.List.of(handler1), handlerTwoName, java.util.List.of(handler2)));
+    }
+
+    @Test
+    void overlappingRegistrationIsRejected() {
+        var handler1 = mock(CommandHandler.class);
+        when(handler1.supportedVersions()).thenReturn(org.axonframework.messaging.core.VersionSpecifier.range("1.0", "3.0"));
+        
+        var handler2 = mock(CommandHandler.class);
+        when(handler2.supportedVersions()).thenReturn(org.axonframework.messaging.core.VersionSpecifier.range("2.0", "4.0"));
+        
+        testSubject.subscribe(COMMAND_NAME, handler1);
+        assertThrows(DuplicateCommandHandlerSubscriptionException.class,
+                     () -> testSubject.subscribe(COMMAND_NAME, handler2));
+    }
+
+    @Test
+    void nonOverlappingRegistrationIsAllowedAndDispatchesCorrectly() throws Exception {
+        var handler1 = new StubCommandHandler("V1") {
+            @Override
+            public org.axonframework.messaging.core.VersionSpecifier supportedVersions() {
+                return org.axonframework.messaging.core.VersionSpecifier.range("1.0", "1.9");
+            }
+        };
+        var handler2 = new StubCommandHandler("V2") {
+            @Override
+            public org.axonframework.messaging.core.VersionSpecifier supportedVersions() {
+                return org.axonframework.messaging.core.VersionSpecifier.range("2.0", "2.9");
+            }
+        };
+
+        testSubject.subscribe(COMMAND_NAME, handler1);
+        testSubject.subscribe(COMMAND_NAME, handler2);
+
+        // Dispatch V1 command
+        CommandMessage commandV1 = new GenericCommandMessage(new MessageType("command", "1.5"), "payload");
+        var actualV1 = testSubject.dispatch(commandV1, StubProcessingContext.forMessage(commandV1));
+        assertEquals("V1", actualV1.join().payload());
+
+        // Dispatch V2 command
+        CommandMessage commandV2 = new GenericCommandMessage(new MessageType("command", "2.1"), "payload");
+        var actualV2 = testSubject.dispatch(commandV2, StubProcessingContext.forMessage(commandV2));
+        assertEquals("V2", actualV2.join().payload());
+
+        // Dispatch V3 command (no handler)
+        CommandMessage commandV3 = new GenericCommandMessage(new MessageType("command", "3.0"), "payload");
+        var actualV3 = testSubject.dispatch(commandV3, StubProcessingContext.forMessage(commandV3));
+        assertTrue(actualV3.isCompletedExceptionally());
     }
 
     private static class StubCommandHandler implements CommandHandler {
