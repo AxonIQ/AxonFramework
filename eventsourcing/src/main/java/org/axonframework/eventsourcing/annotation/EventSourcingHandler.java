@@ -56,6 +56,20 @@ import java.lang.annotation.Target;
  * resolve to autowired beans, if exactly one autowire candidate is available in the application context. This allows
  * you to inject resources directly into {@code @EventSourcingHandler} annotated methods.</li>
  * </ul>
+ * <p>
+ * An annotated method can also be {@code static}. A static event sourcing handler computes the next state of the
+ * entity: next to the event payload as its first parameter, it declares a parameter typed as the entity holding the
+ * current state, and it returns the next state. It can handle any event of the entity. The state is {@code null} while
+ * the entity does not exist yet, which allows a static handler to create the entity from an event, or to decline
+ * creating it by returning {@code null}. Once the entity exists, returning {@code null} is rejected with a
+ * {@link org.axonframework.modelling.StateEvolvingException}. Instance handlers only run once the entity exists. For
+ * example:
+ * <pre>{@code
+ * @EventSourcingHandler
+ * static Account on(AccountOpened event, @Nullable Account state) {
+ *     return new Account(event.accountId(), 0);
+ * }
+ * }</pre>
  * <p/>
  * For each event, only a single method will be invoked per object instance with annotated methods. This method is
  * resolved in the following order: <ol> <li>First, the event handler methods of the actual class (at runtime) are
