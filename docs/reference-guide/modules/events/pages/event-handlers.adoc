@@ -130,12 +130,45 @@ Axon's autodetected configuration will find the `OrderPlacedEvent` event handler
 The resulting name is then used to register the handler.
 The component in charge of this resolution is the `MessageTypeResolver`, which is explained in more detail xref:messaging-concepts:anatomy-message.adoc#message_type_resolution[here].
 
-If you need to override the name used to register the event handler or if the event payload does not contain the `@Event` annotation at all, you should define the `eventName` attribute of the `@EventHandler`:
+If you need to override the name used to register the event handler or if the event payload does not contain the `@Event` annotation at all, you should define the `event` attribute of the `@EventHandler`.
+It takes a `@QualifiedName` annotation, mirroring the `namespace` and `name` attributes of the `@Event` annotation:
 
 [source,java]
 ----
 include::example$events/eventhandlers/NameResolutionHandlers.java[tag=event-handler-explicit-name,indent=0]
 ----
+
+A single event handler can also handle events arriving under several names.
+This is useful when an event was renamed, while events carrying the previous name still need to be handled.
+The `event` attribute accepts multiple `@QualifiedName` annotations for this purpose:
+
+[source,java]
+----
+include::example$events/eventhandlers/NameResolutionHandlers.java[tag=event-handler-multiple-names,indent=0]
+----
+
+When the `namespace` or `name` of a `@QualifiedName` is left empty, Axon takes that part from the name the handler's payload type resolves to.
+Thus, you only have to define the parts that differ:
+
+[source,java]
+----
+include::example$events/eventhandlers/NameResolutionHandlers.java[tag=event-handler-qualified-name-defaults,indent=0]
+----
+
+Axon splits the payload type's name into a namespace and a local name at its last dot.
+For example, for a payload type annotated with `@Event(namespace = "orders", name = "v2.OrderPlaced")`, the resolved name is `orders.v2.OrderPlaced`.
+A `@QualifiedName(namespace = "legacy")` then resolves to `legacy.OrderPlaced`, as the local name of `orders.v2.OrderPlaced` is `OrderPlaced`.
+Event names always consist of a namespace and a local name.
+
+When the `event` attribute is not defined, the name is resolved from the payload type, as described above.
+In all cases, the event's payload is converted to the payload type of the handler.
+The `@EventSourcingHandler` annotation supports the same `event` attribute.
+
+The `eventName` attribute of the `@EventHandler`, which takes a single fully qualified name as a `String`, is deprecated in favor of the `event` attribute.
+When both are defined, the handler handles the combined set of names.
+
+NOTE: The `@QualifiedName` annotation (`org.axonframework.messaging.core.annotation.QualifiedName`) shares its simple name with the `QualifiedName` class (`org.axonframework.messaging.core.QualifiedName`).
+When you use both in the same file, refer to one of them by its fully qualified class name.
 
 [[handler-resolution]]
 == Handler resolution - How a published event reaches an event handler

@@ -16,7 +16,6 @@
 
 package org.axonframework.modelling.annotation;
 
-import org.axonframework.common.StringUtils;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.QualifiedName;
@@ -190,22 +189,18 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
     ) {
         return handlers.stream()
                        .filter(handler -> handler.canHandleMessageType(EventMessage.class))
+                       .flatMap(handler -> EventHandlingMember.eventNamesOf(handler, messageTypeResolver)
+                               .stream()
+                               .map(eventName -> Map.<QualifiedName, MessageHandlingMember<? super E>>entry(
+                                       eventName, handler
+                               )))
                        .collect(Collectors.collectingAndThen(
                                Collectors.groupingBy(
-                                       handler -> eventName(handler, messageTypeResolver),
-                                       Collectors.toUnmodifiableList()
+                                       Map.Entry::getKey,
+                                       Collectors.mapping(Map.Entry::getValue, Collectors.toUnmodifiableList())
                                ),
                                Map::copyOf
                        ));
-    }
-
-    private QualifiedName eventName(MessageHandlingMember<? super E> handler,
-                                    MessageTypeResolver messageTypeResolver) {
-        return handler.unwrap(EventHandlingMember.class)
-                      .map(EventHandlingMember::eventName)
-                      .filter(StringUtils::nonEmpty)
-                      .map(QualifiedName::new)
-                      .orElseGet(() -> messageTypeResolver.resolveOrThrow(handler.payloadType()).qualifiedName());
     }
 
     private E entityFromStreamResultOrUpdatedExisting(MessageStream.Entry<?> potentialEntityFromStream, E existing) {

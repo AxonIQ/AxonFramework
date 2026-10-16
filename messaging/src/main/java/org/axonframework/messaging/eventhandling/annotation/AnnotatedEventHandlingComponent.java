@@ -16,7 +16,6 @@
 
 package org.axonframework.messaging.eventhandling.annotation;
 
-import org.axonframework.common.StringUtils;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
@@ -116,19 +115,12 @@ public class AnnotatedEventHandlingComponent<T> implements EventHandlingComponen
     }
 
     private void registerHandler(MessageHandlingMember<? super T> handler) {
-        Class<?> payloadType = handler.payloadType();
-        QualifiedName qualifiedName = handler.unwrap(EventHandlingMember.class)
-                                             .map(EventHandlingMember::eventName)
-                                             // Filter empty Strings to  fall back to the MessageTypeResolver
-                                             .filter(StringUtils::nonEmpty)
-                                             .map(QualifiedName::new)
-                                             .orElseGet(() -> messageTypeResolver.resolveOrThrow(payloadType)
-                                                                                 .qualifiedName());
-
-        handlingComponent.subscribe(qualifiedName, constructEventHandlerFor(qualifiedName, handler));
+        Set<QualifiedName> qualifiedNames = EventHandlingMember.eventNamesOf(handler, messageTypeResolver);
+        EventHandler eventHandler = constructEventHandlerFor(qualifiedNames, handler);
+        qualifiedNames.forEach(qualifiedName -> handlingComponent.subscribe(qualifiedName, eventHandler));
     }
 
-    private EventHandler constructEventHandlerFor(QualifiedName qualifiedName,
+    private EventHandler constructEventHandlerFor(Set<QualifiedName> qualifiedNames,
                                                   MessageHandlingMember<? super T> handler) {
         MessageHandlerInterceptorMemberChain<T> interceptorChain = model.chainedInterceptor(target.getClass());
         EventHandler interceptedHandler =
@@ -148,7 +140,7 @@ public class AnnotatedEventHandlingComponent<T> implements EventHandlingComponen
                     String name = "CustomPolicyHandler[%s]".formatted(handler.signature());
                     SimpleEventHandlingComponent handlerWithCustomPolicy =
                             SimpleEventHandlingComponent.create(name, sequencingPolicy);
-                    handlerWithCustomPolicy.subscribe(qualifiedName, interceptedHandler);
+                    handlerWithCustomPolicy.subscribe(qualifiedNames, interceptedHandler);
                     return handlerWithCustomPolicy;
                 })
                 .map(component -> (EventHandler) component)

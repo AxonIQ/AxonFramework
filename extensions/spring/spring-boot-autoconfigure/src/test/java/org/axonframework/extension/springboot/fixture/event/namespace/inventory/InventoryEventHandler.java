@@ -17,6 +17,7 @@
 package org.axonframework.extension.springboot.fixture.event.namespace.inventory;
 
 import org.axonframework.messaging.core.annotation.Namespace;
+import org.axonframework.messaging.core.annotation.QualifiedName;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.springframework.stereotype.Component;
 
@@ -27,7 +28,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class InventoryEventHandler {
 
-    @EventHandler(eventName = "inventory-events")
+    @EventHandler(event = @QualifiedName(namespace = "inventory", name = "inventory-events"))
     public void handle(String event) {
         System.out.println("Handling event [" + event + "]");
     }

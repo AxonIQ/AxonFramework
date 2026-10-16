@@ -36,6 +36,7 @@ import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.Map;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -77,7 +78,8 @@ class AnnotatedHandlerAttributesTest {
         Method messageHandlingMember = getClass().getMethod("annotatedAllowReplayAndEventHandler", Object.class);
 
         Map<String, Object> expected = new HashMap<>();
-        expected.put(HandlerAttributes.EVENT_NAME, "custom-event-name");
+        expected.put(HandlerAttributes.EVENT_NAME, "com.acme.CustomEventName");
+        expected.put(HandlerAttributes.EVENT_QUALIFIED_NAMES, new QualifiedName[0]);
         expected.put(HandlerAttributes.ALLOW_REPLAY, true);
         expected.put(HandlerAttributes.MESSAGE_TYPE, EventMessage.class);
         expected.put(HandlerAttributes.PAYLOAD_TYPE, Boolean.class);
@@ -88,7 +90,8 @@ class AnnotatedHandlerAttributesTest {
         assertFalse(testSubject.isEmpty());
         assertTrue(testSubject.contains(HandlerAttributes.ALLOW_REPLAY));
         assertEquals(true, testSubject.get(HandlerAttributes.ALLOW_REPLAY));
-        assertEquals(expected, testSubject.getAll());
+        // usingRecursiveComparison compares arrays by content rather than reference
+        assertThat(testSubject.getAll()).usingRecursiveComparison().isEqualTo(expected);
     }
 
     /**
@@ -175,9 +178,9 @@ class AnnotatedHandlerAttributesTest {
         // No-op
     }
 
-    @SuppressWarnings("unused")
+    @SuppressWarnings({"unused", "removal"})
     @AllowReplay
-    @EventHandler(eventName = "custom-event-name", payloadType = Boolean.class)
+    @EventHandler(eventName = "com.acme.CustomEventName", payloadType = Boolean.class)
     public void annotatedAllowReplayAndEventHandler(Object event) {
         // No-op
     }
