@@ -226,7 +226,7 @@ public abstract class AbstractSubscriptionQueryTestSuite extends AbstractQueryTe
         Thread.sleep(500);
 
         // when...
-        testUoW.runOnInvocation(context -> queryBus.emitUpdate(testFilter, () -> testUpdate, context).join());
+        testUoW.runOnInvocation(context -> FutureUtils.joinAndUnwrap(queryBus.emitUpdate(testFilter, () -> testUpdate, context)));
         // then, before we commit, we don't have anything yet...
         List<String> updateList = new ArrayList<>();
         FluxUtils.of(result)
@@ -235,7 +235,7 @@ public abstract class AbstractSubscriptionQueryTestSuite extends AbstractQueryTe
                  .subscribe(updateList::add);
         assertTrue(updateList.isEmpty());
         // when we execute the UoW, it commits...
-        testUoW.execute().join();
+        FutureUtils.joinAndUnwrap(testUoW.execute());
         // then...
         Awaitility.await()
                   .atMost(Duration.ofSeconds(5))
@@ -263,9 +263,9 @@ public abstract class AbstractSubscriptionQueryTestSuite extends AbstractQueryTe
         MessageStream<QueryResponseMessage> result =
                 queryBus.subscriptionQuery(queryMessage, null, Queues.SMALL_BUFFER_SIZE);
         scheduleAfterDelay(() -> {
-            queryBus.emitUpdate(testFilter, () -> testUpdateOne, testContext).join();
-            queryBus.completeSubscriptionsExceptionally(testFilter, toBeThrown, testContext).join();
-            queryBus.emitUpdate(testFilter, () -> testUpdateTwo, testContext).join();
+            FutureUtils.joinAndUnwrap(queryBus.emitUpdate(testFilter, () -> testUpdateOne, testContext));
+            FutureUtils.joinAndUnwrap(queryBus.completeSubscriptionsExceptionally(testFilter, toBeThrown, testContext));
+            FutureUtils.joinAndUnwrap(queryBus.emitUpdate(testFilter, () -> testUpdateTwo, testContext));
         });
         // then
         StepVerifier.create(FluxUtils.of(result).map(MessageStream.Entry::message)
@@ -310,9 +310,9 @@ public abstract class AbstractSubscriptionQueryTestSuite extends AbstractQueryTe
                  .mapNotNull(m -> m.payloadAs(String.class))
                  .subscribe(queryTwoUpdates::add, t -> queryTwoUpdates.add("Error2"));
         scheduleAfterDelay(() -> {
-            queryBus.emitUpdate(testFilter, () -> testUpdateOne, testContext).join();
-            queryBus.completeSubscriptionsExceptionally(testFilter, new RuntimeException(), testContext).join();
-            queryBus.emitUpdate(testFilter, () -> testUpdateTwo, testContext).join();
+            FutureUtils.joinAndUnwrap(queryBus.emitUpdate(testFilter, () -> testUpdateOne, testContext));
+            FutureUtils.joinAndUnwrap(queryBus.completeSubscriptionsExceptionally(testFilter, new RuntimeException(), testContext));
+            FutureUtils.joinAndUnwrap(queryBus.emitUpdate(testFilter, () -> testUpdateTwo, testContext));
         });
         // then
         Awaitility
@@ -349,8 +349,8 @@ public abstract class AbstractSubscriptionQueryTestSuite extends AbstractQueryTe
         Thread.sleep(500);
 
         testUoW.runOnInvocation(context -> {
-            queryBus.emitUpdate(testFilter, () -> testUpdate, context).join();
-            queryBus.completeSubscriptionsExceptionally(testFilter, new RuntimeException(), context).join();
+            FutureUtils.joinAndUnwrap(queryBus.emitUpdate(testFilter, () -> testUpdate, context));
+            FutureUtils.joinAndUnwrap(queryBus.completeSubscriptionsExceptionally(testFilter, new RuntimeException(), context));
         });
         // then before we commit we don't have any update yet...
         Optional<MessageStream.Entry<QueryResponseMessage>> peeked = result
@@ -358,7 +358,7 @@ public abstract class AbstractSubscriptionQueryTestSuite extends AbstractQueryTe
                 .peek();
         assertTrue(peeked.isEmpty());
         // when we execute the UoW, it commits...
-        testUoW.execute().join();
+        FutureUtils.joinAndUnwrap(testUoW.execute());
         // then...
         Awaitility.await()
                   .atMost(Duration.ofSeconds(5))
@@ -418,11 +418,11 @@ public abstract class AbstractSubscriptionQueryTestSuite extends AbstractQueryTe
         Thread.sleep(500);
 
         testUoW.runOnInvocation(context -> {
-            queryBus.emitUpdate(testFilter, () -> testUpdate, context).join();
-            queryBus.completeSubscriptions(testFilter, context).join();
+            FutureUtils.joinAndUnwrap(queryBus.emitUpdate(testFilter, () -> testUpdate, context));
+            FutureUtils.joinAndUnwrap(queryBus.completeSubscriptions(testFilter, context));
         });
         // when...
-        testUoW.runOnInvocation(context -> queryBus.emitUpdate(testFilter, () -> testUpdate, context).join());
+        testUoW.runOnInvocation(context -> FutureUtils.joinAndUnwrap(queryBus.emitUpdate(testFilter, () -> testUpdate, context)));
         // then before we commit we don't have anything yet...
         List<String> updateList = new ArrayList<>();
         FluxUtils.of(result)
@@ -431,7 +431,7 @@ public abstract class AbstractSubscriptionQueryTestSuite extends AbstractQueryTe
                  .subscribe(updateList::add);
         assertTrue(updateList.isEmpty());
         // when we execute the UoW, it commits...
-        testUoW.execute().join();
+        FutureUtils.joinAndUnwrap(testUoW.execute());
         // then...
         await().atMost(Duration.ofSeconds(5))
                .untilAsserted(() -> assertEquals(expectedUpdates, updateList));

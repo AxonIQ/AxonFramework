@@ -21,20 +21,25 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.reactivestreams.Subscription;
+import reactor.core.publisher.BaseSubscriber;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 import reactor.test.StepVerifier;
 import reactor.util.context.ContextView;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.axonframework.common.FutureUtils.joinAndUnwrap;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 /**
  * Test class validating {@link FluxUtils}.
@@ -111,6 +116,67 @@ class FluxUtilsTest {
         assertThat(source.timesClosed())
                 .as("source must be closed exactly once when processing throws")
                 .isEqualTo(1);
+    }
+
+    @Nested
+    class BoundedDemand {
+
+        @Test
+        void emitsMessagesThatArriveAfterSubscriptionToASubscriberRequestingOneAtATime() {
+            // given
+            QueueMessageStream<Message> source = new QueueMessageStream<>();
+            List<Object> received = new CopyOnWriteArrayList<>();
+            FluxUtils.of(source).subscribe(new OneAtATimeSubscriber(received));
+
+            // when
+            source.offer(message("one"), Context.empty());
+            source.offer(message("two"), Context.empty());
+
+            // then
+            await().atMost(Duration.ofSeconds(2))
+                   .untilAsserted(() -> assertThat(received).containsExactly("one", "two"));
+        }
+
+        @Test
+        void emitsMessagesOfAConcatenatedStreamToASubscriberRequestingOneAtATime() {
+            // given
+            QueueMessageStream<Message> updates = new QueueMessageStream<>();
+            MessageStream<Message> source = MessageStream.fromItems(message("initial")).concatWith(updates);
+            List<Object> received = new CopyOnWriteArrayList<>();
+            FluxUtils.of(source).subscribe(new OneAtATimeSubscriber(received));
+
+            // when
+            updates.offer(message("one"), Context.empty());
+            updates.offer(message("two"), Context.empty());
+
+            // then
+            await().atMost(Duration.ofSeconds(2))
+                   .untilAsserted(() -> assertThat(received).containsExactly("initial", "one", "two"));
+        }
+    }
+
+    /**
+     * Requests a single element up front, and one more from within each {@code onNext}, as backpressured consumers
+     * such as RSocket streams do.
+     */
+    private static class OneAtATimeSubscriber extends BaseSubscriber<MessageStream.Entry<Message>> {
+
+        private final List<Object> received;
+
+        private OneAtATimeSubscriber(List<Object> received) {
+            this.received = received;
+        }
+
+        @Override
+        protected void hookOnSubscribe(Subscription subscription) {
+            request(1);
+        }
+
+        @Override
+        protected void hookOnNext(MessageStream.Entry<Message> entry) {
+            received.add(entry.message().payload());
+            request(1);
+        }
     }
 
     @Nested

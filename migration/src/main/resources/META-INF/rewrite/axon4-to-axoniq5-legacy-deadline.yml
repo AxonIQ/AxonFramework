@@ -1,0 +1,172 @@
+#
+# Copyright (c) 2010-2026. Axon Framework
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# Axon Framework 4 deadlines: `DeadlineManager`, `@DeadlineHandler` and the
+# deadline test fixtures, kept running on the Axoniq commercial `axoniq-legacy`
+# module (`io.axoniq.framework:axoniq-legacy`) and its test fixtures
+# (`io.axoniq.framework:axoniq-legacy-test`). The deadline types keep their
+# Axon Framework 4 packages there, so the recipe changes call sites only where
+# Axon Framework 5 forces it:
+#
+# - Sagas: a private `DeadlineManager` field, which the legacy module does not
+#   inject, moves into a parameter of the handlers that use it.
+# - Aggregates: a deadline fires as a command, so `@DeadlineHandler` becomes the
+#   `@CommandHandler` receiving it, and `DeadlineManager` calls that relied on
+#   the aggregate's scope get an explicit `AggregateScopeDescriptor`.
+# - Deadline manager configuration: the builders drop the parameters Axon
+#   Framework 5 has no counterpart for, and `ConfigurationScopeAwareProvider`
+#   gives way to the `ScopeAwareProvider` component of the legacy module.
+# - Test fixtures: `DeadlineMessage` loses its type argument, and interceptor
+#   lambdas on `SagaTestFixture` and `StubDeadlineManager` take the Axon
+#   Framework 5 shape. The deadline and time calls of the aggregate fixture,
+#   which `AxonTestFixture` lacks, are marked with how to test the deadline as
+#   the command it fires as.
+#
+# What cannot be inferred at the call site is kept and marked with a
+# `TODO(axon4to5)` comment. Free Axon Framework 5 has no deadline support, so
+# this recipe only runs from `UpgradeAxon4ToAxoniq5`, through
+# `Axon4ToAxoniq5Legacy`, before the free leg renames the Axon Framework 4
+# types. It adds the dependencies it needs itself, so it can also run on its
+# own.
+
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: io.axoniq.framework.migration.Axon4ToAxoniq5LegacyDeadline
+displayName: Migrate Axon Framework 4 deadlines to Axoniq Framework 5
+description: >-
+  Keeps Axon Framework 4 deadlines running on the Axoniq Framework legacy
+  module. Adds `io.axoniq.framework:axoniq-legacy` when deadline types are used,
+  and `io.axoniq.framework:axoniq-legacy-test` when the deadline test fixtures
+  are used. Moves a Saga's private `DeadlineManager` field into a parameter of
+  the handlers that use it. Replaces an aggregate's `@DeadlineHandler` with the
+  `@CommandHandler` that receives the fired deadline, and passes the
+  `AggregateScopeDescriptor` to aggregate `DeadlineManager` calls that relied
+  on the current scope, reading a creation handler's identifier from the
+  command's `@TargetAggregateIdentifier` (Java only; Kotlin aggregates get a
+  marker). Removes `spanFactory(..)` and `transactionManager(..)`
+  from the deadline manager builders, adds the required `unitOfWorkFactory(..)`
+  from an Axon Framework 4 `Configuration` in scope or a `UnitOfWorkFactory`
+  parameter of a Spring `@Bean` method, and replaces a default Jackson
+  `serializer(..)` with `converter(..)`, as well as a serializer `@Bean`
+  method parameter with the matching converter parameter, marked to check it
+  against the deadlines already stored. Replaces `ConfigurationScopeAwareProvider`
+  and `Configuration#deadlineManager()` with component lookups. Drops the type
+  argument of `DeadlineMessage` and `GenericDeadlineMessage`, and rewrites
+  interceptor lambdas registered on `SagaTestFixture` and `StubDeadlineManager`
+  to the Axon Framework 5 signature. Leaves a `TODO(axon4to5)` marker where the
+  change depends on the application: a `unitOfWorkFactory(..)` with neither in
+  reach, a converter it cannot infer, `configureDeadlineManager(..)`, interceptors
+  registered on the `DeadlineManager` interface, a `ScopeAwareProvider` the
+  application registers itself, aggregate deadline handlers no command can
+  reach, aggregate `DeadlineManager` calls without an identifier in reach, and
+  the deadline and time calls of `AggregateTestFixture`, which `AxonTestFixture`
+  does not have, saying how to test the deadline as the command it fires as.
+recipeList:
+  # `onlyIfUsing` evaluates the AF4-typed source model before source rewrites run.
+  - org.openrewrite.java.dependencies.AddDependency:
+      groupId: io.axoniq.framework
+      artifactId: axoniq-legacy
+      version: ${axoniq.version}
+      onlyIfUsing: org.axonframework.deadline..*
+  - org.openrewrite.java.dependencies.AddDependency:
+      groupId: io.axoniq.framework
+      artifactId: axoniq-legacy-test
+      version: ${axoniq.version}
+      scope: test
+      onlyIfUsing: org.axonframework.test.deadline..*
+
+  # ── Sagas ──────────────────────────────────────────────────────────────────
+
+  # The legacy module does not inject Saga fields, so an @Autowired or @Inject
+  # DeadlineManager field would stay null. Every schedule and cancel overload is
+  # kept, so only the collaborator moves: into a parameter of the handlers (and
+  # the private helpers they call) that use it. Only a private field moves, or a
+  # property of a final Kotlin class: a subclass or another class of the package
+  # may use any other field, and the recipe cannot see or update that code. Runs
+  # before the Saga recipe, whose closing MarkSagaResourceInjection then only
+  # marks the injected fields left in place. A @DeadlineHandler without
+  # parameters first gets a DeadlineMessage parameter: the DeadlineManager
+  # resolves from the configuration, which ranks below the payload resolver,
+  # so as the first parameter it would become the payload.
+  - org.axonframework.migration.MoveSagaFieldToHandlerParameter:
+      fullyQualifiedTypeName: org.axonframework.deadline.DeadlineManager
+
+  # ── Aggregates ─────────────────────────────────────────────────────────────
+
+  # An aggregate deadline fires as a command on the legacy module, so its
+  # @DeadlineHandler becomes the Axon Framework 4 @CommandHandler receiving
+  # that command. It must run before the free leg, which then moves that
+  # annotation to the Axon Framework 5 package and migrates the handler like
+  # any other aggregate command handler.
+  - org.axonframework.migration.MigrateAggregateDeadlineHandler
+  # Only a Saga handler runs inside a scope in Axon Framework 5, so the
+  # DeadlineManager calls of an aggregate that relied on its scope get the
+  # AggregateScopeDescriptor Axon Framework 4 described. It must run before
+  # the free leg removes @AggregateIdentifier, which names the identifier,
+  # renames @TargetAggregateIdentifier, which names a creation command's
+  # identifier, and turns creation constructors into static methods. The free leg's
+  # modelling.command package move excludes AggregateScopeDescriptor, as
+  # axoniq-legacy keeps it in that package.
+  - org.axonframework.migration.AddAggregateScopeToDeadlineCalls
+
+  # ── Deadline manager configuration ─────────────────────────────────────────
+
+  # The legacy deadline manager builders dropped spanFactory(..), transactionManager(..)
+  # and serializer(..), and require unitOfWorkFactory(..) and, when persistent,
+  # converter(..). Runs before the free leg renames org.axonframework.serialization,
+  # so the AF4 JacksonSerializer it maps is still recognizable.
+  - org.axonframework.migration.MigrateDeadlineManagerBuilders
+
+  # ConfigurationScopeAwareProvider is not ported; the legacy module registers its own
+  # ScopeAwareProvider component. Configuration#deadlineManager(), configureDeadlineManager(..)
+  # and interceptor registration on the DeadlineManager interface are gone too. Runs before
+  # the free leg moves org.axonframework.config, while the AF4 types still resolve.
+  - org.axonframework.migration.MigrateDeadlineManagerConfiguration
+  # Retypes what still names the removed class, such as a variable or @Bean return type,
+  # after the step above replaced its construction.
+  - org.openrewrite.java.ChangeType:
+      oldFullyQualifiedTypeName: org.axonframework.config.ConfigurationScopeAwareProvider
+      newFullyQualifiedTypeName: org.axonframework.messaging.ScopeAwareProvider
+
+  # ── Test fixtures ──────────────────────────────────────────────────────────
+  # The legacy DeadlineMessage and GenericDeadlineMessage keep their Axon Framework 4
+  # package but dropped the payload type parameter, like every Axon Framework 5
+  # message. Production code is affected as much as tests (a `DeadlineMessage<?>`
+  # handler parameter, a `new GenericDeadlineMessage<>(..)`); the step sits here
+  # because the fixture matchers and interceptors are where the type arguments
+  # cluster, e.g. `Matcher<? super DeadlineMessage<?>>`. Matched on the unchanged
+  # Axon Framework 4 type names, so the position in the leg does not matter.
+  - org.axonframework.migration.RemoveTypeArguments:
+      fullyQualifiedTypeName: org.axonframework.deadline.DeadlineMessage
+  - org.axonframework.migration.RemoveTypeArguments:
+      fullyQualifiedTypeName: org.axonframework.deadline.GenericDeadlineMessage
+  # The ported SagaTestFixture and StubDeadlineManager take Axon Framework 5
+  # interceptors, so the Axon Framework 4 interceptor lambdas registered on them
+  # stop compiling. Runs here, on the Axon Framework 4 types, before the free leg
+  # renames the interceptor types; the rewritten lambdas keep the types of the
+  # message calls they hold, so the free leg's method renames (`getTimestamp()`,
+  # `andMetaData(..)`) still apply to them. The Saga recipe lists it too, for the
+  # Saga event handler interceptors; running it twice is a no-op.
+  - org.axonframework.migration.MigrateLegacyFixtureInterceptorLambdas
+  # The aggregate fixture becomes AxonTestFixture, which has no deadline manager
+  # and no clock, and axoniq-legacy-test ports deadline support for
+  # SagaTestFixture only. The aggregate's deadline arrives as a command here,
+  # so the marker on each deadline or time call says how to test it that way.
+  # The free leg runs the same recipe with wording for free Axon Framework 5;
+  # running here first, on the Axon Framework 4 types, makes this wording win,
+  # as both share the marker keys.
+  - org.axonframework.migration.MarkAggregateTestFixtureDeadlineCalls:
+      axoniqLegacy: true

@@ -17,7 +17,7 @@
 org.axonframework.extension.springboot.autoconfig.AvroConverterAutoConfiguration
 org.axonframework.extension.springboot.autoconfig.AvroSchemaStoreAutoConfiguration
 org.axonframework.extension.springboot.autoconfig.AxonAutoConfiguration
-# TODO: include in config, see #3959 - org.axonframework.extension.springboot.autoconfig.AxonTimeoutAutoConfiguration
+org.axonframework.extension.springboot.autoconfig.AxonTimeoutAutoConfiguration
 org.axonframework.extension.springboot.autoconfig.CBORConverterAutoConfiguration
 org.axonframework.extension.springboot.autoconfig.CBORMapperAutoConfiguration
 org.axonframework.extension.springboot.autoconfig.ConverterAutoConfiguration

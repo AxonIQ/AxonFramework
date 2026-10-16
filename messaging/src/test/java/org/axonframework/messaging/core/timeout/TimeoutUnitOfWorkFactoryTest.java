@@ -32,6 +32,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -46,10 +47,17 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class TimeoutUnitOfWorkFactoryTest {
 
+    private ScheduledThreadPoolExecutor executor;
+
+    @BeforeEach
+    void setUp() {
+        executor = AxonTaskJanitor.createExecutor();
+    }
+
     @AfterEach
     void tearDown() throws InterruptedException {
         //noinspection ResultOfMethodCallIgnored | Awaiting termination to ensure none of the AxonTimeLimitedTask hang
-        AxonTaskJanitor.INSTANCE.awaitTermination(250, TimeUnit.MILLISECONDS);
+        executor.awaitTermination(250, TimeUnit.MILLISECONDS);
     }
 
     @Test
@@ -200,12 +208,7 @@ class TimeoutUnitOfWorkFactoryTest {
         try (ExecutorService workScheduler = Executors.newSingleThreadExecutor()) {
             TimeoutUnitOfWorkFactory factory = new TimeoutUnitOfWorkFactory(
                     new SimpleUnitOfWorkFactory(EmptyApplicationContext.INSTANCE, c -> c.workScheduler(workScheduler)),
-                    "TestComponent",
-                    100,
-                    500,
-                    10,
-                    AxonTaskJanitor.INSTANCE,
-                    AxonTaskJanitor.LOGGER
+                    "TestComponent", 100, 500, 10, executor
             );
             Thread creatorThread = Thread.currentThread();
             AtomicReference<Thread> workerThread = new AtomicReference<>();
@@ -239,12 +242,7 @@ class TimeoutUnitOfWorkFactoryTest {
         try (ExecutorService workScheduler = Executors.newFixedThreadPool(2)) {
             TimeoutUnitOfWorkFactory factory = new TimeoutUnitOfWorkFactory(
                     new SimpleUnitOfWorkFactory(EmptyApplicationContext.INSTANCE, c -> c.workScheduler(workScheduler)),
-                    "TestComponent",
-                    100,
-                    500,
-                    10,
-                    AxonTaskJanitor.INSTANCE,
-                    AxonTaskJanitor.LOGGER
+                    "TestComponent", 100, 500, 10, executor
             );
             UnitOfWork uow = factory.create(UUID.randomUUID().toString());
             AtomicBoolean slowActionInterrupted = new AtomicBoolean(false);
@@ -300,13 +298,7 @@ class TimeoutUnitOfWorkFactoryTest {
 
     private TimeoutUnitOfWorkFactory createTimeoutFactory(int timeout) {
         return new TimeoutUnitOfWorkFactory(
-                UnitOfWorkTestUtils.SIMPLE_FACTORY,
-                "TestComponent",
-                timeout,
-                500,
-                10,
-                AxonTaskJanitor.INSTANCE,
-                AxonTaskJanitor.LOGGER
+                UnitOfWorkTestUtils.SIMPLE_FACTORY, "TestComponent", timeout, 500, 10, executor
         );
     }
 }

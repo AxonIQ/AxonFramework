@@ -58,10 +58,16 @@ class CompletionCallbackMessageStream<M extends Message> extends AbstractMessage
     }
 
     @Override
+    protected FetchResult.NoValue<Entry<M>> terminalState() {
+        return terminalStateOf(delegate);
+    }
+
+    @Override
     protected void onCompleted() {
         delegate.close();
 
-        if (error().isEmpty()) {
+        // Closing may fail the delegate, as a pending stream does by cancelling its source: no normal completion.
+        if (error().isEmpty() && delegate.error().isEmpty()) {
             completeHandler.run();  // may throw exception, that's allowed
         }
     }

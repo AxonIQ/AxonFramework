@@ -68,3 +68,15 @@ python3 docs/_samples/bin/compare-snippets.py docs/reference-guide/modules/comma
 Every difference the script reports must be intentional (for example a dropped import of a
 sample-local type). If compilation reveals that a documented snippet was wrong, fix the sample
 so it keeps its teaching intent and record the finding in the commit message.
+
+## Saga and workflow comparison examples
+
+The `migration/paths/sagastoworkflows` examples use separate classpaths for AF4 sagas
+and Axoniq Framework workflows. They are excluded from the OSS sample classpath. Run:
+
+```bash
+mvn -f docs/reference-guide/modules/migration/examples/migration/paths/sagastoworkflows/pom.xml compile
+```
+
+This compiles both sides using Java 21 or newer; it does not run behavior tests.
+The workflow examples target 5.4.0; they do not establish compatibility with other releases.

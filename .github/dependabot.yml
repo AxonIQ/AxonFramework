@@ -10,7 +10,7 @@ updates:
   labels:
     - "Type: Dependency Upgrade"
     - "Priority 1: Must"
-  milestone: 138
+  milestone: 142
   groups:
     github-dependencies:
       update-types:
@@ -30,7 +30,7 @@ updates:
   labels:
     - "Type: Dependency Upgrade"
     - "Priority 1: Must"
-  milestone: 138
+  milestone: 142
   groups:
     maven-dependencies:
       update-types:
@@ -50,6 +50,8 @@ updates:
       versions: [ "[2025.0.0,)" ]
     - dependency-name: "org.openrewrite.recipe:*"
       versions: [ "[3.37.0,)" ]
+    - dependency-name: "org.apache.maven:apache-maven"
+      versions: [ "3.10.0" ]
 
 
 - package-ecosystem: maven
@@ -61,7 +63,7 @@ updates:
   labels:
     - "Type: Dependency Upgrade"
     - "Priority 1: Must"
-  milestone: 138
+  milestone: 142
   groups:
     maven-dependencies:
       update-types:
@@ -82,7 +84,7 @@ updates:
   labels:
     - "Type: Dependency Upgrade"
     - "Priority 1: Must"
-  milestone: 138
+  milestone: 142
   groups:
     maven-dependencies:
       update-types:
@@ -99,7 +101,7 @@ updates:
   labels:
     - "Type: Dependency Upgrade"
     - "Priority 1: Must"
-  milestone: 138
+  milestone: 142
   groups:
     antora-dependencies:
       update-types:

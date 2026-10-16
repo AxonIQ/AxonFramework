@@ -16,6 +16,7 @@
 
 package org.axonframework.eventsourcing.snapshot.store.tracing;
 
+import org.axonframework.common.configuration.DecoratingComponent;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.messaging.tracing.Span;
 import org.axonframework.messaging.tracing.SpanFactory;
@@ -44,7 +45,7 @@ import java.util.concurrent.CompletableFuture;
  * @since 5.3.0
  */
 @Internal
-public final class TracingSnapshotStore implements SnapshotStore {
+public final class TracingSnapshotStore implements SnapshotStore, DecoratingComponent {
 
     /** Prefix for the snapshot-store-write span ({@code "SnapshotStore.store <name>"}). */
     private static final String STORE_SPAN = "SnapshotStore.store";
@@ -95,8 +96,13 @@ public final class TracingSnapshotStore implements SnapshotStore {
     }
 
     @Override
+    public Object decoratedDelegate() {
+        return delegate;
+    }
+
+    @Override
     public void describeTo(ComponentDescriptor descriptor) {
-        descriptor.describeWrapperOf(descriptor);
+        descriptor.describeWrapperOf(delegate);
         descriptor.describeProperty("spanFactory", spanFactory);
     }
 }

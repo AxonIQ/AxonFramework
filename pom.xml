@@ -30,8 +30,6 @@
         <module>conversion</module>
         <module>extensions</module>
         <module>eventsourcing</module>
-        <module>legacy</module>
-        <module>legacy-test</module>
         <module>messaging</module>
         <module>migration</module>
         <module>modelling</module>
@@ -70,16 +68,12 @@
     </organization>
 
     <properties>
-        <revision>5.4.0-SNAPSHOT</revision>
+        <revision>5.5.0-SNAPSHOT</revision>
         <java.version>21</java.version>
         <maven.compiler.source>${java.version}</maven.compiler.source>
         <maven.compiler.target>${java.version}</maven.compiler.target>
         <!-- Main -->
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <sonar.coverage.jacoco.xmlReportPaths>
-            ${project.basedir}/coverage-report/target/site/jacoco-aggregate/jacoco.xml,
-            ${project.basedir}/../coverage-report/target/site/jacoco-aggregate/jacoco.xml
-        </sonar.coverage.jacoco.xmlReportPaths>
 
         <!-- Build / Plugin -->
         <central-publishing-maven-plugin.version>0.11.0</central-publishing-maven-plugin.version>
@@ -91,7 +85,7 @@
         <maven-enforcer.version>3.6.3</maven-enforcer.version>
         <maven-failsafe.version>3.6.0</maven-failsafe.version>
         <maven-gpg.version>3.2.8</maven-gpg.version>
-        <maven-install.version>3.1.4</maven-install.version>
+        <maven-install.version>3.2.0</maven-install.version>
         <maven-jar.version>3.5.1</maven-jar.version>
         <maven-javadoc.version>3.12.0</maven-javadoc.version>
         <maven-release.version>3.3.1</maven-release.version>
@@ -276,7 +270,7 @@
                         <configuration>
                             <doclint>none</doclint>
                             <legacyMode>true</legacyMode>
-                            <skippedModules>axon-todo,axon-legacy-aggregate,axon-legacy-saga,axon-integrationtests,axon-docs-samples</skippedModules>
+                            <skippedModules>axon-todo,axon-integrationtests,axon-docs-samples</skippedModules>
                             <!-- These parameters are in preparation for resolution of this issue: -->
                             <!-- https://bugs.openjdk.java.net/browse/JDK-8068562 -->
                             <tags>

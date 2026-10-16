@@ -26,6 +26,7 @@ import org.junit.jupiter.api.*;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ScheduledExecutorService;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -150,6 +151,19 @@ class TimeoutUnitOfWorkFactoryConfigurationEnhancerTest {
         // then
         assertThat(eventProcessorUnitOfWorkFactory(config, "slow-processor")).isInstanceOf(TimeoutUnitOfWorkFactory.class);
         assertThat(eventProcessorUnitOfWorkFactory(config, "fast-processor")).isSameAs(baseUnitOfWorkFactory);
+    }
+
+    @Test
+    void registersAxonTaskJanitorAsAConfigurationScopedComponent() {
+        // given / when
+        Configuration config = componentRegistry.build(mock(LifecycleRegistry.class));
+
+        // then
+        ScheduledExecutorService executor =
+                config.getComponent(ScheduledExecutorService.class, AxonTaskJanitor.EXECUTOR_COMPONENT_NAME);
+        assertThat(executor).isNotNull();
+        assertThat(commandBusUnitOfWorkFactory(config)).extracting("executorService").isSameAs(executor);
+        assertThat(queryBusUnitOfWorkFactory(config)).extracting("executorService").isSameAs(executor);
     }
 
     private static UnitOfWorkFactory commandBusUnitOfWorkFactory(Configuration config) {

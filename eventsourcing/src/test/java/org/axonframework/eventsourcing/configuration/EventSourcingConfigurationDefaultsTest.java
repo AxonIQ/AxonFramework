@@ -163,7 +163,7 @@ class EventSourcingConfigurationDefaultsTest {
     }
 
     @Test
-    void doesNotDecorateEventStorageEngineWhenItImplementsSnapshotStore_evenIfADifferentSnapshotStoreInstanceIsRegistered(
+    void decoratesEventStorageEngineWhenSnapshotStoreIsDifferentInstance_evenIfEngineImplementsSnapshotStore(
             @Mock(extraInterfaces = SnapshotStore.class) InMemoryEventStorageEngine snapshotAwareEngine
     ) {
         ApplicationConfigurer configurer = EventSourcingConfigurer.create();
@@ -171,9 +171,10 @@ class EventSourcingConfigurationDefaultsTest {
                                              .registerComponent(SnapshotStore.class, c -> new InMemorySnapshotStore()));
         Configuration resultConfig = configurer.build();
 
-        // an engine that natively supports snapshotting is never wrapped, regardless of the registered SnapshotStore
+        // snapshot reads must be routed to the registered SnapshotStore, not the engine itself: an engine merely
+        // happening to implement SnapshotStore does not make it the SnapshotStore a caller explicitly configured
         assertThat(resultConfig.getComponent(EventStorageEngine.class))
-                .isNotInstanceOf(SnapshotCapableEventStorageEngine.class);
+                .isInstanceOf(SnapshotCapableEventStorageEngine.class);
     }
 
     @Test

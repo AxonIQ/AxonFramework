@@ -42,6 +42,7 @@ public interface Configuration extends DescribableComponent {
      * @param <C>  The type of component.
      * @return The component registered for the given type.
      * @throws ComponentNotFoundException Whenever there is no component present for the given {@code type}.
+     * @throws AmbiguousComponentMatchException if several components match the given {@code type}
      */
     default <C> C getComponent(Class<C> type) {
         return getComponent(type, (String) null);
@@ -58,6 +59,7 @@ public interface Configuration extends DescribableComponent {
      * @return The component registered for the given {@code type} and {@code name}.
      * @throws ComponentNotFoundException Whenever there is no component present for the given {@code type} and
      *                                    {@code name}.
+     * @throws AmbiguousComponentMatchException if several components match the given {@code type} and {@code name}
      */
     default <C> C getComponent(Class<C> type,
                                @Nullable String name) {
@@ -72,6 +74,8 @@ public interface Configuration extends DescribableComponent {
      * @param <C>  The type of component.
      * @return An {@code Optional} wrapping the component registered for the given {@code type}. Might be empty when
      * there is no component present for the given {@code type}.
+     * @throws AmbiguousComponentMatchException if several components match the given {@code type}, as that is not the
+     *                                          same as no component being present
      */
     default <C> Optional<C> getOptionalComponent(Class<C> type) {
         return getOptionalComponent(type, null);
@@ -86,6 +90,8 @@ public interface Configuration extends DescribableComponent {
      * @param <C>  The type of component.
      * @return An {@code Optional} wrapping the component registered for the given {@code type} and {@code name}. Might
      * be empty when there is no component present for the given {@code type} and {@code name}.
+     * @throws AmbiguousComponentMatchException if several components match the given {@code type} and {@code name}, as
+     *                                          that is not the same as no component being present
      */
     <C> Optional<C> getOptionalComponent(Class<C> type,
                                          @Nullable String name);
@@ -105,6 +111,7 @@ public interface Configuration extends DescribableComponent {
      * @param <C>           The type of component.
      * @return The component registered for the given {@code typeReference}.
      * @throws ComponentNotFoundException Whenever there is no component present for the given {@code type}.
+     * @throws AmbiguousComponentMatchException if several components match the given {@code typeReference}
      */
     default <C> C getComponent(TypeReference<C> typeReference) {
         return getComponent(typeReference, null);
@@ -128,6 +135,8 @@ public interface Configuration extends DescribableComponent {
      * @return The component registered for the given {@code typeReference} and {@code name}.
      * @throws ComponentNotFoundException Whenever there is no component present for the given {@code typeReference} and
      *                                    {@code name}.
+     * @throws AmbiguousComponentMatchException if several components match the given {@code typeReference} and
+     *                                          {@code name}
      */
     default <C> C getComponent(TypeReference<C> typeReference,
                                @Nullable String name) {
@@ -149,6 +158,8 @@ public interface Configuration extends DescribableComponent {
      * @param <C>           The type of component.
      * @return An {@code Optional} wrapping the component registered for the given {@code type}. Might be empty when
      * there is no component present for the given {@code typeReference}.
+     * @throws AmbiguousComponentMatchException if several components match the given {@code typeReference}, as that is
+     *                                          not the same as no component being present
      */
     default <C> Optional<C> getOptionalComponent(TypeReference<C> typeReference) {
         return getOptionalComponent(typeReference, null);
@@ -171,12 +182,17 @@ public interface Configuration extends DescribableComponent {
      * @param <C>           The type of component.
      * @return An {@code Optional} wrapping the component registered for the given {@code type} and {@code name}. Might
      * be empty when there is no component present for the given {@code type} and {@code name}.
+     * @throws AmbiguousComponentMatchException if several components match the given {@code typeReference} and
+     *                                          {@code name}, as that is not the same as no component being present
      */
     <C> Optional<C> getOptionalComponent(TypeReference<C> typeReference,
                                          @Nullable String name);
 
     /**
      * Check whether there is a {@link Component} present in this {@code Configuration} for the given {@code type}.
+     * <p>
+     * Returns {@code true} as well when several components match, even though retrieving the component then fails with
+     * an {@link AmbiguousComponentMatchException}.
      *
      * @param type The type of the {@link Component} to check if it exists, typically an interface.
      * @return {@code true} when there is a {@link Component} registered under the given {@code type}, {@code false}
@@ -189,6 +205,9 @@ public interface Configuration extends DescribableComponent {
     /**
      * Check whether there is a {@link Component} present in this {@code Configuration} for the given {@code type} and
      * {@code name} combination.
+     * <p>
+     * Returns {@code true} as well when several components match, even though retrieving the component then fails with
+     * an {@link AmbiguousComponentMatchException}.
      *
      * @param type The type of the {@link Component} to check if it exists, typically an interface.
      * @param name The name of the {@link Component} to check if it exists. Use {@code null} when there is no name or
@@ -198,7 +217,11 @@ public interface Configuration extends DescribableComponent {
      */
     default boolean hasComponent(Class<?> type,
                                  @Nullable String name) {
-        return getOptionalComponent(type, name).isPresent();
+        try {
+            return getOptionalComponent(type, name).isPresent();
+        } catch (AmbiguousComponentMatchException e) {
+            return true;
+        }
     }
 
     /**
@@ -206,6 +229,9 @@ public interface Configuration extends DescribableComponent {
      * {@code typeReference}.
      * <p>
      * Implementations should make sure the type reference matches exactly (including generic parameters).
+     * <p>
+     * Returns {@code true} as well when several components match, even though retrieving the component then fails with
+     * an {@link AmbiguousComponentMatchException}.
      *
      * @param typeReference a {@link TypeReference} specifying the type of the {@link Component} to check for existence
      * @return {@code true} when there is a {@link Component} registered under the given {@code typeReference},
@@ -220,6 +246,9 @@ public interface Configuration extends DescribableComponent {
      * {@code typeReference} and {@code name} combination.
      * <p>
      * Implementations should make sure the type reference matches exactly (including generic parameters).
+     * <p>
+     * Returns {@code true} as well when several components match, even though retrieving the component then fails with
+     * an {@link AmbiguousComponentMatchException}.
      *
      * @param typeReference The type of the {@link Component} to check if it exists, typically an interface.
      * @param name          The name of the {@link Component} to check if it exists. Use {@code null} when there is no
@@ -229,20 +258,28 @@ public interface Configuration extends DescribableComponent {
      */
     default boolean hasComponent(TypeReference<?> typeReference,
                                  @Nullable String name) {
-        return getOptionalComponent(typeReference, name).isPresent();
+        try {
+            return getOptionalComponent(typeReference, name).isPresent();
+        } catch (AmbiguousComponentMatchException e) {
+            return true;
+        }
     }
 
     /**
      * Returns the component declared under the given {@code type}, reverting to the given {@code defaultImpl} if no
      * such component is defined.
      * <p>
-     * When no component was previously registered, the default is then configured as the component for the given type.
+     * A component registered under a subtype of the given {@code type} counts as defined, as it does for
+     * {@link #getOptionalComponent(Class, String)}. Only when no component matches is the default used, and then
+     * configured as the component for the given type.
      *
      * @param type        The type of component, typically the interface the component implements.
      * @param defaultImpl The supplier of the default component to return if it was not registered.
      * @param <C>         The type of component.
      * @return The component declared under the given {@code type}, reverting to the given {@code defaultImpl} if no
      * such component is defined.
+     * @throws AmbiguousComponentMatchException if several components match the given {@code type}, in which case the
+     *                                          {@code defaultImpl} is not used
      */
     default <C> C getComponent(Class<C> type,
                                Supplier<C> defaultImpl) {
@@ -253,7 +290,9 @@ public interface Configuration extends DescribableComponent {
      * Returns the component declared under the given {@code type} and {@code name}, reverting to the given
      * {@code defaultImpl} if no such component is defined.
      * <p>
-     * When no component was previously registered, the default is then configured as the component for the given type.
+     * A component registered under a subtype of the given {@code type} counts as defined, as it does for
+     * {@link #getOptionalComponent(Class, String)}. Only when no component matches is the default used, and then
+     * configured as the component for the given type.
      *
      * @param type        The type of component, typically the interface the component implements.
      * @param name        The name of the component to retrieve. Use {@code null} when there is no name or use
@@ -262,6 +301,8 @@ public interface Configuration extends DescribableComponent {
      * @param <C>         The type of component.
      * @return The component declared under the given {@code type} and {@code name}, reverting to the given
      * {@code defaultImpl} if no such component is defined.
+     * @throws AmbiguousComponentMatchException if several components match the given {@code type} and {@code name}, in
+     *                                          which case the {@code defaultImpl} is not used
      */
     <C> C getComponent(Class<C> type,
                        @Nullable String name,

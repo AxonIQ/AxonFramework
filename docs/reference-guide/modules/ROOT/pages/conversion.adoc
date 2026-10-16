@@ -178,7 +178,6 @@ When deciding which converter to use for your application, consider:
 
 * You must maintain XML format for legacy reasons
 * External systems require XML
-* You're migrating from XStream and need XML compatibility
 
 **For most new applications, the default JacksonConverter with JSON format is the recommended choice.**
 It provides the best balance of features, performance, and maintainability.
@@ -259,6 +258,10 @@ In Spring Boot applications, the auto-configuration can create a schema store th
 
 For production use with multiple services, consider implementing a custom `SchemaStore` that connects to a central schema registry.
 We doing so, be sure to implement caching to maintain performance.
+
+ifdef::advanced-framework[]
+include::ROOT:partial$xstream-converter.adoc[]
+endif::[]
 
 === Custom converters
 

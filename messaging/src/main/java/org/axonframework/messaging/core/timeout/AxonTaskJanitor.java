@@ -17,27 +17,37 @@
 package org.axonframework.messaging.core.timeout;
 
 import org.axonframework.common.AxonThreadFactory;
+import org.axonframework.common.configuration.ComponentDefinition;
+import org.axonframework.common.configuration.Configuration;
+import org.axonframework.common.lifecycle.Phase;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 /**
- * Container of unique {@link ScheduledExecutorService} and {@link Logger} instances for the
+ * Utility constructing a {@link ScheduledExecutorService} and providing {@link Logger} instances for the
  * {@link AxonTimeLimitedTask}.
+ * <p>
+ * To ensure a unique executor is used throughout, the {@link #executorComponent()} should be registered with an
+ * applications {@link Configuration} just once under the {@link #EXECUTOR_COMPONENT_NAME}. Doing so on top level
+ * ensures (1) that there is a single instance throughout and (2) that it's lifecycle is tied to the application's
+ * lifecycle.
  *
  * @author Mitchell Herrijgers
+ * @author Steven van Beelen
  * @see AxonTimeLimitedTask
  * @since 4.11.0
  */
 public class AxonTaskJanitor {
 
     /**
-     * Unique instances of the {@link ScheduledExecutorService} for the {@link AxonTimeLimitedTask} to schedule warnings
-     * and interrupts.
+     * The name under which the {@link Configuration}-scoped {@link ScheduledExecutorService}, defined by
+     * {@link #executorComponent()}, is known in the {@link Configuration}.
      */
-    public static final ScheduledExecutorService INSTANCE = createJanitorExecutorService();
+    public static final String EXECUTOR_COMPONENT_NAME = "AxonTaskJanitorScheduledExecutorService";
 
     /**
      * Unique instance of the {@link Logger} for the {@link AxonTimeLimitedTask} to log warnings and errors.
@@ -49,15 +59,49 @@ public class AxonTaskJanitor {
     }
 
     /**
-     * Creates the ScheduledExecutorService used for scheduling the interrupting task. It only has one thread as the
-     * load is very low. Cancelling the tasks will clean it up to reduce memory pressure.
+     * Creates a {@link ComponentDefinition} for a {@link ScheduledExecutorService}, named
+     * {@link #EXECUTOR_COMPONENT_NAME}, scoped to whichever {@link Configuration} it is registered with (for example
+     * through
+     * {@link org.axonframework.common.configuration.ComponentRegistry#registerIfNotPresent(ComponentDefinition)}).
+     * <p>
+     * The defined executor is created lazily, on first use, and is shut down automatically when the owning
+     * {@code Configuration} shuts down. Since the executor is scoped to a single {@code Configuration}, shutting that
+     * {@code Configuration} down can never affect timeout enforcement in another {@code Configuration} sharing the same
+     * JVM.
      *
-     * @return The ScheduledExecutorService
+     * @return a {@link ComponentDefinition} for a {@link Configuration}-scoped {@link ScheduledExecutorService}
      */
-    private static ScheduledThreadPoolExecutor createJanitorExecutorService() {
+    public static ComponentDefinition<ScheduledExecutorService> executorComponent() {
+        return ComponentDefinition.ofTypeAndName(ScheduledExecutorService.class, EXECUTOR_COMPONENT_NAME)
+                                  .withBuilder(c -> createExecutor())
+                                  .onShutdown(Phase.EXTERNAL_CONNECTIONS - 10, AxonTaskJanitor::gracefulShutdown);
+    }
+
+    /**
+     * Creates the {@link ScheduledExecutorService} used for scheduling the interrupting task.
+     * <p>
+     * It only has one thread as the load is very low. Cancelling the tasks will clean it up to reduce memory pressure.
+     *
+     * @return the {@link ScheduledExecutorService} used for scheduling the interrupting task
+     */
+    protected static ScheduledThreadPoolExecutor createExecutor() {
         ScheduledThreadPoolExecutor janitor = new ScheduledThreadPoolExecutor(1, new AxonThreadFactory("axon-janitor"));
         // Clean up tasks in the queue when canceled. Performance is equal but reduces memory pressure.
         janitor.setRemoveOnCancelPolicy(true);
         return janitor;
+    }
+
+    private static void gracefulShutdown(ScheduledExecutorService executor) {
+        executor.shutdown();
+        try {
+            if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
+                LOGGER.warn("The janitor's executor did not terminate within 5 seconds. Forcing shutdown.");
+                executor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            LOGGER.warn("Interrupted while awaiting the janitor's executor termination. Forcing shutdown.");
+            executor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 }

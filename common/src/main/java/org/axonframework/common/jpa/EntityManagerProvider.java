@@ -17,29 +17,30 @@
 package org.axonframework.common.jpa;
 
 import jakarta.persistence.EntityManager;
-import org.axonframework.common.annotation.Internal;
 
 /**
- * Provides components with an EntityManager to access the persistence mechanism. Depending on the application
- * environment, this may be a single container managed EntityManager, or an application managed instance for one-time
- * use.
- * <p/>
- * Note that the implementation is responsible for keeping track of transaction scope, if necessary. Generally, this is
- * the case when using application-managed EntityManagers.
+ * Provides components with an {@link EntityManager} to access the persistence mechanism. Depending on
+ * the application environment, this may be a single container managed EntityManager, or an application
+ * managed instance for one-time use.
+ * <p>
+ * The returned entity manager's transactional lifecycle (commit, rollback, and close) is never
+ * managed by {@link EntityManagerExecutor} or any other consumer of this interface; it remains entirely
+ * the responsibility of whatever owns the entity manager on the other end of this provider, such as a
+ * container's transaction manager binding it to the current unit of work.
  *
  * @author Allard Buijze
+ * @author John Hendrikx
  * @since 1.3
  */
-@Internal
 public interface EntityManagerProvider {
 
     /**
-     * Returns the EntityManager instance to use.
-     * <p/>
-     * Note that the implementation is responsible for keeping track of transaction scope, if necessary. Generally,
-     * this is the case when using application-managed EntityManagers.
+     * Returns the {@link EntityManager} instance to use.
+     * <p>
+     * The caller must never commit, roll back, or close the returned entity manager directly; its
+     * lifecycle is managed externally by whatever this provider obtained it from.
      *
-     * @return the EntityManager instance to use.
+     * @return the entity manager instance to use, never {@code null}
      */
     EntityManager getEntityManager();
 }
