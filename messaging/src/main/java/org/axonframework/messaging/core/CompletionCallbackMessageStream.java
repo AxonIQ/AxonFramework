@@ -20,7 +20,8 @@ import org.axonframework.messaging.core.MessageStream.Entry;
 
 /**
  * Implementation of the {@link MessageStream} that invokes the given {@code completeHandler} once the
- * {@code delegate MessageStream} completes.
+ * {@code delegate MessageStream} completes normally. The {@code completeHandler} is not invoked when this stream is
+ * closed before it was exhausted, which includes being closed while an entry it already peeked was not yet read.
  *
  * @param <M> The type of {@link Message} contained in the {@link Entry entries} of this stream.
  * @author Allard Buijze
@@ -66,8 +67,7 @@ class CompletionCallbackMessageStream<M extends Message> extends AbstractMessage
     protected void onCompleted() {
         delegate.close();
 
-        // Closing may fail the delegate, as a pending stream does by cancelling its source: no normal completion.
-        if (error().isEmpty() && delegate.error().isEmpty()) {
+        if (error().isEmpty() && !isClosedBeforeExhaustion()) {
             completeHandler.run();  // may throw exception, that's allowed
         }
     }
