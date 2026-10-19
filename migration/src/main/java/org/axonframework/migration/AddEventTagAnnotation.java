@@ -581,7 +581,8 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
             }
 
             /**
-             * Appends {@code commentText} as a trailing {@code //} comment right after {@code vd}'s
+             * Appends {@code commentText} as a trailing {@code //} comment (a block comment when the
+             * declaration continues on the same line) right after {@code vd}'s
              * last leading annotation, on the same line, by converting the newline+indent prefix of
              * whatever node follows the annotation (a modifier, or the type expression) into
              * {@code " " + comment + <original newline+indent>}.
@@ -599,7 +600,15 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
             }
 
             private Space withTrailingComment(Space prefix, String commentText) {
-                String suffix = prefix.getWhitespace().isEmpty() ? "\n" : prefix.getWhitespace();
+                String whitespace = prefix.getWhitespace();
+                if (!whitespace.isEmpty() && !whitespace.contains("\n")) {
+                    // The declaration continues on this line (for example, a record component list on one
+                    // line), so a line comment would comment out the rest of it. Use a block comment instead.
+                    TextComment blockComment = new TextComment(true, commentText + " ", " ", Markers.EMPTY);
+                    return prefix.withWhitespace(" ")
+                                 .withComments(ListUtils.concat(prefix.getComments(), blockComment));
+                }
+                String suffix = whitespace.isEmpty() ? "\n" : whitespace;
                 TextComment comment = new TextComment(false, commentText, suffix, Markers.EMPTY);
                 return prefix.withWhitespace(" ")
                              .withComments(ListUtils.concat(prefix.getComments(), comment));

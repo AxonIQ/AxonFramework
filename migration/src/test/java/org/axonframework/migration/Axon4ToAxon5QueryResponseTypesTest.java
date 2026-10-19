@@ -390,4 +390,70 @@ class Axon4ToAxon5QueryResponseTypesTest implements RewriteTest {
                 )
         );
     }
+
+    @Test
+    void flagsSubscriptionQueryAssignedToAVariable() {
+        rewriteRun(
+                spec -> spec.typeValidationOptions(TypeValidation.none()),
+                java(
+                        """
+                        package com.example;
+                        import org.axonframework.queryhandling.QueryGateway;
+                        class Foo {
+                            private final QueryGateway gateway;
+                            Foo(QueryGateway gateway) { this.gateway = gateway; }
+                            void watch(Object payload) {
+                                var result = gateway.subscriptionQuery(payload, String.class, String.class);
+                            }
+                        }
+                        """,
+                        """
+                        package com.example;
+                        import org.axonframework.queryhandling.QueryGateway;
+                        class Foo {
+                            private final QueryGateway gateway;
+                            Foo(QueryGateway gateway) { this.gateway = gateway; }
+                            void watch(Object payload) {
+                                var result = // TODO(axon4to5): subscriptionQuery: AF5 removed SubscriptionQueryResult. The subscriptionQuery(...) method now returns a single Publisher<R> merging the initial result and updates. To keep the old "subscribe before send" idiom, use Flux.from(updates).doOnSubscribe(sub -> commandGateway.send(command)).
+                                gateway.subscriptionQuery(payload, String.class, String.class);
+                            }
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
+    void flagsSubscriptionQueryNestedAsAnArgument() {
+        rewriteRun(
+                spec -> spec.typeValidationOptions(TypeValidation.none()),
+                java(
+                        """
+                        package com.example;
+                        import org.axonframework.queryhandling.QueryGateway;
+                        class Foo {
+                            private final QueryGateway gateway;
+                            Foo(QueryGateway gateway) { this.gateway = gateway; }
+                            Object watch(Object payload) {
+                                return wrap(gateway.subscriptionQuery(payload, String.class, String.class));
+                            }
+                            Object wrap(Object result) { return result; }
+                        }
+                        """,
+                        """
+                        package com.example;
+                        import org.axonframework.queryhandling.QueryGateway;
+                        class Foo {
+                            private final QueryGateway gateway;
+                            Foo(QueryGateway gateway) { this.gateway = gateway; }
+                            Object watch(Object payload) {
+                                return wrap(// TODO(axon4to5): subscriptionQuery: AF5 removed SubscriptionQueryResult. The subscriptionQuery(...) method now returns a single Publisher<R> merging the initial result and updates. To keep the old "subscribe before send" idiom, use Flux.from(updates).doOnSubscribe(sub -> commandGateway.send(command)).
+                        gateway.subscriptionQuery(payload, String.class, String.class));
+                            }
+                            Object wrap(Object result) { return result; }
+                        }
+                        """
+                )
+        );
+    }
 }
