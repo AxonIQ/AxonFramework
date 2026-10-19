@@ -179,11 +179,13 @@ public class EventProcessorProperties {
 
         /**
          * The name of the bean that represents the sequencing policy for processing events.
-         *
-         * When no name is specified,
-         * the processor defaults to a {@link SequentialPerAggregatePolicy},
-         * which guarantees to process events originating from the same Aggregate instance sequentially, while events
-         * from different Aggregate instances may be processed concurrently.
+         * <p>
+         * When no name is specified, the processor defaults to a
+         * {@link org.axonframework.messaging.core.sequencing.HierarchicalSequencingPolicy} pairing a
+         * {@link SequentialPerAggregatePolicy} with a
+         * {@link org.axonframework.messaging.core.sequencing.SequentialPolicy}. This setup guarantees that
+         * aggregate-based event stores keep their per-aggregate sequencing. When no aggregate identifier is present,
+         * full sequential kicks in instead.
          */
         @Nullable
         private String sequencingPolicy;
@@ -404,11 +406,9 @@ public class EventProcessorProperties {
         }
 
         /**
-         * Returns the name of the bean that defines the
-         * {@link SequencingPolicy} for this processor.
+         * Returns the name of the bean that defines the {@link SequencingPolicy} for this processor.
          *
-         * @return the name of the bean that defines the
-         * {@link SequencingPolicy} for this processor.
+         * @return the name of the bean that defines the {@link SequencingPolicy} for this processor
          */
         @Override
         @Nullable
@@ -417,14 +417,16 @@ public class EventProcessorProperties {
         }
 
         /**
-         * Sets the name of the bean that defines the
-         * {@link SequencingPolicy} for this processor. The
-         * {@code SequencingPolicy} describes which Events must be handled sequentially, and which can be handled
-         * concurrently. Defaults to a {@link SequentialPerAggregatePolicy}.
+         * Sets the name of the bean that defines the {@link SequencingPolicy} for this processor.
+         * <p>
+         * When no name is specified, the processor defaults to a
+         * {@link org.axonframework.messaging.core.sequencing.HierarchicalSequencingPolicy} pairing a
+         * {@link SequentialPerAggregatePolicy} with a
+         * {@link org.axonframework.messaging.core.sequencing.SequentialPolicy}. This setup guarantees that
+         * aggregate-based event stores keep their per-aggregate sequencing. When no aggregate identifier is present,
+         * full sequential kicks in instead.
          *
-         * @param sequencingPolicy the name of the bean that defines the
-         *                         {@link SequencingPolicy} for this
-         *                         processor.
+         * @param sequencingPolicy the name of the bean that defines the {@link SequencingPolicy} for this processor
          */
         public void setSequencingPolicy(String sequencingPolicy) {
             this.sequencingPolicy = sequencingPolicy;

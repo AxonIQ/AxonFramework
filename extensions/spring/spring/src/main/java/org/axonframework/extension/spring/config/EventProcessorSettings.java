@@ -174,7 +174,7 @@ public sealed interface EventProcessorSettings {
          * or the framework's default aggregate-based sequencing).
          *
          * @return only used if non-null
-         * @since 5.4.0
+         * @since 5.5.0
          */
         @Nullable
         default String sequencingPolicy() {

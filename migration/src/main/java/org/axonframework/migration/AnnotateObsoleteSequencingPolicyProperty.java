@@ -28,21 +28,20 @@ import org.openrewrite.yaml.tree.Yaml;
 import java.util.regex.Pattern;
 
 /**
- * Spring-Boot-only advisory recipe for the AF4 → AF5 sequencing-policy migration.
+ * Spring-Boot-only advisory recipe for the AF4 to AF5 sequencing-policy migration.
  * <p>
  * In AF4, sequencing for an event-processing group was configured via the Spring property
- * {@code axon.eventhandling.processors.<group>.sequencing-policy}. AF5 moves that decision
- * onto the event handler class itself, via {@code @SequencingPolicy(...)} from
- * {@code org.axonframework.messaging.core.annotation}. The property therefore becomes
- * obsolete — but the per-construct migration skill drives the source-side annotation move,
- * so deleting the property mechanically here would race the skill (and risk silently
- * dropping configuration before the handler class catches up).
+ * {@code axon.eventhandling.processors.<group>.sequencing-policy}. In AF5, that property still
+ * configures a processor-wide {@code SequencingPolicy}, but only for pooled streaming event
+ * processors. It has no effect on subscribing event processors, which need
+ * {@code @SequencingPolicy(...)} from {@code org.axonframework.messaging.core.annotation} on the
+ * event handler class instead.
  * <p>
- * Instead, this recipe inserts an advisory comment immediately above any matching property
- * entry in {@code application.properties} / {@code application.yml} (including
- * profile-specific files via the standard recipe-tooling glob). The comment surfaces the
- * obsolescence to the developer (and to the LLM-driven skill that runs next) without
- * touching the value. The recipe is idempotent — it skips entries whose preceding comment
+ * This recipe inserts an advisory comment immediately above any matching property entry in
+ * {@code application.properties} / {@code application.yml} (including profile-specific files via
+ * the standard recipe-tooling glob). The comment states the pooled streaming restriction and
+ * surfaces the entry to the developer (and to the LLM-driven skill that runs next) without
+ * touching the value. The recipe is idempotent: it skips entries whose preceding comment
  * already carries the marker.
  *
  * @author Mateusz Nowak
@@ -50,8 +49,9 @@ import java.util.regex.Pattern;
  */
 public class AnnotateObsoleteSequencingPolicyProperty extends Recipe {
 
-    private static final String COMMENT_MARKER = "TODO(axon4to5): move sequencing-policy to @SequencingPolicy on the handler class";
-    private static final String COMMENT_LINE = "# " + COMMENT_MARKER + "; this property has no AF5 equivalent.";
+    private static final String COMMENT_MARKER = "TODO(axon4to5): sequencing-policy only applies to pooled streaming processors";
+    private static final String COMMENT_MESSAGE = COMMENT_MARKER + "; use @SequencingPolicy on the handler class for others.";
+    private static final String COMMENT_LINE = "# " + COMMENT_MESSAGE;
 
     private static final Pattern PROPERTIES_KEY_PATTERN = Pattern.compile(
             "^axon\\.eventhandling\\.processors\\.[^.]+\\.sequencing-policy$"
@@ -66,10 +66,9 @@ public class AnnotateObsoleteSequencingPolicyProperty extends Recipe {
     public String getDescription() {
         return "Inserts a one-line `# TODO(axon4to5): ...` comment above any "
                 + "`axon.eventhandling.processors.<group>.sequencing-policy` entry in "
-                + "`application.properties` / `application.yml`. AF5 moves the decision onto the "
-                + "handler class via `@SequencingPolicy`; deleting the property here would race the "
-                + "per-construct skill that drives the source-side annotation, so this recipe only "
-                + "annotates. Idempotent.";
+                + "`application.properties` / `application.yml`. AF5 applies the property to pooled "
+                + "streaming event processors only; other processors need `@SequencingPolicy` on the "
+                + "handler class. The recipe never changes the value, so it only annotates. Idempotent.";
     }
 
     @Override
@@ -133,7 +132,7 @@ public class AnnotateObsoleteSequencingPolicyProperty extends Recipe {
                     entryPrefix,
                     org.openrewrite.marker.Markers.EMPTY,
                     Properties.Comment.Delimiter.HASH_TAG,
-                    " " + COMMENT_MARKER + "; this property has no AF5 equivalent."
+                    " " + COMMENT_MESSAGE
             );
         }
     }
