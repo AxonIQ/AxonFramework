@@ -151,4 +151,119 @@ class AddEventTagAnnotationKotlinTest implements RewriteTest {
                 )
         );
     }
+
+    @Test
+    void flagsTypeAndNameSimilarityMatchOnPrimaryConstructorParam() {
+        // "id" is a case-insensitive suffix of the entity's "giftCardId" and both are Strings, so the
+        // param is tagged. It is no exact match, so a TODO is left for the reviewer.
+        rewriteRun(
+                kotlin(
+                        """
+                        package com.example
+                        import org.axonframework.eventsourcing.EventSourcingHandler
+                        import org.axonframework.modelling.command.AggregateIdentifier
+                        import org.axonframework.spring.stereotype.Aggregate
+
+                        @Aggregate
+                        class GiftCard {
+                            @AggregateIdentifier
+                            private lateinit var giftCardId: String
+
+                            @EventSourcingHandler
+                            fun on(event: CardIssued) {}
+
+                            private constructor()
+                        }
+
+                        data class CardIssued(
+                            val id: String,
+                            val amount: Int,
+                        )
+                        """,
+                        """
+                        package com.example
+                        import org.axonframework.eventsourcing.EventSourcingHandler
+                        import org.axonframework.eventsourcing.annotation.EventTag
+                        import org.axonframework.modelling.command.AggregateIdentifier
+                        import org.axonframework.spring.stereotype.Aggregate
+
+                        @Aggregate
+                        class GiftCard {
+                            @AggregateIdentifier
+                            private lateinit var giftCardId: String
+
+                            @EventSourcingHandler
+                            fun on(event: CardIssued) {}
+
+                            private constructor()
+                        }
+
+                        data class CardIssued(
+                            @EventTag(key = "GiftCard") // TODO(axon4to5): verify this is the aggregate-id field
+                            val id: String,
+                            val amount: Int,
+                        )
+                        """
+                )
+        );
+    }
+
+    @Test
+    void flagsSiblingKotlinCommandTargetIdAlias() {
+        // Neither exact name nor similarity matches "giftCardId" and "identifier". The data class
+        // command in the same package targets the entity through a param named "identifier", which
+        // selects the event's param.
+        rewriteRun(
+                kotlin(
+                        """
+                        package com.example
+                        import org.axonframework.eventsourcing.EventSourcingHandler
+                        import org.axonframework.modelling.command.AggregateIdentifier
+                        import org.axonframework.spring.stereotype.Aggregate
+
+                        @Aggregate
+                        class GiftCard {
+                            @AggregateIdentifier
+                            private lateinit var giftCardId: String
+
+                            @EventSourcingHandler
+                            fun on(event: CardIssued) {}
+
+                            private constructor()
+                        }
+                        """
+                ),
+                kotlin(
+                        """
+                        package com.example
+                        import org.axonframework.modelling.command.TargetAggregateIdentifier
+
+                        data class IssueCard(
+                            @TargetAggregateIdentifier val identifier: String,
+                        )
+                        """
+                ),
+                kotlin(
+                        """
+                        package com.example
+
+                        data class CardIssued(
+                            val amount: Int,
+                            val identifier: String,
+                        )
+                        """,
+                        """
+                        package com.example
+
+                        import org.axonframework.eventsourcing.annotation.EventTag
+
+                        data class CardIssued(
+                            val amount: Int,
+                            @EventTag(key = "GiftCard") // TODO(axon4to5): verify this is the aggregate-id field
+                            val identifier: String,
+                        )
+                        """
+                )
+        );
+    }
 }

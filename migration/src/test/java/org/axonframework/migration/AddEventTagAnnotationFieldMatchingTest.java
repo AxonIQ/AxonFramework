@@ -243,4 +243,155 @@ class AddEventTagAnnotationFieldMatchingTest implements RewriteTest {
                 )
         );
     }
+
+    @Test
+    void usesSiblingCommandAliasEvenWhenTheCommandTargetsADifferentEntity() {
+        // Known limitation, pinned on purpose: the sibling-command alias is collected per package, not
+        // per entity. The Order command's "orderId" therefore also selects the "orderId" field of the
+        // GiftCard event. The match is still flagged, so a human gets to verify it.
+        rewriteRun(
+                java(
+                        """
+                        package com.example;
+                        import org.axonframework.eventsourcing.EventSourcingHandler;
+                        import org.axonframework.modelling.command.AggregateIdentifier;
+                        import org.axonframework.spring.stereotype.Aggregate;
+
+                        @Aggregate
+                        class GiftCard {
+                            @AggregateIdentifier
+                            private String giftCardId;
+
+                            @EventSourcingHandler
+                            void on(CardIssuedEvent event) {
+                            }
+                        }
+                        """
+                ),
+                java(
+                        """
+                        package com.example;
+                        import org.axonframework.modelling.command.TargetAggregateIdentifier;
+
+                        class PlaceOrderCommand {
+                            @TargetAggregateIdentifier
+                            private String orderId;
+                        }
+                        """
+                ),
+                java(
+                        """
+                        package com.example;
+
+                        class CardIssuedEvent {
+                            String orderId;
+                            int amount;
+                        }
+                        """,
+                        """
+                        package com.example;
+
+                        import org.axonframework.eventsourcing.annotation.EventTag;
+
+                        class CardIssuedEvent {
+                            @EventTag(key = "GiftCard") // TODO(axon4to5): verify this is the aggregate-id field
+                            String orderId;
+                            int amount;
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
+    void tagsRecordEventComponentWithoutReviewWhenNameMatchesExactly() {
+        rewriteRun(
+                java(
+                        """
+                        package com.example;
+                        import org.axonframework.eventsourcing.EventSourcingHandler;
+                        import org.axonframework.modelling.command.AggregateIdentifier;
+                        import org.axonframework.spring.stereotype.Aggregate;
+
+                        @Aggregate
+                        class GiftCard {
+                            @AggregateIdentifier
+                            private String giftCardId;
+
+                            @EventSourcingHandler
+                            void on(CardIssuedEvent event) {
+                            }
+                        }
+                        """
+                ),
+                java(
+                        """
+                        package com.example;
+
+                        record CardIssuedEvent(String giftCardId, int amount) {
+                        }
+                        """,
+                        """
+                        package com.example;
+
+                        import org.axonframework.eventsourcing.annotation.EventTag;
+
+                        record CardIssuedEvent(@EventTag(key = "GiftCard") String giftCardId, int amount) {
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
+    void flagsRecordEventComponentMatchedThroughRecordCommandTargetId() {
+        // The record command declares its target id as a record component; that component name is the
+        // alias that selects the record event's component. The review marker is a block comment because
+        // the component list sits on one line, where a line comment would swallow the rest of it.
+        rewriteRun(
+                java(
+                        """
+                        package com.example;
+                        import org.axonframework.eventsourcing.EventSourcingHandler;
+                        import org.axonframework.modelling.command.AggregateIdentifier;
+                        import org.axonframework.spring.stereotype.Aggregate;
+
+                        @Aggregate
+                        class GiftCard {
+                            @AggregateIdentifier
+                            private String giftCardId;
+
+                            @EventSourcingHandler
+                            void on(CardIssuedEvent event) {
+                            }
+                        }
+                        """
+                ),
+                java(
+                        """
+                        package com.example;
+                        import org.axonframework.modelling.command.TargetAggregateIdentifier;
+
+                        record IssueCardCommand(@TargetAggregateIdentifier String identifier) {
+                        }
+                        """
+                ),
+                java(
+                        """
+                        package com.example;
+
+                        record CardIssuedEvent(String identifier, int amount) {
+                        }
+                        """,
+                        """
+                        package com.example;
+
+                        import org.axonframework.eventsourcing.annotation.EventTag;
+
+                        record CardIssuedEvent(@EventTag(key = "GiftCard") /* TODO(axon4to5): verify this is the aggregate-id field */ String identifier, int amount) {
+                        }
+                        """
+                )
+        );
+    }
 }
