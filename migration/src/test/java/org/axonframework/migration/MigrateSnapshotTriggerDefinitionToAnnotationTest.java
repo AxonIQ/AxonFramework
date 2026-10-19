@@ -39,7 +39,7 @@ class MigrateSnapshotTriggerDefinitionToAnnotationTest implements RewriteTest {
     }
 
     // -------------------------------------------------------------------------
-    // EventCountSnapshotTriggerDefinition → @Snapshotting(afterEvents = N)
+    // EventCountSnapshotTriggerDefinition -> @Snapshotting(afterEvents = N)
     // -------------------------------------------------------------------------
 
     @Nested
@@ -235,7 +235,7 @@ class MigrateSnapshotTriggerDefinitionToAnnotationTest implements RewriteTest {
         @Test
         void removesAf5SnapshotterImportWhenEventsourcingRecipeRanFirst() {
             // When axon4-to-axon5-eventsourcing.yml runs before this recipe, it renames
-            // org.axonframework.eventsourcing.Snapshotter →
+            // org.axonframework.eventsourcing.Snapshotter ->
             // org.axonframework.eventsourcing.snapshot.api.Snapshotter.
             // The bean method must still be removed and that renamed import must be cleaned up.
             rewriteRun(
@@ -301,7 +301,7 @@ class MigrateSnapshotTriggerDefinitionToAnnotationTest implements RewriteTest {
     }
 
     // -------------------------------------------------------------------------
-    // AggregateLoadTimeSnapshotTriggerDefinition → @Snapshotting(afterSourcingTime)
+    // AggregateLoadTimeSnapshotTriggerDefinition -> @Snapshotting(afterSourcingTime)
     // -------------------------------------------------------------------------
 
     @Nested
@@ -397,7 +397,7 @@ class MigrateSnapshotTriggerDefinitionToAnnotationTest implements RewriteTest {
     }
 
     // -------------------------------------------------------------------------
-    // Custom SnapshotTriggerDefinition → TODO comment
+    // Custom SnapshotTriggerDefinition -> TODO comment
     // -------------------------------------------------------------------------
 
     @Nested
@@ -440,7 +440,7 @@ class MigrateSnapshotTriggerDefinitionToAnnotationTest implements RewriteTest {
 
                             @Configuration
                             class MyConfig {
-                                // TODO(axon4to5): Custom SnapshotTriggerDefinition bean "customTrigger" — remove this bean manually.
+                                // TODO(axon4to5): Custom SnapshotTriggerDefinition bean "customTrigger". Remove this bean manually.
                                 @Bean
                                 SnapshotTriggerDefinition customTrigger() {
                                     return new CustomSnapshotTriggerDefinition();
@@ -453,7 +453,7 @@ class MigrateSnapshotTriggerDefinitionToAnnotationTest implements RewriteTest {
 
         @Test
         void addsTodoCommentWhenBeanNotFoundInAccumulator() {
-            // The aggregate references a bean name that no @Bean method provides —
+            // The aggregate references a bean name that no @Bean method provides -
             // the recipe must still remove the attribute and add a TODO comment.
             rewriteRun(
                     java(
@@ -480,7 +480,7 @@ class MigrateSnapshotTriggerDefinitionToAnnotationTest implements RewriteTest {
     }
 
     // -------------------------------------------------------------------------
-    // Adjacent manually-registered Serializer bean → flagged for review
+    // Adjacent manually-registered Serializer bean -> flagged for review
     // -------------------------------------------------------------------------
 
     @Nested
@@ -543,7 +543,7 @@ class MigrateSnapshotTriggerDefinitionToAnnotationTest implements RewriteTest {
                             @Configuration
                             class MyConfig {
 
-                                // TODO(axon4to5): This manually-registered Serializer bean existed under AF4 to guarantee the snapshot payload was serializable — review whether it is still needed under AF5's converter model.
+                                // TODO(axon4to5): This manually-registered Serializer bean existed under AF4 to guarantee the snapshot payload was serializable. Review whether it is still needed under AF5's converter model.
                                 @Bean
                                 @Primary
                                 Serializer serializer() {
@@ -584,7 +584,7 @@ class MigrateSnapshotTriggerDefinitionToAnnotationTest implements RewriteTest {
         @Test
         void flagsCustomTriggerAndDoesNotDuplicateExistingSerializerTodo() {
             // The custom-trigger bean gets its usual TODO on this pass, while the Serializer bean
-            // already carries its TODO from a previous pass — that one must not be duplicated.
+            // already carries its TODO from a previous pass - that one must not be duplicated.
             rewriteRun(
                     java(
                             """
@@ -609,7 +609,7 @@ class MigrateSnapshotTriggerDefinitionToAnnotationTest implements RewriteTest {
                                     return new CustomSnapshotTriggerDefinition();
                                 }
 
-                                // TODO(axon4to5): This manually-registered Serializer bean existed under AF4 to guarantee the snapshot payload was serializable — review whether it is still needed under AF5's converter model.
+                                // TODO(axon4to5): This manually-registered Serializer bean existed under AF4 to guarantee the snapshot payload was serializable. Review whether it is still needed under AF5's converter model.
                                 @Bean
                                 Serializer serializer() {
                                     return JacksonSerializer.defaultSerializer();
@@ -633,13 +633,13 @@ class MigrateSnapshotTriggerDefinitionToAnnotationTest implements RewriteTest {
 
                             @Configuration
                             class MyConfig {
-                                // TODO(axon4to5): Custom SnapshotTriggerDefinition bean "myTrigger" — remove this bean manually.
+                                // TODO(axon4to5): Custom SnapshotTriggerDefinition bean "myTrigger". Remove this bean manually.
                                 @Bean
                                 SnapshotTriggerDefinition myTrigger() {
                                     return new CustomSnapshotTriggerDefinition();
                                 }
 
-                                // TODO(axon4to5): This manually-registered Serializer bean existed under AF4 to guarantee the snapshot payload was serializable — review whether it is still needed under AF5's converter model.
+                                // TODO(axon4to5): This manually-registered Serializer bean existed under AF4 to guarantee the snapshot payload was serializable. Review whether it is still needed under AF5's converter model.
                                 @Bean
                                 Serializer serializer() {
                                     return JacksonSerializer.defaultSerializer();
@@ -673,13 +673,13 @@ class MigrateSnapshotTriggerDefinitionToAnnotationTest implements RewriteTest {
 
                             @Configuration
                             class MyConfig {
-                                // TODO(axon4to5): Custom SnapshotTriggerDefinition bean "myTrigger" — remove this bean manually.
+                                // TODO(axon4to5): Custom SnapshotTriggerDefinition bean "myTrigger". Remove this bean manually.
                                 @Bean
                                 SnapshotTriggerDefinition myTrigger() {
                                     return new CustomSnapshotTriggerDefinition();
                                 }
 
-                                // TODO(axon4to5): This manually-registered Serializer bean existed under AF4 to guarantee the snapshot payload was serializable — review whether it is still needed under AF5's converter model.
+                                // TODO(axon4to5): This manually-registered Serializer bean existed under AF4 to guarantee the snapshot payload was serializable. Review whether it is still needed under AF5's converter model.
                                 @Bean
                                 Serializer serializer() {
                                     return JacksonSerializer.defaultSerializer();

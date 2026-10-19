@@ -53,7 +53,7 @@ import java.util.Set;
  * <p>
  * The recipe runs in two phases:
  * <ol>
- *   <li><b>Scan</b> – visits entity classes (annotated with {@code @Aggregate},
+ *   <li><b>Scan</b> - visits entity classes (annotated with {@code @Aggregate},
  *       {@code @EventSourced}, or {@code @EventSourcedEntity}) and records the event payload type
  *       for every event used in the entity, together with the entity's identifier field name and
  *       the entity's simple class name. Events are discovered from two sources:
@@ -62,18 +62,18 @@ import java.util.Set;
  *       entity body. The second source catches events that are published but never re-sourced in
  *       this entity (a valid AF4 pattern that would otherwise miss the {@code @EventTag}
  *       treatment).</li>
- *   <li><b>Edit</b> – for every event class recorded in the scan, picks the field that should carry
+ *   <li><b>Edit</b> - for every event class recorded in the scan, picks the field that should carry
  *       {@code @EventTag(key = "<EntitySimpleName>")}, trying each of the following until one
  *       matches:
  *       <ol>
  *         <li>a field named exactly the entity's identifier field name;</li>
  *         <li>a field whose declared type matches the identifier's type (when known) and whose name
- *         is a case-insensitive suffix relationship of the identifier field name — e.g. entity id
+ *         is a case-insensitive suffix relationship of the identifier field name - e.g. entity id
  *         {@code giftCardId} against an event field named {@code id} or {@code cardId}, annotated
  *         with a {@code // TODO(axon4to5):} comment asking a human reviewer to verify the choice;</li>
  *         <li>a field whose name matches (case-insensitively) a {@code @TargetAggregateIdentifier}/
- *         {@code @TargetEntityId} field found on some other class in the same package — typically a
- *         command routing to this entity — with the same type-compatibility check, annotated with
+ *         {@code @TargetEntityId} field found on some other class in the same package - typically a
+ *         command routing to this entity - with the same type-compatibility check, annotated with
  *         the same {@code // TODO(axon4to5):} comment;</li>
  *         <li>otherwise, the first declared field, annotated anyway (so the event isn't left without
  *         a tag) with the same {@code // TODO(axon4to5):} comment.</li>
@@ -105,7 +105,7 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
     // AF4 FQN (before ChangePackage in Axon4ToAxon5Modelling)
     private static final String AGGREGATE_IDENTIFIER_AF4 =
             "org.axonframework.modelling.command.AggregateIdentifier";
-    // AF5 FQN (after ChangePackage in Axon4ToAxon5Modelling — same recipe, prior step)
+    // AF5 FQN (after ChangePackage in Axon4ToAxon5Modelling - same recipe, prior step)
     private static final String AGGREGATE_IDENTIFIER_AF5 =
             "org.axonframework.modelling.entity.AggregateIdentifier";
 
@@ -157,7 +157,7 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
     static final String SHARED_ID_TYPES_KEY =
             "axon.migration.aggregateIdentifierFieldTypes";
 
-    /** Maps event-class FQN → scan result needed to place {@code @EventTag}. */
+    /** Maps event-class FQN -> scan result needed to place {@code @EventTag}. */
     public static class Accumulator {
 
         /** Holds everything needed to annotate a single event class's field. */
@@ -316,7 +316,7 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
 
                 // Also collect event types from `AggregateLifecycle.apply(...)` call sites
                 // anywhere in the entity body. Catches events that are published but not
-                // re-sourced in this entity (no matching @EventSourcingHandler) — a valid
+                // re-sourced in this entity (no matching @EventSourcingHandler) - a valid
                 // AF4 pattern that would otherwise miss the @EventTag treatment.
                 final String capturedIdFieldName = idFieldName;
                 final String capturedEntitySimpleName = entitySimpleName;
@@ -390,7 +390,7 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
                                                                      ExecutionContext ctx) {
                 J.VariableDeclarations vd = super.visitVariableDeclarations(multiVar, ctx);
 
-                // Only act on fields and record components of event classes — never on regular
+                // Only act on fields and record components of event classes - never on regular
                 // method parameters or local variables. The check has two carve-outs:
                 // - Java records: a method parameter inside a static factory (e.g.
                 //   `event(Id id)`) shares the enclosing class with the record header, so a
@@ -398,7 +398,7 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
                 //   components handled correctly because they live directly under the class.
                 // - Kotlin data classes: primary-constructor parameters surface as
                 //   J.VariableDeclarations whose enclosing J.MethodDeclaration carries a
-                //   {@link PrimaryConstructor} marker. Those ARE the class's properties — they
+                //   {@link PrimaryConstructor} marker. Those ARE the class's properties - they
                 //   need the @EventTag treatment, so we explicitly let them through.
                 J.MethodDeclaration enclosingMethod =
                         getCursor().firstEnclosing(J.MethodDeclaration.class);
@@ -421,7 +421,7 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
                 }
 
                 // Resolve, once per class, which field is the best match for the entity's
-                // identifier — trying an exact name match first, then a type-plus-name-similarity
+                // identifier - trying an exact name match first, then a type-plus-name-similarity
                 // heuristic, then a sibling command's @TargetEntityId field name, and only then
                 // falling back to the first field (flagged for human review). See
                 // #resolveIdField for the full priority order.
@@ -455,17 +455,17 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
              * trying each of the following in order and returning the first match. Only the exact
              * name match is certain, so every other match is flagged {@code needsReview}:
              * <ol>
-             *   <li><b>Exact name match</b> — a field named exactly {@code target.idFieldName}.</li>
-             *   <li><b>Type + name-similarity match</b> — a field whose declared type matches the
+             *   <li><b>Exact name match</b> - a field named exactly {@code target.idFieldName}.</li>
+             *   <li><b>Type + name-similarity match</b> - a field whose declared type matches the
              *   entity identifier's type (when known) and whose name is a case-insensitive suffix
              *   relationship of {@code target.idFieldName} (e.g. entity id {@code giftCardId} and
              *   event field {@code id}, or event field {@code cardId}). Flagged {@code needsReview}.</li>
-             *   <li><b>Sibling command alias match</b> — a field whose name matches (case-insensitive)
+             *   <li><b>Sibling command alias match</b> - a field whose name matches (case-insensitive)
              *   the name of a {@code @TargetAggregateIdentifier}/{@code @TargetEntityId} field found
              *   on some other class in the same package (typically a command class routing to this
              *   entity), and whose type still matches the entity identifier's type when known. Flagged
              *   {@code needsReview}.</li>
-             *   <li><b>Fallback</b> — the first declared field, flagged {@code needsReview}.</li>
+             *   <li><b>Fallback</b> - the first declared field, flagged {@code needsReview}.</li>
              * </ol>
              * Returns {@code null} when the class has no fields at all.
              */
@@ -510,7 +510,7 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
 
             /**
              * A candidate field name is "similar" to the entity's identifier field name when the
-             * identifier field name ends with it, case-insensitively — e.g. entity id
+             * identifier field name ends with it, case-insensitively - e.g. entity id
              * {@code giftCardId} and event field {@code id} or {@code cardId}. Intentionally
              * one-directional: an event field like {@code transactionId} should not match an entity
              * identifier simply named {@code id}, since that would tag an unrelated identifier.
@@ -533,7 +533,7 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
                 JavaType fieldRawType = field.getTypeExpression().getType();
                 if (fieldRawType instanceof JavaType.Primitive) {
                     // The entity identifier resolved to a reference type (idFieldTypeFqn is set),
-                    // so a primitive-typed field can never be a match — treat unconditionally as
+                    // so a primitive-typed field can never be a match - treat unconditionally as
                     // incompatible instead of the permissive "can't verify" default below.
                     return false;
                 }
@@ -558,7 +558,7 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
                                                                  String tagKey,
                                                                  @Nullable String todoComment) {
                 if (isKotlinSource()) {
-                    // Kotlin path — JavaTemplate.addAnnotation produces inconsistent layout on
+                    // Kotlin path - JavaTemplate.addAnnotation produces inconsistent layout on
                     // data class primary-constructor params (annotation lost or pushed to a
                     // weird indent). Build the J.Annotation directly from LST primitives and
                     // prepend it to the leading-annotation list, with an explicit newline+indent
@@ -612,7 +612,7 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
             /**
              * Construct an {@code @EventTag(key = "...")} annotation as a synthetic
              * {@link J.Annotation}. Building the annotation through LST primitives skips
-             * {@link JavaTemplate}'s parsing pipeline entirely — that pipeline cannot render
+             * {@link JavaTemplate}'s parsing pipeline entirely - that pipeline cannot render
              * Kotlin's {@code val}/{@code var}-shaped {@link J.VariableDeclarations} nodes
              * back through a Java placeholder, which is why the template-driven path produces
              * lopsided output on data class primary-constructor params.
@@ -634,7 +634,7 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
                         "key",
                         null,
                         null);
-                // The value's leading space renders between `=` and the literal — pairing it
+                // The value's leading space renders between `=` and the literal - pairing it
                 // with the JLeftPadded's `before` (which renders BEFORE `=`) yields the
                 // canonical `key = "value"` shape.
                 J.Literal keyValue = new J.Literal(
@@ -684,7 +684,7 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
                 J.VariableDeclarations withAnnotation = vd.withLeadingAnnotations(
                         ListUtils.concat(annotation, vd.getLeadingAnnotations()));
                 if (vd.getLeadingAnnotations().isEmpty()) {
-                    // First annotation — re-flow the declaration's downstream nodes so the
+                    // First annotation - re-flow the declaration's downstream nodes so the
                     // annotation block sits on its own line above the val/var keyword.
                     if (!withAnnotation.getModifiers().isEmpty()) {
                         return withAnnotation.withModifiers(
@@ -755,7 +755,7 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
             }
 
             /**
-             * Resolve a newline + indent {@link Space} for {@code vd}, checking — in order — the
+             * Resolve a newline + indent {@link Space} for {@code vd}, checking - in order - the
              * trailing annotation, the variable declaration itself, and any sibling record
              * component / class field. The first record component's indent often lives on the
              * enclosing {@code JContainer} (so its own prefix is just {@code "\n"} with no
@@ -825,12 +825,12 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
              * Returns the {@link J.VariableDeclarations} fields that belong to {@code classDecl}
              * in source-declaration order, walking three places:
              * <ol>
-             *   <li>{@link J.ClassDeclaration#getPrimaryConstructor()} — Java records and
+             *   <li>{@link J.ClassDeclaration#getPrimaryConstructor()} - Java records and
              *   anything else that exposes its primary-constructor params explicitly;</li>
              *   <li>any {@link J.MethodDeclaration} in the body marked with the Kotlin
-             *   {@link PrimaryConstructor} marker — Kotlin data classes embed primary-constructor
+             *   {@link PrimaryConstructor} marker - Kotlin data classes embed primary-constructor
              *   params here rather than in {@code getPrimaryConstructor()};</li>
-             *   <li>the class body itself — regular Java fields and Kotlin {@code val}/{@code var}
+             *   <li>the class body itself - regular Java fields and Kotlin {@code val}/{@code var}
              *   class members (the latter wrapped in {@link K.Property}).</li>
              * </ol>
              */
@@ -871,7 +871,7 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
         };
     }
 
-    // ── Static helpers ────────────────────────────────────────────────────────
+    // -- Static helpers --------------------------------------------------------
 
     private static boolean isEntityClass(J.ClassDeclaration cd) {
         for (J.Annotation ann : cd.getLeadingAnnotations()) {
