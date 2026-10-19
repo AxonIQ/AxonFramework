@@ -82,6 +82,8 @@ import static org.axonframework.migration.SagaClasses.resolvedName;
  *     <li>a deadline name or aggregate type given as an expression that is no literal or resolvable constant;</li>
  *     <li>a handler in a subclass of an annotated aggregate class: Axon Framework 4 stored the type of the
  *     polymorphic aggregate's root, which the subclass does not declare;</li>
+ *     <li>a handler in an unannotated class that is abstract or extended by another class of the sources: Axon
+ *     Framework 4 stored the type of the aggregate extending it;</li>
  *     <li>a handler of a member entity: Axon Framework 4 delivered a fired deadline to the aggregate root and to every
  *     member entity, while a command reaches an entity in a collection only through a routing key.</li>
  * </ul>
@@ -138,6 +140,9 @@ public class MigrateAggregateDeadlineHandler extends ScanningRecipe<MigrateAggre
             + " The original @DeadlineHandler did not name the deadline, and another @CommandHandler of this class"
             + " already handles its payload type, so a deadline fired under that payload type would reach that"
             + " handler instead." + FIRED_AS_COMMAND;
+    private static final String BASE_CLASS_TODO = " " + REPLACE_MARKER + COMMAND_NAME + " in each aggregate"
+            + " extending this class, with the type of that aggregate, which Axon Framework 4 stored with the"
+            + " deadline." + FIRED_AS_COMMAND;
     private static final String UNRESOLVED_NAME_TODO = " " + REPLACE_MARKER + COMMAND_NAME + "."
             + " The recipe could not resolve its deadline name or aggregate type." + FIRED_AS_COMMAND;
     private static final String POLYMORPHIC_TODO = " " + REPLACE_MARKER + COMMAND_NAME + ", with the aggregate type"
@@ -186,6 +191,7 @@ public class MigrateAggregateDeadlineHandler extends ScanningRecipe<MigrateAggre
         final SagaClasses sagaClasses = new SagaClasses();
         final MemberEntities memberEntities = new MemberEntities();
         final Map<String, String> constants = new HashMap<>();
+        final Set<String> extendedClasses = new HashSet<>();
     }
 
     @Override
@@ -201,6 +207,11 @@ public class MigrateAggregateDeadlineHandler extends ScanningRecipe<MigrateAggre
                                                              ExecutionContext ctx) {
                 acc.sagaClasses.collect(classDeclaration);
                 acc.memberEntities.collect(classDeclaration);
+                JavaType.FullyQualified type = classDeclaration.getType();
+                JavaType.FullyQualified supertype = type == null ? null : type.getSupertype();
+                if (supertype != null) {
+                    acc.extendedClasses.add(supertype.getFullyQualifiedName());
+                }
                 return super.visitClassDeclaration(classDeclaration, ctx);
             }
 
@@ -243,7 +254,10 @@ public class MigrateAggregateDeadlineHandler extends ScanningRecipe<MigrateAggre
                         ? null
                         : type.getFullyQualifiedName();
                 boolean memberEntity = className != null && acc.memberEntities.ownerOf(className) != null;
-                AggregateType aggregateType = aggregateTypeOf(visited, constants);
+                boolean baseClass = className != null && acc.extendedClasses.contains(className)
+                        || type != null && type.hasFlags(Flag.Abstract)
+                        || visited.hasModifier(J.Modifier.Type.Abstract);
+                AggregateType aggregateType = aggregateTypeOf(visited, baseClass, constants);
                 Set<String> commandNames = commandNamesOf(visited, constants);
                 Map<J.MethodDeclaration, Migration> migrations = new HashMap<>();
                 for (Statement statement : visited.getBody().getStatements()) {
@@ -343,9 +357,12 @@ public class MigrateAggregateDeadlineHandler extends ScanningRecipe<MigrateAggre
     /**
      * Returns the aggregate type Axon Framework 4 stored with a deadline of the given class: the {@code type} of its
      * {@code @AggregateRoot} or {@code @Aggregate} annotation, or its simple class name otherwise. A subclass of an
-     * annotated class belongs to a polymorphic aggregate, whose root type it does not declare.
+     * annotated class belongs to a polymorphic aggregate, whose root type it does not declare, and an unannotated base
+     * class, abstract or extended by another class of the sources, has the types of its subclasses stored instead.
      */
-    private static AggregateType aggregateTypeOf(J.ClassDeclaration classDeclaration, Constants constants) {
+    private static AggregateType aggregateTypeOf(J.ClassDeclaration classDeclaration,
+                                                 boolean baseClass,
+                                                 Constants constants) {
         JavaType.FullyQualified type = classDeclaration.getType();
         for (JavaType.FullyQualified supertype = type == null ? null : type.getSupertype();
              supertype != null && !OBJECT_FQN.equals(supertype.getFullyQualifiedName());
@@ -368,9 +385,13 @@ public class MigrateAggregateDeadlineHandler extends ScanningRecipe<MigrateAggre
                             ? new AggregateType(null, UNRESOLVED_NAME_TODO)
                             : new AggregateType(name, null);
                 }
+                return new AggregateType(classDeclaration.getSimpleName(), null);
             }
         }
-        return new AggregateType(classDeclaration.getSimpleName(), null);
+        // An unannotated class others extend is no aggregate of its own, and its subclasses' types are stored instead.
+        return baseClass
+                ? new AggregateType(null, BASE_CLASS_TODO)
+                : new AggregateType(classDeclaration.getSimpleName(), null);
     }
 
     /**
