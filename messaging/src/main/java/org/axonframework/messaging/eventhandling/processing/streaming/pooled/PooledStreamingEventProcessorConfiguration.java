@@ -81,6 +81,10 @@ import static org.axonframework.common.BuilderUtils.assertStrictPositive;
  *     <li>The {@code batchSize} defaults to {@code 1}.</li>
  *     <li>The {@link Clock} defaults to {@link ClockUtils#get()}.</li>
  *     <li>The {@code coordinatorExtendsClaims} defaults to a {@code false}.</li>
+ *     <li>The {@link SequencingPolicy}, defaulting to {@code null} here, resulting in a
+ *     {@link org.axonframework.messaging.core.sequencing.HierarchicalSequencingPolicy} using a
+ *     {@link org.axonframework.messaging.core.sequencing.SequentialPerAggregatePolicy} and
+ *     {@link org.axonframework.messaging.core.sequencing.SequentialPolicy}.</li>
  * </ul>
  * The following fields of this configuration are <b>hard requirements</b> and as such should be provided:
  * <ul>
