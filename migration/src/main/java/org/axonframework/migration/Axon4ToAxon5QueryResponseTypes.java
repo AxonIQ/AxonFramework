@@ -91,7 +91,7 @@ public class Axon4ToAxon5QueryResponseTypes extends Recipe {
 
     @Override
     public String getDisplayName() {
-        return "Unwrap ResponseTypes wrappers on AF5-shape QueryGateway.query(...) calls";
+        return "Unwrap ResponseTypes on QueryGateway.query(...) calls and flag subscriptionQuery(...) call sites";
     }
 
     @Override
