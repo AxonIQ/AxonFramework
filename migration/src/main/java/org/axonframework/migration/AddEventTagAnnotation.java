@@ -69,14 +69,16 @@ import java.util.Set;
  *         <li>a field named exactly the entity's identifier field name;</li>
  *         <li>a field whose declared type matches the identifier's type (when known) and whose name
  *         is a case-insensitive suffix relationship of the identifier field name — e.g. entity id
- *         {@code giftCardId} against an event field named {@code id} or {@code cardId};</li>
+ *         {@code giftCardId} against an event field named {@code id} or {@code cardId}, annotated
+ *         with a {@code // TODO(axon4to5):} comment asking a human reviewer to verify the choice;</li>
  *         <li>a field whose name matches (case-insensitively) a {@code @TargetAggregateIdentifier}/
  *         {@code @TargetEntityId} field found on some other class in the same package — typically a
- *         command routing to this entity — with the same type-compatibility check;</li>
+ *         command routing to this entity — with the same type-compatibility check, annotated with
+ *         the same {@code // TODO(axon4to5):} comment;</li>
  *         <li>otherwise, the first declared field, annotated anyway (so the event isn't left without
- *         a tag) with a {@code // TODO(axon4to5):} comment asking a human reviewer to verify the
- *         choice.</li>
- *       </ol></li>
+ *         a tag) with the same {@code // TODO(axon4to5):} comment.</li>
+ *       </ol>
+ *       Only an exact name match is certain, so every weaker match is flagged for review.</li>
  * </ol>
  *
  * <p>Child entities declared on a parent via {@code @AggregateMember}/{@code @EntityMember} are
@@ -84,15 +86,15 @@ import java.util.Set;
  * {@code apply(...)} call) is tagged with the <b>parent</b> entity's tag, so it is sourced into the
  * parent's stream. This preserves the single event stream an Axon Framework 4 aggregate shared with
  * its members. The same field-matching priority (exact name, then type-plus-name-similarity, then
- * sibling command alias, then first-field fallback with a {@code // TODO(axon4to5):} comment) applies
- * to child events.
+ * sibling command alias, then first field, the last three with a {@code // TODO(axon4to5):} comment)
+ * applies to child events.
  *
  * <p><b>Must run before {@code @AggregateIdentifier} is removed</b> (i.e. before the
  * {@link org.openrewrite.java.RemoveAnnotation} step inside {@code Axon4ToAxon5Modelling}), so
  * that the annotation is still present for the scan.
  *
  * <p><b>What the LLM must still do</b>: verify the selected field is truly the aggregate
- * identifier (especially when the fallback path fires), and adjust {@code key} if the entity
+ * identifier wherever a {@code // TODO(axon4to5):} comment was added, and adjust {@code key} if the entity
  * simple name differs from the intended tag name.
  *
  * @author Mateusz Nowak
@@ -428,9 +430,9 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
                     return vd;
                 }
                 if (resolved.needsReview) {
-                    // Fallback — first field; mark for LLM review. We still annotate it because
-                    // leaving an event without @EventTag would cause a runtime failure; the LLM
-                    // must verify the field choice.
+                    // Anything weaker than an exact name match; mark for LLM review. We still
+                    // annotate it because leaving an event without @EventTag would cause a runtime
+                    // failure; the LLM must verify the field choice.
                     return annotateWithEventTag(vd, target.tagKey,
                                                 " TODO(axon4to5): verify this is the aggregate-id field");
                 }
@@ -450,17 +452,19 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
 
             /**
              * Picks the field in {@code enclosingClass} that should carry the {@code @EventTag},
-             * trying each of the following in order and returning the first match:
+             * trying each of the following in order and returning the first match. Only the exact
+             * name match is certain, so every other match is flagged {@code needsReview}:
              * <ol>
              *   <li><b>Exact name match</b> — a field named exactly {@code target.idFieldName}.</li>
              *   <li><b>Type + name-similarity match</b> — a field whose declared type matches the
              *   entity identifier's type (when known) and whose name is a case-insensitive suffix
              *   relationship of {@code target.idFieldName} (e.g. entity id {@code giftCardId} and
-             *   event field {@code id}, or event field {@code cardId}).</li>
+             *   event field {@code id}, or event field {@code cardId}). Flagged {@code needsReview}.</li>
              *   <li><b>Sibling command alias match</b> — a field whose name matches (case-insensitive)
              *   the name of a {@code @TargetAggregateIdentifier}/{@code @TargetEntityId} field found
              *   on some other class in the same package (typically a command class routing to this
-             *   entity), and whose type still matches the entity identifier's type when known.</li>
+             *   entity), and whose type still matches the entity identifier's type when known. Flagged
+             *   {@code needsReview}.</li>
              *   <li><b>Fallback</b> — the first declared field, flagged {@code needsReview}.</li>
              * </ol>
              * Returns {@code null} when the class has no fields at all.
@@ -480,7 +484,7 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
                 }
                 for (J.VariableDeclarations field : fields) {
                     if (isTypeAndNameSimilarMatch(field, target)) {
-                        return new ResolvedIdField(field, false);
+                        return new ResolvedIdField(field, true);
                     }
                 }
                 Set<String> aliases = acc.packageTargetEntityIdFieldNames.get(packageOf(classFqn));
@@ -489,7 +493,7 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
                         String name = fieldSimpleName(field);
                         if (name != null && containsIgnoreCase(aliases, name)
                                 && typeCompatible(field, target)) {
-                            return new ResolvedIdField(field, false);
+                            return new ResolvedIdField(field, true);
                         }
                     }
                 }
