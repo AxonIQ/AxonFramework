@@ -17,21 +17,24 @@
 package org.axonframework.eventsourcing.eventstore;
 
 import org.axonframework.common.ReflectionUtils;
-import org.axonframework.messaging.eventhandling.EventMessage;
+import org.axonframework.common.annotation.AnnotationUtils;
 import org.axonframework.eventsourcing.annotation.EventTag;
 import org.axonframework.eventsourcing.annotation.EventTags;
+import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventstreaming.Tag;
 
 import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Field;
 import java.lang.reflect.Member;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
 import static java.lang.String.format;
@@ -61,6 +64,24 @@ import static org.axonframework.common.ReflectionUtils.getMemberValue;
  *     </li>
  * </ul>
  * Both approaches are equivalent and will produce the same tags.
+ * <p>
+ * Besides direct use, the {@link EventTag} annotation is also detected when it is used as a meta-annotation, on any
+ * level:
+ * <pre>
+ * {@literal @}Retention(RetentionPolicy.RUNTIME)
+ * {@literal @}Target({ElementType.FIELD, ElementType.METHOD})
+ * {@literal @}EventTag(key = "orderId")
+ * public {@literal @}interface OrderIdTag {
+ * }
+ *
+ * {@literal @}OrderIdTag
+ * private String id;
+ * </pre>
+ * Every occurrence of the {@link EventTag} annotation on a member, whether direct, repeated or meta-annotated,
+ * results in tags for that member. An annotation meta-annotated with {@link EventTag} may declare a {@code key}
+ * attribute itself, which then overrides the {@link EventTag#key()} of every {@link EventTag} meta-annotation on it.
+ * <p>
+ * The tagged fields and methods are inspected once per payload type and cached for subsequent resolutions.
  *
  * @author Mateusz Nowak
  * @see EventTag for more information on how to use the annotation
@@ -70,75 +91,72 @@ import static org.axonframework.common.ReflectionUtils.getMemberValue;
 public class AnnotationBasedTagResolver implements TagResolver {
 
     private static final Class<EventTag> EVENT_TAG_ANNOTATION = EventTag.class;
-    private static final Class<EventTags> CONTAINING_ANNOTATION_TYPE = EventTags.class;
+    private static final String KEY_ATTRIBUTE = "key";
+
+    private final ClassValue<List<TaggedMember>> taggedMembersCache = new ClassValue<>() {
+        @Override
+        protected List<TaggedMember> computeValue(Class<?> payloadType) {
+            return taggedMembersOf(payloadType);
+        }
+    };
 
     @Override
     public Set<Tag> resolve(EventMessage event) {
         Objects.requireNonNull(event, "Event cannot be null");
         var payload = event.payload();
-        return Stream.concat(resolveFieldTags(payload), resolveMethodTags(payload))
-                     .collect(Collectors.toSet());
-    }
-
-    private Stream<Tag> resolveFieldTags(Object payload) {
-        var fields = ReflectionUtils.fieldsOf(payload.getClass());
-        return StreamSupport.stream(fields.spliterator(), false)
-                            .filter(AnnotationBasedTagResolver::isTagAnnotationPresent)
-                            .flatMap(field -> tagsFrom(field, payload).stream())
-                            .filter(Objects::nonNull);
-    }
-
-    private Set<Tag> tagsFrom(Field field, Object payload) {
-        try {
-            var value = getMemberValue(field, payload);
-            if (value == null) {
-                return Set.of();
-            }
-
-            var tags = new HashSet<Tag>();
-            var annotations = field.getAnnotationsByType(EVENT_TAG_ANNOTATION);
-
-            for (var annotation : annotations) {
-                tags.addAll(createTagsForValue(value, field.getName(), annotation.key()));
-            }
-
-            return tags;
-        } catch (Exception e) {
-            throw new TagResolutionException("Failed to resolve tag from field: " + field.getName(), e);
+        if (payload == null) {
+            return Set.of();
         }
+        return taggedMembersCache.get(payload.getClass())
+                                 .stream()
+                                 .flatMap(taggedMember -> tagsFrom(taggedMember, payload).stream())
+                                 .collect(Collectors.toSet());
     }
 
-    private Stream<Tag> resolveMethodTags(Object payload) {
-        var methods = ReflectionUtils.methodsOf(payload.getClass());
-        return StreamSupport.stream(methods.spliterator(), false)
-                            .filter(AnnotationBasedTagResolver::isTagAnnotationPresent)
-                            .flatMap(field -> tagsFrom(field, payload).stream())
-                            .filter(Objects::nonNull);
+    private List<TaggedMember> taggedMembersOf(Class<?> payloadType) {
+        var taggedMembers = new ArrayList<TaggedMember>();
+        for (Field field : ReflectionUtils.fieldsOf(payloadType)) {
+            taggedMemberOf(field, field.getName()).ifPresent(taggedMembers::add);
+        }
+        for (Method method : ReflectionUtils.methodsOf(payloadType)) {
+            var taggedMethod = taggedMemberOf(method, getMemberIdentifierName(method));
+            if (taggedMethod.isPresent()) {
+                assertValidTagMethod(method);
+                taggedMembers.add(taggedMethod.get());
+            }
+        }
+        return List.copyOf(taggedMembers);
     }
 
-    private static boolean isTagAnnotationPresent(AnnotatedElement member) {
-        return member.isAnnotationPresent(EVENT_TAG_ANNOTATION)
-                || member.isAnnotationPresent(CONTAINING_ANNOTATION_TYPE);
+    private static <M extends AnnotatedElement & Member> Optional<TaggedMember> taggedMemberOf(M member,
+                                                                                               String memberName) {
+        var keys = AnnotationUtils.findAllAnnotationAttributes(member, EVENT_TAG_ANNOTATION)
+                                  .stream()
+                                  .map(attributes -> (String) attributes.get(KEY_ATTRIBUTE))
+                                  .distinct()
+                                  .toList();
+        return keys.isEmpty() ? Optional.empty() : Optional.of(new TaggedMember(member, memberName, keys));
     }
 
-    private Set<Tag> tagsFrom(Method method, Object payload) {
-        assertValidTagMethod(method);
+    private Set<Tag> tagsFrom(TaggedMember taggedMember, Object payload) {
+        var member = taggedMember.member();
         try {
-            var value = getMemberValue(method, payload);
+            Object value = getMemberValue(member, payload);
             if (value == null) {
                 return Set.of();
             }
 
             var tags = new HashSet<Tag>();
-            var annotations = method.getAnnotationsByType(EVENT_TAG_ANNOTATION);
-
-            for (var annotation : annotations) {
-                tags.addAll(createTagsForValue(value, getMemberIdentifierName(method), annotation.key()));
+            for (var key : taggedMember.keys()) {
+                tags.addAll(createTagsForValue(value, taggedMember.name(), key));
             }
-
             return tags;
         } catch (Exception e) {
-            throw new TagResolutionException("Failed to resolve tag from method: " + method.getName(), e);
+            throw new TagResolutionException(
+                    "Failed to resolve tag from " + (member instanceof Field ? "field: " : "method: ")
+                            + member.getName(),
+                    e
+            );
         }
     }
 
@@ -212,6 +230,18 @@ public class AnnotationBasedTagResolver implements TagResolver {
 
     private String stripGetterConvention(String identifierName) {
         return identifierName.substring(3, 4).toLowerCase() + identifierName.substring(4);
+    }
+
+    /**
+     * A field or method of an event payload type that provides tags, together with the tag keys defined through
+     * (meta-annotated) {@link EventTag} annotations on that member.
+     *
+     * @param member the field or method providing the tag value
+     * @param name   the identifier name of the member, used as the tag key when no key is defined
+     * @param keys   the keys defined on the {@link EventTag} occurrences on the member, which may be empty strings
+     */
+    private record TaggedMember(Member member, String name, List<String> keys) {
+
     }
 
     /**

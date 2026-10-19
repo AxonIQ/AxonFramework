@@ -151,7 +151,7 @@ class SplitTask extends CoordinatorTask {
                                                      Segment segmentToSplit,
                                                      ProcessingContext context) {
         return tokenStore.initializeSegment(
-                                 splitStatuses[1].getTrackingToken(),
+                                 splitStatuses[1].getInternalTrackingToken(),
                                  name,
                                  splitStatuses[1].getSegment(),
                                  context
@@ -162,7 +162,7 @@ class SplitTask extends CoordinatorTask {
                                  context
                          ))
                          .thenCompose(result -> tokenStore.initializeSegment(
-                                 splitStatuses[0].getTrackingToken(),
+                                 splitStatuses[0].getInternalTrackingToken(),
                                  name,
                                  splitStatuses[0].getSegment(),
                                  context
