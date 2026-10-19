@@ -875,6 +875,89 @@ class MigrateAggregateDeadlineHandlerTest implements RewriteTest {
                 """;
 
         @Test
+        void marksHandlerOfAbstractUnannotatedBaseClass() {
+            // Axon Framework 4 stored the type of the annotated aggregate extending the base class
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+
+                            abstract class BaseAggregate {
+                                @DeadlineHandler(deadlineName = "paymentDeadline")
+                                void on() {
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+
+                            abstract class BaseAggregate {
+                                // TODO(axon4to5): replace this @DeadlineHandler with a @CommandHandler(commandName = "<aggregate type>.<deadline name>") in each aggregate extending this class, with the type of that aggregate, which Axon Framework 4 stored with the deadline. A fired aggregate deadline now arrives as a command named <aggregate type>.<deadline name>, with the aggregate type Axon Framework 4 stored: the type of its @AggregateRoot or @Aggregate annotation, or its simple class name.
+                                @DeadlineHandler(deadlineName = "paymentDeadline")
+                                void on() {
+                                }
+                            }
+                            """
+                    ),
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.modelling.command.AggregateRoot;
+
+                            @AggregateRoot
+                            class Order extends BaseAggregate {
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void marksHandlerOfUnannotatedClassThatAnotherClassExtends() {
+            // Such as the root of a polymorphic aggregate configured with its subtypes instead of annotations
+            rewriteRun(
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+
+                            class Order {
+                                @DeadlineHandler(deadlineName = "paymentDeadline")
+                                void on() {
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+
+                            class Order {
+                                // TODO(axon4to5): replace this @DeadlineHandler with a @CommandHandler(commandName = "<aggregate type>.<deadline name>") in each aggregate extending this class, with the type of that aggregate, which Axon Framework 4 stored with the deadline. A fired aggregate deadline now arrives as a command named <aggregate type>.<deadline name>, with the aggregate type Axon Framework 4 stored: the type of its @AggregateRoot or @Aggregate annotation, or its simple class name.
+                                @DeadlineHandler(deadlineName = "paymentDeadline")
+                                void on() {
+                                }
+                            }
+                            """
+                    ),
+                    java(
+                            """
+                            package com.example;
+
+                            class ExpressOrder extends Order {
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
         void marksDeadlineHandlerOfMemberEntityAndKeepsIt() {
             rewriteRun(
                     java(PAYLOAD),
