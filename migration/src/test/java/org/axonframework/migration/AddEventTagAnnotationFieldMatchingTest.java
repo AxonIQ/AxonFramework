@@ -25,10 +25,11 @@ import static org.openrewrite.java.Assertions.java;
 
 /**
  * Verifies the field-matching heuristics {@link AddEventTagAnnotation} tries before falling back to
- * "tag the first field + leave a TODO for human review". These cover a real-world gap found while
- * migrating a sample application: the entity's {@code @AggregateIdentifier} field was named
- * {@code giftCardId}, while the corresponding event class carried the same identifier under a
- * differently-named field (e.g. plain {@code id}), which a naive exact-name match would miss.
+ * "tag the first field". These cover a real-world gap found while migrating a sample application:
+ * the entity's {@code @AggregateIdentifier} field was named {@code giftCardId}, while the
+ * corresponding event class carried the same identifier under a differently-named field (e.g. plain
+ * {@code id}), which a naive exact-name match would miss. Only an exact name match is certain, so
+ * every heuristic match leaves a TODO for human review.
  */
 class AddEventTagAnnotationFieldMatchingTest implements RewriteTest {
 
@@ -39,10 +40,10 @@ class AddEventTagAnnotationFieldMatchingTest implements RewriteTest {
     }
 
     @Test
-    void matchesByTypeAndNameSimilarityWhenExactNameFails() {
+    void flagsTypeAndNameSimilarityMatchForReviewWhenExactNameFails() {
         // Entity id field is "giftCardId"; the event's own field is just "id". Not an exact match,
         // but "giftCardId" ends with "id" (case-insensitively) and both are declared String — the
-        // type-plus-name-similarity heuristic should tag it directly, without a TODO.
+        // type-plus-name-similarity heuristic should tag it, but leave a TODO as it is no exact match.
         rewriteRun(
                 java(
                         """
@@ -77,7 +78,7 @@ class AddEventTagAnnotationFieldMatchingTest implements RewriteTest {
                         import org.axonframework.eventsourcing.annotation.EventTag;
 
                         class CardIssuedEvent {
-                            @EventTag(key = "GiftCard")
+                            @EventTag(key = "GiftCard") // TODO(axon4to5): verify this is the aggregate-id field
                             String id;
                             int amount;
                         }
@@ -87,12 +88,12 @@ class AddEventTagAnnotationFieldMatchingTest implements RewriteTest {
     }
 
     @Test
-    void matchesSiblingCommandTargetEntityIdFieldAlias() {
+    void flagsSiblingCommandTargetEntityIdFieldAliasForReview() {
         // Neither an exact-name nor a name-similarity match exists between the entity's id field
         // ("giftCardId") and the event's field ("identifier"). But a command class in the same
         // package routes to the entity via a @TargetAggregateIdentifier field also named
-        // "identifier" — that alias, combined with the matching String type, should be preferred
-        // over the "first field" fallback.
+        // "identifier" — that alias, combined with the matching String type, selects the field,
+        // but leaves a TODO as it is no exact match.
         rewriteRun(
                 java(
                         """
@@ -138,9 +139,57 @@ class AddEventTagAnnotationFieldMatchingTest implements RewriteTest {
                         import org.axonframework.eventsourcing.annotation.EventTag;
 
                         class CardIssuedEvent {
-                            @EventTag(key = "GiftCard")
+                            @EventTag(key = "GiftCard") // TODO(axon4to5): verify this is the aggregate-id field
                             String identifier;
                             int amount;
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
+    void flagsTheFirstDeclaredFieldForReviewWhenSeveralFieldsAreSimilar() {
+        // Both "id" (the event's own identifier) and "cardId" end the entity id field name
+        // "giftCardId". The first declared field wins, which can be the wrong one, so the choice
+        // must be flagged for a human reviewer.
+        rewriteRun(
+                java(
+                        """
+                        package com.example;
+                        import org.axonframework.eventsourcing.EventSourcingHandler;
+                        import org.axonframework.modelling.command.AggregateIdentifier;
+                        import org.axonframework.spring.stereotype.Aggregate;
+
+                        @Aggregate
+                        class GiftCard {
+                            @AggregateIdentifier
+                            private String giftCardId;
+
+                            @EventSourcingHandler
+                            void on(CardIssuedEvent event) {
+                            }
+                        }
+                        """
+                ),
+                java(
+                        """
+                        package com.example;
+
+                        class CardIssuedEvent {
+                            String id;
+                            String cardId;
+                        }
+                        """,
+                        """
+                        package com.example;
+
+                        import org.axonframework.eventsourcing.annotation.EventTag;
+
+                        class CardIssuedEvent {
+                            @EventTag(key = "GiftCard") // TODO(axon4to5): verify this is the aggregate-id field
+                            String id;
+                            String cardId;
                         }
                         """
                 )
