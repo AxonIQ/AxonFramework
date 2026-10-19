@@ -38,12 +38,11 @@ import org.mockito.junit.jupiter.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.UnaryOperator;
 
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.axonframework.messaging.eventhandling.EventTestUtils.createEvent;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -227,19 +226,17 @@ class EventSourcingRepositoryIT {
     }
 
     @Test
-    void loadThrowsExceptionIfNullEntityIsReturnedAfterFirstEvent() {
+    void loadPassesTheAbsentEntityToTheEvolverWhenFactoryReturnsNullAfterFirstEvent() {
         ProcessingContext processingContext = new StubProcessingContext();
-        factory = (id, event, ctx) -> {
-            return null; // Simulating a null entity creation
-        };
+        // The factory does not create the entity. Reporting that is up to the factory, as the annotation-based one
+        // does; otherwise the evolver receives the absent entity, which a static event sourcing handler can create.
+        factory = (id, event, ctx) -> null;
 
-        assertThatThrownBy(
-                () -> testSubject.load("test", processingContext)
-                                 .orTimeout(2, TimeUnit.SECONDS)
-                                 .join()
-        ).isInstanceOf(CompletionException.class)
-         .cause()
-         .isInstanceOf(EntityMissingAfterFirstEventException.class);
+        ManagedEntity<String, String> loaded = testSubject.load("test", processingContext)
+                                                          .orTimeout(2, TimeUnit.SECONDS)
+                                                          .join();
+
+        assertThat(loaded.entity()).isEqualTo("null-0-1");
     }
 
     @Test

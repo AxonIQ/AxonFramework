@@ -186,7 +186,9 @@ public class SnapshottingEntityLifecycleHandler<I, E> implements EntityLifecycle
                 default -> CompletableFuture.failedFuture(e);
             })
             .thenApply(entity -> {
-                if (evolutionCount.get() > 0) {
+                // An entity can still be absent after its events, for example when a static event sourcing handler
+                // declined to create it. There is no state to snapshot then.
+                if (entity != null && evolutionCount.get() > 0) {
                     Duration sourcingTime = Duration.ofMillis(Math.max(0, System.currentTimeMillis() - startTime));
 
                     // Snapshot is made when specifically triggered by an event, or based on the statistics:

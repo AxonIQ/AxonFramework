@@ -75,7 +75,21 @@ class InitializingEntityEvolverTest {
     }
 
     @Test
-    void evolveShouldThrowExceptionWhenFactoryReturnsNull() {
-        assertThatThrownBy(() -> evolver.evolve(1001, null, event, context)).isInstanceOf(EntityMissingAfterFirstEventException.class);
+    void evolvePassesTheAbsentEntityToTheEvolverWhenFactoryReturnsNull() {
+        // given a factory that does not create the entity, and an evolver that creates it from a null state, as a
+        // static event sourcing handler does
+        when(entityEvolver.evolve(null, event, context)).thenReturn("created-from-null");
+
+        // when / then
+        assertThat(evolver.evolve(1001, null, event, context)).isEqualTo("created-from-null");
+    }
+
+    @Test
+    void evolveLeavesTheEntityAbsentWhenNeitherFactoryNorEvolverCreatesIt() {
+        // given a factory that does not create the entity, and an evolver that leaves it absent, as a static event
+        // sourcing handler that declines to create it does
+
+        // when / then
+        assertThat(evolver.evolve(1001, null, event, context)).isNull();
     }
 }

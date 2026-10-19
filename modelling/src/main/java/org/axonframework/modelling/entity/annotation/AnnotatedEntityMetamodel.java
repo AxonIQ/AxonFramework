@@ -666,8 +666,9 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
         descriptor.describeProperty("entityType", entityType());
     }
 
+    @Nullable
     @Override
-    public E evolve(E entity, EventMessage event, ProcessingContext context) {
+    public E evolve(@Nullable E entity, EventMessage event, ProcessingContext context) {
         logger.debug("Evolving entity: {} with event: {} for entity type: {}", entity, event.type(), entityType());
         return delegateMetamodel.evolve(entity, event, context);
     }
