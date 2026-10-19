@@ -39,6 +39,7 @@ import org.openrewrite.marker.Markers;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -76,6 +77,8 @@ import static org.axonframework.migration.SagaClasses.resolvedName;
  *     <li>a handler that names neither a deadline nor a payload type handled every deadline of the aggregate, and a
  *     handler without a deadline name whose payload type is {@code Object}, an interface or an abstract class
  *     handled every deadline with a payload of that type;</li>
+ *     <li>a handler without a deadline name whose payload type another {@code @CommandHandler} of the class handles,
+ *     which a deadline dispatched under that payload type would reach instead;</li>
  *     <li>a deadline name or aggregate type given as an expression that is no literal or resolvable constant;</li>
  *     <li>a handler in a subclass of an annotated aggregate class: Axon Framework 4 stored the type of the
  *     polymorphic aggregate's root, which the subclass does not declare;</li>
@@ -131,6 +134,10 @@ public class MigrateAggregateDeadlineHandler extends ScanningRecipe<MigrateAggre
             + " Name the deadline this @CommandHandler handles with a @CommandHandler" + COMMAND_NAME
             + " after the name this deadline was scheduled with. Until you name the deadline, the legacy deadline"
             + " support will fire the deadline named after its payload type with a warning.";
+    private static final String PAYLOAD_COMMAND_TODO = " " + REPLACE_MARKER + COMMAND_NAME + "."
+            + " The original @DeadlineHandler did not name the deadline, and another @CommandHandler of this class"
+            + " already handles its payload type, so a deadline fired under that payload type would reach that"
+            + " handler instead." + FIRED_AS_COMMAND;
     private static final String UNRESOLVED_NAME_TODO = " " + REPLACE_MARKER + COMMAND_NAME + "."
             + " The recipe could not resolve its deadline name or aggregate type." + FIRED_AS_COMMAND;
     private static final String POLYMORPHIC_TODO = " " + REPLACE_MARKER + COMMAND_NAME + ", with the aggregate type"
@@ -237,6 +244,7 @@ public class MigrateAggregateDeadlineHandler extends ScanningRecipe<MigrateAggre
                         : type.getFullyQualifiedName();
                 boolean memberEntity = className != null && acc.memberEntities.ownerOf(className) != null;
                 AggregateType aggregateType = aggregateTypeOf(visited, constants);
+                Set<String> commandNames = commandNamesOf(visited, constants);
                 Map<J.MethodDeclaration, Migration> migrations = new HashMap<>();
                 for (Statement statement : visited.getBody().getStatements()) {
                     if (statement instanceof J.MethodDeclaration method) {
@@ -245,6 +253,10 @@ public class MigrateAggregateDeadlineHandler extends ScanningRecipe<MigrateAggre
                             Migration migration = memberEntity
                                     ? Migration.mark(MEMBER_TODO)
                                     : migrationOf(method, deadlineHandler, aggregateType, constants);
+                            if (migration.namedAfterPayloadType() && commandNames.contains(migration.commandName)) {
+                                // The fallback under the payload type would reach the existing command handler.
+                                migration = Migration.mark(PAYLOAD_COMMAND_TODO);
+                            }
                             migrations.put(method, migration);
                         }
                     }
@@ -253,6 +265,7 @@ public class MigrateAggregateDeadlineHandler extends ScanningRecipe<MigrateAggre
                     return visited;
                 }
                 Map<String, Integer> handlersPerCommand = new HashMap<>();
+                commandNames.forEach(commandName -> handlersPerCommand.put(commandName, 1));
                 migrations.values().stream()
                           .filter(migration -> migration.commandName != null)
                           .forEach(migration -> handlersPerCommand.merge(migration.commandName, 1, Integer::sum));
@@ -358,6 +371,39 @@ public class MigrateAggregateDeadlineHandler extends ScanningRecipe<MigrateAggre
             }
         }
         return new AggregateType(classDeclaration.getSimpleName(), null);
+    }
+
+    /**
+     * Returns the names of the commands the existing {@code @CommandHandler} methods of the given class receive: their
+     * {@code commandName}, or the name of their payload type otherwise. A command name the recipe cannot resolve is
+     * left out.
+     */
+    private static Set<String> commandNamesOf(J.ClassDeclaration classDeclaration, Constants constants) {
+        Set<String> commandNames = new HashSet<>();
+        for (Statement statement : classDeclaration.getBody().getStatements()) {
+            if (!(statement instanceof J.MethodDeclaration method)) {
+                continue;
+            }
+            J.Annotation commandHandler = annotation(method, COMMAND_HANDLER_AF4_FQN, "CommandHandler");
+            if (commandHandler == null) {
+                continue;
+            }
+            Expression commandName = attribute(commandHandler, "commandName");
+            String name;
+            if (commandName != null && !isEmptyLiteral(commandName)) {
+                name = constants.resolve(commandName);
+            } else {
+                JavaType declaredPayloadType = classLiteralType(attribute(commandHandler, "payloadType"));
+                J.VariableDeclarations payloadParameter = payloadParameter(method);
+                name = declaredPayloadType != null && !isObject(declaredPayloadType)
+                        ? resolvedName(declaredPayloadType)
+                        : payloadParameter == null ? null : resolvedName(payloadParameter.getType());
+            }
+            if (name != null) {
+                commandNames.add(name);
+            }
+        }
+        return commandNames;
     }
 
     /**
@@ -618,6 +664,14 @@ public class MigrateAggregateDeadlineHandler extends ScanningRecipe<MigrateAggre
                                  boolean deadlineMessageParameter,
                                  @Nullable String todo) {
             return new Migration(replacement, commandName, deadlineMessageParameter, todo);
+        }
+
+        /**
+         * Returns whether the migrated handler has no command name and so receives the command named after its payload
+         * type.
+         */
+        boolean namedAfterPayloadType() {
+            return replacement != null && todo != null && commandName != null;
         }
 
         static Migration mark(String todo) {
