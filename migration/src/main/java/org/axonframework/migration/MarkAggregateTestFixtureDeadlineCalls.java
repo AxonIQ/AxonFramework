@@ -91,6 +91,8 @@ public class MarkAggregateTestFixtureDeadlineCalls extends Recipe {
                     + " when().command(new GenericCommandMessage(new MessageType(\"<aggregate type>.<deadline name>\"),"
                     + " <deadline payload, or the deadline name without one>, Metadata.with("
                     + "AggregateDeadlineEntityIdResolverDefinition.DESCRIPTOR_BASED_ID, <aggregate identifier>)))."
+                    + " A @CommandHandler migrated without a command name receives the deadline payload itself: send"
+                    + " it with when().command(<deadline payload>, <the same metadata>)."
                     + " Assert the scheduling on a StubDeadlineManager registered as the DeadlineManager component."
     );
 
