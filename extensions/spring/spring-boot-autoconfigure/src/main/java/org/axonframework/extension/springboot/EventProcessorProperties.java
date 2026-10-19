@@ -180,12 +180,18 @@ public class EventProcessorProperties {
         /**
          * The name of the bean that represents the sequencing policy for processing events.
          * <p>
-         * When no name is specified, the processor defaults to a
+         * Only applies to pooled streaming processors. A
+         * {@link org.axonframework.messaging.core.annotation.SequencingPolicy} annotation on an event handler method or
+         * class, and a policy given when an event handling component was created manually, take precedence over this
+         * policy.
+         * <p>
+         * When no name is specified, no processor-wide policy applies. Each event handling component then keeps its own
+         * sequencing, which without a more specific policy is a
          * {@link org.axonframework.messaging.core.sequencing.HierarchicalSequencingPolicy} pairing a
          * {@link SequentialPerAggregatePolicy} with a
-         * {@link org.axonframework.messaging.core.sequencing.SequentialPolicy}. This setup guarantees that
-         * aggregate-based event stores keep their per-aggregate sequencing. When no aggregate identifier is present,
-         * full sequential kicks in instead.
+         * {@link org.axonframework.messaging.core.sequencing.SequentialPolicy}. That keeps per-aggregate sequencing for
+         * aggregate-based event stores, and falls back to full sequential processing when no aggregate identifier is
+         * present.
          */
         @Nullable
         private String sequencingPolicy;
@@ -419,12 +425,15 @@ public class EventProcessorProperties {
         /**
          * Sets the name of the bean that defines the {@link SequencingPolicy} for this processor.
          * <p>
-         * When no name is specified, the processor defaults to a
+         * Only applies to pooled streaming processors. A
+         * {@link org.axonframework.messaging.core.annotation.SequencingPolicy} on an event handler method or class, and
+         * a policy given when an event handling component was created manually, take precedence over this policy.
+         * <p>
+         * When no name is specified, no processor-wide policy applies. Each event handling component then keeps its own
+         * sequencing, which without a more specific policy is a
          * {@link org.axonframework.messaging.core.sequencing.HierarchicalSequencingPolicy} pairing a
          * {@link SequentialPerAggregatePolicy} with a
-         * {@link org.axonframework.messaging.core.sequencing.SequentialPolicy}. This setup guarantees that
-         * aggregate-based event stores keep their per-aggregate sequencing. When no aggregate identifier is present,
-         * full sequential kicks in instead.
+         * {@link org.axonframework.messaging.core.sequencing.SequentialPolicy}.
          *
          * @param sequencingPolicy the name of the bean that defines the {@link SequencingPolicy} for this processor
          */

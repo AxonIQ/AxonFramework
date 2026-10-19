@@ -26,6 +26,7 @@ import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.configuration.MessagingConfigurer;
 import org.axonframework.messaging.core.sequencing.SequencingPolicy;
+import org.axonframework.messaging.core.sequencing.SequentialPolicy;
 import org.axonframework.messaging.core.unitofwork.SimpleUnitOfWorkFactory;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.core.unitofwork.TransactionalUnitOfWorkFactory;
@@ -432,22 +433,22 @@ class PooledStreamingEventProcessorModuleTest {
     class SequencingPolicyWiringTest {
 
         @Test
-        void configuredSequencingPolicyOverridesTheAssignedComponentsSequencing() {
+        void configuredSequencingPolicyReplacesTheDefaultSequencingOfTheAssignedComponent() {
             // given
             String processorName = "sequencing-processor";
             String componentName = "component";
             var component = SimpleEventHandlingComponent.create(componentName);
             component.subscribe(new QualifiedName(String.class), (event, context) -> MessageStream.empty());
             EventMessage event = EventTestUtils.asEventMessage("some-event");
-            Object overriddenIdentifier = "overridden-sequence-id";
-            SequencingPolicy<EventMessage> overridingPolicy = (e, ctx) -> Optional.of(overriddenIdentifier);
+            Object processorWideIdentifier = "processor-wide-sequence-id";
+            SequencingPolicy<EventMessage> processorWidePolicy = (e, ctx) -> Optional.of(processorWideIdentifier);
 
             var module = EventProcessorModule
                     .pooledStreaming(processorName)
                     .eventHandlingComponents(components -> components.declarative(componentName, cfg -> component))
                     .customized((cfg, c) -> c.eventSource(new AsyncInMemoryStreamableEventSource())
                                              .tokenStore(new InMemoryTokenStore())
-                                             .sequencingPolicy(overridingPolicy));
+                                             .sequencingPolicy(processorWidePolicy));
 
             var configurer = MessagingConfigurer.create();
             configurer.eventProcessing(ep -> ep.pooledStreaming(ps -> ps.processor(module)));
@@ -458,7 +459,65 @@ class PooledStreamingEventProcessorModuleTest {
 
             // then
             assertThat(registeredComponent.sequenceIdentifierFor(event, new StubProcessingContext()))
-                    .isEqualTo(overriddenIdentifier);
+                    .isEqualTo(processorWideIdentifier);
+        }
+
+        @Test
+        void configuredSequencingPolicyDoesNotReplaceAnExplicitPolicyOfTheAssignedComponent() {
+            // given
+            String processorName = "explicit-sequencing-processor";
+            String componentName = "component";
+            var component = SimpleEventHandlingComponent.create(componentName, SequentialPolicy.INSTANCE);
+            component.subscribe(new QualifiedName(String.class), (event, context) -> MessageStream.empty());
+            EventMessage event = EventTestUtils.asEventMessage("some-event");
+            SequencingPolicy<EventMessage> processorWidePolicy = (e, ctx) -> Optional.of("processor-wide-sequence-id");
+
+            var module = EventProcessorModule
+                    .pooledStreaming(processorName)
+                    .eventHandlingComponents(components -> components.declarative(componentName, cfg -> component))
+                    .customized((cfg, c) -> c.eventSource(new AsyncInMemoryStreamableEventSource())
+                                             .tokenStore(new InMemoryTokenStore())
+                                             .sequencingPolicy(processorWidePolicy));
+
+            var configurer = MessagingConfigurer.create();
+            configurer.eventProcessing(ep -> ep.pooledStreaming(ps -> ps.processor(module)));
+            var configuration = configurer.build();
+
+            // when
+            var registeredComponent = registeredEventHandlingComponent(configuration, processorName, componentName);
+
+            // then - the explicit policy of the component wins over the processor-wide policy
+            assertThat(registeredComponent.sequenceIdentifierFor(event, new StubProcessingContext()))
+                    .isEqualTo(SequentialPolicy.FULL_SEQUENTIAL_POLICY);
+        }
+
+        @Test
+        void configuredSequencingPolicyResolvingNothingDoesNotFallBackToTheDefaultSequencing() {
+            // given
+            String processorName = "empty-sequencing-processor";
+            String componentName = "component";
+            var component = SimpleEventHandlingComponent.create(componentName);
+            component.subscribe(new QualifiedName(String.class), (event, context) -> MessageStream.empty());
+            EventMessage event = EventTestUtils.asEventMessage("some-event");
+            SequencingPolicy<EventMessage> processorWidePolicy = (e, ctx) -> Optional.empty();
+
+            var module = EventProcessorModule
+                    .pooledStreaming(processorName)
+                    .eventHandlingComponents(components -> components.declarative(componentName, cfg -> component))
+                    .customized((cfg, c) -> c.eventSource(new AsyncInMemoryStreamableEventSource())
+                                             .tokenStore(new InMemoryTokenStore())
+                                             .sequencingPolicy(processorWidePolicy));
+
+            var configurer = MessagingConfigurer.create();
+            configurer.eventProcessing(ep -> ep.pooledStreaming(ps -> ps.processor(module)));
+            var configuration = configurer.build();
+
+            // when
+            var registeredComponent = registeredEventHandlingComponent(configuration, processorName, componentName);
+
+            // then - the processor-wide policy replaced the default, so the event identifier is used
+            assertThat(registeredComponent.sequenceIdentifierFor(event, new StubProcessingContext()))
+                    .isEqualTo(event.identifier());
         }
 
         @Test
@@ -483,7 +542,7 @@ class PooledStreamingEventProcessorModuleTest {
             // when
             var registeredComponent = registeredEventHandlingComponent(configuration, processorName, componentName);
 
-            // then - the component's own (unwrapped) sequencing decides, not an override
+            // then - the component's own sequencing decides, as no processor-wide policy is configured
             assertThat(registeredComponent.sequenceIdentifierFor(event, new StubProcessingContext()))
                     .isEqualTo(component.sequenceIdentifierFor(event, new StubProcessingContext()));
         }
