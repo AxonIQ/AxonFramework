@@ -457,6 +457,91 @@ class MigrateAggregateDeadlineHandlerTest implements RewriteTest {
         }
 
         @Test
+        void marksHandlerWhosePayloadTypeAnotherCommandHandlerHandles() {
+            rewriteRun(
+                    java(PAYLOAD),
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.commandhandling.CommandHandler;
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+
+                            class Order {
+                                @CommandHandler
+                                void handle(PaymentDeadline command) {
+                                }
+
+                                @DeadlineHandler
+                                void on(PaymentDeadline deadline) {
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.commandhandling.CommandHandler;
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+
+                            class Order {
+                                @CommandHandler
+                                void handle(PaymentDeadline command) {
+                                }
+
+                                // TODO(axon4to5): replace this @DeadlineHandler with a @CommandHandler(commandName = "<aggregate type>.<deadline name>"). The original @DeadlineHandler did not name the deadline, and another @CommandHandler of this class already handles its payload type, so a deadline fired under that payload type would reach that handler instead. A fired aggregate deadline now arrives as a command named <aggregate type>.<deadline name>, with the aggregate type Axon Framework 4 stored: the type of its @AggregateRoot or @Aggregate annotation, or its simple class name.
+                                @DeadlineHandler
+                                void on(PaymentDeadline deadline) {
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
+        void marksHandlersThatShareAPayloadType() {
+            rewriteRun(
+                    java(PAYLOAD),
+                    java(
+                            """
+                            package com.example;
+
+                            import org.axonframework.deadline.annotation.DeadlineHandler;
+
+                            class Order {
+                                @DeadlineHandler
+                                void on(PaymentDeadline deadline) {
+                                }
+
+                                @DeadlineHandler
+                                void onAgain(PaymentDeadline deadline) {
+                                }
+                            }
+                            """,
+                            """
+                            package com.example;
+
+                            import org.axonframework.commandhandling.CommandHandler;
+
+                            class Order {
+                                // TODO(axon4to5): the original @DeadlineHandler did not name the deadline explicitly. Name the deadline this @CommandHandler handles with a @CommandHandler(commandName = "<aggregate type>.<deadline name>") after the name this deadline was scheduled with. Until you name the deadline, the legacy deadline support will fire the deadline named after its payload type with a warning.
+                                // TODO(axon4to5): merge the handlers of this deadline into one handler. Another handler of this class receives the same deadline under the same command name, but you can only declare one handler per command name, so the application will fail to start until they are merged.
+                                @CommandHandler
+                                void on(PaymentDeadline deadline) {
+                                }
+
+                                // TODO(axon4to5): the original @DeadlineHandler did not name the deadline explicitly. Name the deadline this @CommandHandler handles with a @CommandHandler(commandName = "<aggregate type>.<deadline name>") after the name this deadline was scheduled with. Until you name the deadline, the legacy deadline support will fire the deadline named after its payload type with a warning.
+                                // TODO(axon4to5): merge the handlers of this deadline into one handler. Another handler of this class receives the same deadline under the same command name, but you can only declare one handler per command name, so the application will fail to start until they are merged.
+                                @CommandHandler
+                                void onAgain(PaymentDeadline deadline) {
+                                }
+                            }
+                            """
+                    )
+            );
+        }
+
+        @Test
         void keepsPayloadTypeAttributeOfHandlerWithoutDeadlineName() {
             rewriteRun(
                     java(PAYLOAD),
