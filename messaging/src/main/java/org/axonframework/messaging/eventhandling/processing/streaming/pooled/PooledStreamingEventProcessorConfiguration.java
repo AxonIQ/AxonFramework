@@ -41,7 +41,6 @@ import org.axonframework.messaging.eventhandling.processing.streaming.StreamingE
 import org.axonframework.messaging.eventhandling.processing.streaming.progress.SegmentProgressStrategyFactory;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.SegmentChangeListener;
-import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.SequenceOverridingEventHandlingComponent;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.ReplayToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore;
@@ -84,7 +83,8 @@ import static org.axonframework.common.BuilderUtils.assertStrictPositive;
  *     <li>The {@link SequencingPolicy}, defaulting to {@code null} here, resulting in a
  *     {@link org.axonframework.messaging.core.sequencing.HierarchicalSequencingPolicy} using a
  *     {@link org.axonframework.messaging.core.sequencing.SequentialPerAggregatePolicy} and
- *     {@link org.axonframework.messaging.core.sequencing.SequentialPolicy}.</li>
+ *     {@link org.axonframework.messaging.core.sequencing.SequentialPolicy} on the
+ *     {@link EventHandlingComponent EventHandlingComponents} maintained by the processor under configuration.</li>
  * </ul>
  * The following fields of this configuration are <b>hard requirements</b> and as such should be provided:
  * <ul>
@@ -217,18 +217,18 @@ public class PooledStreamingEventProcessorConfiguration extends EventProcessorCo
 
     /**
      * Sets the {@link SequencingPolicy} used to determine the sequence identifier of events handled by this
-     * {@link PooledStreamingEventProcessor}, overriding the sequencing otherwise resolved by the processor's assigned
-     * {@link EventHandlingComponent EventHandlingComponents} (for example through a
-     * {@code @SequencingPolicy}-annotated handler class).
+     * {@link PooledStreamingEventProcessor}, whenever an assigned {@link EventHandlingComponent} does not define a more
+     * specific one.
      * <p>
-     * Internally, this is achieved by wrapping each assigned {@link EventHandlingComponent} in a
-     * {@link SequenceOverridingEventHandlingComponent}: the given {@code sequencingPolicy} is consulted first, and only
-     * when it returns {@link java.util.Optional#empty()} for a given event does the wrapped component's own sequencing
-     * apply. Defaults to {@code null}, leaving every assigned component's own sequencing behavior in place.
+     * When {@code EventHandlingComponent}-specific policy are provided, either through the declarative or automated
+     * configuration API, those take precedence over the given {@code sequencingPolicy}.
+     * {@code EventHandlingComponent}-specific policies are placed to override wider defaults, wherein this operation
+     * should be regarded as a "processor default policy" setting.
      *
-     * @param sequencingPolicy The {@link SequencingPolicy} used to determine the sequence identifier of events handled
-     *                         by this {@link PooledStreamingEventProcessor}.
-     * @return The current instance, for fluent interfacing.
+     * @param sequencingPolicy the {@link SequencingPolicy} used to determine the sequence identifier of events handled
+     *                         by this {@link PooledStreamingEventProcessor} when an {@link EventHandlingComponent}
+     *                         defines none itself
+     * @return the current instance, for fluent interfacing
      */
     public PooledStreamingEventProcessorConfiguration sequencingPolicy(
             SequencingPolicy<? super EventMessage> sequencingPolicy
@@ -615,8 +615,8 @@ public class PooledStreamingEventProcessorConfiguration extends EventProcessorCo
     }
 
     /**
-     * Returns the {@link SequencingPolicy} overriding the sequencing behavior of this processor's assigned
-     * {@link EventHandlingComponent EventHandlingComponents}.
+     * Returns the {@link SequencingPolicy} this processor applies to assigned
+     * {@link EventHandlingComponent EventHandlingComponents} that do not define a more specific one.
      *
      * @return The {@link SequencingPolicy} for this processor, or {@code null} when unset.
      */
