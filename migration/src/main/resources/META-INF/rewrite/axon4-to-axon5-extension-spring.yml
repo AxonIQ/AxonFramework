@@ -93,7 +93,7 @@ recipeList:
   - org.openrewrite.java.ChangeType:
       oldFullyQualifiedTypeName: org.axonframework.extension.spring.stereotype.Aggregate
       newFullyQualifiedTypeName: org.axonframework.extension.spring.stereotype.EventSourced
-  # Runs after the @Aggregate → @EventSourced rename above. Adds explicit
+  # Runs after the @Aggregate -> @EventSourced rename above. Adds explicit
   # tagKey = "<EntitySimpleName>" and idType = Object.class (placeholder)
   # to every @EventSourced annotation that has no tagKey yet, so developers
   # and LLM post-processors can see and verify the configuration.
@@ -132,7 +132,7 @@ recipeList:
       newPackageName: org.axonframework.extension.springboot
       recursive: true
   # Build-tool coordinate moves for the Spring Boot artifacts: groupId
-  # `org.axonframework` → `org.axonframework.extensions.spring`. ArtifactIds
+  # `org.axonframework` -> `org.axonframework.extensions.spring`. ArtifactIds
   # (`axon-spring-boot-starter`, `axon-spring-boot-autoconfigure`) are
   # unchanged. The unified `java.dependencies.ChangeDependency` recipe
   # applies to both Maven and Gradle projects.
@@ -154,7 +154,7 @@ recipeList:
   # Spring Boot configuration property rename. AF4's `SerializerProperties`
   # (`@ConfigurationProperties("axon.serializer")`) is replaced in AF5 by
   # `ConverterProperties` (`@ConfigurationProperties("axon.converter")`),
-  # reflecting the framework-wide rename of `Serializer` → `Converter`. The
+  # reflecting the framework-wide rename of `Serializer` -> `Converter`. The
   # three sub-properties (`general`, `messages`, `events`) keep the same
   # names, so renaming the parent prefix carries them along.
   #

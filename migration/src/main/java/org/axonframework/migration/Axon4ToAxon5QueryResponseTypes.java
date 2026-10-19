@@ -40,23 +40,23 @@ import java.util.List;
  * <p>
  * AF5 dropped the {@code ResponseType} SPI: the gateway now accepts a plain {@code Class<R>} for
  * single-response queries and exposes a separate {@code queryMany(...)} for multi-response queries.
- * For call sites that already pass an object payload — i.e. the AF5 shape
- * {@code queryGateway.query(payload, ResponseTypes.instanceOf(R.class))} — the wrapper can be
+ * For call sites that already pass an object payload - i.e. the AF5 shape
+ * {@code queryGateway.query(payload, ResponseTypes.instanceOf(R.class))} - the wrapper can be
  * removed mechanically:
  * <ul>
- *   <li>{@code query(payload, instanceOf(R.class))} → {@code query(payload, R.class)}</li>
- *   <li>{@code query(payload, optionalInstanceOf(R.class))} → {@code query(payload, R.class)}
- *       — the future resolves to {@code null} when absent in AF5; behaviour-preserving rewrite.</li>
- *   <li>{@code query(payload, multipleInstancesOf(R.class))} → {@code queryMany(payload, R.class)}
- *       — the only paired method-name change.</li>
+ *   <li>{@code query(payload, instanceOf(R.class))} -> {@code query(payload, R.class)}</li>
+ *   <li>{@code query(payload, optionalInstanceOf(R.class))} -> {@code query(payload, R.class)}
+ *       - the future resolves to {@code null} when absent in AF5; behaviour-preserving rewrite.</li>
+ *   <li>{@code query(payload, multipleInstancesOf(R.class))} -> {@code queryMany(payload, R.class)}
+ *       - the only paired method-name change.</li>
  * </ul>
  * <p>
  * <strong>Deliberately conservative scope.</strong> The recipe never fires on the three-argument
- * AF4 form {@code query(String name, Object payload, ResponseType)} — that form has no AF5 overload,
+ * AF4 form {@code query(String name, Object payload, ResponseType)} - that form has no AF5 overload,
  * and silently rewriting it would (a) produce code that does not compile and (b) destroy the
  * fingerprint that the LLM-driven {@code axon4-to-axon5-querygateway} skill needs to recognise the
  * AF4 string-named pattern (so it can introduce typed query message classes). For the same reason
- * the recipe never rewrites {@code subscriptionQuery(...)} — even the typed-payload form needs a
+ * the recipe never rewrites {@code subscriptionQuery(...)} - even the typed-payload form needs a
  * structural rewrite of the surrounding {@code SubscriptionQueryResult.initialResult/updates/close}
  * ceremony, which the skill must drive. Instead, every {@code subscriptionQuery(...)} call site on a
  * {@code QueryGateway} gets a {@code // TODO(axon4to5):} comment pointing at the new shape: AF5
@@ -67,8 +67,8 @@ import java.util.List;
  * to unwrap and no comment is added there.
  * <p>
  * Imports for {@code org.axonframework.messaging.responsetypes.ResponseType} and
- * {@code …ResponseTypes} (including {@code static …ResponseTypes.*}) are removed only after the
- * file has no remaining references to those types — projects that mix the two-argument AF5 shape
+ * {@code ...ResponseTypes} (including {@code static ...ResponseTypes.*}) are removed only after the
+ * file has no remaining references to those types - projects that mix the two-argument AF5 shape
  * with still-untouched three-argument AF4 sites keep their imports until the per-construct skill
  * finishes the migration.
  *
@@ -102,8 +102,8 @@ public class Axon4ToAxon5QueryResponseTypes extends Recipe {
                 + "`query(payload, multipleInstancesOf(R.class))` to `queryMany(payload, R.class)`. "
                 + "Three-argument `query(String, Object, ...)` forms and `streamingQuery(...)` are left "
                 + "untouched so the per-construct migration skill keeps the AF4 fingerprints it needs for "
-                + "design decisions. `subscriptionQuery(...)` call sites are never rewritten either — that "
-                + "needs a structural change the skill must drive — but each one gets a "
+                + "design decisions. `subscriptionQuery(...)` call sites are never rewritten either - that "
+                + "needs a structural change the skill must drive - but each one gets a "
                 + "`TODO(axon4to5):` comment pointing at the new `Publisher<R>`-based shape. Removes "
                 + "`ResponseType` / `ResponseTypes` imports only when no references remain.";
     }
@@ -169,7 +169,7 @@ public class Axon4ToAxon5QueryResponseTypes extends Recipe {
 
             /**
              * Prepends a {@code // TODO(axon4to5):} comment to a {@code subscriptionQuery(...)} call
-             * site pointing at the AF5 replacement shape, without otherwise touching the call — the
+             * site pointing at the AF5 replacement shape, without otherwise touching the call - the
              * structural rewrite (merging {@code initialResult}/{@code updates} into the single
              * {@code Publisher<R>} AF5 returns) is left to the LLM-driven migration skill. Idempotent:
              * a call site that already carries the marker comment is left alone.
@@ -182,8 +182,8 @@ public class Axon4ToAxon5QueryResponseTypes extends Recipe {
                 }
                 String suffix = "\n" + enclosingStatementIndent();
                 TextComment todo = new TextComment(false,
-                        " " + SUBSCRIPTION_QUERY_TODO_MARKER + ": AF5 removed SubscriptionQueryResult —"
-                                + " subscriptionQuery(...) now returns a single Publisher<R> merging the"
+                        " " + SUBSCRIPTION_QUERY_TODO_MARKER + ": AF5 removed SubscriptionQueryResult."
+                                + " The subscriptionQuery(...) method now returns a single Publisher<R> merging the"
                                 + " initial result and updates. To keep the old \"subscribe before send\""
                                 + " idiom, use"
                                 + " Flux.from(updates).doOnSubscribe(sub -> commandGateway.send(command)).",
@@ -201,7 +201,7 @@ public class Axon4ToAxon5QueryResponseTypes extends Recipe {
                 // Start from the PARENT tree, not this cursor: J.MethodInvocation itself always
                 // implements Statement (any expression call could stand alone as one), so checking
                 // the starting cursor would immediately "find" mi itself even when it's nested
-                // inside a `return`/assignment — using its un-indented single-space prefix instead
+                // inside a `return`/assignment - using its un-indented single-space prefix instead
                 // of the actual enclosing statement's indent.
                 Cursor cursor = getCursor().getParentTreeCursor();
                 while (!(cursor.getValue() instanceof Statement) && !(cursor.getValue() instanceof J.Block)) {
@@ -225,7 +225,7 @@ public class Axon4ToAxon5QueryResponseTypes extends Recipe {
                     String fqn = selectType.getFullyQualifiedName();
                     return QUERY_GATEWAY_AF4_FQN.equals(fqn) || QUERY_GATEWAY_AF5_FQN.equals(fqn);
                 }
-                // Type binding may be missing on synthetic test inputs — fall back to the declared
+                // Type binding may be missing on synthetic test inputs - fall back to the declared
                 // type expression on the receiving identifier when possible. This is intentionally
                 // permissive; a misfire here is bounded by the simple-name + arg-count gating above.
                 return select instanceof J.Identifier;
@@ -253,7 +253,7 @@ public class Axon4ToAxon5QueryResponseTypes extends Recipe {
                 if (select instanceof J.FieldAccess) {
                     return ((J.FieldAccess) select).getName().getSimpleName().equals("ResponseTypes");
                 }
-                // Static import — no select. Match by simple name; the simple-name + arg-count gating
+                // Static import - no select. Match by simple name; the simple-name + arg-count gating
                 // on the outer query call still bounds misfires.
                 return select == null;
             }

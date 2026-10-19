@@ -125,7 +125,7 @@ public class AnnotateObsoleteSequencingPolicyProperty extends Recipe {
 
         private Properties.Comment buildMarkerComment(String entryPrefix) {
             // The new comment node steals the entry's leading newline+indent so it lands on its own
-            // line. The entry then keeps its original prefix — the comment node's trailing newline
+            // line. The entry then keeps its original prefix - the comment node's trailing newline
             // (which is implicit in Properties LST printing) brings us back to the entry's column.
             return new Properties.Comment(
                     org.openrewrite.Tree.randomId(),
@@ -155,7 +155,7 @@ public class AnnotateObsoleteSequencingPolicyProperty extends Recipe {
 
         /**
          * Walks the cursor parents to confirm the entry is nested under
-         * {@code axon → eventhandling → processors → <any group>}. Each YAML mapping
+         * {@code axon -> eventhandling -> processors -> <any group>}. Each YAML mapping
          * entry's parent is the {@link Yaml.Mapping}; the mapping's parent is the
          * containing {@link Yaml.Mapping.Entry}. The first parent entry is the
          * {@code <group>} name (anything); the remaining three must match exactly.
@@ -168,7 +168,7 @@ public class AnnotateObsoleteSequencingPolicyProperty extends Recipe {
                 if (c.getValue() instanceof Yaml.Mapping.Entry) {
                     Yaml.Mapping.Entry me = c.getValue();
                     if (parentEntriesSeen == 0) {
-                        // <group> placeholder — any key.
+                        // <group> placeholder - any key.
                     } else {
                         int idx = parentEntriesSeen - 1;
                         if (idx >= expectedAfterGroup.length

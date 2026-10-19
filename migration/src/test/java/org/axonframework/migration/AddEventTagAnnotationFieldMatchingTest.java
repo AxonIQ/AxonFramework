@@ -42,7 +42,7 @@ class AddEventTagAnnotationFieldMatchingTest implements RewriteTest {
     @Test
     void flagsTypeAndNameSimilarityMatchForReviewWhenExactNameFails() {
         // Entity id field is "giftCardId"; the event's own field is just "id". Not an exact match,
-        // but "giftCardId" ends with "id" (case-insensitively) and both are declared String — the
+        // but "giftCardId" ends with "id" (case-insensitively) and both are declared String - the
         // type-plus-name-similarity heuristic should tag it, but leave a TODO as it is no exact match.
         rewriteRun(
                 java(
@@ -92,7 +92,7 @@ class AddEventTagAnnotationFieldMatchingTest implements RewriteTest {
         // Neither an exact-name nor a name-similarity match exists between the entity's id field
         // ("giftCardId") and the event's field ("identifier"). But a command class in the same
         // package routes to the entity via a @TargetAggregateIdentifier field also named
-        // "identifier" — that alias, combined with the matching String type, selects the field,
+        // "identifier" - that alias, combined with the matching String type, selects the field,
         // but leaves a TODO as it is no exact match.
         rewriteRun(
                 java(
@@ -199,7 +199,7 @@ class AddEventTagAnnotationFieldMatchingTest implements RewriteTest {
     @Test
     void fallsBackWithTodoWhenTypeDiffersDespiteNameSimilarity() {
         // The event's "id" field would satisfy the name-similarity check against entity id field
-        // "giftCardId", but it's declared long instead of String — the type mismatch must block the
+        // "giftCardId", but it's declared long instead of String - the type mismatch must block the
         // heuristic match, leaving the original "first field + TODO" fallback in place.
         rewriteRun(
                 java(

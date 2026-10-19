@@ -37,7 +37,7 @@ class Axon4ToAxon5QueryResponseTypesTest implements RewriteTest {
         spec.recipe(new Axon4ToAxon5QueryResponseTypes());
     }
 
-    // ── Positive cases ───────────────────────────────────────────────────────
+    // -- Positive cases -------------------------------------------------------
 
     @Test
     void unwrapsInstanceOfOnTwoArgQuery() {
@@ -177,11 +177,11 @@ class Axon4ToAxon5QueryResponseTypesTest implements RewriteTest {
         );
     }
 
-    // ── Negative cases — fingerprints the per-construct skill needs ──────────
+    // -- Negative cases - fingerprints the per-construct skill needs ----------
 
     @Test
     void leavesThreeArgStringNamedQueryUntouched() {
-        // The 3-arg AF4 form has no AF5 overload — rewriting it would (a) break compilation and
+        // The 3-arg AF4 form has no AF5 overload - rewriting it would (a) break compilation and
         // (b) destroy the fingerprint the LLM-driven skill needs to introduce a typed query class.
         rewriteRun(
                 spec -> spec.typeValidationOptions(TypeValidation.none()),
@@ -206,8 +206,8 @@ class Axon4ToAxon5QueryResponseTypesTest implements RewriteTest {
 
     @Test
     void leavesSubscriptionQueryUntouchedButFlagsItForReview() {
-        // The call itself is never rewritten — AF5 merged initialResult/updates into a single
-        // Publisher<R>, a structural change the LLM-driven skill must drive — but the recipe still
+        // The call itself is never rewritten - AF5 merged initialResult/updates into a single
+        // Publisher<R>, a structural change the LLM-driven skill must drive - but the recipe still
         // marks the call site with a TODO comment so it isn't silently skipped.
         rewriteRun(
                 spec -> spec.typeValidationOptions(TypeValidation.none()),
@@ -236,7 +236,7 @@ class Axon4ToAxon5QueryResponseTypesTest implements RewriteTest {
                             private final QueryGateway gateway;
                             Foo(QueryGateway gateway) { this.gateway = gateway; }
                             SubscriptionQueryResult<String, String> watch(Object payload) {
-                                return // TODO(axon4to5): subscriptionQuery: AF5 removed SubscriptionQueryResult — subscriptionQuery(...) now returns a single Publisher<R> merging the initial result and updates. To keep the old "subscribe before send" idiom, use Flux.from(updates).doOnSubscribe(sub -> commandGateway.send(command)).
+                                return // TODO(axon4to5): subscriptionQuery: AF5 removed SubscriptionQueryResult. The subscriptionQuery(...) method now returns a single Publisher<R> merging the initial result and updates. To keep the old "subscribe before send" idiom, use Flux.from(updates).doOnSubscribe(sub -> commandGateway.send(command)).
                                 gateway.subscriptionQuery(payload,
                                                                   ResponseTypes.instanceOf(String.class),
                                                                   ResponseTypes.instanceOf(String.class));
@@ -260,7 +260,7 @@ class Axon4ToAxon5QueryResponseTypesTest implements RewriteTest {
                             private final QueryGateway gateway;
                             Foo(QueryGateway gateway) { this.gateway = gateway; }
                             Publisher<String> watch(Object payload) {
-                                return // TODO(axon4to5): subscriptionQuery: AF5 removed SubscriptionQueryResult — subscriptionQuery(...) now returns a single Publisher<R> merging the initial result and updates. To keep the old "subscribe before send" idiom, use Flux.from(updates).doOnSubscribe(sub -> commandGateway.send(command)).
+                                return // TODO(axon4to5): subscriptionQuery: AF5 removed SubscriptionQueryResult. The subscriptionQuery(...) method now returns a single Publisher<R> merging the initial result and updates. To keep the old "subscribe before send" idiom, use Flux.from(updates).doOnSubscribe(sub -> commandGateway.send(command)).
                                 gateway.subscriptionQuery(payload, String.class, String.class);
                             }
                         }
@@ -272,7 +272,7 @@ class Axon4ToAxon5QueryResponseTypesTest implements RewriteTest {
     @Test
     void flagsBareSubscriptionQueryStatementNotWrappedInReturn() {
         // Same TODO treatment applies when the call is a bare statement rather than a return
-        // expression — exercises the "call is itself the enclosing statement" placement path.
+        // expression - exercises the "call is itself the enclosing statement" placement path.
         rewriteRun(
                 spec -> spec.typeValidationOptions(TypeValidation.none()),
                 java(
@@ -294,7 +294,7 @@ class Axon4ToAxon5QueryResponseTypesTest implements RewriteTest {
                             private final QueryGateway gateway;
                             Foo(QueryGateway gateway) { this.gateway = gateway; }
                             void watch(Object payload) {
-                                // TODO(axon4to5): subscriptionQuery: AF5 removed SubscriptionQueryResult — subscriptionQuery(...) now returns a single Publisher<R> merging the initial result and updates. To keep the old "subscribe before send" idiom, use Flux.from(updates).doOnSubscribe(sub -> commandGateway.send(command)).
+                                // TODO(axon4to5): subscriptionQuery: AF5 removed SubscriptionQueryResult. The subscriptionQuery(...) method now returns a single Publisher<R> merging the initial result and updates. To keep the old "subscribe before send" idiom, use Flux.from(updates).doOnSubscribe(sub -> commandGateway.send(command)).
                                 gateway.subscriptionQuery(payload, String.class, String.class);
                             }
                         }
@@ -326,7 +326,7 @@ class Axon4ToAxon5QueryResponseTypesTest implements RewriteTest {
 
     @Test
     void isIdempotentOnAlreadyAf5Shape() {
-        // Already in AF5 shape — the recipe must be a no-op.
+        // Already in AF5 shape - the recipe must be a no-op.
         rewriteRun(
                 spec -> spec.typeValidationOptions(TypeValidation.none()),
                 java(

@@ -42,7 +42,7 @@ class AddEventTagAnnotationKotlinTest implements RewriteTest {
     @Test
     void annotatesFirstParamAsFallbackWhenIdFieldNameDiffers() {
         // Mirrors the auction-house Auction.kt shape: the entity's @AggregateIdentifier field
-        // is named `id`, but the event class uses `auctionId` — not a name-similarity match either
+        // is named `id`, but the event class uses `auctionId` - not a name-similarity match either
         // ("id" is not a suffix of "auctionId"), so the recipe falls back to the first
         // primary-constructor param and annotates it with a trailing TODO comment for the human
         // reviewer to verify the choice.

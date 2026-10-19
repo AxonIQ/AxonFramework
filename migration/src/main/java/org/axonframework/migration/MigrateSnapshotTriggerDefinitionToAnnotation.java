@@ -55,14 +55,14 @@ import java.util.Map;
  * <p>
  * This recipe operates in two phases:
  * <ol>
- *     <li><b>Scan</b> – collects all {@code @Bean} methods that return a {@code SnapshotTriggerDefinition},
+ *     <li><b>Scan</b> - collects all {@code @Bean} methods that return a {@code SnapshotTriggerDefinition},
  *     recording the bean name and trigger type (event-count, load-time, or custom).</li>
- *     <li><b>Edit</b> – for each {@code @Aggregate}/{@code @EventSourced} class referencing a collected bean:
+ *     <li><b>Edit</b> - for each {@code @Aggregate}/{@code @EventSourced} class referencing a collected bean:
  *         <ul>
- *             <li>{@code EventCountSnapshotTriggerDefinition} → adds {@code @Snapshotting(afterEvents = N)}</li>
- *             <li>{@code AggregateLoadTimeSnapshotTriggerDefinition} → adds
+ *             <li>{@code EventCountSnapshotTriggerDefinition} -> adds {@code @Snapshotting(afterEvents = N)}</li>
+ *             <li>{@code AggregateLoadTimeSnapshotTriggerDefinition} -> adds
  *             {@code @Snapshotting(afterSourcingTime = "PTxS")}</li>
- *             <li>Custom implementation → prepends a {@code TODO(axon4to5):} comment for manual review</li>
+ *             <li>Custom implementation -> prepends a {@code TODO(axon4to5):} comment for manual review</li>
  *         </ul>
  *         In all cases, the {@code snapshotTriggerDefinition} attribute is removed from the annotation.
  *         Known-type {@code @Bean} methods are deleted from the configuration class; custom ones receive a
@@ -75,7 +75,7 @@ import java.util.Map;
  * the snapshot payload was serializable. Whenever a configuration class declares a
  * {@code SnapshotTriggerDefinition} bean, this recipe also scans that same class for a
  * {@code Serializer}-returning {@code @Bean} method and prepends a {@code TODO(axon4to5):} comment
- * to it — AF5's converter model may make the bean redundant, but that needs a human to confirm.
+ * to it - AF5's converter model may make the bean redundant, but that needs a human to confirm.
  *
  * @author Mateusz Nowak
  * @since 5.1.1
@@ -183,7 +183,7 @@ public class MigrateSnapshotTriggerDefinitionToAnnotation
 
                 J.ClassDeclaration cd = super.visitClassDeclaration(classDecl, ctx);
 
-                // ── Handle the aggregate/entity side ──────────────────────────
+                // -- Handle the aggregate/entity side --------------------------
                 if (beanName != null) {
                     if (!hasSnapshottingAnnotation(cd)) {
                         SnapshotBeanInfo info = acc.beans.get(beanName);
@@ -193,7 +193,7 @@ public class MigrateSnapshotTriggerDefinitionToAnnotation
                             // returned by super), then remove the attribute from the result.
                             cd = applySnapshottingTemplate(
                                     cd, "@Snapshotting(afterEvents = " + info.eventCount() + ")");
-                            // Force import unconditionally — Snapshotting may be unresolved on the
+                            // Force import unconditionally - Snapshotting may be unresolved on the
                             // test classpath, so maybeAddImport(onlyIfReferenced=true) would skip it.
                             doAfterVisit(new AddImport<>(SNAPSHOTTING_FQN, null, false));
                         } else if (info != null && info.type() == TriggerType.LOAD_TIME) {
@@ -206,12 +206,12 @@ public class MigrateSnapshotTriggerDefinitionToAnnotation
                             cd = prependTodoOnAggregateAnnotation(cd, beanName);
                         }
                     }
-                    // Always remove the snapshotTriggerDefinition attribute — after any template
+                    // Always remove the snapshotTriggerDefinition attribute - after any template
                     // application so the withLeadingAnnotations change is not overwritten.
                     cd = removeSnapshotTriggerAttribute(cd);
                 }
 
-                // ── Handle the configuration class side ───────────────────────
+                // -- Handle the configuration class side -----------------------
                 cd = processSnapshotBeanMethods(cd);
 
                 return cd;
@@ -257,7 +257,7 @@ public class MigrateSnapshotTriggerDefinitionToAnnotation
                 );
                 if (hasSnapshotBean[0]) {
                     // A Serializer bean living alongside the SnapshotTriggerDefinition bean in the
-                    // same configuration class is a common AF4 pairing — flag it for review rather
+                    // same configuration class is a common AF4 pairing - flag it for review rather
                     // than silently leaving it behind.
                     body = flagAdjacentSerializerBean(body);
                 }
@@ -267,7 +267,7 @@ public class MigrateSnapshotTriggerDefinitionToAnnotation
                     maybeRemoveImport(SNAPSHOT_TRIGGER_DEFINITION_FQN);
                     maybeRemoveImport(EVENT_COUNT_FQN);
                     maybeRemoveImport(LOAD_TIME_FQN);
-                    // Only remove @Bean import when no @Bean-annotated methods remain — if the
+                    // Only remove @Bean import when no @Bean-annotated methods remain - if the
                     // class has other @Bean methods, removing the import would break them.
                     // Note: maybeRemoveImport with onlyIfReferenced=true is unreliable here when
                     // the type isn't resolved (e.g. spring-context not on classpath), so we guard
@@ -343,7 +343,7 @@ public class MigrateSnapshotTriggerDefinitionToAnnotation
 
     /**
      * Returns {@code true} when the method's declared return type is (or is named like) a
-     * {@code Serializer} — e.g. {@code Serializer} itself or {@code JacksonSerializer}. Mirrors the
+     * {@code Serializer} - e.g. {@code Serializer} itself or {@code JacksonSerializer}. Mirrors the
      * simple-name fallback used elsewhere in this recipe so the check still fires on unresolved
      * types in synthetic test sources.
      */
@@ -366,7 +366,7 @@ public class MigrateSnapshotTriggerDefinitionToAnnotation
      * Prepends a {@code // TODO(axon4to5):} comment to every {@code @Bean} method in {@code body}
      * whose return type looks like a {@code Serializer}. Called only for configuration classes that
      * also declare a {@code SnapshotTriggerDefinition} bean, since this pairing existed under AF4
-     * specifically to guarantee the snapshot payload was serializable — a concern AF5's converter
+     * specifically to guarantee the snapshot payload was serializable - a concern AF5's converter
      * model may already address, so the bean is flagged for review rather than migrated or removed.
      */
     private static J.Block flagAdjacentSerializerBean(J.Block body) {
@@ -398,8 +398,8 @@ public class MigrateSnapshotTriggerDefinitionToAnnotation
         String suffix = "\n" + indent;
         TextComment todo = new TextComment(false,
                 " " + SERIALIZER_TODO_MARKER
-                        + " existed under AF4 to guarantee the snapshot payload was serializable —"
-                        + " review whether it is still needed under AF5's converter model.",
+                        + " existed under AF4 to guarantee the snapshot payload was serializable."
+                        + " Review whether it is still needed under AF5's converter model.",
                 suffix, Markers.EMPTY);
         return method.withPrefix(prefix.withComments(ListUtils.concat(prefix.getComments(), todo)));
     }
@@ -576,7 +576,7 @@ public class MigrateSnapshotTriggerDefinitionToAnnotation
                     // Strip leading whitespace from the first surviving argument. When the removed
                     // attribute was not the last in the list (e.g. "snapshotTriggerDefinition = x,
                     // repository = y"), the next argument keeps its " " prefix that came after the
-                    // comma — producing @Aggregate( repository = "y") instead of @Aggregate(repository = "y").
+                    // comma - producing @Aggregate( repository = "y") instead of @Aggregate(repository = "y").
                     boolean[] first = {true};
                     ann = ann.withArguments(
                             ListUtils.map(ann.getArguments(), arg -> {
@@ -635,7 +635,7 @@ public class MigrateSnapshotTriggerDefinitionToAnnotation
         TextComment todo = new TextComment(false,
                 " TODO(axon4to5): Custom SnapshotTriggerDefinition bean \""
                         + beanName
-                        + "\" — remove this bean manually.",
+                        + "\". Remove this bean manually.",
                 suffix, Markers.EMPTY);
         return method.withPrefix(prefix.withComments(ListUtils.concat(prefix.getComments(), todo)));
     }
