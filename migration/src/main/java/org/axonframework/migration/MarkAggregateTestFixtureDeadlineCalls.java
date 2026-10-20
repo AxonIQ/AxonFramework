@@ -88,9 +88,11 @@ public class MarkAggregateTestFixtureDeadlineCalls extends Recipe {
             DEADLINE_TEST_KEY,
             DEADLINE_TEST_PREFIX + ", and axoniq-legacy-test supports deadlines on SagaTestFixture only. A fired"
                     + " aggregate deadline is now the command its migrated @CommandHandler receives: send it with"
-                    + " when().command(<deadline payload>, Metadata.with("
-                    + "AggregateDeadlineEntityIdResolverDefinition.DESCRIPTOR_BASED_ID, <aggregate identifier>)),"
-                    + " where a deadline without payload is a command named after, and carrying, the deadline name."
+                    + " when().command(new GenericCommandMessage(new MessageType(\"<aggregate type>.<deadline name>\"),"
+                    + " <deadline payload, or the deadline name without one>, Metadata.with("
+                    + "AggregateDeadlineEntityIdResolverDefinition.DESCRIPTOR_BASED_ID, <aggregate identifier>)))."
+                    + " A @CommandHandler migrated without a command name receives the deadline payload itself: send"
+                    + " it with when().command(<deadline payload>, <the same metadata>)."
                     + " Assert the scheduling on a StubDeadlineManager registered as the DeadlineManager component."
     );
 

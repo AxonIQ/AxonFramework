@@ -22,9 +22,10 @@
 # Axon Framework 5 forces it:
 #
 # - Sagas: a private `DeadlineManager` field, which the legacy module does not
-#   inject, moves into a parameter of the handlers that use it. The
+#   inject, moves into a parameter of the handlers that use it.  The
 #   `@Autowired` or `@Inject` setter that only assigns it goes with it.
-# - Aggregates: a deadline fires as a command, so `@DeadlineHandler` becomes the
+# - Aggregates: a deadline fires as a command named
+#   `<aggregateType>.<deadlineName>`, so `@DeadlineHandler` becomes the
 #   `@CommandHandler` receiving it, and `DeadlineManager` calls that relied on
 #   the aggregate's scope get an explicit `AggregateScopeDescriptor`.
 # - Deadline manager configuration: the builders drop the parameters Axon
@@ -54,8 +55,8 @@ description: >-
   are used. Moves a Saga's private `DeadlineManager` field into a parameter of
   the handlers that use it, removing the `@Autowired` or `@Inject` setter that
   only assigns it. Replaces an aggregate's `@DeadlineHandler` with the
-  `@CommandHandler` that receives the fired deadline, and passes the
-  `AggregateScopeDescriptor` to aggregate `DeadlineManager` calls that relied
+  `@CommandHandler` that receives the fired deadline, in Java and Kotlin, and
+  passes the `AggregateScopeDescriptor` to aggregate `DeadlineManager` calls that relied
   on the current scope, reading a creation handler's identifier from the
   command's `@TargetAggregateIdentifier` (Java only; Kotlin aggregates get a
   marker). Removes `spanFactory(..)` and `transactionManager(..)`
@@ -73,8 +74,8 @@ description: >-
   reach, a converter it cannot infer, `configureDeadlineManager(..)`, interceptors
   registered on the `DeadlineManager` interface, a `ScopeAwareProvider` the
   application registers itself, a Saga `DeadlineManager` used in an async
-  callback, which fails once the handler returned, aggregate deadline handlers
-  no command can reach, aggregate `DeadlineManager` calls without an identifier in reach, and
+  callback, which fails once the handler returned, aggregate deadline handlers the recipe cannot
+  name a command for, aggregate `DeadlineManager` calls without an identifier in reach, and
   the deadline and time calls of `AggregateTestFixture`, which `AxonTestFixture`
   does not have, saying how to test the deadline as the command it fires as.
 recipeList:
@@ -116,7 +117,8 @@ recipeList:
 
   # ── Aggregates ─────────────────────────────────────────────────────────────
 
-  # An aggregate deadline fires as a command on the legacy module, so its
+  # An aggregate deadline fires as a command named
+  # <aggregateType>.<deadlineName> on the legacy module, so its
   # @DeadlineHandler becomes the Axon Framework 4 @CommandHandler receiving
   # that command. It must run before the free leg, which then moves that
   # annotation to the Axon Framework 5 package and migrates the handler like
