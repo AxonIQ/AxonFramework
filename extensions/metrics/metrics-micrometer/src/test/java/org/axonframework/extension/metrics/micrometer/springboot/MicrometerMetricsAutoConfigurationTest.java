@@ -31,9 +31,10 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.stereotype.Component;
 
-import java.util.concurrent.TimeUnit;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 /**
  * Test class validating the {@link MicrometerMetricsAutoConfiguration}.
@@ -85,21 +86,15 @@ class MicrometerMetricsAutoConfigurationTest {
 
                                           context.getBean(EventGateway.class).publish(null, "event").join();
 
-                                          assertThat(successfullyHandled(meterRegistry)).isEqualTo(1);
+                                          String counterName = EventHandlingContext.class.getPackageName()
+                                                  + ".messageCounter.success";
+                                          await().atMost(Duration.ofSeconds(5))
+                                                 .untilAsserted(() -> {
+                                                     Counter counter = meterRegistry.find(counterName).counter();
+                                                     assertThat(counter).isNotNull();
+                                                     assertThat(counter.count()).isEqualTo(1);
+                                                 });
                                       });
-    }
-
-    private static double successfullyHandled(MeterRegistry meterRegistry) throws InterruptedException {
-        String counterName = EventHandlingContext.class.getPackageName() + ".messageCounter.success";
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-        while (System.nanoTime() < deadline) {
-            Counter counter = meterRegistry.find(counterName).counter();
-            if (counter != null && counter.count() > 0) {
-                return counter.count();
-            }
-            Thread.sleep(10);
-        }
-        return 0;
     }
 
     @Test
