@@ -50,6 +50,49 @@ import java.lang.annotation.Target;
  * identifier-based scenarios. Furthermore, it allows the create-if-missing solution to work on instance command
  * handlers placed in the entity, resolving the need to make them {@code static}.
  * <p>
+ * Forced creation is not limited to create-if-missing handlers. When the entity has no events yet, <b>every</b>
+ * handler that receives the entity gets the just-constructed instance in its default state:
+ * <ul>
+ *     <li>Instance command handlers in the entity are loaded through
+ *     {@link org.axonframework.modelling.repository.Repository#loadOrCreate(Object,
+ *     org.axonframework.messaging.core.unitofwork.ProcessingContext)}. They run on the default state instead of
+ *     failing with an {@link org.axonframework.modelling.repository.EntityNotFoundException}.</li>
+ *     <li>{@link org.axonframework.modelling.annotation.InjectEntity} parameters of command and event handlers outside
+ *     the entity receive the default instance too. A {@code @Nullable} parameter is never {@code null}, an
+ *     {@link java.util.Optional} parameter is never empty, and
+ *     {@link org.axonframework.modelling.repository.ManagedEntity#entity()} is never {@code null}. A handler written as
+ *     "create if the entity is {@code null}, update otherwise" always takes the update branch.</li>
+ *     <li>Static creational command handlers are the exception. Their commands are loaded through
+ *     {@link org.axonframework.modelling.repository.Repository#load(Object,
+ *     org.axonframework.messaging.core.unitofwork.ProcessingContext)}, which does not invoke the creator without
+ *     events, so the entity counts as absent and the command reaches the static handler.</li>
+ * </ul>
+ * These handlers must check the entity's state themselves, for example:
+ * <pre>{@code
+ * public class GiftCard {
+ *
+ *     private final String cardId;
+ *     private boolean issued;
+ *
+ *     @ForcedEntityCreator
+ *     public GiftCard(@InjectEntityId String cardId) {
+ *         this.cardId = cardId;
+ *     }
+ *
+ *     @CommandHandler
+ *     public void handle(RedeemGiftCard command, EventAppender appender) {
+ *         if (!issued) {
+ *             throw new IllegalStateException("Gift card [" + cardId + "] has not been issued");
+ *         }
+ *         appender.append(new GiftCardRedeemed(cardId, command.amount()));
+ *     }
+ * }
+ * }</pre>
+ * <p>
+ * Forced creation only applies when the forced creator is the one selected. Among the creators that take no event,
+ * the one with the most parameters is selected, so a plain identifier-based {@code EntityCreator} takes precedence
+ * over a forced no-arguments creator. On an event-based creator this annotation has no effect without an event.
+ * <p>
  * Note that this forced-creation-approach is viewed as an aggregate-centric solution, whereas this library aims to
  * steer away from that. Hence, any opportunity to use other mechanisms than this are encouraged.
  *
