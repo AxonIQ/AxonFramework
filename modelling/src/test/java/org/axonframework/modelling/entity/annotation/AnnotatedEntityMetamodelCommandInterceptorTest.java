@@ -215,10 +215,8 @@ class AnnotatedEntityMetamodelCommandInterceptorTest {
     /**
      * When both the polymorphic super type and a concrete type declare their own interceptor, both must fire for any
      * command reaching that concrete type's instance, regardless of whether the command is declared on the concrete
-     * type or on the super type. Ordering here follows the concrete type first, then the super type, matching the
-     * order already observed for a command declared directly on the concrete type: there is no parent-before-child
-     * guarantee across this supertype/concrete-type axis (unlike the {@code @EntityMember} parent/child axis, which
-     * is unaffected and still runs parent-before-child).
+     * type or on the super type. The super type's interceptor is the outermost one, as it wraps every command of the
+     * polymorphic entity, followed by the concrete type's own interceptor. This matches the declarative configuration.
      */
     @Nested
     class InterceptorsAtBothHierarchyLevels extends AbstractAnnotatedEntityMetamodelTest<AuditedShape> {
@@ -243,7 +241,7 @@ class AnnotatedEntityMetamodelCommandInterceptorTest {
             dispatchInstanceCommand(new ResizeShape(5));
 
             assertThat(entityState.invocations)
-                    .containsExactly("concrete-interceptor", "super-interceptor", "concrete-handled");
+                    .containsExactly("super-interceptor", "concrete-interceptor", "concrete-handled");
         }
 
         @Test
@@ -253,7 +251,7 @@ class AnnotatedEntityMetamodelCommandInterceptorTest {
             dispatchInstanceCommand(new RenameShape("new-name"));
 
             assertThat(entityState.invocations)
-                    .containsExactly("concrete-interceptor", "super-interceptor", "super-handled");
+                    .containsExactly("super-interceptor", "concrete-interceptor", "super-handled");
         }
     }
 
