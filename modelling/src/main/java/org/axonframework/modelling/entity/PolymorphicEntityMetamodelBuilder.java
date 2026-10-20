@@ -45,6 +45,13 @@ public interface PolymorphicEntityMetamodelBuilder<E> extends EntityMetamodelBui
     @Override
     PolymorphicEntityMetamodelBuilder<E> addChild(EntityChildMetamodel<?, E> child);
 
+    /**
+     * {@inheritDoc}
+     * <p>
+     * On a polymorphic entity, the interceptor wraps every command of the entity, including commands handled by a
+     * concrete type added through {@link #addConcreteType(EntityMetamodel)}. It is invoked before the interceptors
+     * registered on the concrete type itself, and exactly once per command.
+     */
     @Override
     PolymorphicEntityMetamodelBuilder<E> commandHandlerInterceptor(EntityCommandHandlerInterceptor<E> interceptor);
 
