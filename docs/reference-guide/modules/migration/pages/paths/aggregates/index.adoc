@@ -255,6 +255,51 @@ Forced creation also requires the forced creator to be selected: a plain identif
 +
 New entities are created when a command appends an event that can be routed to an `@EntityCreator`. So any `@CommandHandler` that does not append such an event will implicitly follow the `NEVER` policy.
 
+[#several-event-sourcing-handlers]
+== Several handlers for the same event
+
+Axon Framework 4 invoked exactly one event sourcing handler per event.
+An override ran once.
+Among separate methods for the same event, Axon Framework 4 chose one by comparing the method signatures as text (return type, class name, method name).
+The same code ran `BonusWallet.onBonusDeposit` in a class named `BonusWallet`, and `Wallet.onDeposit` in a class named `WalletWithBonus`.
+Renaming a class could change which handler ran.
+
+[source,java,role=axon4]
+----
+// Axon Framework 4
+public class Wallet {
+
+    protected int balance;
+
+    @EventSourcingHandler
+    void onDeposit(Deposited event) {
+        balance += event.amount();
+    }
+}
+
+public class BonusWallet extends Wallet {
+
+    @EventSourcingHandler
+    void onBonusDeposit(Deposited event) {
+        balance += 2 * event.amount();
+    }
+}
+----
+
+Axon Framework 5 runs all separate methods for the same event, parent first, and an override once.
+`Deposited(10)` on a `BonusWallet` with balance 0 now applies both handlers and results in a balance of 30, where Axon Framework 4 resulted in 20.
+
+Check entities with two differently named handlers for the same event in a class hierarchy.
+Each of them now applies the event.
+Merge them into one method, or use an override that calls `super`:
+
+[source,java]
+----
+include::example$migration/paths/aggregates/index/eventsourcinghandlers/BonusWallet.java[tag=override-with-super,indent=0]
+----
+
+See xref:commands:entities/event-sourced-entity.adoc#event-sourcing-handlers-hierarchy[Handlers in an entity class hierarchy] for the full rule.
+
 [#see-also]
 == See also
 
