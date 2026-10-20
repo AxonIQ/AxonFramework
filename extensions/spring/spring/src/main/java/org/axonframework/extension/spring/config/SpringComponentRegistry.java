@@ -220,9 +220,9 @@ public class SpringComponentRegistry implements
     public ComponentRegistry registerEnhancer(ConfigurationEnhancer enhancer) {
         logger.debug("Registering enhancer [{}].", enhancer.getClass().getSimpleName());
         ConfigurationEnhancer previous = this.enhancers.put(enhancer.getClass().getName(), enhancer);
-        if (previous != null) {
-            logger.warn("Duplicate Configuration Enhancer registration detected. Replaced enhancer of type [{}].",
-                        enhancer.getClass().getSimpleName());
+        if (previous != null && logger.isTraceEnabled()) {
+            logger.trace("Duplicate Configuration Enhancer registration detected. Replaced enhancer of type [{}].",
+                         enhancer.getClass().getSimpleName());
         }
         return this;
     }
