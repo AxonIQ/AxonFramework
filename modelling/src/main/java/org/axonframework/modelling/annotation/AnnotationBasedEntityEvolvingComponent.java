@@ -35,9 +35,19 @@ import org.axonframework.modelling.EntityEvolver;
 import org.axonframework.modelling.EntityEvolvingComponent;
 import org.axonframework.modelling.StateEvolvingException;
 
+import java.lang.reflect.Member;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.util.ArrayDeque;
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.Comparator;
+import java.util.Deque;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -53,6 +63,11 @@ import static java.util.Objects.requireNonNull;
  * startup work and memory usage in proportion to the number of handlers. In return, event evolution performs direct
  * lookups without reflection, message type resolution, cache mutation, or a scan of all handlers. Resolution failures
  * are also reported during initialization instead of on the first matching event.
+ * <p>
+ * An overriding method counts as one handler; call {@code super} to run the overridden one. Separate methods for the
+ * same event all run, parent handlers first, each receiving the entity returned by the previous one. Within one class
+ * the order is unspecified. A handler may return a different concrete type only if no handler of the previous type
+ * follows; otherwise a {@link StateEvolvingException} is thrown.
  *
  * @param <E> The entity type to evolve.
  * @author Mateusz Nowak
@@ -60,6 +75,9 @@ import static java.util.Objects.requireNonNull;
  * @since 5.0.0
  */
 public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolvingComponent<E> {
+
+    private static final Comparator<MessageHandlingMember<?>> LEAST_SPECIFIC_DECLARING_TYPE_FIRST =
+            Comparator.comparingInt(AnnotationBasedEntityEvolvingComponent::declaringTypeSpecificity);
 
     private final Class<E> entityType;
     private final AnnotatedHandlerInspector<E> inspector;
@@ -157,12 +175,13 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
                 if (!handler.canHandle(convertedEvent, context)) {
                     continue;
                 }
+                assertHandlerCanRunOn(handler, evolvedEntity, event);
                 var interceptor = inspector.chainedInterceptor(listenerType);
-                var result = interceptor.handle(convertedEvent, context, entity, handler)
+                var result = interceptor.handle(convertedEvent, context, evolvedEntity, handler)
                                         .first()
                                         .asCompletableFuture()
                                         .join();
-                evolvedEntity = entityFromStreamResultOrUpdatedExisting(result, entity);
+                evolvedEntity = entityFromStreamResultOrUpdatedExisting(result, evolvedEntity);
             }
 
             return evolvedEntity;
@@ -180,23 +199,134 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
         return inspector.getAllHandlers().entrySet().stream()
                         .collect(Collectors.toUnmodifiableMap(
                                 Map.Entry::getKey,
-                                entry -> indexHandlersByEventName(entry.getValue(), messageTypeResolver)
+                                entry -> indexHandlersByEventName(entry.getKey(), entry.getValue(), messageTypeResolver)
                         ));
     }
 
     private Map<QualifiedName, List<MessageHandlingMember<? super E>>> indexHandlersByEventName(
+            Class<?> type,
             Collection<MessageHandlingMember<? super E>> handlers,
             MessageTypeResolver messageTypeResolver
     ) {
         return handlers.stream()
                        .filter(handler -> handler.canHandleMessageType(EventMessage.class))
-                       .collect(Collectors.collectingAndThen(
-                               Collectors.groupingBy(
-                                       handler -> eventName(handler, messageTypeResolver),
-                                       Collectors.toUnmodifiableList()
-                               ),
-                               Map::copyOf
+                       .filter(handler -> handler.unwrap(Method.class).filter(Method::isBridge).isEmpty())
+                       .collect(Collectors.groupingBy(handler -> eventName(handler, messageTypeResolver)))
+                       .entrySet().stream()
+                       .collect(Collectors.toUnmodifiableMap(
+                               Map.Entry::getKey,
+                               entry -> onePerDispatchTargetParentFirst(type, entry.getValue())
                        ));
+    }
+
+    /**
+     * Keeps one handler per method that Java would actually run on the given entity type, the one declared by the most
+     * specific type, and orders them parent handlers first. Handlers whose methods are overridden by a method without
+     * the annotation therefore still run exactly once, through virtual dispatch.
+     */
+    private List<MessageHandlingMember<? super E>> onePerDispatchTargetParentFirst(
+            Class<?> entityType,
+            List<MessageHandlingMember<? super E>> handlers
+    ) {
+        Map<Object, MessageHandlingMember<? super E>> byDispatchTarget = new LinkedHashMap<>();
+        for (var handler : handlers) {
+            Object target = handler.unwrap(Method.class)
+                                   .<Object>map(method -> dispatchTarget(entityType, method))
+                                   .orElse(handler);
+            byDispatchTarget.merge(target, handler, (existing, replacement) ->
+                    declaringTypeSpecificity(replacement) > declaringTypeSpecificity(existing) ? replacement : existing
+            );
+        }
+        // A stable sort, keeping the inspector's order among handlers declared on equally specific types
+        return byDispatchTarget.values().stream()
+                               .sorted(LEAST_SPECIFIC_DECLARING_TYPE_FIRST)
+                               .toList();
+    }
+
+    private static Method dispatchTarget(Class<?> entityType, Method method) {
+        int modifiers = method.getModifiers();
+        if (Modifier.isPrivate(modifiers) || Modifier.isStatic(modifiers)) {
+            return method;
+        }
+        for (Class<?> type = entityType; type != null; type = type.getSuperclass()) {
+            for (Method declared : type.getDeclaredMethods()) {
+                if (isOverrideOrSame(declared, method)) {
+                    return declared;
+                }
+            }
+        }
+        // Not declared by any class, so it is an interface default method: the most specific default wins
+        Set<Class<?>> interfaces = supertypesOf(entityType);
+        interfaces.add(entityType);
+        List<Method> defaults = interfaces.stream()
+                                          .filter(Class::isInterface)
+                                          .flatMap(type -> Arrays.stream(type.getDeclaredMethods()))
+                                          .filter(declared -> isOverrideOrSame(declared, method))
+                                          .toList();
+        return defaults.stream()
+                       .filter(candidate -> defaults.stream().noneMatch(
+                               other -> other != candidate
+                                       && candidate.getDeclaringClass().isAssignableFrom(other.getDeclaringClass())))
+                       .findFirst()
+                       .orElse(method);
+    }
+
+    private static boolean isOverrideOrSame(Method candidate, Method method) {
+        if (candidate.equals(method)) {
+            return true;
+        }
+        int candidateModifiers = candidate.getModifiers();
+        int methodModifiers = method.getModifiers();
+        return !candidate.isBridge()
+                && !Modifier.isStatic(candidateModifiers)
+                && !Modifier.isPrivate(candidateModifiers)
+                && candidate.getName().equals(method.getName())
+                && Arrays.equals(candidate.getParameterTypes(), method.getParameterTypes())
+                && (Modifier.isPublic(methodModifiers)
+                || Modifier.isProtected(methodModifiers)
+                || candidate.getDeclaringClass().getPackageName()
+                            .equals(method.getDeclaringClass().getPackageName()));
+    }
+
+    private static Optional<Class<?>> declaringClass(MessageHandlingMember<?> handler) {
+        return handler.unwrap(Member.class).map(Member::getDeclaringClass);
+    }
+
+    private static int declaringTypeSpecificity(MessageHandlingMember<?> handler) {
+        // A subtype always has more supertypes than any of its supertypes, for classes and interfaces alike
+        return declaringClass(handler).map(type -> supertypesOf(type).size()).orElse(0);
+    }
+
+    private static Set<Class<?>> supertypesOf(Class<?> type) {
+        Set<Class<?>> supertypes = new HashSet<>();
+        Deque<Class<?>> pending = new ArrayDeque<>(List.of(type));
+        while (!pending.isEmpty()) {
+            Class<?> current = pending.pop();
+            if (current.getSuperclass() != null && supertypes.add(current.getSuperclass())) {
+                pending.push(current.getSuperclass());
+            }
+            for (Class<?> implemented : current.getInterfaces()) {
+                if (supertypes.add(implemented)) {
+                    pending.push(implemented);
+                }
+            }
+        }
+        return supertypes;
+    }
+
+    private void assertHandlerCanRunOn(MessageHandlingMember<? super E> handler, E evolvedEntity, EventMessage event) {
+        declaringClass(handler)
+                .filter(declaringClass -> !declaringClass.isInstance(evolvedEntity))
+                .ifPresent(declaringClass -> {
+                    throw new IllegalStateException(
+                            "An earlier handler for event [" + event.type() + "] changed the entity to ["
+                                    + evolvedEntity.getClass().getName() + "], so handler ["
+                                    + handler.signature() + "] declared by [" + declaringClass.getName()
+                                    + "] cannot run. A handler may"
+                                    + " return a different concrete type only if no handler of the previous type"
+                                    + " follows."
+                    );
+                });
     }
 
     private QualifiedName eventName(MessageHandlingMember<? super E> handler,
