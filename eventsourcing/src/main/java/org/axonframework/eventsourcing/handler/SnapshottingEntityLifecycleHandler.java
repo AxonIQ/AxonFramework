@@ -30,6 +30,7 @@ import org.axonframework.eventsourcing.eventstore.SourcingStrategy;
 import org.axonframework.eventsourcing.eventstore.TagResolver;
 import org.axonframework.eventsourcing.snapshot.api.EvolutionResult;
 import org.axonframework.eventsourcing.snapshot.api.Snapshot;
+import org.axonframework.eventsourcing.snapshot.api.SnapshotCandidate;
 import org.axonframework.eventsourcing.snapshot.api.SnapshotPolicy;
 import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
 import org.axonframework.messaging.core.MessageStream;
@@ -43,8 +44,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -153,7 +156,11 @@ public class SnapshottingEntityLifecycleHandler<I, E> implements EntityLifecycle
         EventCriteria criteria = criteriaResolver.resolve(identifier, pc);
         EventStoreTransaction transaction = eventStore.transaction(pc);
         SourcingCondition condition = SourcingCondition.conditionFor(
-            new SourcingStrategy.Snapshot(versionedType.qualifiedName(), identifier, null),
+            new SourcingStrategy.Snapshot(
+                List.of(new SnapshotCandidate(versionedType.qualifiedName(), Set.of(versionedType.version()))),
+                identifier,
+                null
+            ),
             criteria
         );
         AtomicReference<Position> positionRef = new AtomicReference<>();
@@ -163,7 +170,7 @@ public class SnapshottingEntityLifecycleHandler<I, E> implements EntityLifecycle
 
         BiFunction<E, MessageStream.Entry<? extends EventMessage>, E> accumulator =
             (entity, entry) -> switch (entry.message()) {
-                case SnapshotEventMessage sem -> convertSnapshotPayload(identifier, sem.payload());
+                case SnapshotEventMessage sem -> convertSnapshotPayload(identifier, sem);
                 case EventMessage em -> {
                     E evolvedEntity = evolver.evolve(identifier, entity, em, pc);
 
@@ -210,9 +217,11 @@ public class SnapshottingEntityLifecycleHandler<I, E> implements EntityLifecycle
             });
     }
 
-    private E convertSnapshotPayload(I identifier, Snapshot snapshot) {
+    private E convertSnapshotPayload(I identifier, SnapshotEventMessage message) {
+        Snapshot snapshot = message.payload();
+
         try {
-            if (snapshot.version().equals(versionedType.version())) {
+            if (isOfOwnType(message)) {
                 @SuppressWarnings("unchecked")
                 E entity = (E) (entityType.isInstance(snapshot.payload())
                     ? snapshot.payload()
@@ -222,14 +231,35 @@ public class SnapshottingEntityLifecycleHandler<I, E> implements EntityLifecycle
                 return entity;
             }
 
-            // Version mismatched, ignore this snapshot (until there is version handling support)
-            logger.info("Unsupported snapshot version. Snapshot of {} for identifier {} had unsupported version: {}", versionedType, identifier, snapshot.version());
+            // A snapshot of another name or version that nothing transformed into this entity's type is unusable
+            logger.info(
+                "Unsupported snapshot version. Snapshot of {} for identifier {} had unsupported type: {}",
+                versionedType,
+                identifier,
+                message.snapshotType() == null ? snapshot.version() : message.snapshotType()
+            );
         }
         catch (Exception e) {
             logger.warn("Snapshot incompatible, falling back to full reconstruction for: {} ({})", versionedType, identifier, e);
         }
 
         throw new SnapshotIncompatibleException();
+    }
+
+    /*
+     * A snapshot is only usable as-is when it has this entity's name and version. Its name is unknown only for a
+     * message created through the deprecated SnapshotEventMessage constructor, which is used for this entity's own
+     * name alone; that case is temporary and goes away with that constructor.
+     */
+    private boolean isOfOwnType(SnapshotEventMessage message) {
+        VersionedType snapshotType = message.snapshotType();
+
+        if (snapshotType == null) {
+            return message.payload().version().equals(versionedType.version());
+        }
+
+        return snapshotType.qualifiedName().equals(versionedType.qualifiedName())
+            && snapshotType.version().equals(versionedType.version());
     }
 
     /*

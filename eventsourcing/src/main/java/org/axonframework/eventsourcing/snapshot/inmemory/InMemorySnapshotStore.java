@@ -20,11 +20,14 @@ import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.conversion.ConversionException;
 import org.axonframework.conversion.Converter;
 import org.axonframework.eventsourcing.snapshot.api.Snapshot;
+import org.axonframework.eventsourcing.snapshot.api.SnapshotCandidate;
+import org.axonframework.eventsourcing.snapshot.api.SnapshotMatch;
 import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.jspecify.annotations.Nullable;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
@@ -91,6 +94,36 @@ public class InMemorySnapshotStore implements SnapshotStore {
     }
 
     @Override
+    public CompletableFuture<@Nullable SnapshotMatch> load(List<SnapshotCandidate> candidates, Object identifier,
+                                                           @Nullable ProcessingContext context) {
+        List<SnapshotCandidate> candidateList =
+            List.copyOf(Objects.requireNonNull(candidates, "The candidates parameter must not be null."));
+        Objects.requireNonNull(identifier, "The identifier parameter must not be null.");
+
+        if (candidateList.isEmpty()) {
+            throw new IllegalArgumentException("The candidates parameter must not be empty.");
+        }
+
+        for (SnapshotCandidate candidate : candidateList) {
+            Map<Object, Snapshot> entitiesByIdentifier = entitiesByIdentifierByName.get(candidate.qualifiedName());
+            Snapshot stored = entitiesByIdentifier == null ? null : entitiesByIdentifier.get(identifier);
+
+            if (stored != null && candidate.accepts(stored.version())) {
+                return CompletableFuture.completedFuture(
+                    new SnapshotMatch(candidate.qualifiedName(), copySnapshot(stored))
+                );
+            }
+        }
+
+        return CompletableFuture.completedFuture(null);
+    }
+
+    /*
+     * Temporary: implemented only because SnapshotStore keeps this deprecated method so Axoniq Framework keeps
+     * compiling. Remove together with it.
+     */
+    @Override
+    @Deprecated(since = "5.5.0", forRemoval = true)
     public CompletableFuture<@Nullable Snapshot> load(QualifiedName qualifiedName, Object identifier,
                                                       @Nullable ProcessingContext context) {
         Objects.requireNonNull(qualifiedName, "The qualifiedName parameter must not be null.");

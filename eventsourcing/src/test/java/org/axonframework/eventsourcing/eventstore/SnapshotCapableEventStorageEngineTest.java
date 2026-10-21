@@ -21,10 +21,13 @@ import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.eventsourcing.eventstore.EventStorageEngine.AppendTransaction;
 import org.axonframework.eventsourcing.eventstore.inmemory.InMemoryEventStorageEngine;
 import org.axonframework.eventsourcing.snapshot.api.Snapshot;
+import org.axonframework.eventsourcing.snapshot.api.SnapshotCandidate;
+import org.axonframework.eventsourcing.snapshot.api.SnapshotMatch;
 import org.axonframework.eventsourcing.snapshot.inmemory.InMemorySnapshotStore;
 import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.QualifiedName;
+import org.axonframework.messaging.core.VersionedType;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
@@ -75,7 +78,7 @@ class SnapshotCapableEventStorageEngineTest {
     @Nested
     class WhenSourcedWithSnapshotStrategy {
         private SourcingCondition condition = SourcingCondition.conditionFor(
-            new SourcingStrategy.Snapshot(SNAPSHOT_TYPE, AGGREGATE_ID, null),
+            new SourcingStrategy.Snapshot(List.of(candidate(SNAPSHOT_TYPE)), AGGREGATE_ID, null),
             CRITERIA
         );
 
@@ -128,6 +131,206 @@ class SnapshotCapableEventStorageEngineTest {
         }
     }
 
+    /*
+     * A snapshot may still be stored under a name the entity was previously known by. The strategy carries those
+     * names as further candidates, all handed to the store in a single load.
+     */
+    @Nested
+    class WhenSourcedWithSeveralCandidates {
+
+        private final QualifiedName formerType = new QualifiedName("LegacyOrder");
+        private final QualifiedName evenEarlierType = new QualifiedName("AncientOrder");
+
+        private final SourcingCondition condition = SourcingCondition.conditionFor(
+            new SourcingStrategy.Snapshot(
+                List.of(candidate(SNAPSHOT_TYPE), candidate(formerType), candidate(evenEarlierType)),
+                AGGREGATE_ID,
+                null
+            ),
+            CRITERIA
+        );
+
+        @Test
+        void snapshotStoredUnderALaterCandidateIsUsed() {
+            appendToDelegate(createEvent(0));
+            appendToDelegate(createEvent(1));
+            appendToDelegate(createEvent(2));
+            storeSnapshot(formerType, "state-after-event-0", GlobalIndexPositions.of(1));
+
+            List<EventMessage> result = sourceMessages(engine.source(condition));
+
+            assertThat(result).hasSize(3);
+            assertThat(result.get(0).payload())
+                .isInstanceOfSatisfying(Snapshot.class, s -> assertThat(s.payload()).isEqualTo("state-after-event-0"));
+            assertThat(result.subList(1, 3)).extracting(EventMessage::payload).containsExactly(1, 2);
+        }
+
+        @Test
+        void theNameTheSnapshotWasFoundUnderIsCarriedOnTheMessage() {
+            appendToDelegate(createEvent(0));
+            appendToDelegate(createEvent(1));
+            storeSnapshot(formerType, "state-after-event-0", GlobalIndexPositions.of(1));
+
+            List<EventMessage> result = sourceMessages(engine.source(condition));
+
+            // The stored identity, not the entity's current one, is what lets a transformation recognize it.
+            assertThat(((SnapshotEventMessage) result.get(0)).snapshotType())
+                .isEqualTo(VersionedType.of(formerType, "1.0"));
+        }
+
+        @Test
+        void anEarlierCandidateTakesPrecedenceOverLaterOnes() {
+            appendToDelegate(createEvent(0));
+            appendToDelegate(createEvent(1));
+            storeSnapshot(SNAPSHOT_TYPE, "current", GlobalIndexPositions.of(1));
+            storeSnapshot(formerType, "former", GlobalIndexPositions.of(1));
+
+            List<EventMessage> result = sourceMessages(engine.source(condition));
+
+            assertThat(result.get(0).payload())
+                .isInstanceOfSatisfying(Snapshot.class, s -> assertThat(s.payload()).isEqualTo("current"));
+        }
+
+        @Test
+        void candidatesAreTriedInTheOrderGiven() {
+            appendToDelegate(createEvent(0));
+            appendToDelegate(createEvent(1));
+            storeSnapshot(evenEarlierType, "ancient", GlobalIndexPositions.of(1));
+            storeSnapshot(formerType, "former", GlobalIndexPositions.of(1));
+
+            List<EventMessage> result = sourceMessages(engine.source(condition));
+
+            assertThat(result.get(0).payload())
+                .isInstanceOfSatisfying(Snapshot.class, s -> assertThat(s.payload()).isEqualTo("former"));
+        }
+
+        @Test
+        void fullReconstructionWhenNoCandidateYieldsASnapshot() {
+            appendToDelegate(createEvent(0));
+            appendToDelegate(createEvent(1));
+            appendToDelegate(createEvent(2));
+
+            List<EventMessage> result = sourceMessages(engine.source(condition));
+
+            assertThat(result).extracting(EventMessage::payload).containsExactly(0, 1, 2);
+        }
+
+        @Test
+        void shouldReconstructFullyRatherThanUseASnapshotOfAnUnacceptableVersion() {
+            // given a snapshot written by a newer version of the application than the one now sourcing it
+            appendToDelegate(createEvent(0));
+            appendToDelegate(createEvent(1));
+            storeSnapshot(SNAPSHOT_TYPE, "written-by-newer-version", GlobalIndexPositions.of(1), "2.0");
+
+            // when
+            List<EventMessage> result = sourceMessages(engine.source(condition));
+
+            // then
+            assertThat(result).extracting(EventMessage::payload).containsExactly(0, 1);
+        }
+    }
+
+    /*
+     * An aggregate-based snapshot, such as one taken by Axon Framework 4, is described by an aggregate-based candidate,
+     * which only a store that can hold such snapshots looks up. The engine hands it to the store together with the
+     * regular candidates.
+     */
+    @Nested
+    class WhenSourcedWithAnAggregateBasedCandidate {
+
+        private final SnapshotCandidate aggregateBasedCandidate =
+            new SnapshotCandidate(new QualifiedName("com.example.OrderAggregate"), Set.of("0.0.0"));
+
+        private final SourcingCondition condition = SourcingCondition.conditionFor(
+            new SourcingStrategy.Snapshot(
+                List.of(candidate(SNAPSHOT_TYPE)), aggregateBasedCandidate, AGGREGATE_ID, null
+            ),
+            CRITERIA
+        );
+
+        @Test
+        void shouldUseTheSnapshotAnAggregateBasedStoreFindsForTheAggregateBasedCandidate() {
+            // given
+            appendToDelegate(createEvent(0));
+            appendToDelegate(createEvent(1));
+            appendToDelegate(createEvent(2));
+            engine = new SnapshotCapableEventStorageEngine(delegate, aggregateBasedSnapshotStore());
+
+            // when
+            List<EventMessage> result = sourceMessages(engine.source(condition));
+
+            // then
+            assertThat(result).hasSize(3);
+            assertThat(((SnapshotEventMessage) result.get(0)).snapshotType())
+                .isEqualTo(VersionedType.of(aggregateBasedCandidate.qualifiedName(), "0.0.0"));
+            assertThat(result.get(0).payload())
+                .isInstanceOfSatisfying(Snapshot.class, s -> assertThat(s.payload()).isEqualTo("af4-state"));
+            assertThat(result.subList(1, 3)).extracting(EventMessage::payload).containsExactly(1, 2);
+        }
+
+        @Test
+        void shouldReconstructFullyWhenTheStoreCannotHoldAggregateBasedSnapshots() {
+            // given
+            appendToDelegate(createEvent(0));
+            appendToDelegate(createEvent(1));
+
+            // when
+            List<EventMessage> result = sourceMessages(engine.source(condition));
+
+            // then
+            assertThat(result).extracting(EventMessage::payload).containsExactly(0, 1);
+        }
+
+        /*
+         * Answers only the aggregate-based candidate, with a snapshot covering the first event.
+         */
+        private SnapshotStore aggregateBasedSnapshotStore() {
+            return new SnapshotStore() {
+
+                @Override
+                public CompletableFuture<Void> store(QualifiedName qn, Object id, Snapshot s,
+                                                     ProcessingContext context) {
+                    throw new UnsupportedOperationException();
+                }
+
+                @Override
+                public CompletableFuture<SnapshotMatch> load(List<SnapshotCandidate> candidates,
+                                                             SnapshotCandidate aggregateBased,
+                                                             Object id,
+                                                             ProcessingContext context) {
+                    if (aggregateBased == null || !id.equals(AGGREGATE_ID)) {
+                        return CompletableFuture.completedFuture(null);
+                    }
+
+                    Snapshot snapshot = new Snapshot(
+                        GlobalIndexPositions.of(1), "0.0.0", "af4-state", Instant.now(), Map.of()
+                    );
+
+                    return CompletableFuture.completedFuture(
+                        new SnapshotMatch(aggregateBased.qualifiedName(), snapshot)
+                    );
+                }
+
+                @Override
+                public CompletableFuture<SnapshotMatch> load(List<SnapshotCandidate> candidates, Object id,
+                                                             ProcessingContext context) {
+                    return load(candidates, null, id, context);
+                }
+
+                // temporary: SnapshotStore keeps this deprecated method so Axoniq Framework keeps compiling
+                @Override
+                public CompletableFuture<Snapshot> load(QualifiedName qn, Object id, ProcessingContext context) {
+                    throw new UnsupportedOperationException();
+                }
+
+                @Override
+                public void describeTo(ComponentDescriptor descriptor) {
+                    throw new UnsupportedOperationException();
+                }
+            };
+        }
+    }
+
     @Nested
     class WhenAppendingEvents {
         @Test
@@ -151,12 +354,24 @@ class SnapshotCapableEventStorageEngineTest {
     }
 
     private void storeSnapshot(Object payload, Position position) {
+        storeSnapshot(SNAPSHOT_TYPE, payload, position);
+    }
+
+    private void storeSnapshot(QualifiedName qualifiedName, Object payload, Position position) {
+        storeSnapshot(qualifiedName, payload, position, "1.0");
+    }
+
+    private void storeSnapshot(QualifiedName qualifiedName, Object payload, Position position, String version) {
         snapshotStore.store(
-            SNAPSHOT_TYPE,
+            qualifiedName,
             AGGREGATE_ID,
-            new Snapshot(position, "1.0", payload, Instant.now(), Map.of()),
+            new Snapshot(position, version, payload, Instant.now(), Map.of()),
             null
         ).join();
+    }
+
+    private static SnapshotCandidate candidate(QualifiedName qualifiedName) {
+        return new SnapshotCandidate(qualifiedName, Set.of("1.0"));
     }
 
     private static List<EventMessage> sourceMessages(MessageStream<? extends EventMessage> stream) {
@@ -250,6 +465,13 @@ class SnapshotCapableEventStorageEngineTest {
         }
 
         @Override
+        public CompletableFuture<SnapshotMatch> load(List<SnapshotCandidate> candidates, Object id,
+                                                         ProcessingContext context) {
+            return CompletableFuture.completedFuture(null);
+        }
+
+        // temporary: SnapshotStore keeps this deprecated method so Axoniq Framework keeps compiling
+        @Override
         public CompletableFuture<Snapshot> load(QualifiedName qn, Object id, ProcessingContext context) {
             return CompletableFuture.completedFuture(null);
         }
@@ -269,6 +491,13 @@ class SnapshotCapableEventStorageEngineTest {
             return delegate.store(qn, id, s, context);
         }
 
+        @Override
+        public CompletableFuture<SnapshotMatch> load(List<SnapshotCandidate> candidates, Object id,
+                                                         ProcessingContext context) {
+            return delegate.load(candidates, id, context);
+        }
+
+        // temporary: SnapshotStore keeps this deprecated method so Axoniq Framework keeps compiling
         @Override
         public CompletableFuture<Snapshot> load(QualifiedName qn, Object id, ProcessingContext context) {
             return delegate.load(qn, id, context);
@@ -294,6 +523,13 @@ class SnapshotCapableEventStorageEngineTest {
                 throw new UnsupportedOperationException();
             }
 
+            @Override
+            public CompletableFuture<SnapshotMatch> load(List<SnapshotCandidate> candidates, Object id,
+                                                         ProcessingContext context) {
+                return CompletableFuture.failedFuture(new RuntimeException("snapshot store failure"));
+            }
+
+            // temporary: SnapshotStore keeps this deprecated method so Axoniq Framework keeps compiling
             @Override
             public CompletableFuture<Snapshot> load(QualifiedName qn, Object id, ProcessingContext context) {
                 return CompletableFuture.failedFuture(new RuntimeException("snapshot store failure"));

@@ -23,11 +23,14 @@ import org.axonframework.messaging.tracing.SpanFactory;
 import org.axonframework.messaging.tracing.attributes.EntityIdSpanAttributesProvider;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.eventsourcing.snapshot.api.Snapshot;
+import org.axonframework.eventsourcing.snapshot.api.SnapshotCandidate;
+import org.axonframework.eventsourcing.snapshot.api.SnapshotMatch;
 import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.jspecify.annotations.Nullable;
 
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 
@@ -79,6 +82,35 @@ public final class TracingSnapshotStore implements SnapshotStore, DecoratingComp
     }
 
     @Override
+    public CompletableFuture<@Nullable SnapshotMatch> load(List<SnapshotCandidate> candidates, Object identifier,
+                                                           @Nullable ProcessingContext context) {
+        return load(candidates, null, identifier, context);
+    }
+
+    @Override
+    public CompletableFuture<@Nullable SnapshotMatch> load(List<SnapshotCandidate> candidates,
+                                                           @Nullable SnapshotCandidate aggregateBasedCandidate,
+                                                           Object identifier,
+                                                           @Nullable ProcessingContext context) {
+        Objects.requireNonNull(candidates, "candidates may not be null");
+
+        if (candidates.isEmpty()) {
+            throw new IllegalArgumentException("candidates may not be empty");
+        }
+
+        // the first candidate carries the name the entity is currently known by
+        Span span = openSpan(LOAD_SPAN, candidates.getFirst().qualifiedName(), identifier, context);
+        return span.branchAsync(
+            context, scoped -> delegate.load(candidates, aggregateBasedCandidate, identifier, scoped)
+        );
+    }
+
+    /*
+     * Temporary: implemented only because SnapshotStore keeps this deprecated method so Axoniq Framework keeps
+     * compiling. Remove together with it.
+     */
+    @Override
+    @Deprecated(since = "5.5.0", forRemoval = true)
     public CompletableFuture<@Nullable Snapshot> load(QualifiedName qualifiedName, Object identifier,
                                                       @Nullable ProcessingContext context) {
         Span span = openSpan(LOAD_SPAN, qualifiedName, identifier, context);

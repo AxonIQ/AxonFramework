@@ -16,10 +16,13 @@
 
 package org.axonframework.eventsourcing.eventstore;
 
+import org.axonframework.eventsourcing.snapshot.api.SnapshotCandidate;
 import org.axonframework.messaging.core.QualifiedName;
 import org.jspecify.annotations.Nullable;
 
+import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * Defines how a sourcing operation should construct the message stream when reading events
@@ -44,7 +47,10 @@ import java.util.Objects;
  * initial state was available. It
  * is identified by:
  * <ul>
- *     <li>A {@link QualifiedName}, defining the snapshot type</li>
+ *     <li>One or more {@link SnapshotCandidate candidates}, each a name together with the snapshot versions acceptable
+ *     under it</li>
+ *     <li>An optional aggregate-based candidate, describing an aggregate-based snapshot of the same entity, such as
+ *     one taken by Axon Framework 4</li>
  *     <li>An identifier (typically an aggregate or entity id)</li>
  *     <li>An optional maximum {@link Position}, limiting which snapshots are acceptable</li>
  * </ul>
@@ -52,7 +58,7 @@ import java.util.Objects;
  * When a snapshot is used, the event store may return:
  * <ul>
  *     <li>The latest snapshot matching the identity whose position is at or before the specified maximum position</li>
- *     <li>All subsequent events from the snapshot’s position onward</li>
+ *     <li>All subsequent events from the snapshot's position onward</li>
  * </ul>
  *
  * If no snapshot is available, the event store falls back to sourcing events only.
@@ -112,21 +118,104 @@ public sealed interface SourcingStrategy {
      * <p>
      * This strategy provides an initial state (snapshot) if available, succeeded by an
      * ordered event stream from the position of the snapshot.
+     * <p>
+     * The snapshot is looked up under the given {@link SnapshotCandidate candidates}, in order: the first candidate
+     * under whose name a snapshot of an acceptable version is stored wins. The first candidate is normally the name and
+     * version the entity is currently known by; later ones name what it was previously known as, so a snapshot taken
+     * before a rename or a version change can still be found.
+     * <p>
+     * When none of the candidates yields a snapshot, the optional aggregate-based candidate is tried last. It describes
+     * an aggregate-based snapshot, such as one taken by Axon Framework 4, which is stored under the identifier of its
+     * aggregate rather than under a name: its {@link SnapshotCandidate#qualifiedName() name} is the payload type of
+     * that snapshot, and its {@link SnapshotCandidate#acceptableVersions() versions} are the acceptable revisions of
+     * that payload type, where a snapshot without a revision has version {@code 0.0.0}. Only stores that can hold
+     * aggregate-based snapshots look it up; it is ignored by all others.
      *
-     * @param qualifiedName the {@link QualifiedName} defining the snapshot type, cannot be {@code null}
+     * @param candidates the candidates to look the snapshot up under, in order of preference, cannot be {@code null}
+     *                   or empty, and cannot contain {@code null}
+     * @param aggregateBasedCandidate the aggregate-based snapshot to look up when no candidate yields a snapshot, can
+     *                                be {@code null} when there is none to look up
      * @param identifier the identifier of the snapshotted entity, cannot be {@code null}
      * @param maximumPosition the maximum position of the snapshot to return, can be {@code null}
      */
-    record Snapshot(QualifiedName qualifiedName, Object identifier, @Nullable Position maximumPosition) implements SourcingStrategy {
+    record Snapshot(
+        List<SnapshotCandidate> candidates,
+        @Nullable SnapshotCandidate aggregateBasedCandidate,
+        Object identifier,
+        @Nullable Position maximumPosition
+    ) implements SourcingStrategy {
 
         /**
          * Constructs a new instance.
          *
-         * @throws NullPointerException if {@code qualifiedName} or {@code identifier} is {@code null}
+         * @throws NullPointerException     if {@code candidates} or {@code identifier} is {@code null}, or
+         *                                  {@code candidates} contains {@code null}
+         * @throws IllegalArgumentException if {@code candidates} is empty
          */
         public Snapshot {
-            Objects.requireNonNull(qualifiedName, "The qualifiedName parameter cannot be null.");
+            candidates = List.copyOf(Objects.requireNonNull(candidates, "The candidates parameter cannot be null."));
             Objects.requireNonNull(identifier, "The identifier parameter cannot be null.");
+
+            if (candidates.isEmpty()) {
+                throw new IllegalArgumentException("The candidates parameter cannot be empty.");
+            }
+        }
+
+        /**
+         * Constructs a new instance without an aggregate-based candidate.
+         *
+         * @param candidates      the candidates to look the snapshot up under, in order of preference, cannot be
+         *                        {@code null} or empty, and cannot contain {@code null}
+         * @param identifier      the identifier of the snapshotted entity, cannot be {@code null}
+         * @param maximumPosition the maximum position of the snapshot to return, can be {@code null}
+         * @throws NullPointerException     if {@code candidates} or {@code identifier} is {@code null}, or
+         *                                  {@code candidates} contains {@code null}
+         * @throws IllegalArgumentException if {@code candidates} is empty
+         */
+        public Snapshot(List<SnapshotCandidate> candidates, Object identifier, @Nullable Position maximumPosition) {
+            this(candidates, null, identifier, maximumPosition);
+        }
+
+        /*
+         * Temporary: kept only so Axoniq Framework keeps compiling until it constructs this strategy from candidates.
+         * Having no version to offer, it accepts a snapshot of any version. Remove together with the other bridges
+         * for that migration.
+         */
+        /**
+         * Constructs a new instance looking the snapshot up under a single name, accepting any version.
+         *
+         * @param qualifiedName   the name to look the snapshot up under, cannot be {@code null}
+         * @param identifier      the identifier of the snapshotted entity, cannot be {@code null}
+         * @param maximumPosition the maximum position of the snapshot to return, can be {@code null}
+         * @throws NullPointerException if {@code qualifiedName} or {@code identifier} is {@code null}
+         * @deprecated use {@link #Snapshot(List, Object, Position)}, stating the versions that can be read
+         */
+        @Deprecated(since = "5.5.0", forRemoval = true)
+        public Snapshot(QualifiedName qualifiedName, Object identifier, @Nullable Position maximumPosition) {
+            this(
+                List.of(new SnapshotCandidate(
+                    Objects.requireNonNull(qualifiedName, "The qualifiedName parameter cannot be null."),
+                    Set.of()
+                )),
+                identifier,
+                maximumPosition
+            );
+        }
+
+        /*
+         * Temporary: kept only so Axoniq Framework keeps compiling until it reads the candidates instead. Remove
+         * together with the other bridges for that migration.
+         */
+        /**
+         * Returns the name of the first candidate, which is normally the name the entity is currently known by.
+         *
+         * @return the name of the first candidate, never {@code null}
+         * @deprecated use {@link #candidates()}, which also carries the names a snapshot may be stored under after a
+         * rename, and the versions acceptable under each
+         */
+        @Deprecated(since = "5.5.0", forRemoval = true)
+        public QualifiedName qualifiedName() {
+            return candidates.getFirst().qualifiedName();
         }
 
         @Override

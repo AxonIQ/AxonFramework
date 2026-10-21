@@ -22,6 +22,8 @@ import org.axonframework.messaging.tracing.support.TestSpanFactory;
 import org.axonframework.messaging.tracing.support.TestSpanFactory.TestSpanType;
 import org.axonframework.eventsourcing.eventstore.Position;
 import org.axonframework.eventsourcing.snapshot.api.Snapshot;
+import org.axonframework.eventsourcing.snapshot.api.SnapshotCandidate;
+import org.axonframework.eventsourcing.snapshot.api.SnapshotMatch;
 import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
@@ -32,7 +34,9 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 import static org.axonframework.common.FutureUtils.joinAndUnwrap;
@@ -97,11 +101,40 @@ class TracingSnapshotStoreTest {
             delegate.loadResult = CompletableFuture.completedFuture(null);
 
             // when
-            joinAndUnwrap(testSubject.load(name, "room-42", null));
+            joinAndUnwrap(testSubject.load(List.of(candidate(name)), "room-42", null));
 
             // then
             spanFactory.verifySpanCompleted("SnapshotStore.load Booking");
             spanFactory.verifySpanHasType("SnapshotStore.load Booking", TestSpanType.INTERNAL);
+        }
+
+        @Test
+        void shouldNameTheSpanAfterTheFirstCandidateAndPassAllCandidatesOn() {
+            // given
+            List<SnapshotCandidate> candidates =
+                List.of(candidate(new QualifiedName("Booking")), candidate(new QualifiedName("Reservation")));
+
+            // when
+            joinAndUnwrap(testSubject.load(candidates, "room-42", null));
+
+            // then
+            spanFactory.verifySpanCompleted("SnapshotStore.load Booking");
+            assertThat(delegate.loadCandidates).isEqualTo(candidates);
+        }
+
+        @Test
+        void shouldPassTheAggregateBasedCandidateOn() {
+            // given
+            List<SnapshotCandidate> candidates = List.of(candidate(new QualifiedName("Booking")));
+            SnapshotCandidate aggregateBasedCandidate = candidate(new QualifiedName("com.example.BookingAggregate"));
+
+            // when
+            joinAndUnwrap(testSubject.load(candidates, aggregateBasedCandidate, "room-42", null));
+
+            // then
+            spanFactory.verifySpanCompleted("SnapshotStore.load Booking");
+            assertThat(delegate.loadCandidates).isEqualTo(candidates);
+            assertThat(delegate.loadAggregateBasedCandidate).isEqualTo(aggregateBasedCandidate);
         }
 
         @Test
@@ -113,7 +146,7 @@ class TracingSnapshotStoreTest {
             context.putResource(marker, "load-marker");
 
             // when
-            joinAndUnwrap(testSubject.load(name, "room-42", context));
+            joinAndUnwrap(testSubject.load(List.of(candidate(name)), "room-42", context));
 
             // then - the delegate may receive a branch of the given context, never an unrelated one
             assertThat(delegate.loadContext).isNotNull();
@@ -124,7 +157,9 @@ class TracingSnapshotStoreTest {
     private static final class RecordingSnapshotStore implements SnapshotStore {
 
         private CompletableFuture<Void> storeResult = CompletableFuture.completedFuture(null);
-        private CompletableFuture<@Nullable Snapshot> loadResult = CompletableFuture.completedFuture(null);
+        private CompletableFuture<@Nullable SnapshotMatch> loadResult = CompletableFuture.completedFuture(null);
+        private @Nullable List<SnapshotCandidate> loadCandidates;
+        private @Nullable SnapshotCandidate loadAggregateBasedCandidate;
         private @Nullable ProcessingContext storeContext;
         private @Nullable ProcessingContext loadContext;
 
@@ -136,16 +171,38 @@ class TracingSnapshotStoreTest {
         }
 
         @Override
+        public CompletableFuture<@Nullable SnapshotMatch> load(List<SnapshotCandidate> candidates, Object identifier,
+                                                               @Nullable ProcessingContext context) {
+            return load(candidates, null, identifier, context);
+        }
+
+        @Override
+        public CompletableFuture<@Nullable SnapshotMatch> load(List<SnapshotCandidate> candidates,
+                                                               @Nullable SnapshotCandidate aggregateBasedCandidate,
+                                                               Object identifier,
+                                                               @Nullable ProcessingContext context) {
+            this.loadCandidates = candidates;
+            this.loadAggregateBasedCandidate = aggregateBasedCandidate;
+            this.loadContext = context;
+            return loadResult;
+        }
+
+        // temporary: SnapshotStore keeps this deprecated method so Axoniq Framework keeps compiling
+        @Override
         public CompletableFuture<@Nullable Snapshot> load(QualifiedName qualifiedName, Object identifier,
                                                           @Nullable ProcessingContext context) {
             this.loadContext = context;
-            return loadResult;
+            return CompletableFuture.completedFuture(null);
         }
 
         @Override
         public void describeTo(ComponentDescriptor descriptor) {
             // No-op - not required for testing
         }
+    }
+
+    private static SnapshotCandidate candidate(QualifiedName name) {
+        return new SnapshotCandidate(name, Set.of("1"));
     }
 
     private static Snapshot aSnapshot() {
