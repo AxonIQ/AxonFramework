@@ -257,6 +257,106 @@ class PolymorphicEntityEventApplicationTest {
     }
 
     @Nested
+    class SubclassesNotListedAsConcreteType {
+
+        abstract static class Wallet {
+
+            int balance;
+
+            @EventHandler
+            void on(Deposited event) {
+                balance += event.amount();
+            }
+
+            @CommandHandler
+            void handle(Withdraw command) {
+                balance -= 1;
+            }
+        }
+
+        static class ListedWallet extends Wallet {
+
+        }
+
+        static class UnlistedWallet extends ListedWallet {
+
+        }
+
+        static class HandlerDeclaringWallet extends ListedWallet {
+
+            @EventHandler
+            void on(Enrolled event) {
+                balance += 1;
+            }
+        }
+
+        static class OrphanWallet extends Wallet {
+
+        }
+
+        @Test
+        void failsClearlyForUnlistedSubclassWithoutHandlers() {
+            // given
+            var metamodel = polymorphic(Wallet.class, Set.of(ListedWallet.class));
+            var wallet = new UnlistedWallet();
+
+            // when
+            var thrown = catchThrowable(() -> evolve(metamodel, wallet, new Deposited(10)));
+
+            // then
+            assertThat(thrown).hasMessageContaining(UnlistedWallet.class.getName())
+                              .hasMessageContaining("concreteTypes");
+        }
+
+        @Test
+        void failsClearlyWhenUnlistedSubclassDeclaresHandlers() {
+            // given
+            var metamodel = polymorphic(Wallet.class, Set.of(ListedWallet.class));
+            var wallet = new HandlerDeclaringWallet();
+
+            // when
+            var thrown = catchThrowable(() -> evolve(metamodel, wallet, new Deposited(10)));
+
+            // then
+            assertThat(thrown).hasMessageContaining(HandlerDeclaringWallet.class.getName())
+                              .hasMessageContaining("concreteTypes");
+        }
+
+        @Test
+        void failsCommandHandlingAsAFailedStreamWhenNoListedConcreteTypeIsAnAncestor() {
+            // given
+            var metamodel = polymorphic(Wallet.class, Set.of(ListedWallet.class));
+            var wallet = new OrphanWallet();
+            var command = new GenericCommandMessage(new MessageType(Withdraw.class), new Withdraw());
+
+            // when
+            var stream = metamodel.handleInstance(command, wallet, StubProcessingContext.forMessage(command));
+
+            // then
+            assertThat(stream.first().asCompletableFuture())
+                    .failsWithin(Duration.ofSeconds(5))
+                    .withThrowableOfType(ExecutionException.class)
+                    .havingRootCause()
+                    .withMessageContaining(OrphanWallet.class.getName());
+        }
+
+        @Test
+        void failsClearlyWhenNoListedConcreteTypeIsAnAncestor() {
+            // given
+            var metamodel = polymorphic(Wallet.class, Set.of(ListedWallet.class));
+            var wallet = new OrphanWallet();
+
+            // when
+            var thrown = catchThrowable(() -> evolve(metamodel, wallet, new Deposited(10)));
+
+            // then
+            assertThat(thrown).isNotInstanceOf(NullPointerException.class)
+                              .hasMessageContaining(OrphanWallet.class.getName())
+                              .hasMessageContaining(Wallet.class.getName());
+        }
+    }
+
+    @Nested
     class WithEntityMembers {
 
         static class Label {

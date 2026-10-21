@@ -1574,4 +1574,91 @@ class AnnotationBasedEntityEvolvingComponentTest {
         var event = payload instanceof EventMessage message ? message : asEventMessage(payload);
         return evolver.evolve(entity, event, StubProcessingContext.forMessage(event));
     }
+
+    @Nested
+    class SubclassesUnknownToTheEntityModel {
+
+        abstract static class Account {
+
+            int balance;
+
+            @EventHandler
+            void on(Deposited event) {
+                balance += event.amount();
+            }
+        }
+
+        static class Savings extends Account {
+
+            int interest;
+
+            @EventHandler
+            void on(InterestPaid event) {
+                interest += event.amount();
+            }
+        }
+
+        static class KnownAccount {
+
+            int balance;
+
+            @EventHandler
+            void on(Deposited event) {
+                balance += event.amount();
+            }
+        }
+
+        static class KnownSavings extends KnownAccount {
+
+            int interest;
+
+            @EventHandler
+            void on(InterestPaid event) {
+                interest += event.amount();
+            }
+        }
+
+        private record InterestPaid(int amount) {
+
+        }
+
+        @Test
+        void ignoresInstanceOfSubclassItHasNoHandlersFor() {
+            // given
+            var savings = new Savings();
+
+            // when
+            var result = evolve(Account.class, savings, new Deposited(10));
+
+            // then - each concrete evolver applies the inherited handlers, so this evolver must not apply them again
+            assertThat(result).isSameAs(savings);
+            assertThat(result.balance).isEqualTo(0);
+        }
+
+        @Test
+        void appliesHandlersOfTheEntityTypeItself() {
+            // given
+            var account = new KnownAccount();
+
+            // when
+            var result = evolve(KnownAccount.class, account, new Deposited(10));
+
+            // then
+            assertThat(result.balance).isEqualTo(10);
+        }
+
+        @Test
+        void appliesHandlersOfSubclassListedAsConcreteType() {
+            // given
+            var savings = new KnownSavings();
+
+            // when
+            var result = evolve(KnownAccount.class, Set.of(KnownSavings.class), savings, new Deposited(10));
+            result = evolve(KnownAccount.class, Set.of(KnownSavings.class), result, new InterestPaid(3));
+
+            // then
+            assertThat(result.balance).isEqualTo(10);
+            assertThat(((KnownSavings) result).interest).isEqualTo(3);
+        }
+    }
 }

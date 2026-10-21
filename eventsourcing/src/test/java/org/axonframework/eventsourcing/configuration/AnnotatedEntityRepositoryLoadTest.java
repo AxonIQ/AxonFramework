@@ -49,6 +49,14 @@ class AnnotatedEntityRepositoryLoadTest {
 
     }
 
+    private record InterestPaid(@EventTag(key = "Account") String id, int amount) {
+
+    }
+
+    private record Opened(@EventTag(key = "Account") String id, int amount) {
+
+    }
+
     @EventSourcedEntity(tagKey = "Wallet", concreteTypes = BasicWallet.class)
     abstract static class Wallet {
 
@@ -67,6 +75,32 @@ class AnnotatedEntityRepositoryLoadTest {
 
     static class BasicWallet extends Wallet {
 
+    }
+
+    @EventSourcedEntity(tagKey = "Account")
+    abstract static class Account {
+
+        int balance;
+
+        @EntityCreator
+        static Account create() {
+            return new Savings();
+        }
+
+        @EventSourcingHandler
+        void on(Opened event) {
+            balance += event.amount();
+        }
+    }
+
+    static class Savings extends Account {
+
+        int interest;
+
+        @EventSourcingHandler
+        void on(InterestPaid event) {
+            interest += event.amount();
+        }
     }
 
     private static <E> E publishThenLoad(EventSourcedEntityModule<String, E> module,
@@ -104,5 +138,21 @@ class AnnotatedEntityRepositoryLoadTest {
         // then
         assertThat(wallet).isInstanceOf(BasicWallet.class);
         assertThat(wallet.balance).isEqualTo(10);
+    }
+
+    @Test
+    void failsClearlyOnLoadWhenCreatorReturnsSubclassNotListedAsConcreteType() {
+        // given
+        var module = EventSourcedEntityModule.autodetected(String.class, Account.class);
+
+        // when
+        var thrown = catchThrowable(() -> publishThenLoad(module, Account.class, new Opened(ID, 10)));
+
+        // then
+        assertThat(thrown).rootCause()
+                          .hasMessageContaining(Savings.class.getName())
+                          .hasMessageContaining(Account.class.getName())
+                          .hasMessageContaining("concreteTypes")
+                          .hasMessageContaining("sealed");
     }
 }

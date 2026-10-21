@@ -30,6 +30,7 @@ import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.messaging.eventhandling.conversion.DelegatingEventConverter;
 import org.axonframework.messaging.eventhandling.conversion.EventConverter;
+import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.*;
 import org.mockito.*;
@@ -451,6 +452,87 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
             public String getId() {
                 return id;
             }
+        }
+    }
+
+    @Nested
+    class CreatedEntityClass {
+
+        private AnnotationBasedEventSourcedEntityFactory<Account, String> factory;
+
+        @BeforeEach
+        void setUp() {
+            factory = new AnnotationBasedEventSourcedEntityFactory<>(
+                    Account.class,
+                    String.class,
+                    Collections.singleton(ListedAccount.class),
+                    parameterResolverFactory,
+                    messageTypeResolver,
+                    converter
+            );
+        }
+
+        private Account create(String id) {
+            return factory.create(id, eventMessage, StubProcessingContext.forMessage(eventMessage));
+        }
+
+        @Test
+        void returnsEntityOfTheEntityTypeItself() {
+            assertEquals(Account.class, create("self").getClass());
+        }
+
+        @Test
+        void returnsEntityOfListedConcreteType() {
+            assertEquals(ListedAccount.class, create("listed").getClass());
+        }
+
+        @Test
+        void failsClearlyForUnlistedSubclassDeclaringHandlers() {
+            AxonConfigurationException exception = assertThrows(AxonConfigurationException.class,
+                                                                () -> create("savings"));
+
+            assertTrue(exception.getMessage().contains(Account.class.getName()));
+            assertTrue(exception.getMessage().contains(Savings.class.getName()));
+            assertTrue(exception.getMessage().contains("concreteTypes"));
+            assertTrue(exception.getMessage().contains("sealed"));
+        }
+
+        @Test
+        void failsClearlyForUnlistedSubclassWithoutHandlers() {
+            AxonConfigurationException exception = assertThrows(AxonConfigurationException.class,
+                                                                () -> create("handler-free"));
+
+            assertTrue(exception.getMessage().contains(HandlerFreeSavings.class.getName()));
+            assertTrue(exception.getMessage().contains("concreteTypes"));
+        }
+
+        public static class Account {
+
+            @EntityCreator(payloadQualifiedNames = "matching-test-type")
+            public static Account create(@InjectEntityId String id, EventMessage message) {
+                return switch (id) {
+                    case "listed" -> new ListedAccount();
+                    case "savings" -> new Savings();
+                    case "handler-free" -> new HandlerFreeSavings();
+                    default -> new Account();
+                };
+            }
+        }
+
+        public static class ListedAccount extends Account {
+
+        }
+
+        public static class Savings extends Account {
+
+            @EventSourcingHandler
+            void on(String event) {
+                // handler declared on an unlisted subclass
+            }
+        }
+
+        public static class HandlerFreeSavings extends Account {
+
         }
     }
 
