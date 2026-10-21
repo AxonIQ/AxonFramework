@@ -100,7 +100,9 @@ Axon automatically collects all concrete (non-sealed) leaf types by recursively 
 
 == Constraints
 
-* For non-sealed entity classes, subtypes not listed in `concreteTypes` are silently ignored; their command and event handlers will not be registered and commands targeting them will fail at runtime.
+* For non-sealed entity classes, list every concrete class the `@EntityCreator` can return in `concreteTypes`.
+Axon finds the command and event handlers of a subtype only when it is listed.
+If the creator returns an instance of an unlisted class, creating or loading the entity fails with an error naming the class, also when the class declares no handlers.
 For sealed entity classes, all concrete (non-sealed) leaf types in the sealed hierarchy are discovered automatically; no explicit listing in `concreteTypes` is needed.
 * Each command may have at most one handler anywhere in the hierarchy.
 Axon throws `DuplicateCommandHandlerSubscriptionException` at startup if the same command appears in more than one class within the same entity type.
