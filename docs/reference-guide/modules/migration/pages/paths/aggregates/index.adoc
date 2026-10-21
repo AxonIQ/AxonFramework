@@ -240,6 +240,16 @@ Alternatively, if you want to keep the create-if-missing logic on an **instance*
 ----
 include::example$migration/paths/aggregates/index/forcedentitycreator/GiftCard.java[tag=forced-entity-creator-create-if-missing,indent=0]
 ----
++
+[NOTE]
+====
+In Axon Framework 4, `@CreationPolicy` was set per command handler and defaulted to `NEVER`, so only handlers marked `CREATE_IF_MISSING` ran without an existing aggregate.
+`@ForcedEntityCreator` sits on the entity and affects every handler that receives it.
+When the entity has no events yet, instance command handlers run on the default entity instead of failing with an `EntityNotFoundException`, and `@InjectEntity` parameters receive the default entity, so they are never `null` or an empty `Optional`.
+Only static creational command handlers still see the entity as absent.
+Check the entity's state in every handler that receives a forced entity, for example with `if (!issued) throw ...`.
+Forced creation also requires the forced creator to be selected: a plain identifier-based `@EntityCreator` takes precedence over a forced no-argument one.
+====
 
 * *`CreationPolicy.NEVER`*
 +
