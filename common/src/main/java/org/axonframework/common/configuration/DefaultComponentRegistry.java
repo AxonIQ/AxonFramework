@@ -46,7 +46,6 @@ import java.util.stream.Collectors;
 
 import static java.util.Objects.requireNonNull;
 import static java.util.function.Predicate.not;
-import static java.util.stream.Collectors.toMap;
 import static org.axonframework.common.annotation.AnnotationUtils.isTypeAnnotatedWithHavingAttributeValue;
 
 /**
@@ -87,7 +86,7 @@ public class DefaultComponentRegistry implements ComponentRegistry {
     DefaultComponentRegistry copyWithDecoratorsAndEnhancers() {
         return create(
                 this.decoratorDefinitions,
-                this.enhancers.values(),
+                this.enhancers,
                 this.disabledEnhancers
         );
     }
@@ -96,16 +95,17 @@ public class DefaultComponentRegistry implements ComponentRegistry {
      * Creates a new registry. This will include the provided enhancers, disabled enhancers and decorator definitions
      * except those annotated with {@link RegistrationScope}. The enhancerScanning flag is set to false.
      *
-     * @param decoratorDefinitions The list of decorator definitions to copy.
-     * @param enhancers            The list of enhancers to copy.
-     * @param disabledEnhancers    The list of disabled enhancer types to copy.
-     * @return A new default component registry.
+     * @param decoratorDefinitions the list of decorator definitions to copy
+     * @param enhancers            the enhancers to copy, by the name they are registered under
+     * @param disabledEnhancers    the list of disabled enhancer types to copy
+     * @return a new default component registry
      */
     @Internal
     public static DefaultComponentRegistry create(
             Collection<DecoratorDefinition.CompletedDecoratorDefinition<?, ?>> decoratorDefinitions,
-            Collection<ConfigurationEnhancer> enhancers,
-            Collection<Class<? extends ConfigurationEnhancer>> disabledEnhancers) {
+            Map<String, ConfigurationEnhancer> enhancers,
+            Collection<Class<? extends ConfigurationEnhancer>> disabledEnhancers
+    ) {
         var registry = new DefaultComponentRegistry().disableEnhancerScanning();
         var shouldRegisterForChildRegistry = not(
                 isTypeAnnotatedWithHavingAttributeValue(
@@ -114,11 +114,11 @@ public class DefaultComponentRegistry implements ComponentRegistry {
                         RegistrationScope.Scope.CURRENT
                 )
         );
-        registry.enhancers.putAll(
-                enhancers.stream()
-                         .filter(shouldRegisterForChildRegistry)
-                         .collect(toMap(e -> e.getClass().getName(), e -> e))
-        );
+        enhancers.forEach((name, enhancer) -> {
+            if (shouldRegisterForChildRegistry.test(enhancer)) {
+                registry.enhancers.put(name, enhancer);
+            }
+        });
         registry.disabledEnhancers.addAll(
                 disabledEnhancers.stream()
                                  .filter(shouldRegisterForChildRegistry)

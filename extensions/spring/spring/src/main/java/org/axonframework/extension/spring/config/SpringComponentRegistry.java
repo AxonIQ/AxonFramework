@@ -141,7 +141,7 @@ public class SpringComponentRegistry implements
      * @return A new registry used for modules.
      */
     DefaultComponentRegistry copyWithDecoratorsAndEnhancers() {
-        return create(this.decorators, this.enhancers.values(), this.disabledEnhancers);
+        return create(this.decorators, this.enhancers, this.disabledEnhancers);
     }
 
     /**
@@ -545,7 +545,6 @@ public class SpringComponentRegistry implements
      * dynamically.
      */
     private void invokeEnhancers() {
-        // last-minute registration of enhancers from Spring context
         // Each enhancer bean is retrieved by name: getBeansOfType silently skips a bean whose creation fails on a bean
         // that is currently in creation, which would leave that enhancer out without notice.
         for (String enhancerName : listableBeanFactory.getBeanNamesForType(ConfigurationEnhancer.class)) {

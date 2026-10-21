@@ -167,6 +167,12 @@ implementation 'org.axonframework.extensions.metrics:axon-metrics-micrometer:${a
 ====
 
 With the dependency in place the <<monitor-defaults,default>> `MessageMonitors` will be set for all `CommandBus`, `EventSink`, `EventProcessor`, and `QueryBus` implementations present in the application.
+
+The `MetricsConfigurationEnhancer` is configured through the `MicrometerMetricsConfiguration`.
+This component holds the Micrometer `MeterRegistry` to record the metrics with, and whether dimensions (tags) are added to the measurements.
+When you do not register a `MicrometerMetricsConfiguration` yourself, a default is used that has a `SimpleMeterRegistry` and dimensions enabled.
+When using Spring Boot, the `MicrometerMetricsConfiguration` is constructed from the `MeterRegistry` bean in the application context and the `axon.metrics.micrometer.dimensional` property.
+
 If you are using an automated configuration flow, as with Spring, be sure to set the following properties:
 
 [source,properties]
@@ -182,7 +188,7 @@ management.endpoint.prometheus.enabled=true
 Furthermore, Micrometer offers to option to enable/disable dimensions to your measurements.
 This allows you to filter the measurements on, for example, the payload type of messages.
 By default, dimensions are enabled.
-If you want to adjust this, please check the following examples:
+You can adjust this through the `useDimensions` setting of the `MicrometerMetricsConfiguration`, as the following examples show:
 
 [tabs]
 ====
@@ -209,7 +215,8 @@ axon.metrics.micrometer.dimensional=false
 --
 ====
 
-Lastly, if you need to specify the `MetricRegistry` used, please check the following examples:
+Lastly, if you need to specify the `MeterRegistry` used, you can set it on the `MicrometerMetricsConfiguration` as well.
+The following examples show how:
 
 [tabs]
 ====
