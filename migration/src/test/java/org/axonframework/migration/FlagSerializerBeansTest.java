@@ -17,7 +17,7 @@
 package org.axonframework.migration;
 
 import org.junit.jupiter.api.Test;
-import org.openrewrite.config.Environment;
+import org.openrewrite.java.ChangePackage;
 import org.openrewrite.java.JavaParser;
 import org.openrewrite.test.RecipeSpec;
 import org.openrewrite.test.RewriteTest;
@@ -26,8 +26,9 @@ import org.openrewrite.test.TypeValidation;
 import static org.openrewrite.java.Assertions.java;
 
 /**
- * Tests for {@link FlagSerializerBeans}, run as part of the {@code Axon4ToAxon5Conversion} composite so the
- * interplay with the package rename is covered.
+ * Tests for {@link FlagSerializerBeans}, run on their own as {@link CommentOutSerializerConfiguration} already comments
+ * out the {@code @Bean} serializer methods of Java sources when both run in the {@code Axon4ToAxon5Conversion}
+ * composite.
  */
 class FlagSerializerBeansTest implements RewriteTest {
 
@@ -37,10 +38,7 @@ class FlagSerializerBeansTest implements RewriteTest {
 
     @Override
     public void defaults(RecipeSpec spec) {
-        spec.recipe(Environment.builder()
-                               .scanRuntimeClasspath("org.axonframework.migration")
-                               .build()
-                               .activateRecipes("org.axonframework.migration.Axon4ToAxon5Conversion"))
+        spec.recipe(new FlagSerializerBeans())
             .parser(JavaParser.fromJavaVersion().classpath("axon-messaging", "axon-spring"))
             .typeValidationOptions(TypeValidation.none());
     }
@@ -48,6 +46,10 @@ class FlagSerializerBeansTest implements RewriteTest {
     @Test
     void flagsSerializerBeanAfterThePackageRename() {
         rewriteRun(
+                spec -> spec.recipes(new ChangePackage("org.axonframework.serialization",
+                                                       "org.axonframework.conversion",
+                                                       true),
+                                     new FlagSerializerBeans()),
                 java(
                         """
                         package com.example;
@@ -106,7 +108,7 @@ class FlagSerializerBeansTest implements RewriteTest {
                         """
                         package com.example;
 
-                        import org.axonframework.conversion.json.JacksonSerializer;
+                        import org.axonframework.serialization.json.JacksonSerializer;
                         import org.springframework.context.annotation.Bean;
 
                         class MyConfig {
@@ -156,17 +158,6 @@ class FlagSerializerBeansTest implements RewriteTest {
                         package com.example;
 
                         import org.axonframework.serialization.json.JacksonSerializer;
-
-                        class Helper {
-                            JacksonSerializer serializer() {
-                                return JacksonSerializer.defaultSerializer();
-                            }
-                        }
-                        """,
-                        """
-                        package com.example;
-
-                        import org.axonframework.conversion.json.JacksonSerializer;
 
                         class Helper {
                             JacksonSerializer serializer() {
