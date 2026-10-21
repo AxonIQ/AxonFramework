@@ -287,8 +287,11 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
         AnnotatedHandlerInspector<E> inspected = inspectType(
                 entityType, messageTypeResolver, parameterResolverFactory, handlerDefinition
         );
+        // Concrete metamodels of a polymorphic entity are internal, so an evolver returning a sibling type never leaks
+        //noinspection unchecked
+        Class<E> evolvedType = polymorphicSuperType != null ? (Class<E>) polymorphicSuperType : entityType;
         builder.entityEvolver(new AnnotationBasedEntityEvolvingComponent<>(
-                entityType, inspected, eventConverter, messageTypeResolver
+                evolvedType, inspected, eventConverter, messageTypeResolver
         ));
         initializeDetectedHandlers(builder, inspected);
         registerCommandInterceptors(builder, inspected);
@@ -310,12 +313,9 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
                 hasMemberEntities ? Collections.emptySet() : concreteTypes
         );
 
+        // The super type metamodel evolves nothing: every concrete metamodel already holds the inherited event
+        // handlers and child entities, so evolving through both would apply each event twice.
         var builder = PolymorphicEntityMetamodel.forSuperType(entityType);
-        builder.entityEvolver(new AnnotationBasedEntityEvolvingComponent<>(entityType,
-                                                                           inspected,
-                                                                           eventConverter,
-                                                                           messageTypeResolver));
-        initializeChildren(builder);
         // Creational commands present on the super type must not be re-registered on a concrete type: see
         // initializeDetectedHandlers and the commandsToSkip javadoc for why.
         List<QualifiedName> registeredCreationalCommands = initializeDetectedHandlers(builder, inspected);
