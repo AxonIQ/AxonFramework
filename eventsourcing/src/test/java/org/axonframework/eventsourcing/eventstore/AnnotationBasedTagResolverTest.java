@@ -25,6 +25,11 @@ import org.axonframework.messaging.eventstreaming.Tag;
 import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.*;
 
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Repeatable;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
@@ -688,6 +693,318 @@ class AnnotationBasedTagResolverTest {
             // given
             var payload = new InvalidContainerClass();
             var event = anEventMessage(payload);
+
+            // when
+            var result = tagResolver.resolve(event);
+
+            // then
+            assertTrue(result.isEmpty());
+        }
+    }
+
+    @Nested
+    class MetaAnnotationTests {
+
+        @Target({ElementType.METHOD, ElementType.FIELD, ElementType.ANNOTATION_TYPE})
+        @Retention(RetentionPolicy.RUNTIME)
+        @EventTag(key = "aggregateId")
+        @interface AggregateIdTag {
+
+        }
+
+        @Target({ElementType.METHOD, ElementType.FIELD})
+        @Retention(RetentionPolicy.RUNTIME)
+        @EventTag
+        @interface MemberNameTag {
+
+        }
+
+        @Target({ElementType.METHOD, ElementType.FIELD})
+        @Retention(RetentionPolicy.RUNTIME)
+        @EventTag(key = "first")
+        @EventTag(key = "second")
+        @interface RepeatedTag {
+
+        }
+
+        @Target({ElementType.METHOD, ElementType.FIELD, ElementType.ANNOTATION_TYPE})
+        @Retention(RetentionPolicy.RUNTIME)
+        @AggregateIdTag
+        @interface NestedAggregateIdTag {
+
+        }
+
+        @Target({ElementType.METHOD, ElementType.FIELD})
+        @Retention(RetentionPolicy.RUNTIME)
+        @NestedAggregateIdTag
+        @interface DeeplyNestedAggregateIdTag {
+
+        }
+
+        @Target({ElementType.METHOD, ElementType.FIELD})
+        @Retention(RetentionPolicy.RUNTIME)
+        @EventTag(key = "defaultKey")
+        @interface OverridableKeyTag {
+
+            String key() default "overriddenDefaultKey";
+        }
+
+        @Target({ElementType.METHOD, ElementType.FIELD})
+        @Retention(RetentionPolicy.RUNTIME)
+        @Repeatable(KeyedTags.class)
+        @EventTag
+        @interface KeyedTag {
+
+            String key();
+        }
+
+        @Target({ElementType.METHOD, ElementType.FIELD})
+        @Retention(RetentionPolicy.RUNTIME)
+        @interface KeyedTags {
+
+            KeyedTag[] value();
+        }
+
+        static class EventWithMetaAnnotation {
+
+            @AggregateIdTag
+            private final String id = "123";
+
+            @AggregateIdTag
+            public String getAnotherId() {
+                return "456";
+            }
+
+            // Mix of standard and custom annotations
+            @EventTag(key = "customKey")
+            @AggregateIdTag
+            private final String mixedId = "789";
+        }
+
+        static class InheritedMetaAnnotation extends EventWithMetaAnnotation {
+
+            @AggregateIdTag
+            private final String childId = "child123";
+        }
+
+        static class EventWithMemberNameMetaAnnotation {
+
+            @MemberNameTag
+            private final String orderId = "order";
+
+            @MemberNameTag
+            public String getCustomerId() {
+                return "customer";
+            }
+        }
+
+        static class EventWithRepeatedMetaAnnotation {
+
+            @RepeatedTag
+            private final String id = "123";
+
+            @RepeatedTag
+            @EventTag(key = "third")
+            @EventTag(key = "fourth")
+            public String getValue() {
+                return "value";
+            }
+        }
+
+        static class EventWithNestedMetaAnnotations {
+
+            @NestedAggregateIdTag
+            private final String nested = "nestedValue";
+
+            @DeeplyNestedAggregateIdTag
+            private final String deeplyNested = "deeplyNestedValue";
+        }
+
+        static class EventWithOverriddenKeys {
+
+            @OverridableKeyTag
+            private final String defaultOverride = "defaultValue";
+
+            @OverridableKeyTag(key = "explicitKey")
+            private final String explicitOverride = "explicitValue";
+
+            @OverridableKeyTag(key = "")
+            private final String memberNameOverride = "memberNameValue";
+        }
+
+        static class EventWithRepeatedCustomTagAnnotation {
+
+            @KeyedTag(key = "x")
+            private final String single = "singleValue";
+
+            @KeyedTag(key = "x")
+            @KeyedTag(key = "y")
+            private final String repeated = "repeatedValue";
+        }
+
+        static class EventWithInvalidMetaAnnotatedMethod {
+
+            @AggregateIdTag
+            public void invalidMethod() {
+                // Method with void return type
+            }
+        }
+
+        @Test
+        void shouldResolveMetaAnnotations() {
+            // given
+            var payload = new EventWithMetaAnnotation();
+            var event = anEventMessage(payload);
+
+            // when
+            var result = tagResolver.resolve(event);
+
+            // then
+            assertEquals(4, result.size());
+            // Tags from AggregateIdTag
+            assertTrue(result.contains(new Tag("aggregateId", "123")));
+            assertTrue(result.contains(new Tag("aggregateId", "456")));
+            // Tags from mixed annotations
+            assertTrue(result.contains(new Tag("aggregateId", "789")));
+            assertTrue(result.contains(new Tag("customKey", "789")));
+        }
+
+        @Test
+        void shouldResolveInheritedMetaAnnotations() {
+            // given
+            var payload = new InheritedMetaAnnotation();
+            var event = anEventMessage(payload);
+
+            // when
+            var result = tagResolver.resolve(event);
+
+            // then
+            assertEquals(5, result.size());
+            // Tags from parent class
+            assertTrue(result.contains(new Tag("aggregateId", "123")));
+            assertTrue(result.contains(new Tag("aggregateId", "456")));
+            assertTrue(result.contains(new Tag("aggregateId", "789")));
+            assertTrue(result.contains(new Tag("customKey", "789")));
+            // Tags from child class
+            assertTrue(result.contains(new Tag("aggregateId", "child123")));
+        }
+
+        @Test
+        void shouldUseMemberNameWhenMetaAnnotationDefinesNoKey() {
+            // given
+            var payload = new EventWithMemberNameMetaAnnotation();
+            var event = anEventMessage(payload);
+
+            // when
+            var result = tagResolver.resolve(event);
+
+            // then
+            assertEquals(2, result.size());
+            assertTrue(result.contains(new Tag("orderId", "order")));
+            assertTrue(result.contains(new Tag("customerId", "customer")));
+        }
+
+        @Test
+        void shouldResolveRepeatedEventTagsOnMetaAnnotation() {
+            // given
+            var payload = new EventWithRepeatedMetaAnnotation();
+            var event = anEventMessage(payload);
+
+            // when
+            var result = tagResolver.resolve(event);
+
+            // then
+            assertEquals(6, result.size());
+            // Tags from field with repeated meta-annotation
+            assertTrue(result.contains(new Tag("first", "123")));
+            assertTrue(result.contains(new Tag("second", "123")));
+            // Tags from method with repeated meta-annotation and repeated direct annotations
+            assertTrue(result.contains(new Tag("first", "value")));
+            assertTrue(result.contains(new Tag("second", "value")));
+            assertTrue(result.contains(new Tag("third", "value")));
+            assertTrue(result.contains(new Tag("fourth", "value")));
+        }
+
+        @Test
+        void shouldResolveMetaAnnotationsOnAnyLevel() {
+            // given
+            var payload = new EventWithNestedMetaAnnotations();
+            var event = anEventMessage(payload);
+
+            // when
+            var result = tagResolver.resolve(event);
+
+            // then
+            assertEquals(2, result.size());
+            assertTrue(result.contains(new Tag("aggregateId", "nestedValue")));
+            assertTrue(result.contains(new Tag("aggregateId", "deeplyNestedValue")));
+        }
+
+        @Test
+        void shouldOverrideKeyWithKeyAttributeOfMetaAnnotatedAnnotation() {
+            // given
+            var payload = new EventWithOverriddenKeys();
+            var event = anEventMessage(payload);
+
+            // when
+            var result = tagResolver.resolve(event);
+
+            // then
+            assertEquals(3, result.size());
+            assertTrue(result.contains(new Tag("overriddenDefaultKey", "defaultValue")));
+            assertTrue(result.contains(new Tag("explicitKey", "explicitValue")));
+            assertTrue(result.contains(new Tag("memberNameOverride", "memberNameValue")));
+        }
+
+        @Test
+        void shouldThrowExceptionForInvalidMetaAnnotatedMethod() {
+            // given
+            var payload = new EventWithInvalidMetaAnnotatedMethod();
+            var event = anEventMessage(payload);
+
+            // when/then
+            var exception = assertThrows(
+                    AnnotationBasedTagResolver.TagResolutionException.class,
+                    () -> tagResolver.resolve(event)
+            );
+            assertTrue(exception.getMessage().contains("should not return void"));
+        }
+
+        @Test
+        void shouldThrowExceptionForInvalidMetaAnnotatedMethodOnEveryResolution() {
+            // given
+            var payload = new EventWithInvalidMetaAnnotatedMethod();
+            var event = anEventMessage(payload);
+            assertThrows(AnnotationBasedTagResolver.TagResolutionException.class, () -> tagResolver.resolve(event));
+
+            // when/then
+            var exception = assertThrows(
+                    AnnotationBasedTagResolver.TagResolutionException.class,
+                    () -> tagResolver.resolve(event)
+            );
+            assertTrue(exception.getMessage().contains("should not return void"));
+        }
+
+        @Test
+        void shouldResolveTagForEveryRepeatedCustomTagAnnotation() {
+            // given
+            var payload = new EventWithRepeatedCustomTagAnnotation();
+            var event = anEventMessage(payload);
+
+            // when
+            var result = tagResolver.resolve(event);
+
+            // then
+            assertEquals(3, result.size());
+            assertTrue(result.contains(new Tag("x", "singleValue")));
+            assertTrue(result.contains(new Tag("x", "repeatedValue")));
+            assertTrue(result.contains(new Tag("y", "repeatedValue")));
+        }
+
+        @Test
+        void shouldReturnEmptySetForNullPayload() {
+            // given
+            var event = anEventMessage(null);
 
             // when
             var result = tagResolver.resolve(event);
