@@ -43,8 +43,8 @@ import org.openrewrite.marker.Markers;
  * {@code Serializer}, are never flagged. Only when the return type could not be resolved at all does the recipe fall
  * back to the simple name {@code Serializer}.
  *
- * @author Mateusz Nowak
- * @since 5.1.1
+ * @author Steven van Beelen
+ * @since 5.5.0
  */
 public class FlagSerializerBeans extends Recipe {
 

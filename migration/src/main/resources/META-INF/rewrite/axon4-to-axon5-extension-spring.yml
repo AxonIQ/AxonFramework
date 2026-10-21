@@ -177,7 +177,7 @@ recipeList:
   # `# TODO(axon4to5): ...` comment above each matching entry so both the
   # developer and the next-running LLM-driven skill see the restriction
   # immediately.
-  - org.axonframework.migration.AnnotateObsoleteSequencingPolicyProperty
+  - org.axonframework.migration.AnnotateSequencingPolicyProperty
 
 ---
 type: specs.openrewrite.org/v1beta/recipe

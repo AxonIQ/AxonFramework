@@ -179,7 +179,7 @@ public class PooledStreamingEventProcessorModule extends BaseModule<PooledStream
                                     cfg.getComponent(PooledStreamingEventProcessorConfiguration.class)
                                        .sequencingPolicy();
                             if (sequencingPolicy != null) {
-                                // Only replace none-default policies through overridePolicyWhenDefault.
+                                // Only replace the default policy through overridePolicyWhenDefault.
                                 // Explicit policies keep precedence.
                                 component.unwrap(SimpleEventHandlingComponent.class)
                                          .ifPresent(sehc -> sehc.overridePolicyWhenDefault(sequencingPolicy));

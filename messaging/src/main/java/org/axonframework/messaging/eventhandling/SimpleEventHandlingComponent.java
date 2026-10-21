@@ -84,7 +84,7 @@ public class SimpleEventHandlingComponent implements
      * subcomponents.
      * <p>
      * This operation does not set an explicit {@link SequencingPolicy}. Instead, it receives the policy defined by the
-     * {@link org.axonframework.messaging.eventhandling.processing.EventProcessor} this component is assigned too, if
+     * {@link org.axonframework.messaging.eventhandling.processing.EventProcessor} this component is assigned to, if
      * such a policy has been set. Otherwise, it uses a default sequencing policy that will first try for the
      * {@link SequentialPerAggregatePolicy}, falling back to the {@link SequentialPolicy} when the former returns no
      * sequence value.
@@ -263,17 +263,22 @@ public class SimpleEventHandlingComponent implements
     }
 
     /**
-     * Override the default {@link SequencingPolicy} of a {@code SimpleEventHandlingComponent} <b>only</b> if the
-     * default is in place, otherwise replace the policy with the given {@code sequencingPolicy}.
+     * Replaces the default {@link SequencingPolicy} of a {@code SimpleEventHandlingComponent} with the given
+     * {@code sequencingPolicy}, <b>only</b> if the default is in place. Explicitly configured policies are left
+     * untouched.
      * <p>
      * Allows a path for users to, for example, define an
      * {@link org.axonframework.messaging.eventhandling.processing.EventProcessor} wide {@code SequencingPolicy} that
      * only takes effect if the default policy is configured. The default policy is a
      * {@link HierarchicalSequencingPolicy} with a {@link SequentialPerAggregatePolicy} firstly, falling back to the
      * {@link SequentialPolicy} when the former returns nothing.
+     * <p>
+     * Note that the replacement is permanent. When the same component instance is registered with several processors
+     * that each define a processor-wide policy, the first processor replaces the default and the others no longer see
+     * the default, hence their policy is ignored.
      *
-     * @param sequencingPolicy the {@link SequencingPolicy} to override this components policy with, <b>if</b> the
-     *                         default policy is used.
+     * @param sequencingPolicy the {@link SequencingPolicy} to override this component's policy with, <b>if</b> the
+     *                         default policy is used
      * @return this component, for fluent interfacing
      */
     @Internal
