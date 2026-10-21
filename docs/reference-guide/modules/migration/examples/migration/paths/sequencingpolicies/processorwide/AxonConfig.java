@@ -15,6 +15,7 @@
  */
 package migration.paths.sequencingpolicies.processorwide;
 
+// tag::processor-sequencing-policy-config[]
 import migration.paths.sequencingpolicies.CustomerIdSequencingPolicy;
 import org.axonframework.messaging.core.configuration.MessagingConfigurer;
 import org.axonframework.messaging.eventhandling.SimpleEventHandlingComponent;

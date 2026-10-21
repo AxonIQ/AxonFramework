@@ -27,11 +27,11 @@ import static org.openrewrite.yaml.Assertions.yaml;
  * Verifies the advisory comment insertion for obsolete
  * {@code axon.eventhandling.processors.<group>.sequencing-policy} properties.
  */
-class AnnotateObsoleteSequencingPolicyPropertyTest implements RewriteTest {
+class AnnotateSequencingPolicyPropertyTest implements RewriteTest {
 
     @Override
     public void defaults(RecipeSpec spec) {
-        spec.recipe(new AnnotateObsoleteSequencingPolicyProperty());
+        spec.recipe(new AnnotateSequencingPolicyProperty());
     }
 
     @Test

@@ -47,7 +47,7 @@ import java.util.regex.Pattern;
  * @author Mateusz Nowak
  * @since 5.1.1
  */
-public class AnnotateObsoleteSequencingPolicyProperty extends Recipe {
+public class AnnotateSequencingPolicyProperty extends Recipe {
 
     private static final String COMMENT_MARKER = "TODO(axon4to5): sequencing-policy only applies to pooled streaming processors";
     private static final String COMMENT_MESSAGE = COMMENT_MARKER + "; use @SequencingPolicy on the handler class for others.";
@@ -59,7 +59,7 @@ public class AnnotateObsoleteSequencingPolicyProperty extends Recipe {
 
     @Override
     public String getDisplayName() {
-        return "Annotate obsolete `axon.eventhandling.processors.<group>.sequencing-policy` properties";
+        return "Annotate `axon.eventhandling.processors.<group>.sequencing-policy` properties";
     }
 
     @Override

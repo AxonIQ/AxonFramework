@@ -220,7 +220,7 @@ public class PooledStreamingEventProcessorConfiguration extends EventProcessorCo
      * {@link PooledStreamingEventProcessor}, whenever an assigned {@link EventHandlingComponent} does not define a more
      * specific one.
      * <p>
-     * When {@code EventHandlingComponent}-specific policy are provided, either through the declarative or automated
+     * When {@code EventHandlingComponent}-specific policies are provided, either through the declarative or automated
      * configuration API, those take precedence over the given {@code sequencingPolicy}.
      * {@code EventHandlingComponent}-specific policies are placed to override wider defaults, wherein this operation
      * should be regarded as a "processor default policy" setting.
