@@ -28,6 +28,7 @@ import org.axonframework.messaging.core.EmptyApplicationContext;
 import org.axonframework.messaging.core.MessageHandlerInterceptor;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.QualifiedName;
+import org.axonframework.messaging.core.sequencing.SequencingPolicy;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
 import org.axonframework.messaging.eventhandling.EventHandlingComponent;
@@ -46,6 +47,7 @@ import org.axonframework.messaging.eventhandling.processing.streaming.token.stor
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.messaging.eventstreaming.StreamableEventSource;
 import org.axonframework.messaging.eventstreaming.TrackingTokenSource;
+import org.jspecify.annotations.Nullable;
 
 import java.time.Clock;
 import java.util.ArrayList;
@@ -78,6 +80,11 @@ import static org.axonframework.common.BuilderUtils.assertStrictPositive;
  *     <li>The {@code batchSize} defaults to {@code 1}.</li>
  *     <li>The {@link Clock} defaults to {@link ClockUtils#get()}.</li>
  *     <li>The {@code coordinatorExtendsClaims} defaults to a {@code false}.</li>
+ *     <li>The {@link SequencingPolicy}, defaulting to {@code null} here, resulting in a
+ *     {@link org.axonframework.messaging.core.sequencing.HierarchicalSequencingPolicy} using a
+ *     {@link org.axonframework.messaging.core.sequencing.SequentialPerAggregatePolicy} and
+ *     {@link org.axonframework.messaging.core.sequencing.SequentialPolicy} on the
+ *     {@link EventHandlingComponent EventHandlingComponents} maintained by the processor under configuration.</li>
  * </ul>
  * The following fields of this configuration are <b>hard requirements</b> and as such should be provided:
  * <ul>
@@ -118,6 +125,8 @@ public class PooledStreamingEventProcessorConfiguration extends EventProcessorCo
     // batch-end token; advanced selectors (such as self-checkpointing detection) are installed through this property.
     private Function<List<EventHandlingComponent>, SegmentProgressStrategyFactory> progressStrategyFactoryBuilder =
             components -> SegmentProgressStrategyFactory.tokenStoring();
+    @Nullable
+    private SequencingPolicy<? super EventMessage> sequencingPolicy;
 
     /**
      * Constructs a new {@code PooledStreamingEventProcessorConfiguration} copying properties from the given
@@ -203,6 +212,29 @@ public class PooledStreamingEventProcessorConfiguration extends EventProcessorCo
     public PooledStreamingEventProcessorConfiguration tokenStore(TokenStore tokenStore) {
         assertNonNull(tokenStore, "TokenStore may not be null");
         this.tokenStore = tokenStore;
+        return this;
+    }
+
+    /**
+     * Sets the {@link SequencingPolicy} used to determine the sequence identifier of events handled by this
+     * {@link PooledStreamingEventProcessor}, whenever an assigned {@link EventHandlingComponent} does not define a more
+     * specific one.
+     * <p>
+     * When {@code EventHandlingComponent}-specific policies are provided, either through the declarative or automated
+     * configuration API, those take precedence over the given {@code sequencingPolicy}.
+     * {@code EventHandlingComponent}-specific policies are placed to override wider defaults, wherein this operation
+     * should be regarded as a "processor default policy" setting.
+     *
+     * @param sequencingPolicy the {@link SequencingPolicy} used to determine the sequence identifier of events handled
+     *                         by this {@link PooledStreamingEventProcessor} when an {@link EventHandlingComponent}
+     *                         defines none itself
+     * @return the current instance, for fluent interfacing
+     */
+    public PooledStreamingEventProcessorConfiguration sequencingPolicy(
+            SequencingPolicy<? super EventMessage> sequencingPolicy
+    ) {
+        assertNonNull(sequencingPolicy, "SequencingPolicy may not be null");
+        this.sequencingPolicy = sequencingPolicy;
         return this;
     }
 
@@ -583,6 +615,17 @@ public class PooledStreamingEventProcessorConfiguration extends EventProcessorCo
     }
 
     /**
+     * Returns the {@link SequencingPolicy} this processor applies to assigned
+     * {@link EventHandlingComponent EventHandlingComponents} that do not define a more specific one.
+     *
+     * @return The {@link SequencingPolicy} for this processor, or {@code null} when unset.
+     */
+    @Nullable
+    public SequencingPolicy<? super EventMessage> sequencingPolicy() {
+        return sequencingPolicy;
+    }
+
+    /**
      * Returns the coordinator's {@link ScheduledExecutorService}.
      *
      * @return The coordinator executor.
@@ -759,6 +802,7 @@ public class PooledStreamingEventProcessorConfiguration extends EventProcessorCo
         super.describeTo(descriptor);
         descriptor.describeProperty("eventSource", eventSource);
         descriptor.describeProperty("tokenStore", tokenStore);
+        descriptor.describeProperty("sequencingPolicy", sequencingPolicy);
         descriptor.describeProperty("coordinatorExecutor", coordinatorExecutor);
         descriptor.describeProperty("workerExecutor", workerExecutor);
         descriptor.describeProperty("initialSegmentCount", initialSegmentCount);

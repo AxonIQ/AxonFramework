@@ -24,8 +24,11 @@ import org.axonframework.common.configuration.ComponentDefinition;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.common.configuration.ModuleBuilder;
 import org.axonframework.common.lifecycle.Phase;
+import org.axonframework.messaging.core.sequencing.SequencingPolicy;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
 import org.axonframework.messaging.eventhandling.EventHandlingComponent;
+import org.axonframework.messaging.eventhandling.EventMessage;
+import org.axonframework.messaging.eventhandling.SimpleEventHandlingComponent;
 import org.axonframework.messaging.eventhandling.configuration.DefaultEventHandlingComponentsConfigurer;
 import org.axonframework.messaging.eventhandling.configuration.EventHandlingComponentsConfigurer;
 import org.axonframework.messaging.eventhandling.configuration.EventProcessingConfigurer;
@@ -168,11 +171,22 @@ public class PooledStreamingEventProcessorModule extends BaseModule<PooledStream
             var componentBuilder = componentBuilderEntry.getValue();
             var componentName = processorEventHandlingComponentName(configuredComponentName);
             componentRegistry(cr -> {
-                cr.registerComponent(EventHandlingComponent.class, componentName,
-                                     cfg -> {
-                                         var component = componentBuilder.build(cfg);
-                                         return new SequenceCachingEventHandlingComponent(component);
-                                     });
+                cr.registerComponent(
+                        EventHandlingComponent.class, componentName,
+                        cfg -> {
+                            var component = componentBuilder.build(cfg);
+                            SequencingPolicy<? super EventMessage> sequencingPolicy =
+                                    cfg.getComponent(PooledStreamingEventProcessorConfiguration.class)
+                                       .sequencingPolicy();
+                            if (sequencingPolicy != null) {
+                                // Only replace the default policy through overridePolicyWhenDefault.
+                                // Explicit policies keep precedence.
+                                component.unwrap(SimpleEventHandlingComponent.class)
+                                         .ifPresent(sehc -> sehc.overridePolicyWhenDefault(sequencingPolicy));
+                            }
+                            return new SequenceCachingEventHandlingComponent(component);
+                        }
+                );
                 cr.registerDecorator(EventHandlingComponent.class, componentName,
                                      InterceptingEventHandlingComponent.DECORATION_ORDER,
                                      (config, name, delegate) -> {

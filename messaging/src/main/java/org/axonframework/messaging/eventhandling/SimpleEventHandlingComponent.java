@@ -17,6 +17,7 @@
 package org.axonframework.messaging.eventhandling;
 
 import org.axonframework.common.Assert;
+import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.common.infra.DescribableComponent;
 import org.axonframework.messaging.core.Message;
@@ -73,7 +74,7 @@ public class SimpleEventHandlingComponent implements
 
     private final String name;
     private final ConcurrentHashMap<QualifiedName, List<EventHandler>> eventHandlers = new ConcurrentHashMap<>();
-    private final SequencingPolicy<? super EventMessage> sequencingPolicy;
+    private SequencingPolicy<? super EventMessage> sequencingPolicy;
     private final Set<ResetHandler> resetHandlers = ConcurrentHashMap.newKeySet();
     private final Set<ReplayStatusChangedHandler> replayStatusChangedHandlers = ConcurrentHashMap.newKeySet();
     private final AtomicBoolean loggedSequencingFallback = new AtomicBoolean();
@@ -82,25 +83,28 @@ public class SimpleEventHandlingComponent implements
      * Instantiates a simple {@link EventHandlingComponent} that is able to handle events and delegate them to
      * subcomponents.
      * <p>
-     * Uses a default sequencing policy that will first try for the {@link SequentialPerAggregatePolicy}, falling back
-     * to the {@link SequentialPolicy} when the former returns no sequence value.
+     * This operation does not set an explicit {@link SequencingPolicy}. Instead, it receives the policy defined by the
+     * {@link org.axonframework.messaging.eventhandling.processing.EventProcessor} this component is assigned to, if
+     * such a policy has been set. Otherwise, it uses a default sequencing policy that will first try for the
+     * {@link SequentialPerAggregatePolicy}, falling back to the {@link SequentialPolicy} when the former returns no
+     * sequence value.
      *
-     * @param name The name of the component, used for {@link DescribableComponent describing} the component.
-     * @return A simple {@link EventHandlingComponent} instance with the given {@code name}.
+     * @param name the name of the component, used for {@link DescribableComponent describing} the component
+     * @return a simple {@link EventHandlingComponent} instance with the given {@code name}
      */
     public static SimpleEventHandlingComponent create(String name) {
-        return create(name, DEFAULT_SEQUENCING_POLICY);
+        return new SimpleEventHandlingComponent(name, DEFAULT_SEQUENCING_POLICY);
     }
 
     /**
      * Instantiates a simple {@link EventHandlingComponent} that is able to handle events and delegate them to
      * subcomponents, using the given {@code sequencingPolicy} to decide how to sequence incoming events.
      *
-     * @param name             The name of the component, used for {@link DescribableComponent describing} the
-     *                         component.
-     * @param sequencingPolicy The {@link SequencingPolicy} to use for sequencing events through, for example,
-     *                         {@link #sequenceIdentifierFor(EventMessage, ProcessingContext)}.
-     * @return A simple {@link EventHandlingComponent} instance with the given {@code name}.
+     * @param name             the name of the component, used for {@link DescribableComponent describing} the
+     *                         component
+     * @param sequencingPolicy the {@link SequencingPolicy} to use for sequencing events through, for example,
+     *                         {@link #sequenceIdentifierFor(EventMessage, ProcessingContext)}
+     * @return a simple {@link EventHandlingComponent} instance with the given {@code name}
      */
     public static SimpleEventHandlingComponent create(String name,
                                                       SequencingPolicy<? super EventMessage> sequencingPolicy) {
@@ -256,5 +260,35 @@ public class SimpleEventHandlingComponent implements
         descriptor.describeProperty("resetHandlers", resetHandlers);
         descriptor.describeProperty("replayStatusChangedHandlers", replayStatusChangedHandlers);
         descriptor.describeProperty("sequencingPolicy", sequencingPolicy);
+    }
+
+    /**
+     * Replaces the default {@link SequencingPolicy} of a {@code SimpleEventHandlingComponent} with the given
+     * {@code sequencingPolicy}, <b>only</b> if the default is in place. Explicitly configured policies are left
+     * untouched.
+     * <p>
+     * Allows a path for users to, for example, define an
+     * {@link org.axonframework.messaging.eventhandling.processing.EventProcessor} wide {@code SequencingPolicy} that
+     * only takes effect if the default policy is configured. The default policy is a
+     * {@link HierarchicalSequencingPolicy} with a {@link SequentialPerAggregatePolicy} firstly, falling back to the
+     * {@link SequentialPolicy} when the former returns nothing.
+     * <p>
+     * Note that the replacement is permanent. When the same component instance is registered with several processors
+     * that each define a processor-wide policy, the first processor replaces the default and the others no longer see
+     * the default, hence their policy is ignored.
+     *
+     * @param sequencingPolicy the {@link SequencingPolicy} to override this component's policy with, <b>if</b> the
+     *                         default policy is used
+     * @return this component, for fluent interfacing
+     */
+    @Internal
+    public SimpleEventHandlingComponent overridePolicyWhenDefault(
+            SequencingPolicy<? super EventMessage> sequencingPolicy
+    ) {
+        Objects.requireNonNull(sequencingPolicy, "The Sequencing Policy to override with may not be null.");
+        if (this.sequencingPolicy == DEFAULT_SEQUENCING_POLICY) {
+            this.sequencingPolicy = sequencingPolicy;
+        }
+        return this;
     }
 }
