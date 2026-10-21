@@ -19,7 +19,7 @@ package org.axonframework.extension.metrics.micrometer.springboot;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import org.axonframework.extension.metrics.micrometer.MetricsConfigurationEnhancer;
+import org.axonframework.extension.metrics.micrometer.MicrometerMetricsConfiguration;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.axonframework.messaging.eventhandling.gateway.EventGateway;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore;
@@ -55,7 +55,7 @@ class MicrometerMetricsAutoConfigurationTest {
         testContext.withPropertyValues("axon.metrics.enabled=true")
                    .run(context -> {
                        assertThat(context).hasSingleBean(MeterRegistry.class);
-                       assertThat(context).hasSingleBean(MetricsConfigurationEnhancer.class);
+                       assertThat(context).hasSingleBean(MicrometerMetricsConfiguration.class);
                    });
     }
 
@@ -64,7 +64,7 @@ class MicrometerMetricsAutoConfigurationTest {
         // Deliberately not included "axon.metrics.enabled=true" per test!
         testContext.run(context -> {
             assertThat(context).hasSingleBean(MeterRegistry.class);
-            assertThat(context).hasSingleBean(MetricsConfigurationEnhancer.class);
+            assertThat(context).hasSingleBean(MicrometerMetricsConfiguration.class);
         });
     }
 
@@ -73,7 +73,7 @@ class MicrometerMetricsAutoConfigurationTest {
         testContext.withPropertyValues("axon.metrics.enabled=false")
                    .run(context -> {
                        assertThat(context).doesNotHaveBean(MeterRegistry.class);
-                       assertThat(context).doesNotHaveBean(MetricsConfigurationEnhancer.class);
+                       assertThat(context).doesNotHaveBean(MicrometerMetricsConfiguration.class);
                    });
     }
 
@@ -104,7 +104,8 @@ class MicrometerMetricsAutoConfigurationTest {
                                           assertThat(context).hasSingleBean(MeterRegistry.class);
                                           assertThat(context.getBean(MeterRegistry.class))
                                                   .isSameAs(UserMeterRegistryContext.USER_METER_REGISTRY);
-                                          assertThat(context).hasSingleBean(MetricsConfigurationEnhancer.class);
+                                          assertThat(context.getBean(MicrometerMetricsConfiguration.class).registry())
+                                                  .isSameAs(UserMeterRegistryContext.USER_METER_REGISTRY);
                                       });
     }
 
