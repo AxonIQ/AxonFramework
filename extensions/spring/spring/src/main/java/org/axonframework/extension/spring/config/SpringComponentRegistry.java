@@ -141,7 +141,7 @@ public class SpringComponentRegistry implements
      * @return A new registry used for modules.
      */
     DefaultComponentRegistry copyWithDecoratorsAndEnhancers() {
-        return create(this.decorators, this.enhancers.values(), this.disabledEnhancers);
+        return create(this.decorators, this.enhancers, this.disabledEnhancers);
     }
 
     /**
