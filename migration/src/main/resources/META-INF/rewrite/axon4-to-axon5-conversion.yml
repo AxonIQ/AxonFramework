@@ -34,6 +34,7 @@ recipeList:
   # imports only it used, before the package rename, while the Axon Framework 4
   # types still resolve, so the rename does not import types that do not exist.
   - org.axonframework.migration.CommentOutSerializerConfiguration
+  - org.axonframework.migration.FlagSerializerBeans
   - org.openrewrite.java.ChangePackage:
       oldPackageName: org.axonframework.serialization
       newPackageName: org.axonframework.conversion

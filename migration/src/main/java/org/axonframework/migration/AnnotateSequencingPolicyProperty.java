@@ -28,30 +28,30 @@ import org.openrewrite.yaml.tree.Yaml;
 import java.util.regex.Pattern;
 
 /**
- * Spring-Boot-only advisory recipe for the AF4 → AF5 sequencing-policy migration.
+ * Spring-Boot-only advisory recipe for the AF4 to AF5 sequencing-policy migration.
  * <p>
  * In AF4, sequencing for an event-processing group was configured via the Spring property
- * {@code axon.eventhandling.processors.<group>.sequencing-policy}. AF5 moves that decision
- * onto the event handler class itself, via {@code @SequencingPolicy(...)} from
- * {@code org.axonframework.messaging.core.annotation}. The property therefore becomes
- * obsolete — but the per-construct migration skill drives the source-side annotation move,
- * so deleting the property mechanically here would race the skill (and risk silently
- * dropping configuration before the handler class catches up).
+ * {@code axon.eventhandling.processors.<group>.sequencing-policy}. In AF5, that property still
+ * configures a processor-wide {@code SequencingPolicy}, but only for pooled streaming event
+ * processors. It has no effect on subscribing event processors, which need
+ * {@code @SequencingPolicy(...)} from {@code org.axonframework.messaging.core.annotation} on the
+ * event handler class instead.
  * <p>
- * Instead, this recipe inserts an advisory comment immediately above any matching property
- * entry in {@code application.properties} / {@code application.yml} (including
- * profile-specific files via the standard recipe-tooling glob). The comment surfaces the
- * obsolescence to the developer (and to the LLM-driven skill that runs next) without
- * touching the value. The recipe is idempotent — it skips entries whose preceding comment
+ * This recipe inserts an advisory comment immediately above any matching property entry in
+ * {@code application.properties} / {@code application.yml} (including profile-specific files via
+ * the standard recipe-tooling glob). The comment states the pooled streaming restriction and
+ * surfaces the entry to the developer (and to the LLM-driven skill that runs next) without
+ * touching the value. The recipe is idempotent: it skips entries whose preceding comment
  * already carries the marker.
  *
  * @author Mateusz Nowak
  * @since 5.1.1
  */
-public class AnnotateObsoleteSequencingPolicyProperty extends Recipe {
+public class AnnotateSequencingPolicyProperty extends Recipe {
 
-    private static final String COMMENT_MARKER = "TODO(axon4to5): move sequencing-policy to @SequencingPolicy on the handler class";
-    private static final String COMMENT_LINE = "# " + COMMENT_MARKER + "; this property has no AF5 equivalent.";
+    private static final String COMMENT_MARKER = "TODO(axon4to5): sequencing-policy only applies to pooled streaming processors";
+    private static final String COMMENT_MESSAGE = COMMENT_MARKER + "; use @SequencingPolicy on the handler class for others.";
+    private static final String COMMENT_LINE = "# " + COMMENT_MESSAGE;
 
     private static final Pattern PROPERTIES_KEY_PATTERN = Pattern.compile(
             "^axon\\.eventhandling\\.processors\\.[^.]+\\.sequencing-policy$"
@@ -59,17 +59,16 @@ public class AnnotateObsoleteSequencingPolicyProperty extends Recipe {
 
     @Override
     public String getDisplayName() {
-        return "Annotate obsolete `axon.eventhandling.processors.<group>.sequencing-policy` properties";
+        return "Annotate `axon.eventhandling.processors.<group>.sequencing-policy` properties";
     }
 
     @Override
     public String getDescription() {
         return "Inserts a one-line `# TODO(axon4to5): ...` comment above any "
                 + "`axon.eventhandling.processors.<group>.sequencing-policy` entry in "
-                + "`application.properties` / `application.yml`. AF5 moves the decision onto the "
-                + "handler class via `@SequencingPolicy`; deleting the property here would race the "
-                + "per-construct skill that drives the source-side annotation, so this recipe only "
-                + "annotates. Idempotent.";
+                + "`application.properties` / `application.yml`. AF5 applies the property to pooled "
+                + "streaming event processors only; other processors need `@SequencingPolicy` on the "
+                + "handler class. The recipe never changes the value, so it only annotates. Idempotent.";
     }
 
     @Override
@@ -126,14 +125,14 @@ public class AnnotateObsoleteSequencingPolicyProperty extends Recipe {
 
         private Properties.Comment buildMarkerComment(String entryPrefix) {
             // The new comment node steals the entry's leading newline+indent so it lands on its own
-            // line. The entry then keeps its original prefix — the comment node's trailing newline
+            // line. The entry then keeps its original prefix - the comment node's trailing newline
             // (which is implicit in Properties LST printing) brings us back to the entry's column.
             return new Properties.Comment(
                     org.openrewrite.Tree.randomId(),
                     entryPrefix,
                     org.openrewrite.marker.Markers.EMPTY,
                     Properties.Comment.Delimiter.HASH_TAG,
-                    " " + COMMENT_MARKER + "; this property has no AF5 equivalent."
+                    " " + COMMENT_MESSAGE
             );
         }
     }
@@ -156,7 +155,7 @@ public class AnnotateObsoleteSequencingPolicyProperty extends Recipe {
 
         /**
          * Walks the cursor parents to confirm the entry is nested under
-         * {@code axon → eventhandling → processors → <any group>}. Each YAML mapping
+         * {@code axon -> eventhandling -> processors -> <any group>}. Each YAML mapping
          * entry's parent is the {@link Yaml.Mapping}; the mapping's parent is the
          * containing {@link Yaml.Mapping.Entry}. The first parent entry is the
          * {@code <group>} name (anything); the remaining three must match exactly.
@@ -169,7 +168,7 @@ public class AnnotateObsoleteSequencingPolicyProperty extends Recipe {
                 if (c.getValue() instanceof Yaml.Mapping.Entry) {
                     Yaml.Mapping.Entry me = c.getValue();
                     if (parentEntriesSeen == 0) {
-                        // <group> placeholder — any key.
+                        // <group> placeholder - any key.
                     } else {
                         int idx = parentEntriesSeen - 1;
                         if (idx >= expectedAfterGroup.length

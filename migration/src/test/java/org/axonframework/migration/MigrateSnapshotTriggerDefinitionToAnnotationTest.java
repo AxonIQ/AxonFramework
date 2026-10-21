@@ -39,7 +39,7 @@ class MigrateSnapshotTriggerDefinitionToAnnotationTest implements RewriteTest {
     }
 
     // -------------------------------------------------------------------------
-    // EventCountSnapshotTriggerDefinition → @Snapshotting(afterEvents = N)
+    // EventCountSnapshotTriggerDefinition -> @Snapshotting(afterEvents = N)
     // -------------------------------------------------------------------------
 
     @Nested
@@ -235,7 +235,7 @@ class MigrateSnapshotTriggerDefinitionToAnnotationTest implements RewriteTest {
         @Test
         void removesAf5SnapshotterImportWhenEventsourcingRecipeRanFirst() {
             // When axon4-to-axon5-eventsourcing.yml runs before this recipe, it renames
-            // org.axonframework.eventsourcing.Snapshotter →
+            // org.axonframework.eventsourcing.Snapshotter ->
             // org.axonframework.eventsourcing.snapshot.api.Snapshotter.
             // The bean method must still be removed and that renamed import must be cleaned up.
             rewriteRun(
@@ -301,7 +301,7 @@ class MigrateSnapshotTriggerDefinitionToAnnotationTest implements RewriteTest {
     }
 
     // -------------------------------------------------------------------------
-    // AggregateLoadTimeSnapshotTriggerDefinition → @Snapshotting(afterSourcingTime)
+    // AggregateLoadTimeSnapshotTriggerDefinition -> @Snapshotting(afterSourcingTime)
     // -------------------------------------------------------------------------
 
     @Nested
@@ -397,7 +397,7 @@ class MigrateSnapshotTriggerDefinitionToAnnotationTest implements RewriteTest {
     }
 
     // -------------------------------------------------------------------------
-    // Custom SnapshotTriggerDefinition → TODO comment
+    // Custom SnapshotTriggerDefinition -> TODO comment
     // -------------------------------------------------------------------------
 
     @Nested
@@ -440,7 +440,7 @@ class MigrateSnapshotTriggerDefinitionToAnnotationTest implements RewriteTest {
 
                             @Configuration
                             class MyConfig {
-                                // TODO(axon4to5): Custom SnapshotTriggerDefinition bean "customTrigger" — remove this bean manually.
+                                // TODO(axon4to5): Custom SnapshotTriggerDefinition bean "customTrigger". Remove this bean manually.
                                 @Bean
                                 SnapshotTriggerDefinition customTrigger() {
                                     return new CustomSnapshotTriggerDefinition();
@@ -453,7 +453,7 @@ class MigrateSnapshotTriggerDefinitionToAnnotationTest implements RewriteTest {
 
         @Test
         void addsTodoCommentWhenBeanNotFoundInAccumulator() {
-            // The aggregate references a bean name that no @Bean method provides —
+            // The aggregate references a bean name that no @Bean method provides -
             // the recipe must still remove the attribute and add a TODO comment.
             rewriteRun(
                     java(

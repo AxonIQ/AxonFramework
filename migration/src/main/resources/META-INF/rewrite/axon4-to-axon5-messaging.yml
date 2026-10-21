@@ -122,7 +122,7 @@ recipeList:
       oldFullyQualifiedTypeName: org.axonframework.messaging.queryhandling.QueryGateway
       newFullyQualifiedTypeName: org.axonframework.messaging.queryhandling.gateway.QueryGateway
 
-  # ── Unwrap ResponseTypes wrappers on AF5-shape `query(payload, ResponseType)` calls ─
+  # ── Unwrap ResponseTypes on `query(payload, ResponseType)` calls, flag `subscriptionQuery(...)` ─
   # AF5 dropped the `ResponseType` SPI; the gateway accepts `Class<R>` directly and
   # exposes `queryMany(...)` for multi-response queries. The recipe is deliberately
   # narrow: it only fires on the two-argument typed-payload form, so 3-argument

@@ -30,6 +30,7 @@ import org.axonframework.messaging.core.MessageHandlerInterceptor;
 import org.axonframework.messaging.core.MessageHandlerInterceptorChain;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.SubscribableEventSource;
+import org.axonframework.messaging.core.sequencing.SequencingPolicy;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.AsyncInMemoryStreamableEventSource;
 import org.axonframework.messaging.eventhandling.EventMessage;
@@ -68,6 +69,7 @@ import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BiFunction;
@@ -202,6 +204,91 @@ class EventProcessorPropertiesAndDefinitionInteractionIT {
         }
     }
 
+    @org.springframework.context.annotation.Configuration
+    public static class SequencingPolicyPropertyContext {
+
+        @Bean
+        public AsyncInMemoryStreamableEventSource sequencingPolicySource() {
+            return new AsyncInMemoryStreamableEventSource();
+        }
+
+        @Bean
+        public RecordingEventHandler recordingEventHandler() {
+            return new RecordingEventHandler();
+        }
+
+        @Bean
+        public SequencingPolicy<EventMessage> mySequencingPolicy() {
+            return (event, context) -> Optional.of("stub-sequence-id");
+        }
+
+        @Bean
+        public EventProcessorDefinition sequencingPolicyProcessorDefinition() {
+            return EventProcessorDefinition.pooledStreaming("sequencing-policy-processor")
+                                           .assigningHandlers(p -> p.beanType().equals(RecordingEventHandler.class))
+                                           .notCustomized();
+        }
+    }
+
+    @org.springframework.context.annotation.Configuration
+    public static class DefinitionSuppliedSequencingPolicyContext {
+
+        static final SequencingPolicy<EventMessage> DEFINITION_SUPPLIED_POLICY =
+                (event, context) -> Optional.of("definition-sequence-id");
+
+        @Bean
+        public AsyncInMemoryStreamableEventSource definitionSequencingPolicySource() {
+            return new AsyncInMemoryStreamableEventSource();
+        }
+
+        @Bean
+        public RecordingEventHandler recordingEventHandler() {
+            return new RecordingEventHandler();
+        }
+
+        @Bean
+        public EventProcessorDefinition definitionSequencingPolicyProcessorDefinition(
+                AsyncInMemoryStreamableEventSource definitionSequencingPolicySource
+        ) {
+            return EventProcessorDefinition.pooledStreaming("definition-sequencing-policy-processor")
+                                           .assigningHandlers(p -> p.beanType().equals(RecordingEventHandler.class))
+                                           .customized(c -> c.eventSource(definitionSequencingPolicySource)
+                                                             .sequencingPolicy(DEFINITION_SUPPLIED_POLICY));
+        }
+    }
+
+    @org.springframework.context.annotation.Configuration
+    public static class PropertyAndDefinitionSequencingPolicyContext {
+
+        @Bean
+        public AsyncInMemoryStreamableEventSource bothSequencingPolicySource() {
+            return new AsyncInMemoryStreamableEventSource();
+        }
+
+        @Bean
+        public RecordingEventHandler recordingEventHandler() {
+            return new RecordingEventHandler();
+        }
+
+        @Bean
+        public SequencingPolicy<EventMessage> propertyNamedSequencingPolicy() {
+            return (event, context) -> Optional.of("property-sequence-id");
+        }
+
+        @Bean
+        public EventProcessorDefinition bothSequencingPolicyProcessorDefinition(
+                AsyncInMemoryStreamableEventSource bothSequencingPolicySource
+        ) {
+            return EventProcessorDefinition.pooledStreaming("both-sequencing-policy-processor")
+                                           .assigningHandlers(p -> p.beanType().equals(RecordingEventHandler.class))
+                                           .customized(c -> c.eventSource(bothSequencingPolicySource)
+                                                             .sequencingPolicy(
+                                                                     DefinitionSuppliedSequencingPolicyContext
+                                                                             .DEFINITION_SUPPLIED_POLICY
+                                                             ));
+        }
+    }
+
     /**
      * A source that, unlike the {@link SimpleEventBus}, only implements {@link SubscribableEventSource}, like a
      * persistent stream backed source does. This keeps type-level lookups of other components, like the
@@ -317,6 +404,14 @@ class EventProcessorPropertiesAndDefinitionInteractionIT {
                             "Could not find a mandatory TokenStore with name 'nonExisting1' "
                                     + "for event processor '" + KEY1 + "'.",
                             57893
+                    ),
+                    Arguments.of(
+                            Map.of(
+                                    "axon.eventhandling.processors[" + KEY1 + "].sequencingPolicy", "nonExisting1"
+                            ),
+                            "Could not find a mandatory SequencingPolicy with name 'nonExisting1' "
+                                    + "for event processor '" + KEY1 + "'.",
+                            57894
                     )
             );
         }
@@ -575,6 +670,96 @@ class EventProcessorPropertiesAndDefinitionInteractionIT {
             await().atMost(Duration.ofSeconds(5))
                    .untilAsserted(() -> assertThat(recordingEventHandler.handledEvents())
                            .contains("definition-sourced-pooled-event"));
+        }
+    }
+
+    @Nested
+    @SpringBootTest(
+            classes = {LeanPooledDefinitionContext.class, SequencingPolicyPropertyContext.class},
+            properties = {
+                    "axon.eventstorage.jpa.polling-interval=0",
+                    // explicit source needed: with autoconfiguration active, the event store is also a
+                    // StreamableEventSource candidate, so no unique type-level default can be resolved
+                    "axon.eventhandling.processors[sequencing-policy-processor].source=sequencingPolicySource",
+                    "axon.eventhandling.processors[sequencing-policy-processor].sequencing-policy=mySequencingPolicy"
+            },
+            webEnvironment = SpringBootTest.WebEnvironment.NONE
+    )
+    class SequencingPolicyPropertyAppliedTest {
+
+        @Autowired
+        private ApplicationContext context;
+
+        @Autowired
+        private SequencingPolicy<EventMessage> mySequencingPolicy;
+
+        @Test
+        void processorConfigurationUsesTheNamedSequencingPolicyBean() {
+            AxonConfiguration axonApplication = context.getBean(AxonConfiguration.class);
+            Configuration processorConfig = axonApplication.getModuleConfiguration(
+                    "EventProcessor[sequencing-policy-processor]").orElseThrow();
+            assertThat(processorConfig.getOptionalComponent(PooledStreamingEventProcessorConfiguration.class))
+                    .hasValueSatisfying(
+                            config -> assertThat(config.sequencingPolicy()).isSameAs(mySequencingPolicy)
+                    );
+        }
+    }
+
+    @Nested
+    @SpringBootTest(
+            classes = {LeanPooledDefinitionContext.class, DefinitionSuppliedSequencingPolicyContext.class},
+            properties = {
+                    "axon.eventstorage.jpa.polling-interval=0"
+            },
+            webEnvironment = SpringBootTest.WebEnvironment.NONE
+    )
+    class DefinitionSuppliedSequencingPolicyTest {
+
+        @Autowired
+        private ApplicationContext context;
+
+        @Test
+        void processorUsesTheDefinitionSuppliedSequencingPolicy() {
+            // given - no sequencing-policy property is set for this processor, only the EventProcessorDefinition's
+            // customized(config -> config.sequencingPolicy(...)) call supplies it
+            AxonConfiguration axonApplication = context.getBean(AxonConfiguration.class);
+            Configuration processorConfig = axonApplication.getModuleConfiguration(
+                    "EventProcessor[definition-sequencing-policy-processor]").orElseThrow();
+            assertThat(processorConfig.getOptionalComponent(PooledStreamingEventProcessorConfiguration.class))
+                    .hasValueSatisfying(
+                            config -> assertThat(config.sequencingPolicy())
+                                    .isSameAs(DefinitionSuppliedSequencingPolicyContext.DEFINITION_SUPPLIED_POLICY)
+                    );
+        }
+    }
+
+    @Nested
+    @SpringBootTest(
+            classes = {LeanPooledDefinitionContext.class, PropertyAndDefinitionSequencingPolicyContext.class},
+            properties = {
+                    "axon.eventstorage.jpa.polling-interval=0",
+                    "axon.eventhandling.processors[both-sequencing-policy-processor].sequencing-policy="
+                            + "propertyNamedSequencingPolicy"
+            },
+            webEnvironment = SpringBootTest.WebEnvironment.NONE
+    )
+    class PropertyAndDefinitionSuppliedSequencingPolicyTest {
+
+        @Autowired
+        private ApplicationContext context;
+
+        @Test
+        void definitionSuppliedSequencingPolicyTakesPrecedenceOverTheProperty() {
+            // given - both the sequencing-policy property and the EventProcessorDefinition's
+            // customized(config -> config.sequencingPolicy(...)) call supply a policy
+            AxonConfiguration axonApplication = context.getBean(AxonConfiguration.class);
+            Configuration processorConfig = axonApplication.getModuleConfiguration(
+                    "EventProcessor[both-sequencing-policy-processor]").orElseThrow();
+            assertThat(processorConfig.getOptionalComponent(PooledStreamingEventProcessorConfiguration.class))
+                    .hasValueSatisfying(
+                            config -> assertThat(config.sequencingPolicy())
+                                    .isSameAs(DefinitionSuppliedSequencingPolicyContext.DEFINITION_SUPPLIED_POLICY)
+                    );
         }
     }
 
