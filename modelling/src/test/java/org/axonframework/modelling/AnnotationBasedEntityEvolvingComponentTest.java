@@ -39,6 +39,7 @@ import org.axonframework.messaging.eventhandling.conversion.EventConverter;
 import org.axonframework.modelling.annotation.AnnotationBasedEntityEvolvingComponent;
 import org.axonframework.modelling.otherpackage.PackagePrivateHandlerWallet;
 import org.axonframework.modelling.otherpackage.ProtectedHandlerWallet;
+import org.axonframework.modelling.otherpackage.PublicOverrideWallet;
 import org.junit.jupiter.api.*;
 
 import java.time.Clock;
@@ -1381,6 +1382,37 @@ class AnnotationBasedEntityEvolvingComponentTest {
             }
         }
 
+        static class GenericBase<T> {
+
+            int balance;
+            final List<String> ran = new ArrayList<>();
+
+            @EventHandler(payloadType = Deposited.class)
+            void on(T event) {
+                ran.add("GenericBase.on");
+                balance += 2;
+            }
+        }
+
+        static class GenericChild extends GenericBase<Deposited> {
+
+            @EventHandler
+            void on(Deposited event) {
+                ran.add("GenericChild.on");
+                balance += event.amount();
+            }
+
+            @EventHandler
+            void on(Withdrawn event) {
+                ran.add("GenericChild.onWithdrawn");
+                balance -= event.amount();
+            }
+        }
+
+        private record Withdrawn(int amount) {
+
+        }
+
         static class StaticParent {
 
             @EventHandler
@@ -1528,6 +1560,32 @@ class AnnotationBasedEntityEvolvingComponentTest {
         }
 
         @Test
+        void overrideOfGenericParentHandlerReachedThroughBridgeMethodRunsOnce() {
+            // given
+            var child = new GenericChild();
+
+            // when
+            var result = evolve(GenericChild.class, child, new Deposited(10));
+
+            // then
+            assertThat(result.ran).containsExactly("GenericChild.on");
+            assertThat(result.balance).isEqualTo(10);
+        }
+
+        @Test
+        void overloadedHandlerOfGenericChildStillHandlesItsOwnEventOnce() {
+            // given
+            var child = new GenericChild();
+
+            // when
+            var result = evolve(GenericChild.class, child, new Withdrawn(4));
+
+            // then
+            assertThat(result.ran).containsExactly("GenericChild.onWithdrawn");
+            assertThat(result.balance).isEqualTo(-4);
+        }
+
+        @Test
         void staticHandlersHideInsteadOfOverrideSoBothRun() {
             // given
             var child = new StaticChild();
@@ -1538,41 +1596,135 @@ class AnnotationBasedEntityEvolvingComponentTest {
             // then
             assertThat(staticTrace).containsExactlyInAnyOrder("StaticParent.on", "StaticChild.on");
         }
-    }
 
-    private record Deposited(int amount) {
+        static class WalletOverridingAcrossPackages extends PublicOverrideWallet {
 
-    }
+            @Override
+            @EventHandler
+            public void onDeposit(PackagePrivateHandlerWallet.Deposited event) {
+                ran.add("WalletOverridingAcrossPackages.onDeposit");
+                balance += event.amount();
+            }
+        }
 
-    private record CourseCreated(String name) {
+        @Test
+        void overrideOfPackagePrivateHandlerThroughPublicOverrideInAnotherPackageRunsOnce() {
+            // given
+            var wallet = new WalletOverridingAcrossPackages();
 
-    }
+            // when
+            var result = evolve(WalletOverridingAcrossPackages.class,
+                                wallet,
+                                new PackagePrivateHandlerWallet.Deposited(10));
 
-    private static <E> E evolve(Class<E> type, E entity, Object payload) {
-        var evolver = new AnnotationBasedEntityEvolvingComponent<>(
-                type,
-                converter,
-                messageTypeResolver,
-                ClasspathParameterResolverFactory.forClass(type),
-                ClasspathHandlerDefinition.forClass(type)
-        );
-        var event = payload instanceof EventMessage message ? message : asEventMessage(payload);
-        return evolver.evolve(entity, event, StubProcessingContext.forMessage(event));
-    }
+            // then
+            assertThat(result.ran).containsExactly("WalletOverridingAcrossPackages.onDeposit");
+            assertThat(result.balance).isEqualTo(10);
+        }
 
-    private static <E> E evolve(Class<E> type, Set<Class<? extends E>> concreteTypes, E entity, Object payload) {
-        var evolver = new AnnotationBasedEntityEvolvingComponent<>(
-                type,
-                inspectType(type,
-                            messageTypeResolver,
-                            ClasspathParameterResolverFactory.forClass(type),
-                            ClasspathHandlerDefinition.forClass(type),
-                            concreteTypes),
-                converter,
-                messageTypeResolver
-        );
-        var event = payload instanceof EventMessage message ? message : asEventMessage(payload);
-        return evolver.evolve(entity, event, StubProcessingContext.forMessage(event));
+        record Envelope<T>(T content) {
+
+        }
+
+        static class EnvelopeBase<T> {
+
+            final List<String> ran = new ArrayList<>();
+
+            @EventHandler(eventName = "envelope")
+            void on(T event) {
+                ran.add("EnvelopeBase.on");
+            }
+        }
+
+        static class EnvelopeChild extends EnvelopeBase<Envelope<String>> {
+
+            @Override
+            @EventHandler(eventName = "envelope")
+            void on(Envelope<String> event) {
+                ran.add("EnvelopeChild.on");
+            }
+        }
+
+        @Test
+        void overrideOfGenericParentHandlerWithParameterizedTypeArgumentRunsOnce() {
+            // given
+            var child = new EnvelopeChild();
+            var event = new GenericEventMessage(new MessageType("envelope"), new Envelope<>("content"));
+
+            // when
+            var result = evolve(EnvelopeChild.class, child, event);
+
+            // then
+            assertThat(result.ran).containsExactly("EnvelopeChild.on");
+        }
+
+        static class BoundedBase<T> {
+
+            final List<String> ran = new ArrayList<>();
+
+            @EventHandler(eventName = "deposited")
+            void on(T event) {
+                ran.add("BoundedBase.on");
+            }
+        }
+
+        static class BoundedMid<U extends Deposited> extends BoundedBase<U> {
+
+            @Override
+            @EventHandler(eventName = "deposited")
+            void on(U event) {
+                ran.add("BoundedMid.on");
+            }
+        }
+
+        static class BoundedChild extends BoundedMid<Deposited> {
+
+        }
+
+        @Test
+        void overrideOfGenericParentHandlerThroughTypeVariableOfIntermediateClassRunsOnce() {
+            // given
+            var child = new BoundedChild();
+            var event = new GenericEventMessage(new MessageType("deposited"), new Deposited(10));
+
+            // when
+            var result = evolve(BoundedChild.class, child, event);
+
+            // then
+            assertThat(result.ran).containsExactly("BoundedMid.on");
+        }
+
+        static class ArrayBase<T> {
+
+            final List<String> ran = new ArrayList<>();
+
+            @EventHandler(eventName = "deposits")
+            void on(T[] events) {
+                ran.add("ArrayBase.on");
+            }
+        }
+
+        static class ArrayChild extends ArrayBase<Deposited> {
+
+            @Override
+            @EventHandler(eventName = "deposits")
+            void on(Deposited[] events) {
+                ran.add("ArrayChild.on");
+            }
+        }
+
+        @Test
+        void overrideOfGenericParentHandlerWithGenericArrayParameterRunsOnce() {
+            // given
+            var child = new ArrayChild();
+            var event = new GenericEventMessage(new MessageType("deposits"), new Deposited[]{new Deposited(10)});
+
+            // when
+            var result = evolve(ArrayChild.class, child, event);
+
+            // then
+            assertThat(result.ran).containsExactly("ArrayChild.on");
+        }
     }
 
     @Nested
@@ -1660,5 +1812,40 @@ class AnnotationBasedEntityEvolvingComponentTest {
             assertThat(result.balance).isEqualTo(10);
             assertThat(((KnownSavings) result).interest).isEqualTo(3);
         }
+    }
+
+    private record Deposited(int amount) {
+
+    }
+
+    private record CourseCreated(String name) {
+
+    }
+
+    private static <E> E evolve(Class<E> type, E entity, Object payload) {
+        var evolver = new AnnotationBasedEntityEvolvingComponent<>(
+                type,
+                converter,
+                messageTypeResolver,
+                ClasspathParameterResolverFactory.forClass(type),
+                ClasspathHandlerDefinition.forClass(type)
+        );
+        var event = payload instanceof EventMessage message ? message : asEventMessage(payload);
+        return evolver.evolve(entity, event, StubProcessingContext.forMessage(event));
+    }
+
+    private static <E> E evolve(Class<E> type, Set<Class<? extends E>> concreteTypes, E entity, Object payload) {
+        var evolver = new AnnotationBasedEntityEvolvingComponent<>(
+                type,
+                inspectType(type,
+                            messageTypeResolver,
+                            ClasspathParameterResolverFactory.forClass(type),
+                            ClasspathHandlerDefinition.forClass(type),
+                            concreteTypes),
+                converter,
+                messageTypeResolver
+        );
+        var event = payload instanceof EventMessage message ? message : asEventMessage(payload);
+        return evolver.evolve(entity, event, StubProcessingContext.forMessage(event));
     }
 }
