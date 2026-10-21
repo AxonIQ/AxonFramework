@@ -219,12 +219,16 @@ public class SpringComponentRegistry implements
     @Override
     public ComponentRegistry registerEnhancer(ConfigurationEnhancer enhancer) {
         logger.debug("Registering enhancer [{}].", enhancer.getClass().getSimpleName());
-        ConfigurationEnhancer previous = this.enhancers.put(enhancer.getClass().getName(), enhancer);
+        doRegisterEnhancer(enhancer.getClass().getName(), enhancer);
+        return this;
+    }
+
+    private void doRegisterEnhancer(String name, ConfigurationEnhancer enhancer) {
+        ConfigurationEnhancer previous = this.enhancers.put(name, enhancer);
         if (previous != null && logger.isTraceEnabled()) {
             logger.trace("Duplicate Configuration Enhancer registration detected. Replaced enhancer of type [{}].",
                          enhancer.getClass().getSimpleName());
         }
-        return this;
     }
 
     @Override
@@ -541,11 +545,10 @@ public class SpringComponentRegistry implements
      * dynamically.
      */
     private void invokeEnhancers() {
-        // last-minute registration of enhancers from Spring context by enhancerName to mirror ServiceLoader scanning
         // Each enhancer bean is retrieved by name: getBeansOfType silently skips a bean whose creation fails on a bean
         // that is currently in creation, which would leave that enhancer out without notice.
         for (String enhancerName : listableBeanFactory.getBeanNamesForType(ConfigurationEnhancer.class)) {
-            registerEnhancer(listableBeanFactory.getBean(enhancerName, ConfigurationEnhancer.class));
+            doRegisterEnhancer(enhancerName, listableBeanFactory.getBean(enhancerName, ConfigurationEnhancer.class));
         }
         Set<String> processedEnhancerKeys = new HashSet<>();
 

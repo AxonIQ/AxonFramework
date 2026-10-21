@@ -89,7 +89,30 @@ class SpringComponentRegistryInitializationTest {
     }
 
     @Test
-    void enhancerBeanReplacesServiceLoadedEnhancerOfTheSameType() {
+    void enhancerBeanNamedAfterItsClassReplacesServiceLoadedEnhancer() {
+        // given
+        DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory();
+        SpringLifecycleRegistry lifecycleRegistry = new SpringLifecycleRegistry();
+        lifecycleRegistry.setBeanFactory(beanFactory);
+        // MessagingConfigurationDefaults is also registered through the ServiceLoader
+        beanFactory.registerBeanDefinition(
+                MessagingConfigurationDefaults.class.getName(),
+                BeanDefinitionBuilder.rootBeanDefinition(MessagingConfigurationDefaults.class).getBeanDefinition()
+        );
+        beanFactory.registerBeanDefinition("applicationBean", new RootBeanDefinition(Object.class));
+
+        SpringComponentRegistry testSubject = new SpringComponentRegistry(beanFactory, lifecycleRegistry);
+        testSubject.postProcessBeanFactory(beanFactory);
+
+        // when
+        testSubject.postProcessAfterInitialization(new Object(), "applicationBean");
+
+        // then
+        assertThatCode(testSubject::copyWithDecoratorsAndEnhancers).doesNotThrowAnyException();
+    }
+
+    @Test
+    void enhancerBeanWithCustomNameOfServiceLoadedTypeSurvivesCopy() {
         // given
         DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory();
         SpringLifecycleRegistry lifecycleRegistry = new SpringLifecycleRegistry();
