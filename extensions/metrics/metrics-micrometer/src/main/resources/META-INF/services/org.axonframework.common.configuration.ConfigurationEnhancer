@@ -14,3 +14,4 @@
 # limitations under the License.
 #
 org.axonframework.extension.metrics.micrometer.MetricsConfigurationEnhancer
+org.axonframework.extension.metrics.micrometer.MicrometerMetricsConfigurationEnhancer
