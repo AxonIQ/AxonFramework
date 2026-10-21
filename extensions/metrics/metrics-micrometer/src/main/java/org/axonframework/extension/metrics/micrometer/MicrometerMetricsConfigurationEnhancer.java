@@ -24,7 +24,7 @@ import org.axonframework.common.configuration.SearchScope;
  * A {@link ConfigurationEnhancer} registering the default {@link MicrometerMetricsConfiguration}
  *
  * @author Steven van Beelen
- * @since 5.5.0
+ * @since 5.4.1
  */
 public class MicrometerMetricsConfigurationEnhancer implements ConfigurationEnhancer {
 

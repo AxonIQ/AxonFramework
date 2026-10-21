@@ -31,7 +31,7 @@ import java.util.Objects;
  * @param registry      the {@link MeterRegistry} which will record the metrics
  * @param useDimensions when {@code true}, {@link Tag tags} are added to measurements
  * @author Steven van Beelen
- * @since 5.5.0
+ * @since 5.4.1
  */
 public record MicrometerMetricsConfiguration(
         MeterRegistry registry,
