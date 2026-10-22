@@ -59,7 +59,8 @@ class JpaAutoConfigurationTest {
     void setUp() {
         testContext = new ApplicationContextRunner()
                 .withUserConfiguration(TestContext.class)
-                .withPropertyValues("axon.eventstorage.jpa.polling-interval=0");
+                .withPropertyValues("axon.eventstorage.jpa.polling-interval=0",
+                                    "axon.transaction.allow-non-transactional-connection-provider=true");
     }
 
     @Test
