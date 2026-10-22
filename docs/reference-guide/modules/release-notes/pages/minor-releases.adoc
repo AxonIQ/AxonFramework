@@ -3,6 +3,34 @@
 
 Any patch release made for an Axon project is tailored towards resolving bugs. This page aims to provide a dedicated overview of patch releases per project.
 
+[#release_5_4]
+== Release 5.4
+
+=== Release 5.4.1
+
+==== Enhancements
+
+* Migration Path enhancements, OpenRewrite Script expansion, and default PSEP-wide `SequencingPolicy` https://github.com/AxonIQ/AxonFramework/pull/5194[#5194]
+* Name migrated aggregate deadline handlers after aggregate type and deadline https://github.com/AxonIQ/AxonFramework/pull/5190[#5190]
+
+==== Bug fixes
+
+* Fix window of opportunity for "Duplicate key for `ConfigurationEnhancer`" https://github.com/AxonIQ/AxonFramework/pull/5195[#5195]
+* [\#5169] Ensure consistent interceptor behavior for Polymorphic Entities https://github.com/AxonIQ/AxonFramework/pull/5189[#5189]
+* Make `OrEventCriteria#or` idempotent https://github.com/AxonIQ/AxonFramework/pull/5183[#5183]
+* Keep `ReplayToken` on both halves when splitting during a replay https://github.com/AxonIQ/AxonFramework/pull/5173[#5173]
+* OpenRewrite: close 4 legacy saga and deadline migration gaps https://github.com/AxonIQ/AxonFramework/pull/5166[#5166]
+* [\#5133] Resolve bean types from merged definitions in SpringComponentRegistry https://github.com/AxonIQ/AxonFramework/pull/5165[#5165]
+* Fail ambiguous component lookups instead of silently using the default https://github.com/AxonIQ/AxonFramework/pull/5163[#5163]
+* Resolve components registered under a subtype before using the default https://github.com/AxonIQ/AxonFramework/pull/5162[#5162]
+* [\#5155] Keep emitting subscription query updates under bounded demand https://github.com/AxonIQ/AxonFramework/pull/5158[#5158]
+
+==== Contributors
+
+Thank you to all the contributors who worked on this release:
+
+@CodeDrivenMitch, @hatzlj, @schananas, and @smcvb
+
 [#release_5_3]
 == Release 5.3
 
