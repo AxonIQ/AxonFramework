@@ -43,6 +43,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Collection;
 import java.util.Map;
+import java.util.OptionalInt;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Predicate;
@@ -239,6 +240,39 @@ class TracingQueryBusTest {
             // then
             spanFactory.verifySpanCompleted("QueryBus.emitUpdate");
             spanFactory.verifySpanHasType("QueryBus.emitUpdate", TestSpanType.INTERNAL);
+        }
+
+        @Test
+        void preservesTheDelegatesCountsForTheAndCountVariants() {
+            // given
+            testSubject = new TracingQueryBus(
+                    new SimpleQueryBus(new SimpleUnitOfWorkFactory(EmptyApplicationContext.INSTANCE)), spanFactory
+            );
+            testSubject.subscribe(query.type().qualifiedName(), (actualQuery, context) -> MessageStream.just(response));
+            MessageStream<QueryResponseMessage> first = testSubject.subscriptionQuery(query, null, 256);
+            MessageStream<QueryResponseMessage> second = testSubject.subscriptionQuery(
+                    new GenericQueryMessage(new MessageType("MyQuery"), "other-payload"), null, 256
+            );
+
+            // when
+            OptionalInt emitted = joinAndUnwrap(testSubject.emitUpdateAndCount(q -> true, () -> updateMessage(), null));
+            OptionalInt completedExceptionally = joinAndUnwrap(testSubject.completeSubscriptionsExceptionallyAndCount(
+                    q -> q.payload().equals("other-payload"), new IllegalStateException("boom"), null
+            ));
+            OptionalInt completed = joinAndUnwrap(
+                    testSubject.completeSubscriptionsAndCount(q -> q.payload().equals("the-payload"), null)
+            );
+
+            // then
+            assertThat(emitted).hasValue(2);
+            assertThat(completedExceptionally).hasValue(1);
+            assertThat(completed).hasValue(1);
+            spanFactory.verifySpanCompleted("QueryBus.emitUpdate");
+            spanFactory.verifySpanCompleted("QueryBus.completeSubscriptions");
+            spanFactory.verifySpanCompleted("QueryBus.completeSubscriptionsExceptionally");
+
+            first.close();
+            second.close();
         }
 
         @Test
