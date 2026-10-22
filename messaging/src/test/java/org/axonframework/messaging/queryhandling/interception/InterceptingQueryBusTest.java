@@ -44,6 +44,7 @@ import org.junit.jupiter.api.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalInt;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Predicate;
@@ -493,6 +494,42 @@ class InterceptingQueryBusTest {
             // then
             // Verify that emitUpdate works without interception
             assertDoesNotThrow(result::join);
+        }
+
+        @Test
+        void andCountVariantsReturnTheDelegatesCountsWithoutUpdateInterceptors() {
+            assertAndCountVariantsReturnTheDelegatesCounts(testSubject);
+        }
+
+        @Test
+        void andCountVariantsReturnTheDelegatesCountsWithUpdateInterceptors() {
+            MessageDispatchInterceptor<SubscriptionQueryUpdateMessage> updateInterceptor =
+                    (message, context, chain) -> chain.proceed(message, context);
+            assertAndCountVariantsReturnTheDelegatesCounts(
+                    new InterceptingQueryBus(delegateQueryBus, List.of(), List.of(), List.of(updateInterceptor))
+            );
+        }
+
+        private void assertAndCountVariantsReturnTheDelegatesCounts(InterceptingQueryBus subject) {
+            // given
+            subject.subscribeToUpdates(new GenericQueryMessage(TEST_QUERY_TYPE, "first"), 16);
+            subject.subscribeToUpdates(new GenericQueryMessage(TEST_QUERY_TYPE, "second"), 16);
+            GenericSubscriptionQueryUpdateMessage updateMessage =
+                    new GenericSubscriptionQueryUpdateMessage(TEST_RESPONSE_TYPE, "update");
+
+            // when
+            OptionalInt emitted = subject.emitUpdateAndCount(query -> true, () -> updateMessage, null).join();
+            OptionalInt completedExceptionally = subject.completeSubscriptionsExceptionallyAndCount(
+                    query -> query.payload().equals("first"), new MockException("boom"), null
+            ).join();
+            OptionalInt completed = subject.completeSubscriptionsAndCount(
+                    query -> query.payload().equals("second"), null
+            ).join();
+
+            // then
+            assertThat(emitted).hasValue(2);
+            assertThat(completedExceptionally).hasValue(1);
+            assertThat(completed).hasValue(1);
         }
 
         @Test
