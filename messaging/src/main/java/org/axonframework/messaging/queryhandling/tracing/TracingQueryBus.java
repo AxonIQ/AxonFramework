@@ -179,7 +179,9 @@ public final class TracingQueryBus implements QueryBus {
                                               Supplier<SubscriptionQueryUpdateMessage> updateSupplier,
                                               @Nullable ProcessingContext context) {
         Span span = spanFactory.createInternalSpan(EMIT_UPDATE_SPAN, context);
-        return span.branchAsync(context, scoped -> delegate.emitUpdate(filter, updateSupplier, scoped));
+        return span.branchAsync(
+                context, scoped -> delegate.emitUpdate(filter, propagating(span, updateSupplier), scoped)
+        );
     }
 
     @Override
@@ -187,7 +189,20 @@ public final class TracingQueryBus implements QueryBus {
                                                              Supplier<SubscriptionQueryUpdateMessage> updateSupplier,
                                                              @Nullable ProcessingContext context) {
         Span span = spanFactory.createInternalSpan(EMIT_UPDATE_SPAN, context);
-        return span.branchAsync(context, scoped -> delegate.emitUpdateAndCount(filter, updateSupplier, scoped));
+        return span.branchAsync(
+                context, scoped -> delegate.emitUpdateAndCount(filter, propagating(span, updateSupplier), scoped)
+        );
+    }
+
+    /**
+     * Propagates the emit span's context onto every supplied update. A delegate may defer the actual send (for example
+     * until the emitting {@link ProcessingContext} commits), after this span ended; the update's metadata then still
+     * lets the sending side parent on this span.
+     */
+    private static Supplier<SubscriptionQueryUpdateMessage> propagating(
+            Span span, Supplier<SubscriptionQueryUpdateMessage> updateSupplier
+    ) {
+        return () -> span.propagateContext(updateSupplier.get());
     }
 
     @Override
