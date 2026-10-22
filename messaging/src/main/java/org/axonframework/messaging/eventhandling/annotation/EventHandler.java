@@ -94,4 +94,14 @@ public @interface EventHandler {
      * @return The type of the event this method handles.
      */
     Class<?> payloadType() default Object.class;
+
+    /**
+     * The version range of the event this handler listens to.
+     * <p>
+     * Defaults to an empty string, meaning the handler accepts any version of the event.
+     * The string can define a specific version (e.g. {@code "1.0"}) or an inclusive range (e.g. {@code "1.0-2.0"}).
+     *
+     * @return The version range of the event expected by this handler.
+     */
+    String versionRange() default "";
 }
