@@ -32,6 +32,7 @@ import org.jspecify.annotations.Nullable;
 
 import java.util.Map;
 import java.util.Objects;
+import java.util.OptionalInt;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Predicate;
@@ -182,10 +183,25 @@ public final class TracingQueryBus implements QueryBus {
     }
 
     @Override
+    public CompletableFuture<OptionalInt> emitUpdateAndCount(Predicate<QueryMessage> filter,
+                                                             Supplier<SubscriptionQueryUpdateMessage> updateSupplier,
+                                                             @Nullable ProcessingContext context) {
+        Span span = spanFactory.createInternalSpan(EMIT_UPDATE_SPAN, context);
+        return span.branchAsync(context, scoped -> delegate.emitUpdateAndCount(filter, updateSupplier, scoped));
+    }
+
+    @Override
     public CompletableFuture<Void> completeSubscriptions(Predicate<QueryMessage> filter,
                                                          @Nullable ProcessingContext context) {
         Span span = spanFactory.createInternalSpan(COMPLETE_SUBSCRIPTIONS_SPAN, context);
         return span.branchAsync(context, scoped -> delegate.completeSubscriptions(filter, scoped));
+    }
+
+    @Override
+    public CompletableFuture<OptionalInt> completeSubscriptionsAndCount(Predicate<QueryMessage> filter,
+                                                                        @Nullable ProcessingContext context) {
+        Span span = spanFactory.createInternalSpan(COMPLETE_SUBSCRIPTIONS_SPAN, context);
+        return span.branchAsync(context, scoped -> delegate.completeSubscriptionsAndCount(filter, scoped));
     }
 
     @Override
@@ -195,6 +211,18 @@ public final class TracingQueryBus implements QueryBus {
         Span span = spanFactory.createInternalSpan(COMPLETE_SUBSCRIPTIONS_EXCEPTIONALLY_SPAN, context);
         return span.branchAsync(context,
                                 scoped -> delegate.completeSubscriptionsExceptionally(filter, cause, scoped));
+    }
+
+    @Override
+    public CompletableFuture<OptionalInt> completeSubscriptionsExceptionallyAndCount(
+            Predicate<QueryMessage> filter,
+            Throwable cause,
+            @Nullable ProcessingContext context
+    ) {
+        Span span = spanFactory.createInternalSpan(COMPLETE_SUBSCRIPTIONS_EXCEPTIONALLY_SPAN, context);
+        return span.branchAsync(
+                context, scoped -> delegate.completeSubscriptionsExceptionallyAndCount(filter, cause, scoped)
+        );
     }
 
     @Override
