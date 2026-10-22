@@ -243,6 +243,21 @@ class TracingQueryBusTest {
         }
 
         @Test
+        void propagatesEmitUpdateContextOntoUpdatesSuppliedAfterTheSpanEnded() {
+            // given
+            SubscriptionQueryUpdateMessage update = updateMessage();
+
+            // when
+            joinAndUnwrap(testSubject.emitUpdate(q -> true, () -> update, null));
+            // a deferring delegate (sending after commit) only invokes the supplier once the emit span has ended
+            spanFactory.verifySpanCompleted("QueryBus.emitUpdate");
+            delegate.emittedUpdateSupplier.get().get();
+
+            // then
+            spanFactory.verifySpanPropagated("QueryBus.emitUpdate", update);
+        }
+
+        @Test
         void preservesTheDelegatesCountsForTheAndCountVariants() {
             // given
             testSubject = new TracingQueryBus(
@@ -336,6 +351,8 @@ class TracingQueryBusTest {
         private final AtomicReference<QueryHandler> subscribedHandler = new AtomicReference<>();
         private MessageStream<QueryResponseMessage> queryResult = MessageStream.empty().cast();
         private MessageStream<QueryResponseMessage> subscriptionQueryResult = MessageStream.empty().cast();
+        private final AtomicReference<Supplier<SubscriptionQueryUpdateMessage>> emittedUpdateSupplier =
+                new AtomicReference<>();
         private CompletableFuture<Void> emitResult = CompletableFuture.completedFuture(null);
         private CompletableFuture<Void> completeResult = CompletableFuture.completedFuture(null);
         private CompletableFuture<Void> completeExceptionallyResult = CompletableFuture.completedFuture(null);
@@ -366,6 +383,7 @@ class TracingQueryBusTest {
         public CompletableFuture<Void> emitUpdate(@NonNull Predicate<QueryMessage> filter,
                                                   @NonNull Supplier<SubscriptionQueryUpdateMessage> updateSupplier,
                                                   @Nullable ProcessingContext context) {
+            emittedUpdateSupplier.set(updateSupplier);
             return emitResult;
         }
 
