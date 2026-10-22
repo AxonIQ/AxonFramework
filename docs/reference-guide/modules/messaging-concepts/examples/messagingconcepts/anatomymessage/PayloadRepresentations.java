@@ -17,6 +17,7 @@ package messagingconcepts.anatomymessage;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import java.util.Map;
+import org.axonframework.messaging.core.annotation.QualifiedName;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 
 class PayloadRepresentations {
@@ -29,13 +30,13 @@ class PayloadRepresentations {
     }
 
     // Handler 2: Receives as JSON (must specify messageType)
-    @EventHandler(eventName = "com.example.orders.OrderPlaced")
+    @EventHandler(event = @QualifiedName(namespace = "com.example.orders", name = "OrderPlaced"))
     public void handle(JsonNode event) {
         // Same message, converted to JsonNode
     }
 
     // Handler 3: Receives as Map (must specify messageType)
-    @EventHandler(eventName = "com.example.orders.OrderPlaced")
+    @EventHandler(event = @QualifiedName(namespace = "com.example.orders", name = "OrderPlaced"))
     public void handle(Map<String, Object> event) {
         // Same message, converted to Map
     }

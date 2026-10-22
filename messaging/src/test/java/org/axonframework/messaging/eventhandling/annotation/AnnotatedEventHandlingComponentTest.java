@@ -90,7 +90,7 @@ class AnnotatedEventHandlingComponentTest {
     void subscribesEventHandlerWithEventName() {
         Object annotatedEventHandler = new Object() {
             @SuppressWarnings("unused")
-            @EventHandler(eventName = "myEventName")
+            @EventHandler(eventName = "com.acme.MyEventName")
             public void handle(String event) {
                 // Unimportant
             }
@@ -106,7 +106,7 @@ class AnnotatedEventHandlingComponentTest {
 
         Set<QualifiedName> supportedEvents = annotatedComponent.supportedEvents();
         assertThat(supportedEvents).hasSize(1);
-        assertThat(supportedEvents).contains(new QualifiedName("myEventName"));
+        assertThat(supportedEvents).contains(new QualifiedName("com.acme", "MyEventName"));
         verifyNoInteractions(messageTypeResolver);
     }
 
@@ -307,7 +307,7 @@ class AnnotatedEventHandlingComponentTest {
             var eventHandler = new HandlingNamedEventHandler();
             var eventHandlingComponent = annotatedEventHandlingComponent(eventHandler);
             var event = new GenericEventMessage(
-                    new MessageType("CustomEventName"),
+                    new MessageType(new QualifiedName("com.acme", "CustomEventName")),
                     123
             );
 
@@ -895,7 +895,9 @@ class AnnotatedEventHandlingComponentTest {
         private int handledNamed = 0;
         private int handledNotNamed = 0;
 
-        @EventHandler(eventName = "CustomEventName")
+        @EventHandler(event = @org.axonframework.messaging.core.annotation.QualifiedName(
+                namespace = "com.acme", name = "CustomEventName"
+        ))
         void handleNamed() {
             handledNamed++;
         }

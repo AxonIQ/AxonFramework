@@ -35,8 +35,9 @@ import java.util.Optional;
  * Implementation of a {@link HandlerEnhancerDefinition} used for {@link EventHandler} annotated methods to wrap a
  * {@link MessageHandlingMember} in a {@link EventHandlingMember} instance.
  * <p>
- * The {@link EventHandler#eventName()} is used to define the {@link EventHandlingMember#eventName()} without any fall
- * back.
+ * The {@link EventHandler#eventName()} and {@link EventHandler#event()} attributes define the
+ * {@link EventHandlingMember#eventNames(org.axonframework.messaging.core.MessageTypeResolver) event names} of the
+ * resulting member.
  *
  * @author Mateusz Nowak
  * @since 5.0.0
@@ -50,16 +51,14 @@ public class MethodEventHandlerDefinition implements HandlerEnhancerDefinition {
                        .filter(method -> AnnotationUtils.isAnnotationPresent(method, EventHandler.class))
                        .filter(method -> optionalEventName.isPresent())
                        .map(method -> (MessageHandlingMember<T>)
-                               new MethodEventHandlerDefinition.MethodEventMessageHandlingMember<>(
-                                       original,
-                                       optionalEventName.get()
-                               )
+                               new MethodEventHandlerDefinition.MethodEventMessageHandlingMember<>(original)
                        )
                        .orElse(original);
     }
 
     /**
-     * Extracting event name from {@link EventHandler} annotation.
+     * An {@link EventHandlingMember} for {@link EventHandler} annotated methods, deriving its event names from the
+     * annotation attributes.
      *
      * @param <T> The type of entity to which the message handler will delegate the actual handling of the message.
      */
@@ -68,9 +67,7 @@ public class MethodEventHandlerDefinition implements HandlerEnhancerDefinition {
             extends WrappedMessageHandlingMember<T>
             implements EventHandlingMember<T> {
 
-        private final String eventName;
-
-        private MethodEventMessageHandlingMember(MessageHandlingMember<T> delegate, String eventNameAttribute) {
+        private MethodEventMessageHandlingMember(MessageHandlingMember<T> delegate) {
             super(delegate);
             if (delegate.unwrap(Method.class).isEmpty()) {
                 throw new UnsupportedHandlerException(
@@ -78,17 +75,11 @@ public class MethodEventHandlerDefinition implements HandlerEnhancerDefinition {
                         delegate.unwrap(Member.class).orElse(null)
                 );
             }
-            eventName = eventNameAttribute;
         }
 
         @Override
         public boolean canHandle(Message message, ProcessingContext context) {
             return super.canHandle(message, context) && message instanceof EventMessage;
-        }
-
-        @Override
-        public String eventName() {
-            return eventName;
         }
     }
 }

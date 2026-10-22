@@ -22,9 +22,12 @@ import org.axonframework.messaging.tracing.support.TestSpanFactory;
 import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.commandhandling.GenericCommandMessage;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandlingMember;
+import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
+import org.axonframework.messaging.core.MessageTypeResolver;
+import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.annotation.HandlerEnhancerDefinition;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
@@ -44,6 +47,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Type;
 import java.util.Optional;
 import java.util.ServiceLoader;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -102,6 +106,23 @@ class TracingHandlerEnhancerDefinitionTest {
             // then
             assertThat(wrapped).isNotSameAs(member);
             spanFactory.verifySpanCompleted("RoomBookedProjection.on(String)");
+        }
+
+        @Test
+        void delegatesEventNamesToTheWrappedEventHandlingMember() {
+            // given a member declaring a name that cannot be derived from its payload type
+            StubHandlingMember<Object> member = new EventStubHandlingMember<>(method("on", String.class));
+
+            // when
+            MessageHandlingMember<Object> wrapped = testSubject.wrapHandler(member);
+
+            // then
+            assertThat(wrapped).isNotSameAs(member);
+            assertThat(wrapped).isInstanceOfSatisfying(
+                    EventHandlingMember.class,
+                    eventMember -> assertThat(eventMember.eventNames(new ClassBasedMessageTypeResolver()))
+                            .containsExactly(EventStubHandlingMember.EVENT_NAME)
+            );
         }
     }
 
@@ -416,13 +437,15 @@ class TracingHandlerEnhancerDefinitionTest {
     private static final class EventStubHandlingMember<T> extends StubHandlingMember<T>
             implements EventHandlingMember<T> {
 
+        private static final QualifiedName EVENT_NAME = new QualifiedName("com.acme", "RoomBooked");
+
         private EventStubHandlingMember(Method method) {
             super(EventMessage.class, method);
         }
 
         @Override
-        public String eventName() {
-            return "";
+        public Set<QualifiedName> eventNames(MessageTypeResolver messageTypeResolver) {
+            return Set.of(EVENT_NAME);
         }
     }
 

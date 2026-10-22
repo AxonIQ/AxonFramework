@@ -29,6 +29,7 @@ import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.annotation.HandlerDefinition;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
+import org.axonframework.messaging.core.annotation.QualifiedName;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.SimpleUnitOfWorkFactory;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
@@ -75,7 +76,8 @@ import static org.junit.jupiter.api.Assertions.*;
 class SpringBeanResolverFactoryTest {
 
     private static final AtomicInteger COUNTER = new AtomicInteger();
-    private static final String EVENT_QUALIFIER = "test-event";
+    private static final String EVENT_NAMESPACE = "test";
+    private static final String EVENT_NAME = "test-event";
     private static final EventMessage EVENT_MESSAGE = asEventMessage("Hi there");
 
     private ProcessingContext processingContext;
@@ -303,7 +305,10 @@ class SpringBeanResolverFactoryTest {
     }
 
     private static EventMessage asEventMessage(Object payload) {
-        return new GenericEventMessage(new MessageType(EVENT_QUALIFIER), payload);
+        return new GenericEventMessage(
+                new MessageType(new org.axonframework.messaging.core.QualifiedName(EVENT_NAMESPACE, EVENT_NAME)),
+                payload
+        );
     }
 
     public interface DuplicateResourceWithPrimary {
@@ -442,7 +447,7 @@ class SpringBeanResolverFactoryTest {
     @SuppressWarnings("unused")
     public static class MissingResourceHandler {
 
-        @EventHandler(eventName = "test-event")
+        @EventHandler(event = @QualifiedName(namespace = EVENT_NAMESPACE, name = EVENT_NAME))
         public void handle(String message, ThisResourceReallyDoesntExist dataSource) {
             COUNTER.incrementAndGet();
         }
@@ -451,7 +456,7 @@ class SpringBeanResolverFactoryTest {
     @SuppressWarnings("unused")
     public static class NullableResourceHandler {
 
-        @EventHandler(eventName = "test-event")
+        @EventHandler(event = @QualifiedName(namespace = EVENT_NAMESPACE, name = EVENT_NAME))
         public void handle(String message,
                            @Autowired(required = false) ThisResourceReallyDoesntExist dataSource) {
             COUNTER.incrementAndGet();
@@ -461,7 +466,7 @@ class SpringBeanResolverFactoryTest {
     @SuppressWarnings("unused")
     public static class DuplicateResourceHandler {
 
-        @EventHandler(eventName = "test-event")
+        @EventHandler(event = @QualifiedName(namespace = EVENT_NAMESPACE, name = EVENT_NAME))
         public void handle(String message, DuplicateResource dataSource) {
             COUNTER.incrementAndGet();
         }
@@ -470,7 +475,7 @@ class SpringBeanResolverFactoryTest {
     @SuppressWarnings("unused")
     public static class DuplicateResourceHandlerWithPrimary {
 
-        @EventHandler(eventName = "test-event")
+        @EventHandler(event = @QualifiedName(namespace = EVENT_NAMESPACE, name = EVENT_NAME))
         public void handle(String message, DuplicateResourceWithPrimary dataSource) {
             COUNTER.incrementAndGet();
         }
@@ -479,7 +484,7 @@ class SpringBeanResolverFactoryTest {
     @SuppressWarnings("unused")
     public static class DuplicateResourceHandlerWithQualifier {
 
-        @EventHandler(eventName = "test-event")
+        @EventHandler(event = @QualifiedName(namespace = EVENT_NAMESPACE, name = EVENT_NAME))
         public void handle(String message, @Qualifier("qualifiedByName") DuplicateResourceWithQualifier resource) {
             COUNTER.incrementAndGet();
         }
@@ -488,7 +493,7 @@ class SpringBeanResolverFactoryTest {
     @SuppressWarnings("unused")
     public static class DuplicateResourceHandlerWithQualifierAndPrimary {
 
-        @EventHandler(eventName = "test-event")
+        @EventHandler(event = @QualifiedName(namespace = EVENT_NAMESPACE, name = EVENT_NAME))
         public void handle(String message,
                            @Qualifier("duplicateResourceWithPrimary2") DuplicateResourceWithPrimary resource) {
             assertFalse(resource.isPrimary(), "expect the non-primary bean to be autowired here");
@@ -499,7 +504,7 @@ class SpringBeanResolverFactoryTest {
     @SuppressWarnings("unused")
     public static class DuplicateResourceHandlerWithAutowired {
 
-        @EventHandler(eventName = "test-event")
+        @EventHandler(event = @QualifiedName(namespace = EVENT_NAMESPACE, name = EVENT_NAME))
         public void handle(String message, @Autowired DuplicateResource resource) {
             COUNTER.incrementAndGet();
         }
@@ -508,7 +513,7 @@ class SpringBeanResolverFactoryTest {
     @SuppressWarnings("unused")
     public static class DuplicateResourceHandlerWithAutowiredAndQualifier {
 
-        @EventHandler(eventName = "test-event")
+        @EventHandler(event = @QualifiedName(namespace = EVENT_NAMESPACE, name = EVENT_NAME))
         public void handle(String message,
                            @Autowired @Qualifier("qualifiedByName") DuplicateResourceWithQualifier resource) {
             COUNTER.incrementAndGet();
@@ -520,7 +525,7 @@ class SpringBeanResolverFactoryTest {
 
         private PrototypeResource resource;
 
-        @EventHandler(eventName = "test-event")
+        @EventHandler(event = @QualifiedName(namespace = EVENT_NAMESPACE, name = EVENT_NAME))
         public void handle(String message, PrototypeResource resource) {
             assertThat(this.resource).isNotEqualTo(resource);
             this.resource = resource;
@@ -530,7 +535,7 @@ class SpringBeanResolverFactoryTest {
 
     public static class AnnotatedEventHandlerWithResources {
 
-        @EventHandler(eventName = "test-event")
+        @EventHandler(event = @QualifiedName(namespace = EVENT_NAMESPACE, name = EVENT_NAME))
         public void handle(String message, CommandBus commandBus, EventBus eventBus) {
             assertThat(message).isNotNull();
             assertThat(commandBus).isNotNull();
