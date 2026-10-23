@@ -43,6 +43,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Collection;
 import java.util.Map;
+import java.util.OptionalInt;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Predicate;
@@ -242,6 +243,54 @@ class TracingQueryBusTest {
         }
 
         @Test
+        void propagatesEmitUpdateContextOntoUpdatesSuppliedAfterTheSpanEnded() {
+            // given
+            SubscriptionQueryUpdateMessage update = updateMessage();
+
+            // when
+            joinAndUnwrap(testSubject.emitUpdate(q -> true, () -> update, null));
+            // a deferring delegate (sending after commit) only invokes the supplier once the emit span has ended
+            spanFactory.verifySpanCompleted("QueryBus.emitUpdate");
+            delegate.emittedUpdateSupplier.get().get();
+
+            // then
+            spanFactory.verifySpanPropagated("QueryBus.emitUpdate", update);
+        }
+
+        @Test
+        void preservesTheDelegatesCountsForTheAndCountVariants() {
+            // given
+            testSubject = new TracingQueryBus(
+                    new SimpleQueryBus(new SimpleUnitOfWorkFactory(EmptyApplicationContext.INSTANCE)), spanFactory
+            );
+            testSubject.subscribe(query.type().qualifiedName(), (actualQuery, context) -> MessageStream.just(response));
+            MessageStream<QueryResponseMessage> first = testSubject.subscriptionQuery(query, null, 256);
+            MessageStream<QueryResponseMessage> second = testSubject.subscriptionQuery(
+                    new GenericQueryMessage(new MessageType("MyQuery"), "other-payload"), null, 256
+            );
+
+            // when
+            OptionalInt emitted = joinAndUnwrap(testSubject.emitUpdateAndCount(q -> true, () -> updateMessage(), null));
+            OptionalInt completedExceptionally = joinAndUnwrap(testSubject.completeSubscriptionsExceptionallyAndCount(
+                    q -> q.payload().equals("other-payload"), new IllegalStateException("boom"), null
+            ));
+            OptionalInt completed = joinAndUnwrap(
+                    testSubject.completeSubscriptionsAndCount(q -> q.payload().equals("the-payload"), null)
+            );
+
+            // then
+            assertThat(emitted).hasValue(2);
+            assertThat(completedExceptionally).hasValue(1);
+            assertThat(completed).hasValue(1);
+            spanFactory.verifySpanCompleted("QueryBus.emitUpdate");
+            spanFactory.verifySpanCompleted("QueryBus.completeSubscriptions");
+            spanFactory.verifySpanCompleted("QueryBus.completeSubscriptionsExceptionally");
+
+            first.close();
+            second.close();
+        }
+
+        @Test
         void opensAnInternalSpanAroundCompleteSubscriptions() {
             // given
             delegate.completeResult = CompletableFuture.completedFuture(null);
@@ -302,6 +351,8 @@ class TracingQueryBusTest {
         private final AtomicReference<QueryHandler> subscribedHandler = new AtomicReference<>();
         private MessageStream<QueryResponseMessage> queryResult = MessageStream.empty().cast();
         private MessageStream<QueryResponseMessage> subscriptionQueryResult = MessageStream.empty().cast();
+        private final AtomicReference<Supplier<SubscriptionQueryUpdateMessage>> emittedUpdateSupplier =
+                new AtomicReference<>();
         private CompletableFuture<Void> emitResult = CompletableFuture.completedFuture(null);
         private CompletableFuture<Void> completeResult = CompletableFuture.completedFuture(null);
         private CompletableFuture<Void> completeExceptionallyResult = CompletableFuture.completedFuture(null);
@@ -332,6 +383,7 @@ class TracingQueryBusTest {
         public CompletableFuture<Void> emitUpdate(@NonNull Predicate<QueryMessage> filter,
                                                   @NonNull Supplier<SubscriptionQueryUpdateMessage> updateSupplier,
                                                   @Nullable ProcessingContext context) {
+            emittedUpdateSupplier.set(updateSupplier);
             return emitResult;
         }
 
