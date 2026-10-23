@@ -38,6 +38,8 @@ import org.mockito.junit.jupiter.*;
 
 import java.util.Collections;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -478,32 +480,44 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
 
         @Test
         void returnsEntityOfTheEntityTypeItself() {
-            assertEquals(Account.class, create("self").getClass());
+            // when
+            var entity = create("self");
+
+            // then
+            assertThat(entity).isExactlyInstanceOf(Account.class);
         }
 
         @Test
         void returnsEntityOfListedConcreteType() {
-            assertEquals(ListedAccount.class, create("listed").getClass());
+            // when
+            var entity = create("listed");
+
+            // then
+            assertThat(entity).isExactlyInstanceOf(ListedAccount.class);
         }
 
         @Test
         void failsClearlyForUnlistedSubclassDeclaringHandlers() {
-            AxonConfigurationException exception = assertThrows(AxonConfigurationException.class,
-                                                                () -> create("savings"));
+            // when
+            var thrown = catchThrowable(() -> create("savings"));
 
-            assertTrue(exception.getMessage().contains(Account.class.getName()));
-            assertTrue(exception.getMessage().contains(Savings.class.getName()));
-            assertTrue(exception.getMessage().contains("concreteTypes"));
-            assertTrue(exception.getMessage().contains("sealed"));
+            // then
+            assertThat(thrown).isInstanceOf(AxonConfigurationException.class)
+                              .hasMessageContaining(Account.class.getName())
+                              .hasMessageContaining(Savings.class.getName())
+                              .hasMessageContaining("concreteTypes")
+                              .hasMessageContaining("sealed");
         }
 
         @Test
         void failsClearlyForUnlistedSubclassWithoutHandlers() {
-            AxonConfigurationException exception = assertThrows(AxonConfigurationException.class,
-                                                                () -> create("handler-free"));
+            // when
+            var thrown = catchThrowable(() -> create("handler-free"));
 
-            assertTrue(exception.getMessage().contains(HandlerFreeSavings.class.getName()));
-            assertTrue(exception.getMessage().contains("concreteTypes"));
+            // then
+            assertThat(thrown).isInstanceOf(AxonConfigurationException.class)
+                              .hasMessageContaining(HandlerFreeSavings.class.getName())
+                              .hasMessageContaining("concreteTypes");
         }
 
         public static class Account {
