@@ -108,10 +108,10 @@ For sealed entity classes, all concrete (non-sealed) leaf types in the sealed hi
 Axon throws `DuplicateCommandHandlerSubscriptionException` at startup if the same command appears in more than one class within the same entity type.
 This applies to both instance and creational command handlers.
 * `@EventSourcingHandler` methods can be declared on both the parent and subtypes; the parent's handler is called first, then the subtype's.
-See xref:commands:entities/event-sourced-entity.adoc#event-sourcing-handlers-hierarchy[Handlers in an entity class hierarchy].
+See xref:commands:entities/entity-inheritance.adoc[Entity inheritance].
 * Parent fields read or assigned by subtype constructors must be at least `protected`; `private` fields cannot be accessed from subclasses.
 * The entity creator decides the initial concrete type.
-An event sourcing handler of an immutable entity may return another concrete type of the hierarchy; see xref:commands:entities/event-sourced-entity.adoc#event-sourcing-handlers-hierarchy[Handlers in an entity class hierarchy].
+An event sourcing handler of an immutable entity may return another concrete type of the hierarchy; see xref:commands:entities/entity-inheritance.adoc[Entity inheritance].
 
 == Further reading
 

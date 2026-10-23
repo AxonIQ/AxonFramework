@@ -298,7 +298,7 @@ Merge them into one method, or use an override that calls `super`:
 include::example$migration/paths/aggregates/index/eventsourcinghandlers/BonusWallet.java[tag=override-with-super,indent=0]
 ----
 
-See xref:commands:entities/event-sourced-entity.adoc#event-sourcing-handlers-hierarchy[Handlers in an entity class hierarchy] for the full rule.
+See xref:commands:entities/entity-inheritance.adoc[Entity inheritance] for the full rule.
 
 [#see-also]
 == See also

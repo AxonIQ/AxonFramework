@@ -1,0 +1,130 @@
+= Entity Inheritance
+:navtitle: Entity inheritance
+
+This page explains how Axon runs the event sourcing handlers declared on an entity class and its supertypes.
+For a parent entity that owns child entities, see xref:commands:entities/entity-hierarchies.adoc[Entity hierarchies].
+
+== How the handlers run
+
+An overriding method counts as one handler; call `super` to run the overridden one.
+Separate methods for the same event all run, parent handlers first, each receiving the entity returned by the previous one.
+Within one class the order is unspecified.
+A handler may return a different concrete type only if every handler that follows is declared by a supertype of the returned type; otherwise evolving fails with a `StateEvolvingException`.
+Handlers declared only by the returned type do not run for the same event.
+
+A handler matches an event by its event name, so a handler accepting `Object` does not receive other events.
+
+[tabs]
+====
+Override::
++
+--
+`SavingsAccount.on` overrides `Account.on`.
+Only the override runs.
+
+[source,java]
+----
+include::example$commands/entities/eventsourcedentity/hierarchy/override/OverrideExample.java[tag=override,indent=0]
+----
+
+[source,text]
+----
+Deposited(10) on a SavingsAccount with balance 0
+1. SavingsAccount.on           balance 0 -> 10
+----
+--
+
+Override calling super::
++
+--
+`BonusAccount.on` overrides `Account.on` and calls `super.on`.
+Both bodies run, the override once.
+
+[source,java]
+----
+include::example$commands/entities/eventsourcedentity/hierarchy/supercall/SuperCallExample.java[tag=super-call,indent=0]
+----
+
+[source,text]
+----
+Deposited(10) on a BonusAccount with balance 0
+1. BonusAccount.on             balance 0 -> 20
+   super.on (Account.on)       balance 0 -> 10
+   rest of BonusAccount.on     balance 10 -> 20
+----
+--
+
+Separate methods::
++
+--
+`BonusWallet.onBonusDeposit` does not override `Wallet.onDeposit`.
+Both run, parent first.
+
+[source,java]
+----
+include::example$commands/entities/eventsourcedentity/hierarchy/separate/SeparateMethodsExample.java[tag=separate-methods,indent=0]
+----
+
+[source,text]
+----
+Deposited(10) on a BonusWallet with balance 0
+1. Wallet.onDeposit            balance 0  -> 10
+2. BonusWallet.onBonusDeposit  balance 10 -> 30
+----
+--
+
+Immutable entity::
++
+--
+`VipCard` is the entity type; `Card` is a plain interface that supplies a default handler.
+Each handler returns the new entity, and the next handler receives it.
+The result depends on the parent-first order.
+
+[source,java]
+----
+include::example$commands/entities/eventsourcedentity/hierarchy/immutable/ImmutableExample.java[tag=immutable,indent=0]
+----
+
+[source,text]
+----
+Deposited(10) on a VipCard with balance 0
+1. Card.onDeposit              VipCard(0)  -> VipCard(10)
+2. VipCard.onVipDeposit        VipCard(10) -> VipCard(20)
+----
+--
+
+Changing the concrete type::
++
+--
+The most specific handler may change the concrete type, because no handler follows it.
+
+[source,java]
+----
+include::example$commands/entities/eventsourcedentity/hierarchy/typechange/AllowedTypeChangeExample.java[tag=type-change-allowed,indent=0]
+----
+
+[source,text]
+----
+CourseCreated("Axon") on an InitialCourse with 0 touches
+1. Course.countTouch           InitialCourse(0) -> InitialCourse(1)
+2. InitialCourse.onCreated     InitialCourse(1) -> CreatedCourse("Axon", 1)
+----
+
+A handler of a more general type that changes the concrete type to a sibling is rejected when a handler of the previous type follows, because the sibling is not an instance of that type.
+
+[source,java]
+----
+include::example$commands/entities/eventsourcedentity/hierarchy/typechange/RejectedTypeChangeExample.java[tag=type-change-rejected,indent=0]
+----
+
+[source,text]
+----
+Deposited(10) on a VipPass with balance 0
+1. Pass.onDeposit              VipPass(0) -> GiftPass(10)
+2. VipPass.onVipDeposit        rejected: Axon throws a StateEvolvingException
+----
+
+Axon throws a `StateEvolvingException`.
+Its cause names the new type, the handler that cannot run, and the class declaring that handler.
+--
+====
