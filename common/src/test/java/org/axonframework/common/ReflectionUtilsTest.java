@@ -16,6 +16,8 @@
 
 package org.axonframework.common;
 
+import org.axonframework.common.otherpackage.PackagePrivateMethodParent;
+import org.axonframework.common.otherpackage.PublicOverride;
 import org.junit.jupiter.api.*;
 
 import java.lang.reflect.Constructor;
@@ -25,6 +27,8 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -533,6 +537,300 @@ class ReflectionUtilsTest {
 
         public String someMethodWithParameters(String parameterOne, Integer parameterTwo, Object parameter3) {
             return "someMethodWithParametersResult";
+        }
+    }
+
+    @Nested
+    class DispatchTarget {
+
+        static class Parent {
+
+            void on(String event) {
+            }
+        }
+
+        static class Child extends Parent {
+
+            @Override
+            void on(String event) {
+            }
+        }
+
+        static class ChildWithoutOverride extends Parent {
+
+        }
+
+        static class PrivateParent {
+
+            @SuppressWarnings("unused")
+            private void on(String event) {
+            }
+        }
+
+        static class PrivateChild extends PrivateParent {
+
+            @SuppressWarnings("unused")
+            private void on(String event) {
+            }
+        }
+
+        static class StaticParent {
+
+            static void on(String event) {
+            }
+        }
+
+        static class StaticChild extends StaticParent {
+
+            static void on(String event) {
+            }
+        }
+
+        static class ChildInAnotherPackage extends PackagePrivateMethodParent {
+
+            @SuppressWarnings("unused")
+            void on(String event) {
+            }
+        }
+
+        static class ChildOfPublicOverride extends PublicOverride {
+
+            @Override
+            public void on(String event) {
+            }
+        }
+
+        static class GenericParent<T> {
+
+            void on(T event) {
+            }
+        }
+
+        static class StringChild extends GenericParent<String> {
+
+            @Override
+            void on(String event) {
+            }
+        }
+
+        static class ListChild extends GenericParent<List<String>> {
+
+            @Override
+            void on(List<String> event) {
+            }
+        }
+
+        static class BoundedMid<U extends CharSequence> extends GenericParent<U> {
+
+        }
+
+        static class BoundedChild extends BoundedMid<String> {
+
+            @Override
+            void on(String event) {
+            }
+        }
+
+        static class ArrayParent<T> {
+
+            void on(T[] events) {
+            }
+        }
+
+        static class ArrayChild extends ArrayParent<String> {
+
+            @Override
+            void on(String[] events) {
+            }
+        }
+
+        static class OverloadingChild extends GenericParent<String> {
+
+            void on(Integer event) {
+            }
+
+            @Override
+            void on(String event) {
+            }
+        }
+
+        interface Greeter {
+
+            default void on(String event) {
+            }
+        }
+
+        interface LoudGreeter extends Greeter {
+
+            @Override
+            default void on(String event) {
+            }
+        }
+
+        static class LoudGreeterImpl implements LoudGreeter {
+
+        }
+
+        @Test
+        void returnsOverrideDeclaredBySubclass() throws NoSuchMethodException {
+            // when
+            Method target = dispatchTarget(Child.class, Parent.class.getDeclaredMethod("on", String.class));
+
+            // then
+            assertThat(target).isEqualTo(Child.class.getDeclaredMethod("on", String.class));
+        }
+
+        @Test
+        void returnsMethodItselfWhenNotOverridden() throws NoSuchMethodException {
+            // given
+            Method parentMethod = Parent.class.getDeclaredMethod("on", String.class);
+
+            // when
+            Method target = dispatchTarget(ChildWithoutOverride.class, parentMethod);
+
+            // then
+            assertThat(target).isEqualTo(parentMethod);
+        }
+
+        @Test
+        void neverResolvesPrivateMethods() throws NoSuchMethodException {
+            // given
+            Method parentMethod = PrivateParent.class.getDeclaredMethod("on", String.class);
+
+            // when
+            Method target = dispatchTarget(PrivateChild.class, parentMethod);
+
+            // then
+            assertThat(target).isEqualTo(parentMethod);
+        }
+
+        @Test
+        void neverResolvesStaticMethods() throws NoSuchMethodException {
+            // given
+            Method parentMethod = StaticParent.class.getDeclaredMethod("on", String.class);
+
+            // when
+            Method target = dispatchTarget(StaticChild.class, parentMethod);
+
+            // then
+            assertThat(target).isEqualTo(parentMethod);
+        }
+
+        @Test
+        void doesNotResolvePackagePrivateMethodFromAnotherPackage() throws NoSuchMethodException {
+            // given
+            Method parentMethod = PackagePrivateMethodParent.class.getDeclaredMethod("on", String.class);
+
+            // when
+            Method target = dispatchTarget(ChildInAnotherPackage.class, parentMethod);
+
+            // then
+            assertThat(target).isEqualTo(parentMethod);
+        }
+
+        @Test
+        void resolvesOverrideChainThroughPublicOverrideInAnotherPackage() throws NoSuchMethodException {
+            // given - PublicOverride makes the package-private method public, so this package can override it again
+            Method parentMethod = PackagePrivateMethodParent.class.getDeclaredMethod("on", String.class);
+
+            // when
+            Method target = dispatchTarget(ChildOfPublicOverride.class, parentMethod);
+
+            // then
+            assertThat(target).isEqualTo(ChildOfPublicOverride.class.getDeclaredMethod("on", String.class));
+        }
+
+        @Test
+        void resolvesBridgeOfGenericParentToBridgedMethod() throws NoSuchMethodException {
+            // given - javac adds a bridge on(Object) to StringChild that calls on(String)
+            Method parentMethod = GenericParent.class.getDeclaredMethod("on", Object.class);
+
+            // when
+            Method target = dispatchTarget(StringChild.class, parentMethod);
+
+            // then
+            assertThat(target).isEqualTo(StringChild.class.getDeclaredMethod("on", String.class));
+        }
+
+        @Test
+        void resolvesBridgeOfGenericParentWithParameterizedTypeArgument() throws NoSuchMethodException {
+            // when
+            Method target = dispatchTarget(ListChild.class, GenericParent.class.getDeclaredMethod("on", Object.class));
+
+            // then
+            assertThat(target).isEqualTo(ListChild.class.getDeclaredMethod("on", List.class));
+        }
+
+        @Test
+        void resolvesBridgeOfGenericParentThroughTypeVariableOfIntermediateClass() throws NoSuchMethodException {
+            // when
+            Method target = dispatchTarget(BoundedChild.class,
+                                           GenericParent.class.getDeclaredMethod("on", Object.class));
+
+            // then
+            assertThat(target).isEqualTo(BoundedChild.class.getDeclaredMethod("on", String.class));
+        }
+
+        @Test
+        void resolvesBridgeOfGenericParentWithGenericArrayParameter() throws NoSuchMethodException {
+            // when
+            Method target = dispatchTarget(ArrayChild.class, ArrayParent.class.getDeclaredMethod("on", Object[].class));
+
+            // then
+            assertThat(target).isEqualTo(ArrayChild.class.getDeclaredMethod("on", String[].class));
+        }
+
+        @Test
+        void resolvesBridgeToTheMatchingOverload() throws NoSuchMethodException {
+            // when
+            Method target = dispatchTarget(OverloadingChild.class,
+                                           GenericParent.class.getDeclaredMethod("on", Object.class));
+
+            // then
+            assertThat(target).isEqualTo(OverloadingChild.class.getDeclaredMethod("on", String.class));
+        }
+
+        @Test
+        void returnsMostSpecificInterfaceDefault() throws NoSuchMethodException {
+            // when
+            Method target = dispatchTarget(LoudGreeterImpl.class, Greeter.class.getDeclaredMethod("on", String.class));
+
+            // then
+            assertThat(target).isEqualTo(LoudGreeter.class.getDeclaredMethod("on", String.class));
+        }
+    }
+
+    @Nested
+    class AllSupertypes {
+
+        interface Root {
+
+        }
+
+        interface Leaf extends Root {
+
+        }
+
+        interface Other {
+
+        }
+
+        static class Base implements Leaf {
+
+        }
+
+        static class Sub extends Base implements Other {
+
+        }
+
+        @Test
+        void includesSuperclassesAndInterfacesTransitivelyWithoutTheTypeItself() {
+            // when
+            Set<Class<?>> supertypes = allSupertypes(Sub.class);
+
+            // then
+            assertThat(supertypes).containsExactlyInAnyOrder(Base.class, Object.class, Leaf.class, Root.class,
+                                                             Other.class);
         }
     }
 }

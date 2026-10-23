@@ -103,7 +103,9 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
      * Instantiate a reflection-based {@link EventSourcedEntityFactory} for the given super {@code entityType}, with the
      * given {@code subTypes}. The {@code subTypes} must be concrete types that extend the {@code entityType}. The
      * factory will look for static methods and constructors on the {@code subTypes} and their supertypes to find a
-     * suitable constructor or static method to create an entity instance.
+     * suitable constructor or static method to create an entity instance. Creating an entity whose class is neither
+     * the {@code entityType} nor one of the {@code subTypes} fails with an {@link AxonConfigurationException}, as the
+     * entity model has no event handlers for it.
      *
      * @param entityType               The type of the entity to create. Can be abstract.
      * @param idType                   The type of the identifier used by the entity.
@@ -321,8 +323,19 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
         if (firstEventMessage != null) {
             preparedContext = Message.addToContext(preparedContext, firstEventMessage);
         }
-        return findMostSpecificMethod(id, firstEventMessage, preparedContext)
+        E entity = findMostSpecificMethod(id, firstEventMessage, preparedContext)
                 .invoke(id, firstEventMessage, preparedContext);
+        if (entity != null && !types.contains(entity.getClass())) {
+            throw new AxonConfigurationException(
+                    ("The @EntityCreator for entity type [%s] returned an instance of [%s], which the entity model"
+                            + " does not know, so its event handlers would never run. List the class in"
+                            + " @EventSourcedEntity(concreteTypes = ...)%s.")
+                            .formatted(entityType.getName(),
+                                       entity.getClass().getName(),
+                                       entityType.isSealed() ? "" : " or make the entity type sealed")
+            );
+        }
+        return entity;
     }
 
     /**
