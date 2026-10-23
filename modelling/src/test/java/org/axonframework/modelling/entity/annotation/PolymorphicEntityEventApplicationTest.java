@@ -463,6 +463,72 @@ class PolymorphicEntityEventApplicationTest {
             assertThat(result.balance).isEqualTo(10);
         }
 
+        private record Issue() {
+
+        }
+
+        abstract static sealed class Ticket permits Draft, Issued {
+
+            @EntityMember
+            Label label;
+
+            int deposits;
+
+            Ticket(Label label) {
+                this.label = label;
+            }
+
+            @EventHandler
+            void on(Deposited event) {
+                deposits++;
+            }
+        }
+
+        static final class Draft extends Ticket {
+
+            Draft() {
+                super(new Label());
+            }
+
+            @EventHandler
+            Issued on(Issue event) {
+                Issued issued = new Issued(label);
+                issued.deposits = deposits;
+                return issued;
+            }
+        }
+
+        static final class Issued extends Ticket {
+
+            Issued(Label label) {
+                super(label);
+            }
+        }
+
+        @Test
+        void keepsChildEntityWorkingAfterMovingToASiblingType() {
+            // given
+            var metamodel = polymorphicSealed(Ticket.class);
+            Ticket ticket = evolve(metamodel, new Draft(), new Deposited(1));
+
+            // when - the Draft moves to its sibling Issued, which then receives a child event and a child command
+            ticket = evolve(metamodel, ticket, new Issue());
+            ticket = evolve(metamodel, ticket, new Relabeled("fiction"));
+            ticket = evolve(metamodel, ticket, new Deposited(1));
+            var command = new GenericCommandMessage(new MessageType(Rename.class), new Rename("x"));
+            var result = metamodel.handleInstance(command, ticket, StubProcessingContext.forMessage(command))
+                                  .first()
+                                  .asCompletableFuture()
+                                  .orTimeout(5, TimeUnit.SECONDS)
+                                  .join();
+
+            // then - each event and the command reached the entity and its child exactly once
+            assertThat(ticket).isInstanceOf(Issued.class);
+            assertThat(ticket.deposits).isEqualTo(2);
+            assertThat(result.message().payload()).isEqualTo("renamed");
+            assertThat(ticket.label.names).containsExactly("fiction", "x");
+        }
+
         @Test
         void evolvesChildEntityDeclaredOnTheSuperTypeOnce() {
             // given

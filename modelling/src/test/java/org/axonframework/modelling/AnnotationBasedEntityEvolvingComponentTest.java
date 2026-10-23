@@ -593,6 +593,20 @@ class AnnotationBasedEntityEvolvingComponentTest {
         }
 
         @Test
+        void ignoresEventHandledOnlyBySiblingType() {
+            // given - only InitialCourse handles String, the entity is a CreatedCourse
+            Course course = new CreatedCourse("Introduction to Axon");
+            var event = asEventMessage("Advanced Axon");
+            var context = StubProcessingContext.forMessage(event);
+
+            // when
+            Course result = COURSE_EVOLVER.evolve(course, event, context);
+
+            // then
+            assertThat(result).isSameAs(course);
+        }
+
+        @Test
         void evolvesPolymorphicEntityFromCreatedToPublishedType() {
             // given
             Course course = new CreatedCourse("Introduction to Axon");
@@ -1778,6 +1792,32 @@ class AnnotationBasedEntityEvolvingComponentTest {
 
             // then
             assertThat(result.ran).containsExactly("ArrayChild.on");
+        }
+
+        abstract static class HiddenBase {
+
+            final List<String> ran = new ArrayList<>();
+
+            @EventHandler
+            public void on(Deposited event) {
+                ran.add("HiddenBase.on");
+            }
+        }
+
+        public static class VisibleChild extends HiddenBase {
+
+        }
+
+        @Test
+        void publicHandlerInheritedFromPackagePrivateClassRunsOnce() {
+            // given - HiddenBase is package-private, so javac adds an annotated bridge on(Deposited) to VisibleChild
+            var child = new VisibleChild();
+
+            // when
+            evolve(HiddenBase.class, Set.of(VisibleChild.class), child, new Deposited(1));
+
+            // then
+            assertThat(child.ran).containsExactly("HiddenBase.on");
         }
     }
 
