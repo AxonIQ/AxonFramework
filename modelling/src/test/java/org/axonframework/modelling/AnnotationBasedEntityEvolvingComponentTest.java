@@ -1166,9 +1166,8 @@ class AnnotationBasedEntityEvolvingComponentTest {
             assertThat(thrown).isInstanceOf(StateEvolvingException.class)
                               .cause()
                               .hasMessageContaining("Deposited")
-                              .hasMessageContaining("GiftPass")
-                              .hasMessageContaining("onVipDeposit")
-                              .hasMessageContaining(VipPass.class.getName());
+                              .hasMessageContaining("[Pass.onDeposit] returned [GiftPass]")
+                              .hasMessageContaining("next handler [VipPass.onVipDeposit] requires [VipPass]");
         }
 
         static class Base {

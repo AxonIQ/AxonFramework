@@ -35,6 +35,7 @@ import org.axonframework.messaging.eventhandling.conversion.EventConverter;
 import org.axonframework.modelling.EntityEvolver;
 import org.axonframework.modelling.EntityEvolvingComponent;
 import org.axonframework.modelling.StateEvolvingException;
+import org.jspecify.annotations.Nullable;
 
 import java.lang.reflect.Member;
 import java.lang.reflect.Method;
@@ -62,9 +63,8 @@ import static java.util.Objects.requireNonNull;
  * <p>
  * An overriding method counts as one handler; call {@code super} to run the overridden one. Separate methods for the
  * same event all run, parent handlers first, each receiving the entity returned by the previous one. Within one class
- * the order is unspecified. A handler may return a different concrete type only if every handler that follows is
- * declared by a supertype of the returned type; otherwise evolving fails with a {@link StateEvolvingException}.
- * Handlers declared only by the returned type do not run for the same event.
+ * the order is unspecified. If a handler returns an entity the next handler cannot run on, evolving fails with a
+ * {@link StateEvolvingException}. Handlers of the returned type do not run for the same event.
  *
  * @param <E> The entity type to evolve.
  * @author Mateusz Nowak
@@ -167,12 +167,14 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
                                                .getOrDefault(event.type().qualifiedName(), List.of());
 
             E evolvedEntity = entity;
+            MessageHandlingMember<? super E> previous = null;
             for (var handler : handlers) {
                 var convertedEvent = event.withConvertedPayload(handler.payloadType(), converter);
                 if (!handler.canHandle(convertedEvent, context)) {
                     continue;
                 }
-                assertHandlerCanRunOn(handler, evolvedEntity, event);
+                assertHandlerCanRunOn(handler, previous, evolvedEntity, event);
+                previous = handler;
                 var interceptor = inspector.chainedInterceptor(listenerType);
                 var result = interceptor.handle(convertedEvent, context, evolvedEntity, handler)
                                         .first()
@@ -252,17 +254,26 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
         return declaringClass(handler).map(type -> ReflectionUtils.allSupertypes(type).size()).orElse(0);
     }
 
-    private void assertHandlerCanRunOn(MessageHandlingMember<? super E> handler, E evolvedEntity, EventMessage event) {
+    private void assertHandlerCanRunOn(MessageHandlingMember<? super E> handler,
+                                       @Nullable MessageHandlingMember<? super E> previous,
+                                       E evolvedEntity,
+                                       EventMessage event) {
         Optional<Class<?>> declaringClass = declaringClass(handler);
         if (declaringClass.isPresent() && !declaringClass.get().isInstance(evolvedEntity)) {
+            // The first handler always fits the entity it receives, so a failing check has a previous handler
             throw new IllegalStateException(
-                    "An earlier handler for event [" + event.type() + "] changed the entity to ["
-                            + evolvedEntity.getClass().getName() + "], so handler [" + handler.signature()
-                            + "] declared by [" + declaringClass.get().getName() + "] cannot run. A handler may return"
-                            + " a different concrete type only if every handler that follows is declared by a"
-                            + " supertype of the returned type."
+                    "Cannot apply [" + event.type() + "]: [" + (previous == null ? "?" : shortName(previous))
+                            + "] returned [" + evolvedEntity.getClass().getSimpleName() + "], but the next handler ["
+                            + shortName(handler) + "] requires [" + declaringClass.get().getSimpleName()
+                            + "] or a subtype. Move the type change to the last handler or return a compatible entity."
             );
         }
+    }
+
+    private static String shortName(MessageHandlingMember<?> handler) {
+        return handler.unwrap(Method.class)
+                      .map(method -> method.getDeclaringClass().getSimpleName() + "." + method.getName())
+                      .orElseGet(handler::signature);
     }
 
     private QualifiedName eventName(MessageHandlingMember<? super E> handler,

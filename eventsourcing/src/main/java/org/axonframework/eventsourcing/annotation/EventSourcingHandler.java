@@ -59,10 +59,9 @@ import java.lang.annotation.Target;
  * <p/>
  * An overriding method counts as one handler; call {@code super} to run the overridden one. Separate methods for the
  * same event all run, parent handlers first, each receiving the entity returned by the previous one. Within one class
- * the order is unspecified. A handler may return a different concrete type only if every handler that follows is
- * declared by a supertype of the returned type; otherwise evolving fails with a
- * {@link org.axonframework.modelling.StateEvolvingException}. Handlers declared only by the returned type do not run
- * for the same event.
+ * the order is unspecified. If a handler returns an entity the next handler cannot run on, evolving fails with a
+ * {@link org.axonframework.modelling.StateEvolvingException}. Handlers of the returned type do not run for the same
+ * event.
  * <p/>
  * A handler matches an event by its event name, so a handler accepting {@code Object} does not receive other events.
  *

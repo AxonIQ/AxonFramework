@@ -9,8 +9,8 @@ For a parent entity that owns child entities, see xref:commands:entities/entity-
 An overriding method counts as one handler; call `super` to run the overridden one.
 Separate methods for the same event all run, parent handlers first, each receiving the entity returned by the previous one.
 Within one class the order is unspecified.
-A handler may return a different concrete type only if every handler that follows is declared by a supertype of the returned type; otherwise evolving fails with a `StateEvolvingException`.
-Handlers declared only by the returned type do not run for the same event.
+If a handler returns an entity the next handler cannot run on, evolving fails with a `StateEvolvingException`.
+Handlers of the returned type do not run for the same event.
 
 A handler matches an event by its event name, so a handler accepting `Object` does not receive other events.
 
@@ -110,7 +110,7 @@ CourseCreated("Axon") on an InitialCourse with 0 touches
 2. InitialCourse.onCreated     InitialCourse(1) -> CreatedCourse("Axon", 1)
 ----
 
-A handler of a more general type that changes the concrete type to a sibling is rejected when a handler of the previous type follows, because the sibling is not an instance of that type.
+A handler of a more general type that changes the concrete type to a sibling is rejected when a handler of the previous type follows, because that handler cannot run on the sibling.
 
 [source,java]
 ----
@@ -125,6 +125,6 @@ Deposited(10) on a VipPass with balance 0
 ----
 
 Axon throws a `StateEvolvingException`.
-Its cause names the new type, the handler that cannot run, and the class declaring that handler.
+Its cause names the handler that returned the new type, the next handler, and the type that handler requires.
 --
 ====
