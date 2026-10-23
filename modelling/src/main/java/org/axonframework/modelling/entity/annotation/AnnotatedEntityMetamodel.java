@@ -287,7 +287,9 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
         AnnotatedHandlerInspector<E> inspected = inspectType(
                 entityType, messageTypeResolver, parameterResolverFactory, handlerDefinition
         );
-        // Concrete metamodels of a polymorphic entity are internal, so an evolver returning a sibling type never leaks
+        // A handler of a concrete type may move the entity to a sibling type, as in a sealed state machine, so the
+        // evolver accepts any type of the polymorphic hierarchy instead of dropping the result. The cast is safe
+        // because concrete metamodels are only reached through the PolymorphicEntityMetamodel of the super type.
         //noinspection unchecked
         Class<E> evolvedType = polymorphicSuperType != null ? (Class<E>) polymorphicSuperType : entityType;
         builder.entityEvolver(new AnnotationBasedEntityEvolvingComponent<>(

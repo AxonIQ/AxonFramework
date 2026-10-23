@@ -217,6 +217,9 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
     ) {
         return handlers.stream()
                        .filter(handler -> handler.canHandleMessageType(EventMessage.class))
+                       // javac copies handler annotations onto the bridges it generates, and a bridge runs the same
+                       // body as the method it bridges; for an override of a generic parent method, the bridge would
+                       // otherwise count as a second handler
                        .filter(handler -> handler.unwrap(Method.class).filter(Method::isBridge).isEmpty())
                        .collect(Collectors.groupingBy(handler -> eventName(handler, messageTypeResolver)))
                        .entrySet().stream()
