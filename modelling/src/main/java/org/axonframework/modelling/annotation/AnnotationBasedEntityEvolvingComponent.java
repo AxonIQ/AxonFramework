@@ -17,7 +17,7 @@
 package org.axonframework.modelling.annotation;
 
 import org.axonframework.common.StringUtils;
-import org.axonframework.common.TypeReflectionUtils;
+import org.axonframework.common.ReflectionUtils;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.QualifiedName;
@@ -36,20 +36,10 @@ import org.axonframework.modelling.EntityEvolver;
 import org.axonframework.modelling.EntityEvolvingComponent;
 import org.axonframework.modelling.StateEvolvingException;
 
-import java.lang.reflect.Array;
-import java.lang.reflect.GenericArrayType;
 import java.lang.reflect.Member;
 import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
-import java.lang.reflect.ParameterizedType;
-import java.lang.reflect.Type;
-import java.lang.reflect.TypeVariable;
-import java.util.ArrayDeque;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
-import java.util.Deque;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -241,7 +231,7 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
         Map<Object, MessageHandlingMember<? super E>> byDispatchTarget = new LinkedHashMap<>();
         for (var handler : handlers) {
             Object target = handler.unwrap(Method.class)
-                                   .<Object>map(method -> dispatchTarget(entityType, method))
+                                   .<Object>map(method -> ReflectionUtils.dispatchTarget(entityType, method))
                                    .orElse(handler);
             byDispatchTarget.merge(target, handler, (existing, replacement) ->
                     declaringTypeSpecificity(replacement) > declaringTypeSpecificity(existing) ? replacement : existing
@@ -253,171 +243,13 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
                                .toList();
     }
 
-    /**
-     * Resolves transitively: a package-private method is invisible to an override in another package, so the next
-     * override is only found by resolving again from the target found so far.
-     */
-    private static Method dispatchTarget(Class<?> entityType, Method method) {
-        Method target = method;
-        Method resolved = dispatchTargetOnce(entityType, target);
-        while (!resolved.equals(target)) {
-            target = resolved;
-            resolved = dispatchTargetOnce(entityType, target);
-        }
-        return target;
-    }
-
-    private static Method dispatchTargetOnce(Class<?> entityType, Method method) {
-        int modifiers = method.getModifiers();
-        if (Modifier.isPrivate(modifiers) || Modifier.isStatic(modifiers)) {
-            return method;
-        }
-        for (Class<?> type = entityType; type != null; type = type.getSuperclass()) {
-            for (Method declared : type.getDeclaredMethods()) {
-                if (isOverrideOrSame(declared, method)) {
-                    return bridgedMethodOrSelf(declared, method);
-                }
-            }
-        }
-        // Not declared by any class, so it is an interface default method: the most specific default wins
-        Set<Class<?>> interfaces = supertypesOf(entityType);
-        interfaces.add(entityType);
-        List<Method> defaults = interfaces.stream()
-                                          .filter(Class::isInterface)
-                                          .flatMap(type -> Arrays.stream(type.getDeclaredMethods()))
-                                          .filter(declared -> isOverrideOrSame(declared, method))
-                                          .toList();
-        return defaults.stream()
-                       .filter(candidate -> defaults.stream().noneMatch(
-                               other -> other != candidate
-                                       && candidate.getDeclaringClass().isAssignableFrom(other.getDeclaringClass())))
-                       .findFirst()
-                       .map(candidate -> bridgedMethodOrSelf(candidate, method))
-                       .orElse(method);
-    }
-
-    /**
-     * Java dispatches an override with a narrower signature through a compiler-generated bridge method, so a bridge
-     * stands for the method it bridges: the one of the same class with the same name whose parameters are exactly the
-     * parameter types of the {@code overridden} method, resolved against the type arguments of that class. Without
-     * exactly one such method, the bridge is left unresolved.
-     */
-    private static Method bridgedMethodOrSelf(Method bridge, Method overridden) {
-        if (!bridge.isBridge()) {
-            return bridge;
-        }
-        Class<?> declaringClass = bridge.getDeclaringClass();
-        Class<?>[] exactParameterTypes = exactParameterTypes(overridden, declaringClass);
-        List<Method> bridged = Arrays.stream(declaringClass.getDeclaredMethods())
-                                     .filter(candidate -> !candidate.isBridge()
-                                             && candidate.getName().equals(bridge.getName())
-                                             && Arrays.equals(candidate.getParameterTypes(), exactParameterTypes))
-                                     .toList();
-        return bridged.size() == 1 ? bridged.getFirst() : bridge;
-    }
-
-    private static Class<?>[] exactParameterTypes(Method method, Class<?> viewpoint) {
-        Type owner = TypeReflectionUtils.getExactSuperType(parameterizedWithOwnTypeVariables(viewpoint),
-                                                           method.getDeclaringClass());
-        Type[] genericTypes = method.getGenericParameterTypes();
-        Class<?>[] exactTypes = method.getParameterTypes();
-        if (genericTypes.length != exactTypes.length || !(owner instanceof ParameterizedType parameterized)) {
-            return exactTypes;
-        }
-        List<TypeVariable<?>> typeParameters = List.of(method.getDeclaringClass().getTypeParameters());
-        for (int i = 0; i < genericTypes.length; i++) {
-            exactTypes[i] = exactType(genericTypes[i], typeParameters, parameterized.getActualTypeArguments());
-        }
-        return exactTypes;
-    }
-
-    /**
-     * A raw generic class would lose the type arguments of its supertypes, whereas viewed with its own type variables
-     * they resolve to those variables, which {@link #erasure(Type)} turns into their bounds.
-     */
-    private static Type parameterizedWithOwnTypeVariables(Class<?> type) {
-        if (type.getTypeParameters().length == 0) {
-            return type;
-        }
-        return new ParameterizedType() {
-            @Override
-            public Type[] getActualTypeArguments() {
-                return type.getTypeParameters();
-            }
-
-            @Override
-            public Type getRawType() {
-                return type;
-            }
-
-            @Override
-            public Type getOwnerType() {
-                return type.getDeclaringClass();
-            }
-        };
-    }
-
-    private static Class<?> exactType(Type type, List<TypeVariable<?>> typeParameters, Type[] typeArguments) {
-        if (type instanceof TypeVariable<?> variable && typeParameters.contains(variable)) {
-            return erasure(typeArguments[typeParameters.indexOf(variable)]);
-        }
-        if (type instanceof GenericArrayType array) {
-            return Array.newInstance(exactType(array.getGenericComponentType(), typeParameters, typeArguments), 0)
-                        .getClass();
-        }
-        return erasure(type);
-    }
-
-    private static Class<?> erasure(Type type) {
-        return switch (type) {
-            case Class<?> clazz -> clazz;
-            case ParameterizedType parameterized -> (Class<?>) parameterized.getRawType();
-            case TypeVariable<?> variable -> erasure(variable.getBounds()[0]);
-            case GenericArrayType array -> Array.newInstance(erasure(array.getGenericComponentType()), 0).getClass();
-            default -> Object.class;
-        };
-    }
-
-    private static boolean isOverrideOrSame(Method candidate, Method method) {
-        if (candidate.equals(method)) {
-            return true;
-        }
-        int candidateModifiers = candidate.getModifiers();
-        int methodModifiers = method.getModifiers();
-        return !Modifier.isStatic(candidateModifiers)
-                && !Modifier.isPrivate(candidateModifiers)
-                && candidate.getName().equals(method.getName())
-                && Arrays.equals(candidate.getParameterTypes(), method.getParameterTypes())
-                && (Modifier.isPublic(methodModifiers)
-                || Modifier.isProtected(methodModifiers)
-                || candidate.getDeclaringClass().getPackageName()
-                            .equals(method.getDeclaringClass().getPackageName()));
-    }
-
     private static Optional<Class<?>> declaringClass(MessageHandlingMember<?> handler) {
         return handler.unwrap(Member.class).map(Member::getDeclaringClass);
     }
 
     private static int declaringTypeSpecificity(MessageHandlingMember<?> handler) {
         // A subtype always has more supertypes than any of its supertypes, for classes and interfaces alike
-        return declaringClass(handler).map(type -> supertypesOf(type).size()).orElse(0);
-    }
-
-    private static Set<Class<?>> supertypesOf(Class<?> type) {
-        Set<Class<?>> supertypes = new HashSet<>();
-        Deque<Class<?>> pending = new ArrayDeque<>(List.of(type));
-        while (!pending.isEmpty()) {
-            Class<?> current = pending.pop();
-            if (current.getSuperclass() != null && supertypes.add(current.getSuperclass())) {
-                pending.push(current.getSuperclass());
-            }
-            for (Class<?> implemented : current.getInterfaces()) {
-                if (supertypes.add(implemented)) {
-                    pending.push(implemented);
-                }
-            }
-        }
-        return supertypes;
+        return declaringClass(handler).map(type -> ReflectionUtils.allSupertypes(type).size()).orElse(0);
     }
 
     private void assertHandlerCanRunOn(MessageHandlingMember<? super E> handler, E evolvedEntity, EventMessage event) {
