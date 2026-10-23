@@ -72,8 +72,9 @@ import static java.util.Objects.requireNonNull;
  * <p>
  * An overriding method counts as one handler; call {@code super} to run the overridden one. Separate methods for the
  * same event all run, parent handlers first, each receiving the entity returned by the previous one. Within one class
- * the order is unspecified. A handler may return a different concrete type only if no handler of the previous type
- * follows; otherwise a {@link StateEvolvingException} is thrown.
+ * the order is unspecified. A handler may return a different concrete type only if every handler that follows is
+ * declared by a supertype of the returned type; otherwise evolving fails with a {@link StateEvolvingException}.
+ * Handlers declared only by the returned type do not run for the same event.
  *
  * @param <E> The entity type to evolve.
  * @author Mateusz Nowak
@@ -417,18 +418,16 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
     }
 
     private void assertHandlerCanRunOn(MessageHandlingMember<? super E> handler, E evolvedEntity, EventMessage event) {
-        declaringClass(handler)
-                .filter(declaringClass -> !declaringClass.isInstance(evolvedEntity))
-                .ifPresent(declaringClass -> {
-                    throw new IllegalStateException(
-                            "An earlier handler for event [" + event.type() + "] changed the entity to ["
-                                    + evolvedEntity.getClass().getName() + "], so handler ["
-                                    + handler.signature() + "] declared by [" + declaringClass.getName()
-                                    + "] cannot run. A handler may"
-                                    + " return a different concrete type only if no handler of the previous type"
-                                    + " follows."
-                    );
-                });
+        Optional<Class<?>> declaringClass = declaringClass(handler);
+        if (declaringClass.isPresent() && !declaringClass.get().isInstance(evolvedEntity)) {
+            throw new IllegalStateException(
+                    "An earlier handler for event [" + event.type() + "] changed the entity to ["
+                            + evolvedEntity.getClass().getName() + "], so handler [" + handler.signature()
+                            + "] declared by [" + declaringClass.get().getName() + "] cannot run. A handler may return"
+                            + " a different concrete type only if every handler that follows is declared by a"
+                            + " supertype of the returned type."
+            );
+        }
     }
 
     private QualifiedName eventName(MessageHandlingMember<? super E> handler,

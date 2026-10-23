@@ -1156,6 +1156,60 @@ class AnnotationBasedEntityEvolvingComponentTest {
                               .hasMessageContaining("onVipDeposit")
                               .hasMessageContaining(VipPass.class.getName());
         }
+
+        static class Base {
+
+            final List<String> trace;
+
+            Base(List<String> trace) {
+                this.trace = trace;
+            }
+
+            @EventHandler
+            Base onBase(Deposited event) {
+                trace.add("Base.onBase");
+                return new Narrow(trace);
+            }
+        }
+
+        static class Child extends Base {
+
+            Child(List<String> trace) {
+                super(trace);
+            }
+
+            @EventHandler
+            Child onChild(Deposited event) {
+                trace.add("Child.onChild on " + getClass().getSimpleName());
+                return this;
+            }
+        }
+
+        static class Narrow extends Child {
+
+            Narrow(List<String> trace) {
+                super(trace);
+            }
+
+            @EventHandler
+            Narrow onNarrow(Deposited event) {
+                trace.add("Narrow.onNarrow");
+                return this;
+            }
+        }
+
+        @Test
+        void handlerOfThePreviousTypeMayFollowWhenTheReturnedTypeIsItsSubtype() {
+            // given - Base.onBase narrows the Child to a Narrow, a subtype of Child
+            var trace = new ArrayList<String>();
+
+            // when
+            var result = evolve(Base.class, Set.of(Child.class, Narrow.class), new Child(trace), new Deposited(1));
+
+            // then - Child.onChild still runs, on the Narrow; Narrow.onNarrow does not run for this event
+            assertThat(result).isInstanceOf(Narrow.class);
+            assertThat(trace).containsExactly("Base.onBase", "Child.onChild on Narrow");
+        }
     }
 
     @Nested
