@@ -1167,7 +1167,9 @@ class AnnotationBasedEntityEvolvingComponentTest {
                               .cause()
                               .hasMessageContaining("Deposited")
                               .hasMessageContaining("[Pass.onDeposit] returned [GiftPass]")
-                              .hasMessageContaining("next handler [VipPass.onVipDeposit] requires [VipPass]");
+                              .hasMessageContaining("next handler [VipPass.onVipDeposit] requires [VipPass]")
+                              .hasMessageContaining("Move the type change to the last handler or return a compatible"
+                                                            + " entity");
         }
 
         static class Base {

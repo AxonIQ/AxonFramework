@@ -96,7 +96,7 @@ Deposited(10) on a VipCard with balance 0
 Changing the concrete type::
 +
 --
-The most specific handler may change the concrete type, because no handler follows it.
+`InitialCourse.onCreated` may change the concrete type: as the most specific handler it runs last, so no handler follows it.
 
 [source,java]
 ----
@@ -121,7 +121,7 @@ include::example$commands/entities/eventsourcedentity/hierarchy/typechange/Rejec
 ----
 Deposited(10) on a VipPass with balance 0
 1. Pass.onDeposit              VipPass(0) -> GiftPass(10)
-2. VipPass.onVipDeposit        rejected: Axon throws a StateEvolvingException
+2. VipPass.onVipDeposit        rejected
 ----
 
 Axon throws a `StateEvolvingException`.
