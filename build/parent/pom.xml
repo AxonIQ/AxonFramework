@@ -48,7 +48,7 @@
         <hsqldb.version>2.7.4</hsqldb.version>
         <hibernate-core.version>7.4.13.Final</hibernate-core.version>
         <mongo.driver.version>5.13.0</mongo.driver.version>
-        <mysql-connector-java.version>26.7.0</mysql-connector-java.version>
+        <mysql-connector-java.version>26.10.0</mysql-connector-java.version>
         <postgresql.version>42.7.14</postgresql.version>
         <ojdbc.version>23.26.3.0.0</ojdbc.version>
         <!-- Jakarta -->
@@ -82,8 +82,8 @@
         <!-- Conversion -->
         <avro.version>1.12.2</avro.version>
         <dom4j.version>2.2.0</dom4j.version>
-        <jackson.version>3.2.3</jackson.version>
-        <jackson2.version>2.22.3</jackson2.version>
+        <jackson.version>3.2.4</jackson.version>
+        <jackson2.version>2.22.4</jackson2.version>
         <!-- Spring -->
         <spring.version>6.2.19</spring.version>
         <spring.boot.version>3.5.16</spring.boot.version>

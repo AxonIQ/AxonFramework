@@ -33,10 +33,10 @@
         <spring.boot.version>4.1.1</spring.boot.version>
         <springdoc-openapi.version>3.1.1</springdoc-openapi.version>
         <testcontainers.version>2.0.5</testcontainers.version>
-        <jackson.version>3.2.3</jackson.version>
+        <jackson.version>3.2.4</jackson.version>
         <kotlin.version>2.4.21</kotlin.version>
         <!-- Workflow examples run against the released Axoniq Framework line. -->
-        <axoniq-framework.version>5.4.0</axoniq-framework.version>
+        <axoniq-framework.version>5.4.1</axoniq-framework.version>
     </properties>
 
     <dependencyManagement>
