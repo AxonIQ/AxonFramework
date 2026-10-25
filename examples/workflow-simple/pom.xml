@@ -31,7 +31,7 @@
     <properties>
         <kotlin.version>2.4.21</kotlin.version>
         <!-- Workflow examples run against the released Axoniq Framework line. -->
-        <axoniq-framework.version>5.4.0</axoniq-framework.version>
+        <axoniq-framework.version>5.4.1</axoniq-framework.version>
     </properties>
 
     <dependencyManagement>
