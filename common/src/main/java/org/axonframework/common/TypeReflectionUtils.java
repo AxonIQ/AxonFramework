@@ -23,6 +23,7 @@ import org.slf4j.LoggerFactory;
 import java.lang.reflect.*;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.IntStream;
 
@@ -225,6 +226,53 @@ public final class TypeReflectionUtils {
             logger.debug("{} is not supported for checking if there are missing type parameters. Will by default return false.", type.getClass());
             return false;
         }
+    }
+
+    /**
+     * Returns the parameter types of the given {@code method} as seen from the given {@code viewpoint}, a subclass of
+     * the method's declaring class: each type variable of the declaring class is replaced by the erasure of its type
+     * argument in the {@code viewpoint}'s hierarchy. For {@code Base<T>.on(T)} viewed from
+     * {@code Child extends Base<String>}, this returns {@code [String.class]}.
+     *
+     * @param method    the method to resolve the parameter types of
+     * @param viewpoint the subclass whose type arguments resolve the declaring class's type variables
+     * @return the resolved parameter types, or the erased ones when the declaring class is not generic
+     */
+    static Class<?>[] exactParameterTypes(Method method, Class<?> viewpoint) {
+        Type owner = getExactSuperType(parameterizedWithOwnTypeVariables(viewpoint),
+                                                           method.getDeclaringClass());
+        Type[] genericTypes = method.getGenericParameterTypes();
+        Class<?>[] exactTypes = method.getParameterTypes();
+        if (genericTypes.length != exactTypes.length || !(owner instanceof ParameterizedType parameterized)) {
+            return exactTypes;
+        }
+        List<TypeVariable<?>> typeParameters = List.of(method.getDeclaringClass().getTypeParameters());
+        for (int i = 0; i < genericTypes.length; i++) {
+            exactTypes[i] = exactType(genericTypes[i], typeParameters, parameterized.getActualTypeArguments());
+        }
+        return exactTypes;
+    }
+
+    /**
+     * A raw generic class would lose the type arguments of its supertypes, whereas viewed with its own type variables
+     * they resolve to those variables, which {@link #erase(Type)} turns into their bounds.
+     */
+    private static Type parameterizedWithOwnTypeVariables(Class<?> type) {
+        if (type.getTypeParameters().length == 0) {
+            return type;
+        }
+        return new VarMap.ParameterizedTypeImpl(type, type.getTypeParameters(), type.getDeclaringClass());
+    }
+
+    private static Class<?> exactType(Type type, List<TypeVariable<?>> typeParameters, Type[] typeArguments) {
+        if (type instanceof TypeVariable<?> variable && typeParameters.contains(variable)) {
+            return erase(typeArguments[typeParameters.indexOf(variable)]);
+        }
+        if (type instanceof GenericArrayType array) {
+            return Array.newInstance(exactType(array.getGenericComponentType(), typeParameters, typeArguments), 0)
+                        .getClass();
+        }
+        return erase(type);
     }
 
     private TypeReflectionUtils() {

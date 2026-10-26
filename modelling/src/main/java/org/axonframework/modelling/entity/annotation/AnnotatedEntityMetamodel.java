@@ -287,8 +287,13 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
         AnnotatedHandlerInspector<E> inspected = inspectType(
                 entityType, messageTypeResolver, parameterResolverFactory, handlerDefinition
         );
+        // A handler of a concrete type may move the entity to a sibling type, as in a sealed state machine, so the
+        // evolver accepts any type of the polymorphic hierarchy instead of dropping the result. The cast is safe
+        // because concrete metamodels are only reached through the PolymorphicEntityMetamodel of the super type.
+        //noinspection unchecked
+        Class<E> evolvedType = polymorphicSuperType != null ? (Class<E>) polymorphicSuperType : entityType;
         builder.entityEvolver(new AnnotationBasedEntityEvolvingComponent<>(
-                entityType, inspected, eventConverter, messageTypeResolver
+                evolvedType, inspected, eventConverter, messageTypeResolver
         ));
         initializeDetectedHandlers(builder, inspected);
         registerCommandInterceptors(builder, inspected);
@@ -310,12 +315,9 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
                 hasMemberEntities ? Collections.emptySet() : concreteTypes
         );
 
+        // The super type metamodel evolves nothing: every concrete metamodel already holds the inherited event
+        // handlers and child entities, so evolving through both would apply each event twice.
         var builder = PolymorphicEntityMetamodel.forSuperType(entityType);
-        builder.entityEvolver(new AnnotationBasedEntityEvolvingComponent<>(entityType,
-                                                                           inspected,
-                                                                           eventConverter,
-                                                                           messageTypeResolver));
-        initializeChildren(builder);
         // Creational commands present on the super type must not be re-registered on a concrete type: see
         // initializeDetectedHandlers and the commandsToSkip javadoc for why.
         List<QualifiedName> registeredCreationalCommands = initializeDetectedHandlers(builder, inspected);

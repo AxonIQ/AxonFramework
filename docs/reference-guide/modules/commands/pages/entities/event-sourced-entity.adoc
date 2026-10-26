@@ -188,4 +188,5 @@ See xref:commands:entities/stateful-command-handler.adoc[Stateful command handle
 
 * xref:events:event-publishing.adoc#_appending_events_with_metadata[Appending events with metadata]: to append metadata alongside an event, pass a `Metadata` instance as the second argument to `eventAppender.append()`
 * xref:tuning:snapshotting.adoc[Snapshotting]: available as a performance optimization for entities with large event streams
+* xref:commands:entities/entity-inheritance.adoc[Entity inheritance]: how the event sourcing handlers declared on an entity class and its supertypes run
 * xref:testing:index.adoc[Test fixtures]: the test fixture guards against unintentional state changes in command handlers and is strongly recommended for stateful entity testing

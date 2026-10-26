@@ -57,19 +57,13 @@ import java.lang.annotation.Target;
  * you to inject resources directly into {@code @EventSourcingHandler} annotated methods.</li>
  * </ul>
  * <p/>
- * For each event, only a single method will be invoked per object instance with annotated methods. This method is
- * resolved in the following order: <ol> <li>First, the event handler methods of the actual class (at runtime) are
- * searched <li>If a method is found with a parameter that the domain event can be assigned to, it is marked as
- * eligible
- * <li>After a class  has been evaluated (but before any super class), the most specific event handler method is
- * called. That means that if an event handler for a class A and one for a class B are eligible, and B is a subclass of
- * A, then the method with a parameter of type B will be chosen<li>If no method is found in the actual class, its super
- * class is evaluated. <li>If still no method is found, the event listener ignores the event </ol>
+ * An overriding method counts as one handler; call {@code super} to run the overridden one. Separate methods for the
+ * same event all run, parent handlers first, each receiving the entity returned by the previous one. Within one class
+ * the order is unspecified. If a handler returns an entity the next handler cannot run on, evolving fails with a
+ * {@link org.axonframework.modelling.StateEvolvingException}. Handlers of the returned type do not run for the same
+ * event.
  * <p/>
- * If you do not want any events to be ignored, but rather have some logging of the fact that an unhandled event came
- * by, make an abstract superclass that contains an event handler method that accepts any {@code Object}.
- * <p/>
- * Note: if there are two event handler methods accepting the same argument, the behavior is undefined.
+ * A handler matches an event by its event name, so a handler accepting {@code Object} does not receive other events.
  *
  * @author Allard Buijze
  * @since 2.1.0
