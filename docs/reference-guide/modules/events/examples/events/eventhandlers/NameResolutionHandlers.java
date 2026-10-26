@@ -15,6 +15,7 @@
  */
 package events.eventhandlers;
 
+import org.axonframework.messaging.core.annotation.QualifiedName;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 
 import java.util.Map;
@@ -29,10 +30,28 @@ class NameResolutionHandlers {
     // end::event-handler-implicit-name[]
 
     // tag::event-handler-explicit-name[]
-    @EventHandler(eventName = "orders.OrderPlaced")
+    @EventHandler(event = @QualifiedName(namespace = "orders", name = "OrderPlaced"))
     public void handleOrderPlaced(Map<String, Object> eventData) {
         // Handles events with qualified name "orders.OrderPlaced"
         // Payload is converted to Map at handling time
     }
     // end::event-handler-explicit-name[]
+
+    // tag::event-handler-multiple-names[]
+    @EventHandler(event = {
+            @QualifiedName(namespace = "orders", name = "OrderPlaced"),
+            @QualifiedName(namespace = "legacy.orders", name = "OrderSubmitted")
+    })
+    public void onOrderPlacedOrSubmitted(OrderPlacedEvent event) {
+        // Handles events named "orders.OrderPlaced" and "legacy.orders.OrderSubmitted"
+    }
+    // end::event-handler-multiple-names[]
+
+    // tag::event-handler-qualified-name-defaults[]
+    @EventHandler(event = @QualifiedName(namespace = "legacy.orders"))
+    public void onLegacyOrderPlaced(OrderPlacedEvent event) {
+        // Handles events named "legacy.orders.OrderPlaced":
+        // the local name defaults to that of the OrderPlacedEvent ("OrderPlaced")
+    }
+    // end::event-handler-qualified-name-defaults[]
 }

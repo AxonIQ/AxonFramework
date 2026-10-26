@@ -24,6 +24,8 @@ import org.axonframework.common.configuration.ComponentNotFoundException;
 import org.axonframework.eventsourcing.eventstore.TagResolver;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
+import org.axonframework.messaging.core.MessageTypeResolver;
+import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.annotation.HandlerEnhancerDefinition;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.core.annotation.WrappedMessageHandlingMember;
@@ -32,6 +34,8 @@ import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.annotation.EventHandlingMember;
 import org.axonframework.messaging.eventhandling.conversion.EventConverter;
 import org.jspecify.annotations.Nullable;
+
+import java.util.Set;
 
 /**
  * {@link HandlerEnhancerDefinition} that enriches the active tracing span with an event's
@@ -143,10 +147,8 @@ public final class TracingEventTagsHandlerEnhancerDefinition implements HandlerE
         }
 
         @Override
-        public String eventName() {
-            return delegate.unwrap(EventHandlingMember.class)
-                           .map(EventHandlingMember::eventName)
-                           .orElse("");
+        public Set<QualifiedName> eventNames(MessageTypeResolver messageTypeResolver) {
+            return EventHandlingMember.eventNamesOf(delegate, messageTypeResolver);
         }
     }
 }
