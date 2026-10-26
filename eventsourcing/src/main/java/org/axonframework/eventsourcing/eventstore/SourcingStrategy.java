@@ -19,6 +19,7 @@ package org.axonframework.eventsourcing.eventstore;
 import org.axonframework.messaging.core.QualifiedName;
 import org.jspecify.annotations.Nullable;
 
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -116,17 +117,32 @@ public sealed interface SourcingStrategy {
      * @param qualifiedName the {@link QualifiedName} defining the snapshot type, cannot be {@code null}
      * @param identifier the identifier of the snapshotted entity, cannot be {@code null}
      * @param maximumPosition the maximum position of the snapshot to return, can be {@code null}
+     * @param priorNames additional names to look the snapshot up under, in order, when {@code qualifiedName}
+     * yields none; these are names the snapshotted entity was previously known by, so a snapshot taken before
+     * a rename can still be found, cannot be {@code null}
      */
-    record Snapshot(QualifiedName qualifiedName, Object identifier, @Nullable Position maximumPosition) implements SourcingStrategy {
+    record Snapshot(QualifiedName qualifiedName, Object identifier, @Nullable Position maximumPosition,
+                    List<QualifiedName> priorNames) implements SourcingStrategy {
+
+        /**
+         * Constructs a new instance without any prior names.
+         *
+         * @throws NullPointerException if {@code qualifiedName} or {@code identifier} is {@code null}
+         */
+        public Snapshot(QualifiedName qualifiedName, Object identifier, @Nullable Position maximumPosition) {
+            this(qualifiedName, identifier, maximumPosition, List.of());
+        }
 
         /**
          * Constructs a new instance.
          *
-         * @throws NullPointerException if {@code qualifiedName} or {@code identifier} is {@code null}
+         * @throws NullPointerException if {@code qualifiedName}, {@code identifier} or {@code priorNames} is
+         * {@code null}
          */
         public Snapshot {
             Objects.requireNonNull(qualifiedName, "The qualifiedName parameter cannot be null.");
             Objects.requireNonNull(identifier, "The identifier parameter cannot be null.");
+            priorNames = List.copyOf(Objects.requireNonNull(priorNames, "The priorNames parameter cannot be null."));
         }
 
         @Override
