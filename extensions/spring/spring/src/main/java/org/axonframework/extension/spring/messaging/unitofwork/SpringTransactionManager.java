@@ -27,6 +27,8 @@ import org.axonframework.messaging.core.unitofwork.transaction.jpa.JpaTransactio
 import org.axonframework.messaging.core.unitofwork.ProcessingLifecycle;
 import org.axonframework.messaging.core.unitofwork.transaction.Transaction;
 import org.axonframework.messaging.core.unitofwork.transaction.TransactionManager;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionStatus;
@@ -43,6 +45,12 @@ import java.util.Objects;
  * @since 2.0
  */
 public class SpringTransactionManager implements TransactionManager {
+
+    private static final Logger logger = LoggerFactory.getLogger(SpringTransactionManager.class);
+
+    static final String NON_TRANSACTIONAL_CONNECTION_MESSAGE =
+            "Connections of the ConnectionProvider are not part of the transaction Axon starts for a unit of work, so "
+                    + "statements on them, like token store and dead-letter updates, commit on their own.";
 
     private final PlatformTransactionManager transactionManager;
     private final EntityManagerProvider entityManagerProvider;
@@ -61,10 +69,55 @@ public class SpringTransactionManager implements TransactionManager {
                                     @Nullable EntityManagerProvider entityManagerProvider,
                                     @Nullable ConnectionProvider connectionProvider,
                                     @Nullable TransactionDefinition transactionDefinition) {
+        this(transactionManager,
+             entityManagerProvider,
+             connectionProvider,
+             transactionDefinition,
+             NonTransactionalConnectionPolicy.WARN);
+    }
+
+    /**
+     * Constructs a new instance.
+     * <p>
+     * Verifies whether the connections of the given {@code connectionProvider} are part of the transactions of the
+     * given {@code transactionManager}, and applies the given {@code nonTransactionalConnectionPolicy} when they are
+     * not. Statements on connections outside the transaction commit on their own, so writes like token and
+     * dead-letter updates are not part of the transaction started for the unit of work.
+     *
+     * @param transactionManager               The transaction manager to use.
+     * @param entityManagerProvider            The optional entity manager provider to use.
+     * @param connectionProvider               The optional connection provider to use.
+     * @param transactionDefinition            The optional definition for transactions to create.
+     * @param nonTransactionalConnectionPolicy What to do when the connections of the {@code connectionProvider} are not
+     *                                         part of the transactions of the {@code transactionManager}.
+     * @throws NonTransactionalConnectionProviderException When the connections are not part of the transactions and
+     *                                                     the policy is {@link NonTransactionalConnectionPolicy#FAIL}.
+     */
+    public SpringTransactionManager(PlatformTransactionManager transactionManager,
+                                    @Nullable EntityManagerProvider entityManagerProvider,
+                                    @Nullable ConnectionProvider connectionProvider,
+                                    @Nullable TransactionDefinition transactionDefinition,
+                                    NonTransactionalConnectionPolicy nonTransactionalConnectionPolicy) {
         this.transactionManager = Objects.requireNonNull(transactionManager, "transactionManager");
         this.entityManagerProvider = entityManagerProvider;
         this.connectionProvider = connectionProvider;
         this.transactionDefinition = transactionDefinition;
+        verifyConnectionProvider(Objects.requireNonNull(nonTransactionalConnectionPolicy,
+                                                        "nonTransactionalConnectionPolicy"));
+    }
+
+    private void verifyConnectionProvider(NonTransactionalConnectionPolicy policy) {
+        if (policy == NonTransactionalConnectionPolicy.IGNORE) {
+            return;
+        }
+        String reason = TransactionalDataSourceCheck.nonTransactionalReason(transactionManager, connectionProvider);
+        if (reason == null) {
+            return;
+        }
+        if (policy == NonTransactionalConnectionPolicy.FAIL) {
+            throw new NonTransactionalConnectionProviderException(reason);
+        }
+        logger.warn("{} {}", NON_TRANSACTIONAL_CONNECTION_MESSAGE, reason);
     }
 
     /**
