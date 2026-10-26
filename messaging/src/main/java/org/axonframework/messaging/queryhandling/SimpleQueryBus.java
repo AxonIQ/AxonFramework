@@ -33,11 +33,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.IntSupplier;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
@@ -73,7 +75,7 @@ public class SimpleQueryBus implements QueryBus {
     private static final ResourceKey<List<Runnable>> UPDATE_TASKS_KEY = ResourceKey.withLabel("update-tasks");
 
     private final UnitOfWorkFactory unitOfWorkFactory;
-    private final ConcurrentMap<QualifiedName, QueryHandler> subscriptions = new ConcurrentHashMap<>();
+    private final ConcurrentMap<QualifiedName, List<QueryHandler>> subscriptions = new ConcurrentHashMap<>();
     private final ConcurrentMap<QueryMessage, QueueMessageStream<SubscriptionQueryUpdateMessage>> updateHandlers =
             new ConcurrentHashMap<>();
 
@@ -90,10 +92,23 @@ public class SimpleQueryBus implements QueryBus {
     @Override
     public QueryBus subscribe(QualifiedName queryName, QueryHandler queryHandler) {
         logger.debug("Subscribing query handler for name [{}].", queryName);
-        QueryHandler existingHandler = subscriptions.putIfAbsent(queryName, queryHandler);
-        if (existingHandler != null && existingHandler != queryHandler) {
-            throw new DuplicateQueryHandlerSubscriptionException(queryName, existingHandler, queryHandler);
-        }
+
+        subscriptions.compute(queryName, (key, existingHandlers) -> {
+            if (existingHandlers == null) {
+                existingHandlers = new CopyOnWriteArrayList<>();
+            }
+            for (QueryHandler existing : existingHandlers) {
+                if (existing == queryHandler) {
+                    return existingHandlers;
+                }
+                if (existing.supportedVersions().overlaps(queryHandler.supportedVersions())) {
+                    throw new DuplicateQueryHandlerSubscriptionException(queryName, existing, queryHandler);
+                }
+            }
+            existingHandlers.add(queryHandler);
+            return existingHandlers;
+        });
+
         return this;
     }
 
@@ -185,10 +200,15 @@ public class SimpleQueryBus implements QueryBus {
 
     private QueryHandler handlerFor(QueryMessage query) {
         QualifiedName handlerName = query.type().qualifiedName();
-        if (!subscriptions.containsKey(handlerName)) {
+        String version = query.type().version();
+        List<QueryHandler> handlers = subscriptions.get(handlerName);
+        if (handlers == null) {
             throw NoHandlerForQueryException.forBus(query);
         }
-        return subscriptions.get(handlerName);
+        return handlers.stream()
+                       .filter(h -> h.supportedVersions().matches(version))
+                       .findFirst()
+                       .orElseThrow(() -> NoHandlerForQueryException.forBus(query));
     }
 
     @Override
