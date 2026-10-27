@@ -16,6 +16,7 @@
 
 package org.axonframework.common.configuration;
 
+import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 import org.axonframework.common.infra.DescribableComponent;
 import org.axonframework.common.configuration.Component.Identifier;
@@ -369,7 +370,65 @@ public interface ComponentRegistry extends DescribableComponent {
      *                 {@link ApplicationConfigurer#build()}.
      * @return The current instance of the {@code Configurer} for a fluent API.
      */
-    ComponentRegistry registerEnhancer(ConfigurationEnhancer enhancer);
+    default ComponentRegistry registerEnhancer(ConfigurationEnhancer enhancer) {
+        Objects.requireNonNull(enhancer, "The enhancer must not be null.");
+        return registerEnhancer(enhancer.name(), enhancer);
+    }
+
+    /**
+     * Registers a {@link ConfigurationEnhancer} with this {@code ComponentRegistry} under the given {@code name}.
+     * <p>
+     * An {@code enhancer} is able to invoke <em>any</em> of the methods on this {@code ComponentRegistry}, allowing it
+     * to add (sensible) defaults, decorate {@link Component components}, or replace components entirely.
+     * <p>
+     * An enhancer's {@link ConfigurationEnhancer#enhance(ComponentRegistry)} method is invoked during the
+     * initialization phase when all components have been defined. This is right before the {@code ComponentRegistry}
+     * creates its {@link Configuration}.
+     * <p>
+     * When multiple enhancers have been provided, their {@link ConfigurationEnhancer#order()} dictates the enhancement
+     * order. For enhancers with the same order, the order of execution is undefined.
+     *
+     * @param name     The name under which to register the enhancer.
+     * @param enhancer The configuration enhancer to enhance ComponentRegistry during
+     *                 {@link ApplicationConfigurer#build()}.
+     * @return The current instance of the {@code Configurer} for a fluent API.
+     */
+    ComponentRegistry registerEnhancer(String name, ConfigurationEnhancer enhancer);
+
+    /**
+     * Registers a {@link ConfigurationEnhancer} with this {@code ComponentRegistry} for the given {@code type} and
+     * {@code name} combination.
+     * <p>
+     * An {@code enhancer} is able to invoke <em>any</em> of the methods on this {@code ComponentRegistry}, allowing it
+     * to add (sensible) defaults, decorate {@link Component components}, or replace components entirely.
+     * <p>
+     * If the given {@code name} is {@code null}, the enhancer will be registered under the given {@code type}'s class name.
+     *
+     * @param type     The declared type of the configuration enhancer.
+     * @param name     The name of the configuration enhancer, potentially {@code null}.
+     * @param enhancer The configuration enhancer to enhance ComponentRegistry during
+     *                 {@link ApplicationConfigurer#build()}.
+     * @return The current instance of the {@code Configurer} for a fluent API.
+     */
+    default ComponentRegistry registerEnhancer(Class<? extends ConfigurationEnhancer> type,
+                                               @Nullable String name,
+                                               ConfigurationEnhancer enhancer) {
+        Objects.requireNonNull(type, "The enhancer type must not be null.");
+        return registerEnhancer(name != null ? name : type.getName(), enhancer);
+    }
+
+    /**
+     * Registers a {@link ConfigurationEnhancer} with this {@code ComponentRegistry} for the given {@code type}.
+     *
+     * @param type     The declared type of the configuration enhancer.
+     * @param enhancer The configuration enhancer to enhance ComponentRegistry during
+     *                 {@link ApplicationConfigurer#build()}.
+     * @return The current instance of the {@code Configurer} for a fluent API.
+     */
+    default ComponentRegistry registerEnhancer(Class<? extends ConfigurationEnhancer> type,
+                                               ConfigurationEnhancer enhancer) {
+        return registerEnhancer(type, null, enhancer);
+    }
 
     /**
      * Registers a {@link Module} with this registry.

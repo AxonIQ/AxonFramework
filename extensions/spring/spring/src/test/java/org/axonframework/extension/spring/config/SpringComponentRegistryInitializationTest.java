@@ -61,6 +61,22 @@ class SpringComponentRegistryInitializationTest {
     }
 
     @Test
+    void registerEnhancerByNameAllowsProgrammaticRegistration() {
+        DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory();
+        SpringLifecycleRegistry lifecycleRegistry = new SpringLifecycleRegistry();
+        lifecycleRegistry.setBeanFactory(beanFactory);
+
+        SpringComponentRegistry testSubject = new SpringComponentRegistry(beanFactory, lifecycleRegistry);
+        testSubject.postProcessBeanFactory(beanFactory);
+
+        boolean[] invoked = new boolean[]{false};
+        testSubject.registerEnhancer("customNamedEnhancer", registry -> invoked[0] = true);
+
+        testSubject.initialize();
+        assertThat(invoked[0]).isTrue();
+    }
+
+    @Test
     void shouldDeferInitializationForConfigurationPropertiesBindingQualifiedBeans() {
         DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory();
         SpringLifecycleRegistry lifecycleRegistry = new SpringLifecycleRegistry();

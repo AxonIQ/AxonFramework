@@ -58,6 +58,17 @@ public interface ConfigurationEnhancer {
      *
      * @return The order in which this enhancer should be invoked.
      */
+    /**
+     * Returns the name of this enhancer.
+     * <p>
+     * Defaults to the fully qualified class name of this instance.
+     *
+     * @return The name of this enhancer.
+     */
+    default String name() {
+        return getClass().getName();
+    }
+
     default int order() {
         return 0;
     }
