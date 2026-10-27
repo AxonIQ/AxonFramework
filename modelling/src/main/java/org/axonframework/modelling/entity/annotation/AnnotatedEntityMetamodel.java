@@ -60,6 +60,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -288,7 +289,7 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
                 entityType, messageTypeResolver, parameterResolverFactory, handlerDefinition
         );
         builder.entityEvolver(new AnnotationBasedEntityEvolvingComponent<>(
-                entityType, inspected, eventConverter, messageTypeResolver
+                entityType, inspected, eventConverter, messageTypeResolver, Set.of(entityType)
         ));
         initializeDetectedHandlers(builder, inspected);
         registerCommandInterceptors(builder, inspected);
@@ -311,10 +312,13 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
         );
 
         var builder = PolymorphicEntityMetamodel.forSuperType(entityType);
+        Set<Class<?>> knownResultTypes = new HashSet<>(concreteTypes);
+        knownResultTypes.add(entityType);
         builder.entityEvolver(new AnnotationBasedEntityEvolvingComponent<>(entityType,
                                                                            inspected,
                                                                            eventConverter,
-                                                                           messageTypeResolver));
+                                                                           messageTypeResolver,
+                                                                           knownResultTypes));
         initializeChildren(builder);
         // Creational commands present on the super type must not be re-registered on a concrete type: see
         // initializeDetectedHandlers and the commandsToSkip javadoc for why.
