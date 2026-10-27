@@ -292,8 +292,9 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
         // because concrete metamodels are only reached through the PolymorphicEntityMetamodel of the super type.
         //noinspection unchecked
         Class<E> evolvedType = polymorphicSuperType != null ? (Class<E>) polymorphicSuperType : entityType;
+        Set<Class<?>> knownResultTypes = polymorphicSuperType != null ? Set.of() : Set.of(entityType);
         builder.entityEvolver(new AnnotationBasedEntityEvolvingComponent<>(
-                evolvedType, inspected, eventConverter, messageTypeResolver
+                evolvedType, inspected, eventConverter, messageTypeResolver, knownResultTypes
         ));
         initializeDetectedHandlers(builder, inspected);
         registerCommandInterceptors(builder, inspected);
