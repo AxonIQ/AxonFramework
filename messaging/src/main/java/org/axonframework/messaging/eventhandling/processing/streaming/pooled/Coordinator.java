@@ -984,7 +984,10 @@ class Coordinator {
                 errorWaitBackOff = 500;
                 processingGate.set(false);
 
-                if (isSpaceAvailable() && hasNextEvent()) {
+                // Read once: the stream only calls back once it was found without events, so waiting for that
+                // callback is only safe when hasNextEvent() was asked, which it is not when there was no space.
+                boolean spaceAvailable = isSpaceAvailable();
+                if (spaceAvailable && hasNextEvent()) {
                     // All work package have space available to handle events and there are still events on the stream.
                     // We should thus start this process again immediately.
                     // It will likely jump all the if-statement directly, thus initiating the reading of events ASAP.
@@ -994,7 +997,7 @@ class Coordinator {
                             name,
                             generation);
                     scheduleImmediateCoordinationTask();
-                } else if (isSpaceAvailable()) {
+                } else if (spaceAvailable) {
                     if (!availabilityCallbackSupported) {
                         logger.trace(
                                 "Processor [{}] (Coordination Task [{}]). Space available, no events pending, "

@@ -276,6 +276,37 @@ class CoordinatorTest {
         verify(workPackage, never()).scheduleEvents(any());
     }
 
+    @Test
+    void coordinationTaskWaitsTheNoCapacityDelayWhenAWorkPackageGetsRoomAfterTheCoordinationFoundNone() {
+        TrackingToken testToken = new GlobalSequenceTrackingToken(0);
+        Coordinator coordinator = buildCoordinatorWith(builder -> builder.noCapacityDelay(7));
+        // the work package has no room while the coordinator offers events, and has room again just after
+        when(workPackage.hasRemainingCapacity()).thenReturn(false, false, true);
+        when(workPackage.isAbortTriggered()).thenReturn(false);
+        MessageStream<EventMessage> testStream = MessageStream.fromIterable(
+                List.of(EventTestUtils.asEventMessage("this-event")),
+                (e) -> trackingTokenContext(testToken)
+        );
+
+        when(executorService.submit(any(Runnable.class))).thenAnswer(runTaskAsync());
+        doAnswer(invocation -> { ((Runnable) invocation.getArgument(0)).run(); return null; })
+                .doAnswer(invocation -> null)
+                .when(executorService).schedule(any(Runnable.class), anyLong(), any(TimeUnit.class));
+        when(tokenStore.fetchSegments(eq(PROCESSOR_NAME), any())).thenReturn(completedFuture(SEGMENTS));
+        when(tokenStore.fetchAvailableSegments(eq(PROCESSOR_NAME), any()))
+                .thenReturn(completedFuture(Collections.singletonList(SEGMENT_ONE)));
+        when(tokenStore.fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_ONE), any()))
+                .thenReturn(completedFuture(testToken));
+        when(messageSource.open(streamingFrom(testToken), null)).thenReturn(testStream);
+
+        awaitStart(coordinator);
+
+        // the event waits in the stream, which will not signal it again, so the coordinator must not wait for that
+        await().atMost(1, TimeUnit.SECONDS)
+               .untilAsserted(() -> verify(executorService)
+                       .schedule(any(Runnable.class), eq(7L), eq(TimeUnit.MILLISECONDS)));
+    }
+
     /**
      * Tests for the {@code claimNewSegments} path — specifically how the coordinator handles
      * {@link UnableToClaimTokenException} during token claiming.
