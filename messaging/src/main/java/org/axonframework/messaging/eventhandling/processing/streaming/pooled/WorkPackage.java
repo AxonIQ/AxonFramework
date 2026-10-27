@@ -108,7 +108,7 @@ class WorkPackage implements SegmentProgressContext {
     private final SegmentProgressStrategy progressStrategy;
 
     private @Nullable TrackingToken lastDeliveredToken; // For use only by event delivery threads, like Coordinator
-    private @Nullable TrackingToken lastStoredToken;
+    private volatile @Nullable TrackingToken lastStoredToken;
     private final AtomicLong nextClaimExtension;
 
     private final Queue<ProcessingEntry> processingQueue = new ConcurrentLinkedQueue<>();
@@ -117,6 +117,7 @@ class WorkPackage implements SegmentProgressContext {
     private final AtomicReference<@Nullable Throwable> abortException = new AtomicReference<>();
     private @Nullable Runnable batchProcessedCallback;
     private volatile @Nullable TrackingToken lastConsumedToken;
+    private volatile @Nullable TrackingToken lastHandledToken;
 
     /**
      * Instantiate a Builder to be able to create a {@code WorkPackage}. This builder <b>does not</b> validate the
@@ -142,6 +143,7 @@ class WorkPackage implements SegmentProgressContext {
         this.segmentStatusUpdater = builder.segmentStatusUpdater;
         this.clock = builder.clock;
         this.lastConsumedToken = builder.initialToken;
+        this.lastHandledToken = builder.initialToken;
         // The claimed token is by definition the last position the token store accepted for this segment, so it is the
         // reference the monotonicity guard in storeIfAdvanced must start from. Leaving it null would skip the guard on
         // the first store of every claim cycle.
@@ -413,7 +415,11 @@ class WorkPackage implements SegmentProgressContext {
         while (!isAbortTriggered() && eventBatch.size() < batchSize && !processingQueue.isEmpty()) {
             ProcessingEntry entry = processingQueue.poll();
             lastConsumedToken = WrappedToken.advance(lastConsumedToken, entry.trackingToken());
+            int batchSizeBeforeEntry = eventBatch.size();
             entry.addToBatch(eventBatch, lastConsumedToken);
+            if (eventBatch.size() > batchSizeBeforeEntry) {
+                lastHandledToken = lastConsumedToken;
+            }
         }
 
         // Make sure all subsequent events with the same token (if non-null) as the last are added as well.
@@ -546,6 +552,16 @@ class WorkPackage implements SegmentProgressContext {
     @Override
     public @Nullable TrackingToken lastConsumedToken() {
         return lastConsumedToken;
+    }
+
+    @Override
+    public @Nullable TrackingToken lastHandledToken() {
+        return lastHandledToken;
+    }
+
+    @Override
+    public @Nullable TrackingToken lastStoredToken() {
+        return lastStoredToken;
     }
 
     @Override

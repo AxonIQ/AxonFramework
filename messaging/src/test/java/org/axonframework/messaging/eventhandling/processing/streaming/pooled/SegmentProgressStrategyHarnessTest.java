@@ -23,6 +23,7 @@ import org.axonframework.messaging.eventhandling.processing.streaming.token.Trac
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
@@ -59,6 +60,23 @@ class SegmentProgressStrategyHarnessTest extends SegmentProgressStrategyTestSupp
 
         // then -- the released position is the already-stored batch end
         assertThat(storedPosition()).isEqualTo(3L);
+    }
+
+    @Test
+    void skippedEventsAreStoredOnTheIdleUpkeepWithoutBeingHandled() {
+        // given: a threshold short enough that a worker cycle without a batch runs the idle upkeep
+        WorkPackageHarness harness = harness(segment(), SegmentProgressStrategyFactory.tokenStoring(), 1);
+        harness.onSegmentClaimed();
+        AtomicLong position = new AtomicLong();
+
+        // when: every skipped event runs the worker, so keep skipping events until a cycle reaches the upkeep
+        await().atMost(TIMEOUT).untilAsserted(() -> {
+            harness.scheduleSkippedEvent(eventAt(position.incrementAndGet()));
+            assertThat(storedPosition()).isPositive();
+        });
+
+        // then
+        assertThat(harness.batchProcessor().processed()).isEmpty();
     }
 
     private long storedPosition() {
