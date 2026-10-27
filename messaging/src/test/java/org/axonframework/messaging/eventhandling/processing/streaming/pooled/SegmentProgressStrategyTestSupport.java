@@ -37,7 +37,9 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -147,7 +149,24 @@ public abstract class SegmentProgressStrategyTestSupport {
      * @return a harness around a fresh work package for {@code segment}
      */
     protected WorkPackageHarness harness(Segment segment, SegmentProgressStrategyFactory progressStrategyFactory) {
-        return new WorkPackageHarness(segment, progressStrategyFactory);
+        return harness(segment, progressStrategyFactory, 5000);
+    }
+
+    /**
+     * Builds a {@link WorkPackageHarness} for the given {@code segment} with the given
+     * {@code claimExtensionThreshold}, wiring the given {@code progressStrategyFactory} into the work package under
+     * test. A short threshold lets a test reach the idle upkeep, which stores progress made through skipped events,
+     * without waiting.
+     *
+     * @param segment                 the segment the work package is responsible for
+     * @param progressStrategyFactory the strategy factory under test
+     * @param claimExtensionThreshold the time in milliseconds after which the work package extends its claim
+     * @return a harness around a fresh work package for {@code segment}
+     */
+    protected WorkPackageHarness harness(Segment segment,
+                                         SegmentProgressStrategyFactory progressStrategyFactory,
+                                         long claimExtensionThreshold) {
+        return new WorkPackageHarness(segment, progressStrategyFactory, claimExtensionThreshold);
     }
 
     /**
@@ -171,19 +190,24 @@ public abstract class SegmentProgressStrategyTestSupport {
 
         private final WorkPackage workPackage;
         private final RecordingBatchProcessor batchProcessor = new RecordingBatchProcessor();
+        private final Set<String> skippedEventIds = ConcurrentHashMap.newKeySet();
 
-        private WorkPackageHarness(Segment segment, SegmentProgressStrategyFactory progressStrategyFactory) {
+        private WorkPackageHarness(Segment segment,
+                                   SegmentProgressStrategyFactory progressStrategyFactory,
+                                   long claimExtensionThreshold) {
             this.workPackage = WorkPackage.builder()
                                           .name(PROCESSOR_NAME)
                                           .tokenStore(tokenStore)
                                           .unitOfWorkFactory(UnitOfWorkTestUtils.SIMPLE_FACTORY)
                                           .executorService(executorService)
-                                          .eventFilter((event, context, seg) -> true)
+                                          .eventFilter((event, context, seg) -> !skippedEventIds.contains(
+                                                  event.identifier()
+                                          ))
                                           .batchProcessor(batchProcessor)
                                           .segment(segment)
                                           .initialToken(initialToken)
                                           .batchSize(1)
-                                          .claimExtensionThreshold(5000)
+                                          .claimExtensionThreshold(claimExtensionThreshold)
                                           .progressStrategyFactory(progressStrategyFactory)
                                           .segmentStatusUpdater(op -> {
                                           })
@@ -213,6 +237,18 @@ public abstract class SegmentProgressStrategyTestSupport {
          * @return {@code true} if the event was scheduled, {@code false} if it was ignored
          */
         public boolean scheduleEvent(MessageStream.Entry<? extends EventMessage> entry) {
+            return workPackage.scheduleEvent(entry);
+        }
+
+        /**
+         * Schedules an event the work package skips, as it does for an event of another segment: the event moves the
+         * consumed position, but is never handed to the handler.
+         *
+         * @param entry the event entry to schedule and skip
+         * @return {@code true} if the event was scheduled for handling, which a skipped event never is
+         */
+        public boolean scheduleSkippedEvent(MessageStream.Entry<? extends EventMessage> entry) {
+            skippedEventIds.add(entry.message().identifier());
             return workPackage.scheduleEvent(entry);
         }
 

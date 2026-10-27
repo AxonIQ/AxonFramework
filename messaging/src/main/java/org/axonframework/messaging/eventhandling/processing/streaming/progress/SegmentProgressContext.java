@@ -66,6 +66,29 @@ public interface SegmentProgressContext {
     TrackingToken lastConsumedToken();
 
     /**
+     * Returns the {@link TrackingToken} of the last event handed to the handler for this segment, or the token the
+     * segment was claimed at when no event has been handed to it since. Unlike {@link #lastConsumedToken()}, skipped
+     * events do not move it.
+     * <p>
+     * Events between this token and the {@link #lastConsumedToken()} were skipped, so storing the consumed position
+     * instead of this one changes nothing for the handler: on a restart, the skipped events would be skipped again.
+     *
+     * @return the token of the last handled event, or {@code null} if nothing has been handled and the segment was
+     * claimed at the start of the stream
+     */
+    @Nullable
+    TrackingToken lastHandledToken();
+
+    /**
+     * Returns the {@link TrackingToken} last stored for this segment, either at claim time or through
+     * {@link #persistProgress(TrackingToken, ProcessingContext)}.
+     *
+     * @return the last stored token, or {@code null} if the segment is stored at the start of the stream
+     */
+    @Nullable
+    TrackingToken lastStoredToken();
+
+    /**
      * Wakes the segment's worker so a commit cycle runs. The lever a strategy uses to act on out-of-band work (such as
      * an asynchronous checkpoint request) recorded between worker cycles; safe to call from any thread.
      */
