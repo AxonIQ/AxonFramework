@@ -855,6 +855,47 @@ class WorkPackageTest {
     }
 
     @Nested
+    class ProgressPositions {
+
+        @Test
+        void handledAndStoredTokensStartAtTheClaimedToken() {
+            // given
+            WorkPackage subject = testSubjectBuilder.initialToken(new GlobalSequenceTrackingToken(3L)).build();
+
+            // when / then
+            assertEquals(new GlobalSequenceTrackingToken(3L), subject.lastHandledToken());
+            assertEquals(new GlobalSequenceTrackingToken(3L), subject.lastStoredToken());
+        }
+
+        @Test
+        void lastHandledTokenIgnoresSkippedEvents() {
+            // given: the filter rejects the second event, as it does for an event of another segment
+            var handledEvent = new SimpleEntry<>(EventTestUtils.asEventMessage("handled"), globalTrackingTokenContext(1L));
+            var skippedEvent = new SimpleEntry<>(EventTestUtils.asEventMessage("skipped"), globalTrackingTokenContext(2L));
+            eventFilterPredicate = event -> !event.equals(skippedEvent.message());
+
+            // when
+            testSubject.scheduleEvent(handledEvent);
+            testSubject.scheduleEvent(skippedEvent);
+
+            // then
+            await().atMost(TIMEOUT).untilAsserted(
+                    () -> assertEquals(new GlobalSequenceTrackingToken(2L), testSubject.lastConsumedToken())
+            );
+            assertEquals(new GlobalSequenceTrackingToken(1L), testSubject.lastHandledToken());
+        }
+
+        @Test
+        void lastStoredTokenFollowsPersistedProgress() {
+            // when
+            persistProgressInUnitOfWork(new GlobalSequenceTrackingToken(5L));
+
+            // then
+            assertEquals(new GlobalSequenceTrackingToken(5L), testSubject.lastStoredToken());
+        }
+    }
+
+    @Nested
     class ScheduleWorkerLifecycleTest {
 
         @Test
