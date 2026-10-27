@@ -77,6 +77,7 @@ import static org.axonframework.common.BuilderUtils.assertStrictPositive;
  *     <li>The {@code tokenClaimInterval} defaults to {@code 5000} milliseconds.</li>
  *     <li>The {@link MaxSegmentProvider} (used by {@link PooledStreamingEventProcessor#maxCapacity()}) defaults to {@link MaxSegmentProvider#maxShort()}.</li>
  *     <li>The {@code claimExtensionThreshold} defaults to {@code 5000} milliseconds.</li>
+ *     <li>The {@code noCapacityDelay} defaults to {@code 100} milliseconds.</li>
  *     <li>The {@code batchSize} defaults to {@code 1}.</li>
  *     <li>The {@link Clock} defaults to {@link ClockUtils#get()}.</li>
  *     <li>The {@code coordinatorExtendsClaims} defaults to a {@code false}.</li>
@@ -110,6 +111,7 @@ public class PooledStreamingEventProcessorConfiguration extends EventProcessorCo
     private long tokenClaimInterval = 5000;
     private MaxSegmentProvider maxSegmentProvider = MaxSegmentProvider.maxShort();
     private long claimExtensionThreshold = 5000;
+    private long noCapacityDelay = 100;
     private int batchSize = 1;
     @Deprecated(forRemoval = true, since = "5.2.0")
     private Clock clock = ClockUtils.get();
@@ -418,6 +420,23 @@ public class PooledStreamingEventProcessorConfiguration extends EventProcessorCo
     }
 
     /**
+     * Specifies the time in milliseconds the coordinator of this processor waits before it offers events to its work
+     * packages again, when none of them has room for more. The coordinator is not told when a work package makes room,
+     * so this wait bounds the throughput of a processor whose work packages handle their events faster than it: a work
+     * package holds at most a fixed number of events, and handles no more than that per wait. Defaults to {@code 100}
+     * milliseconds.
+     *
+     * @param noCapacityDelay The time in milliseconds the coordinator waits before it offers events again, when no
+     *                        work package has room for them.
+     * @return The current instance, for fluent interfacing.
+     */
+    public PooledStreamingEventProcessorConfiguration noCapacityDelay(long noCapacityDelay) {
+        assertStrictPositive(noCapacityDelay, "The no capacity delay should be a higher value than zero");
+        this.noCapacityDelay = noCapacityDelay;
+        return this;
+    }
+
+    /**
      * Specifies the number of events to be processed inside a single transaction. Defaults to a batch size of
      * {@code 1}.
      * <p>
@@ -689,6 +708,16 @@ public class PooledStreamingEventProcessorConfiguration extends EventProcessorCo
     }
 
     /**
+     * Returns the time in milliseconds the coordinator waits before it offers events again, when no work package has
+     * room for them.
+     *
+     * @return The no capacity delay.
+     */
+    public long noCapacityDelay() {
+        return noCapacityDelay;
+    }
+
+    /**
      * Returns the number of events processed in a single transaction.
      *
      * @return The batch size.
@@ -810,6 +839,7 @@ public class PooledStreamingEventProcessorConfiguration extends EventProcessorCo
         descriptor.describeProperty("tokenClaimInterval", tokenClaimInterval);
         descriptor.describeProperty("maxSegmentProvider", maxSegmentProvider);
         descriptor.describeProperty("claimExtensionThreshold", claimExtensionThreshold);
+        descriptor.describeProperty("noCapacityDelay", noCapacityDelay);
         descriptor.describeProperty("batchSize", batchSize);
         descriptor.describeProperty("clock", clock);
         descriptor.describeProperty("coordinatorExtendsClaims", coordinatorExtendsClaims);

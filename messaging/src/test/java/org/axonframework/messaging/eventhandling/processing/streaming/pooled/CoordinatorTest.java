@@ -245,6 +245,37 @@ class CoordinatorTest {
         verify(workPackage, times(0)).scheduleEvent(any());
     }
 
+    @Test
+    void coordinationTaskWaitsTheNoCapacityDelayWhenNoWorkPackageHasRoom() {
+        TrackingToken testToken = new GlobalSequenceTrackingToken(0);
+        Coordinator coordinator = buildCoordinatorWith(builder -> builder.noCapacityDelay(7));
+        when(workPackage.hasRemainingCapacity()).thenReturn(false);
+        when(workPackage.isAbortTriggered()).thenReturn(false);
+        MessageStream<EventMessage> testStream = MessageStream.fromIterable(
+                List.of(EventTestUtils.asEventMessage("this-event")),
+                (e) -> trackingTokenContext(testToken)
+        );
+
+        when(executorService.submit(any(Runnable.class))).thenAnswer(runTaskAsync());
+        // the first scheduled run coordinates, and finds no room; the coordination task it schedules then is not run
+        doAnswer(invocation -> { ((Runnable) invocation.getArgument(0)).run(); return null; })
+                .doAnswer(invocation -> null)
+                .when(executorService).schedule(any(Runnable.class), anyLong(), any(TimeUnit.class));
+        when(tokenStore.fetchSegments(eq(PROCESSOR_NAME), any())).thenReturn(completedFuture(SEGMENTS));
+        when(tokenStore.fetchAvailableSegments(eq(PROCESSOR_NAME), any()))
+                .thenReturn(completedFuture(Collections.singletonList(SEGMENT_ONE)));
+        when(tokenStore.fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_ONE), any()))
+                .thenReturn(completedFuture(testToken));
+        when(messageSource.open(streamingFrom(testToken), null)).thenReturn(testStream);
+
+        awaitStart(coordinator);
+
+        await().atMost(1, TimeUnit.SECONDS)
+               .untilAsserted(() -> verify(executorService)
+                       .schedule(any(Runnable.class), eq(7L), eq(TimeUnit.MILLISECONDS)));
+        verify(workPackage, never()).scheduleEvents(any());
+    }
+
     /**
      * Tests for the {@code claimNewSegments} path — specifically how the coordinator handles
      * {@link UnableToClaimTokenException} during token claiming.
