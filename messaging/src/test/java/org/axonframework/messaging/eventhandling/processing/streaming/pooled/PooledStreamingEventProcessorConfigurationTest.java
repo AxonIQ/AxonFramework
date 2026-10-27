@@ -86,4 +86,33 @@ class PooledStreamingEventProcessorConfigurationTest {
                     .isInstanceOf(AxonConfigurationException.class);
         }
     }
+
+    @Nested
+    class NoCapacityDelayTest {
+
+        private final PooledStreamingEventProcessorConfiguration testSubject = new PooledStreamingEventProcessorConfiguration(
+                new EventProcessorConfiguration("processorName", null)
+        );
+
+        @Test
+        void defaultsToOneHundredMilliseconds() {
+            assertThat(testSubject.noCapacityDelay()).isEqualTo(100);
+        }
+
+        @Test
+        void noCapacityDelaySetsAndReturnsTheGivenDelay() {
+            // when
+            PooledStreamingEventProcessorConfiguration result = testSubject.noCapacityDelay(1);
+
+            // then
+            assertThat(result).isSameAs(testSubject);
+            assertThat(testSubject.noCapacityDelay()).isEqualTo(1);
+        }
+
+        @Test
+        void noCapacityDelayRejectsZeroAndNegativeDelays() {
+            assertThatThrownBy(() -> testSubject.noCapacityDelay(0)).isInstanceOf(AxonConfigurationException.class);
+            assertThatThrownBy(() -> testSubject.noCapacityDelay(-1)).isInstanceOf(AxonConfigurationException.class);
+        }
+    }
 }
