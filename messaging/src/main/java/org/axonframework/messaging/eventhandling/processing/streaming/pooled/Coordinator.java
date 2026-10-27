@@ -97,6 +97,7 @@ class Coordinator {
     private final BiConsumer<Integer, UnaryOperator<TrackerStatus>> processingStatusUpdater;
     private final long tokenClaimInterval;
     private final long claimExtensionThreshold;
+    private final long noCapacityDelay;
     private final long tokenStoreInitRetryInterval;
     private final long tokenStoreInitMaxRetries;
     @Deprecated(forRemoval = true, since = "5.2.0")
@@ -139,6 +140,7 @@ class Coordinator {
         this.processingStatusUpdater = builder.processingStatusUpdater;
         this.tokenClaimInterval = builder.tokenClaimInterval;
         this.claimExtensionThreshold = builder.claimExtensionThreshold;
+        this.noCapacityDelay = builder.noCapacityDelay;
         this.tokenStoreInitRetryInterval = builder.tokenStoreInitRetryInterval;
         this.tokenStoreInitMaxRetries = builder.tokenStoreInitMaxRetries;
         this.clock = builder.clock;
@@ -427,6 +429,7 @@ class Coordinator {
         private BiConsumer<Integer, UnaryOperator<TrackerStatus>> processingStatusUpdater;
         private long tokenClaimInterval = 5000;
         private long claimExtensionThreshold = 5000;
+        private long noCapacityDelay = 100;
         private long tokenStoreInitRetryInterval = 100;
         private long tokenStoreInitMaxRetries = 30;
         @Deprecated(forRemoval = true, since = "5.2.0")
@@ -555,6 +558,18 @@ class Coordinator {
          */
         Builder claimExtensionThreshold(long claimExtensionThreshold) {
             this.claimExtensionThreshold = claimExtensionThreshold;
+            return this;
+        }
+
+        /**
+         * Sets the time the coordinator waits before it offers events to its work packages again, when none of them
+         * has room for more. Defaults to {@code 100}.
+         *
+         * @param noCapacityDelay the time in milliseconds
+         * @return the current Builder instance, for fluent interfacing
+         */
+        Builder noCapacityDelay(long noCapacityDelay) {
+            this.noCapacityDelay = noCapacityDelay;
             return this;
         }
 
@@ -969,7 +984,10 @@ class Coordinator {
                 errorWaitBackOff = 500;
                 processingGate.set(false);
 
-                if (isSpaceAvailable() && hasNextEvent()) {
+                // Read once: the stream only calls back once it was found without events, so waiting for that
+                // callback is only safe when hasNextEvent() was asked, which it is not when there was no space.
+                boolean spaceAvailable = isSpaceAvailable();
+                if (spaceAvailable && hasNextEvent()) {
                     // All work package have space available to handle events and there are still events on the stream.
                     // We should thus start this process again immediately.
                     // It will likely jump all the if-statement directly, thus initiating the reading of events ASAP.
@@ -979,7 +997,7 @@ class Coordinator {
                             name,
                             generation);
                     scheduleImmediateCoordinationTask();
-                } else if (isSpaceAvailable()) {
+                } else if (spaceAvailable) {
                     if (!availabilityCallbackSupported) {
                         logger.trace(
                                 "Processor [{}] (Coordination Task [{}]). Space available, no events pending, "
@@ -1000,10 +1018,11 @@ class Coordinator {
                 } else {
                     logger.trace(
                             "Processor [{}] (Coordination Task [{}]). No space available in work packages. "
-                                    + "Scheduling coordination task (itself) with delay of 100ms.",
+                                    + "Scheduling coordination task (itself) with delay of {}ms.",
                             name,
-                            generation);
-                    scheduleCoordinationTask(100);
+                            generation,
+                            noCapacityDelay);
+                    scheduleCoordinationTask(noCapacityDelay);
                 }
             } catch (Throwable e) {
                 logger.warn(
