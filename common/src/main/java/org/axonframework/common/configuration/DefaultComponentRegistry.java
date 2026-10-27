@@ -187,14 +187,22 @@ public class DefaultComponentRegistry implements ComponentRegistry {
     }
 
     @Override
-    public ComponentRegistry registerEnhancer(ConfigurationEnhancer enhancer) {
-        logger.debug("Registering enhancer [{}].", enhancer.getClass().getSimpleName());
-        ConfigurationEnhancer previous = this.enhancers.put(enhancer.getClass().getName(), enhancer);
+    public ComponentRegistry registerEnhancer(String name, ConfigurationEnhancer enhancer) {
+        requireNonNull(name, "The enhancer name must not be null.");
+        requireNonNull(enhancer, "The enhancer must not be null.");
+        logger.debug("Registering enhancer [{}] with name [{}].", enhancer.getClass().getSimpleName(), name);
+        ConfigurationEnhancer previous = this.enhancers.put(name, enhancer);
         if (previous != null) {
-            logger.warn("Duplicate Configuration Enhancer registration dedicated. Replaced enhancer of type [{}].",
-                        enhancer.getClass().getSimpleName());
+            logger.warn("Duplicate Configuration Enhancer registration detected. Replaced enhancer [{}] registered under name [{}].",
+                        enhancer.getClass().getSimpleName(), name);
         }
         return this;
+    }
+
+    @Override
+    public ComponentRegistry registerEnhancer(ConfigurationEnhancer enhancer) {
+        requireNonNull(enhancer, "The enhancer must not be null.");
+        return registerEnhancer(enhancer.name(), enhancer);
     }
 
     @Override
@@ -463,7 +471,7 @@ public class DefaultComponentRegistry implements ComponentRegistry {
      * @return {@code true} if the given {@code enhancer} has not been registered yet, {@code false} otherwise.
      */
     private boolean isNotYetRegistered(ConfigurationEnhancer enhancer) {
-        return !enhancers.containsKey(enhancer.getClass().getName());
+        return !enhancers.containsKey(enhancer.name());
     }
 
     @Override
