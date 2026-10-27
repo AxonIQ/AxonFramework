@@ -65,6 +65,7 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
     private final AnnotatedHandlerInspector<E> inspector;
     private final EventConverter converter;
     private final Map<Class<?>, Map<QualifiedName, List<MessageHandlingMember<? super E>>>> handlersByEntityType;
+    private final Set<Class<?>> knownResultTypes;
 
     /**
      * Initialize a new annotation-based {@link EntityEvolver}.
@@ -133,12 +134,40 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
                                                   EventConverter converter,
                                                   MessageTypeResolver messageTypeResolver
     ) {
+        this(entityType, inspector, converter, messageTypeResolver, Set.of());
+    }
+
+    /**
+     * Initialize a new annotation-based {@link EntityEvolver} that rejects handler results whose runtime type is not
+     * among the given {@code knownResultTypes}.
+     * <p>
+     * An empty {@code knownResultTypes} set keeps the previous behavior: any result assignable to {@code entityType} is
+     * accepted. That remains necessary for declarative polymorphic setups, whose super-type evolver still sees
+     * assignable subclass results that are not registered as concrete types.
+     *
+     * @param entityType          the type of entity this instance will handle state changes for
+     * @param inspector           the inspector to use to find the annotated handlers on the entity
+     * @param converter           the converter to use for converting event payloads to the handler's expected type
+     * @param messageTypeResolver the resolver to use for resolving the event message type
+     * @param knownResultTypes    the entity type and registered concrete types that a handler may return; empty to skip
+     *                            the check
+     */
+    public AnnotationBasedEntityEvolvingComponent(Class<E> entityType,
+                                                  AnnotatedHandlerInspector<E> inspector,
+                                                  EventConverter converter,
+                                                  MessageTypeResolver messageTypeResolver,
+                                                  Set<Class<?>> knownResultTypes
+    ) {
         this.entityType = requireNonNull(entityType, "The entity type must not be null.");
         this.inspector = requireNonNull(inspector, "The Annotated Handler Inspector must not be null.");
         this.converter = requireNonNull(converter, "The Converter must not be null.");
         this.handlersByEntityType = indexHandlersByEntityType(
                 requireNonNull(messageTypeResolver, "The Message Type Resolver must not be null.")
         );
+        this.knownResultTypes = Set.copyOf(requireNonNull(
+                knownResultTypes,
+                "The known result types must not be null."
+        ));
     }
 
     @Override
@@ -162,10 +191,12 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
                                         .first()
                                         .asCompletableFuture()
                                         .join();
-                evolvedEntity = entityFromStreamResultOrUpdatedExisting(result, entity);
+                evolvedEntity = entityFromStreamResultOrUpdatedExisting(result, entity, handler, event);
             }
 
             return evolvedEntity;
+        } catch (StateEvolvingException e) {
+            throw e;
         } catch (Exception e) {
             throw new StateEvolvingException(
                     "Failed to apply event [" + event.type() + "] in order to evolve [" + entity.getClass() + "] state",
@@ -208,10 +239,27 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
                       .orElseGet(() -> messageTypeResolver.resolveOrThrow(handler.payloadType()).qualifiedName());
     }
 
-    private E entityFromStreamResultOrUpdatedExisting(MessageStream.Entry<?> potentialEntityFromStream, E existing) {
+    private E entityFromStreamResultOrUpdatedExisting(MessageStream.Entry<?> potentialEntityFromStream,
+                                                      E existing,
+                                                      MessageHandlingMember<? super E> handler,
+                                                      EventMessage event) {
         if (potentialEntityFromStream != null) {
             var resultPayload = potentialEntityFromStream.message().payload();
             if (resultPayload != null && entityType.isAssignableFrom(resultPayload.getClass())) {
+                Class<?> resultType = resultPayload.getClass();
+                if (!knownResultTypes.isEmpty() && !knownResultTypes.contains(resultType)) {
+                    throw new StateEvolvingException(
+                            ("Cannot apply [%s]: [%s] returned [%s], which is not the entity type [%s] or a registered "
+                                    + "concrete type. List it in @EventSourcedEntity(concreteTypes = ...) or make the "
+                                    + "entity type sealed.")
+                                    .formatted(
+                                            event.type(),
+                                            handler.signature(),
+                                            resultType.getName(),
+                                            entityType.getName()
+                                    )
+                    );
+                }
                 //noinspection unchecked
                 return (E) entityType.cast(resultPayload);
             }
