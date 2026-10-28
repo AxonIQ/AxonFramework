@@ -49,6 +49,25 @@ See xref:events:event-store-internals.adoc#tags[Event store internals] for detai
 It does not affect which entity instance is loaded.
 ====
 
+[#_entity_id_resolver]
+=== Resolving entity identifiers
+
+Under the hood, Axon Framework uses an `EntityIdResolver` to extract the identifier from an incoming command `Message` and its `ProcessingContext`.
+The resolver is created for each entity type and identifier type through an `EntityIdResolverDefinition`.
+
+By default, Axon uses `DefaultEntityIdResolverDefinition` (which extends `AnnotationBasedEntityIdResolverDefinition`).
+This inspects command payloads for `@TargetEntityId` on fields or getter methods to resolve the identifier.
+
+Axon provides several built-in `EntityIdResolver` implementations:
+
+* **`AnnotationBasedEntityIdResolver`**: Resolves the entity identifier from the annotated `@TargetEntityId` field or getter method in the command payload.
+* **`PropertyBasedEntityIdResolver`**: Extracts the entity identifier using a named property on the command.
+* **`MetadataEntityIdResolver`**: Extracts the identifier from the `Message`'s `Metadata` using a configured metadata key.
+* **`FallbackEntityIdResolver`**: Attempts multiple delegate resolvers in sequence, returning the first successfully resolved identifier.
+* **`RepresentationConvertingEntityIdResolver`**: Converts an identifier between different representations (such as String and UUID or domain-specific wrapper types).
+
+Custom identifier resolution logic can be provided by implementing a custom `EntityIdResolverDefinition` and configuring it on the entity metamodel or module configuration.
+
 [#_entity_members]
 == Entity members
 
