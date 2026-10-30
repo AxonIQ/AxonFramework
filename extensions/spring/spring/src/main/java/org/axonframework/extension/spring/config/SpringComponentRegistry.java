@@ -218,10 +218,18 @@ public class SpringComponentRegistry implements
     }
 
     @Override
-    public ComponentRegistry registerEnhancer(ConfigurationEnhancer enhancer) {
-        logger.debug("Registering enhancer [{}].", enhancer.getClass().getSimpleName());
-        doRegisterEnhancer(enhancer.getClass().getName(), enhancer);
+    public ComponentRegistry registerEnhancer(String name, ConfigurationEnhancer enhancer) {
+        Objects.requireNonNull(name, "The enhancer name must not be null.");
+        Objects.requireNonNull(enhancer, "The enhancer must not be null.");
+        logger.debug("Registering enhancer [{}] with name [{}].", enhancer.getClass().getSimpleName(), name);
+        doRegisterEnhancer(name, enhancer);
         return this;
+    }
+
+    @Override
+    public ComponentRegistry registerEnhancer(ConfigurationEnhancer enhancer) {
+        Objects.requireNonNull(enhancer, "The enhancer must not be null.");
+        return registerEnhancer(enhancer.name(), enhancer);
     }
 
     private void doRegisterEnhancer(String name, ConfigurationEnhancer enhancer) {
