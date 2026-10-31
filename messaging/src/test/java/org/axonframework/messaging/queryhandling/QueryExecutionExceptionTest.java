@@ -18,6 +18,7 @@ package org.axonframework.messaging.queryhandling;
 
 import org.axonframework.conversion.ChainingContentTypeConverter;
 import org.axonframework.conversion.Converter;
+import org.axonframework.messaging.core.VersionedType;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Type;
@@ -55,5 +56,15 @@ class QueryExecutionExceptionTest {
         // then
         assertThat(result).isEqualTo(stringDetails);
         verify(converter).convert(eq(byteDetails), eq((Type) String.class));
+    }
+
+    @Test
+    void constructorWithDetailsAndDetailsTypeExposesThem() {
+        VersionedType type = VersionedType.of("MyQueryError", "1.0.0");
+        QueryExecutionException exception =
+                new QueryExecutionException("message", null, "details", type);
+
+        assertThat(exception.getDetails(String.class)).contains("details");
+        assertThat(exception.detailsType()).contains(type);
     }
 }
