@@ -18,6 +18,7 @@ package org.axonframework.messaging.queryhandling;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.conversion.Converter;
 import org.axonframework.messaging.core.HandlerExecutionException;
+import org.axonframework.messaging.core.VersionedType;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -69,6 +70,22 @@ public class QueryExecutionException extends HandlerExecutionException {
                                    @Nullable Object details,
                                    boolean writableStackTrace) {
         super(message, cause, details, writableStackTrace);
+    }
+
+    /**
+     * Initializes the exception with given {@code message}, {@code cause}, {@code details}, and its
+     * {@code detailsType}.
+     *
+     * @param message     message explaining the context of the error
+     * @param cause       the underlying cause of the invocation failure
+     * @param details     an object providing more error details (might be {@code null})
+     * @param detailsType the {@link VersionedType} describing the type and version of the details
+     */
+    public QueryExecutionException(String message,
+                                   @Nullable Throwable cause,
+                                   @Nullable Object details,
+                                   @Nullable VersionedType detailsType) {
+        super(message, cause, details, detailsType);
     }
 
     /**
