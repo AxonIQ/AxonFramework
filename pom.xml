@@ -78,19 +78,19 @@
         <!-- Build / Plugin -->
         <central-publishing-maven-plugin.version>0.12.0</central-publishing-maven-plugin.version>
         <eclipse.transformer-maven-plugin.version>1.0.0</eclipse.transformer-maven-plugin.version>
-        <jacoco-maven.version>0.8.15</jacoco-maven.version>
+        <jacoco-maven.version>0.8.16</jacoco-maven.version>
         <maven-assembly.version>3.8.0</maven-assembly.version>
         <maven-clean.version>3.5.0</maven-clean.version>
         <maven-compiler.version>3.16.0</maven-compiler.version>
-        <maven-enforcer.version>3.6.3</maven-enforcer.version>
-        <maven-failsafe.version>3.6.0</maven-failsafe.version>
+        <maven-enforcer.version>3.7.0</maven-enforcer.version>
+        <maven-failsafe.version>3.6.1</maven-failsafe.version>
         <maven-gpg.version>3.2.8</maven-gpg.version>
         <maven-install.version>3.2.0</maven-install.version>
         <maven-jar.version>3.5.1</maven-jar.version>
         <maven-javadoc.version>3.12.0</maven-javadoc.version>
         <maven-release.version>3.3.1</maven-release.version>
         <maven-source.version>3.4.0</maven-source.version>
-        <maven-surefire.version>3.6.0</maven-surefire.version>
+        <maven-surefire.version>3.6.1</maven-surefire.version>
         <maven-resources.version>3.5.0</maven-resources.version>
     </properties>
 

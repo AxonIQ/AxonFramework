@@ -46,8 +46,8 @@
         <c3p0.version>0.9.1.2</c3p0.version>
         <hikari.version>7.1.0</hikari.version>
         <hsqldb.version>2.7.4</hsqldb.version>
-        <hibernate-core.version>7.4.13.Final</hibernate-core.version>
-        <mongo.driver.version>5.13.0</mongo.driver.version>
+        <hibernate-core.version>7.4.14.Final</hibernate-core.version>
+        <mongo.driver.version>5.14.0</mongo.driver.version>
         <mysql-connector-java.version>26.10.0</mysql-connector-java.version>
         <postgresql.version>42.7.14</postgresql.version>
         <ojdbc.version>23.26.3.0.0</ojdbc.version>
@@ -64,11 +64,11 @@
         <slf4j.version>2.0.20</slf4j.version>
         <!-- Metrics -->
         <dropwizard.metrics.version>5.0.8</dropwizard.metrics.version>
-        <micrometer.version>1.17.1</micrometer.version>
+        <micrometer.version>1.17.2</micrometer.version>
         <!-- Micrometer Tracing versions independently of Micrometer core, so it has its own property. -->
-        <micrometer-tracing.version>1.7.1</micrometer-tracing.version>
+        <micrometer-tracing.version>1.7.2</micrometer-tracing.version>
         <!-- Other -->
-        <byte-buddy.version>1.18.15</byte-buddy.version>
+        <byte-buddy.version>1.18.16</byte-buddy.version>
         <commons-io.version>2.22.0</commons-io.version>
         <disruptor.version>4.0.0</disruptor.version>
         <findbugs-jsr305.version>3.0.2</findbugs-jsr305.version>
@@ -77,7 +77,7 @@
         <equalsverifier.version>4.5.2</equalsverifier.version>
         <!-- Reactive -->
         <context-propagation.version>1.2.1</context-propagation.version>
-        <projectreactor.version>3.8.7</projectreactor.version>
+        <projectreactor.version>3.8.8</projectreactor.version>
         <reactive.streams.spec.version>1.0.4</reactive.streams.spec.version>
         <!-- Conversion -->
         <avro.version>1.12.2</avro.version>
