@@ -917,6 +917,23 @@ class WorkPackageTest {
         }
 
         @Test
+        void lastHandledTokenStaysAtTheClaimedTokenWhenTheFirstEventIsSkipped() {
+            // given: the filter rejects the event, as it does for an event of another segment
+            WorkPackage subject = testSubjectBuilder.initialToken(new GlobalSequenceTrackingToken(3L)).build();
+            var skippedEvent = new SimpleEntry<>(EventTestUtils.asEventMessage("skipped"), globalTrackingTokenContext(4L));
+            eventFilterPredicate = event -> false;
+
+            // when
+            subject.scheduleEvent(skippedEvent);
+
+            // then
+            await().atMost(TIMEOUT).untilAsserted(
+                    () -> assertEquals(new GlobalSequenceTrackingToken(4L), subject.lastConsumedToken())
+            );
+            assertEquals(new GlobalSequenceTrackingToken(3L), subject.lastHandledToken());
+        }
+
+        @Test
         void lastStoredTokenFollowsPersistedProgress() {
             // when
             persistProgressInUnitOfWork(new GlobalSequenceTrackingToken(5L));
