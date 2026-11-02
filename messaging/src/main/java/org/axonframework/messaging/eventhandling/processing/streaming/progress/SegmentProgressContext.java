@@ -55,8 +55,8 @@ public interface SegmentProgressContext {
     Segment segment();
 
     /**
-     * Returns the highest {@link TrackingToken} handed to the handler so far for this segment, or {@code null} if
-     * nothing has been consumed yet.
+     * Returns the highest {@link TrackingToken} consumed so far for this segment, or {@code null} if nothing has been
+     * consumed yet. This includes events the segment skipped, for example because they belong to another segment.
      * <p>
      * This is the position a strategy treats as "safe up to here" when deciding what to persist.
      *
@@ -72,6 +72,11 @@ public interface SegmentProgressContext {
      * <p>
      * Events between this token and the {@link #lastConsumedToken()} were skipped, so storing the consumed position
      * instead of this one changes nothing for the handler: on a restart, the skipped events would be skipped again.
+     * <p>
+     * This token and the {@link #lastStoredToken()} can be wrapped, for example in a merged or replay token, and
+     * {@link TrackingToken#covers(TrackingToken)} fails for some combinations of wrapped tokens. Compare them with
+     * {@link org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingTokenUtils#coversWhenUnwrapped(TrackingToken, TrackingToken)}
+     * instead.
      *
      * @return the token of the last handled event, or {@code null} if nothing has been handled and the segment was
      * claimed at the start of the stream
@@ -83,7 +88,8 @@ public interface SegmentProgressContext {
      * Returns the {@link TrackingToken} last stored for this segment, either at claim time or through
      * {@link #persistProgress(TrackingToken, ProcessingContext)}.
      *
-     * @return the last stored token, or {@code null} if the segment is stored at the start of the stream
+     * @return the last stored token, or {@code null} when no token is stored yet (the segment starts at the beginning
+     * of the stream)
      */
     @Nullable
     TrackingToken lastStoredToken();
