@@ -886,6 +886,37 @@ class WorkPackageTest {
         }
 
         @Test
+        void lastHandledTokenIgnoresASkippedEventInTheSameBatch() {
+            // given: the worker is held back, so the handled and the skipped event end up in one batch
+            List<Runnable> deferredWorkerTasks = new ArrayList<>();
+            doAnswer(inv -> {
+                deferredWorkerTasks.add(inv.getArgument(0));
+                return CompletableFuture.completedFuture(null);
+            }).when(executorService).submit(any(Runnable.class));
+            List<TrackingToken> batchEndTokens = new ArrayList<>();
+            WorkPackage subject = testSubjectBuilder
+                    .batchSize(2)
+                    .batchProcessor((entries, ctx) -> {
+                        batchEndTokens.add(ctx.getResource(TrackingToken.BATCH_END_RESOURCE_KEY));
+                        return MessageStream.empty();
+                    })
+                    .build();
+            var handledEvent = new SimpleEntry<>(EventTestUtils.asEventMessage("handled"), globalTrackingTokenContext(1L));
+            var skippedEvent = new SimpleEntry<>(EventTestUtils.asEventMessage("skipped"), globalTrackingTokenContext(2L));
+            eventFilterPredicate = event -> !event.equals(skippedEvent.message());
+
+            // when
+            subject.scheduleEvent(handledEvent);
+            subject.scheduleEvent(skippedEvent);
+            runDeferred(deferredWorkerTasks);
+
+            // then: one batch consumed both events, but only the first was handled
+            assertThat(batchEndTokens).containsExactly(new GlobalSequenceTrackingToken(2L));
+            assertEquals(new GlobalSequenceTrackingToken(2L), subject.lastConsumedToken());
+            assertEquals(new GlobalSequenceTrackingToken(1L), subject.lastHandledToken());
+        }
+
+        @Test
         void lastStoredTokenFollowsPersistedProgress() {
             // when
             persistProgressInUnitOfWork(new GlobalSequenceTrackingToken(5L));
