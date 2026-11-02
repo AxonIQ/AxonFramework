@@ -43,6 +43,9 @@ include::example$commands/entities/eventsourcedentity/CourseEntity.java[tag=enti
 Set `tagKey` explicitly to keep it stable if the class is renamed.
 See xref:events:event-store-internals.adoc#tags[Event store internals] for details on how tag-based filtering works.
 
+The `@TargetEntityId` annotation is the default way to resolve the entity identifier.
+See xref:commands:entities/entity-id-resolution.adoc[Entity identifier resolution] for the alternatives, such as resolving the identifier from metadata.
+
 [NOTE]
 ====
 `@Command(routingKey = "...")` is a separate concern: it sets the routing key used by a distributed command bus (such as Axon Server) to route the command to the correct application node.
