@@ -36,6 +36,12 @@ import java.util.concurrent.CompletableFuture;
  * store decision (and the claim-extension timing coupled to it) behind the context, so a strategy carries only the
  * decision logic.
  * <p>
+ * Three tokens describe the progress of the segment. The {@link #lastConsumedToken()} is the furthest position read,
+ * including events the segment skipped. The {@link #lastHandledToken()} is the last event handed to the handler. The
+ * {@link #lastStoredToken()} is the last position persisted. When the stored token covers the last handled event, every
+ * event up to the consumed token was skipped, so a strategy can store the consumed token without waiting for any
+ * handler.
+ * <p>
  * <b>Internal API.</b> This interface is marked {@link Internal}: it is the contract between a streaming processor and a
  * progress strategy, consumed by advanced (and out-of-module) strategies rather than by end users, and its shape may
  * change in a minor or patch release.
@@ -77,22 +83,35 @@ public interface SegmentProgressContext {
      * {@link TrackingToken#covers(TrackingToken)} fails for some combinations of wrapped tokens. Compare them with
      * {@link org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingTokenUtils#coversWhenUnwrapped(TrackingToken, TrackingToken)}
      * instead.
+     * <p>
+     * Defaults to the {@link #lastConsumedToken()}, treating every consumed event as handled. That is the safe answer
+     * for a context that does not tell skipped events apart.
      *
      * @return the token of the last handled event, or {@code null} if nothing has been handled and the segment was
      * claimed at the start of the stream
      */
     @Nullable
-    TrackingToken lastHandledToken();
+    default TrackingToken lastHandledToken() {
+        return lastConsumedToken();
+    }
 
     /**
      * Returns the {@link TrackingToken} last stored for this segment, either at claim time or through
      * {@link #persistProgress(TrackingToken, ProcessingContext)}.
+     * <p>
+     * Like the {@link #lastHandledToken()}, this token can be wrapped, so compare it with
+     * {@link org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingTokenUtils#coversWhenUnwrapped(TrackingToken, TrackingToken)}
+     * instead of {@link TrackingToken#covers(TrackingToken)}.
+     * <p>
+     * Defaults to {@code null}, for a context that does not track its stored token.
      *
      * @return the last stored token, or {@code null} when no token is stored yet (the segment starts at the beginning
-     * of the stream)
+     * of the stream) or the context does not track it
      */
     @Nullable
-    TrackingToken lastStoredToken();
+    default TrackingToken lastStoredToken() {
+        return null;
+    }
 
     /**
      * Wakes the segment's worker so a commit cycle runs. The lever a strategy uses to act on out-of-band work (such as

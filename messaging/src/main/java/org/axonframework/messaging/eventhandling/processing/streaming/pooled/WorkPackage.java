@@ -415,9 +415,7 @@ class WorkPackage implements SegmentProgressContext {
         while (!isAbortTriggered() && eventBatch.size() < batchSize && !processingQueue.isEmpty()) {
             ProcessingEntry entry = processingQueue.poll();
             lastConsumedToken = WrappedToken.advance(lastConsumedToken, entry.trackingToken());
-            int batchSizeBeforeEntry = eventBatch.size();
-            entry.addToBatch(eventBatch, lastConsumedToken);
-            if (eventBatch.size() > batchSizeBeforeEntry) {
+            if (entry.addToBatch(eventBatch, lastConsumedToken)) {
                 lastHandledToken = lastConsumedToken;
             }
         }
@@ -1010,8 +1008,10 @@ class WorkPackage implements SegmentProgressContext {
          * @param eventBatch   the list of events to add this entry's events to
          * @param wrappedToken the result of {@link WrappedToken#advance} for this specific event; replaces the raw
          *                     stream token in each event's context
+         * @return {@code true} if at least one event of this entry was added to the batch, {@code false} if this
+         * package skips all of them
          */
-        void addToBatch(List<MessageStream.Entry<? extends EventMessage>> eventBatch, TrackingToken wrappedToken);
+        boolean addToBatch(List<MessageStream.Entry<? extends EventMessage>> eventBatch, TrackingToken wrappedToken);
     }
 
     /**
@@ -1035,7 +1035,7 @@ class WorkPackage implements SegmentProgressContext {
         }
 
         @Override
-        public void addToBatch(
+        public boolean addToBatch(
                 List<MessageStream.Entry<? extends EventMessage>> eventBatch,
                 TrackingToken wrappedToken
         ) {
@@ -1043,6 +1043,7 @@ class WorkPackage implements SegmentProgressContext {
                 eventBatch.add(eventEntry.withResource(TrackingToken.RESOURCE_KEY, wrappedToken)
                                          .withResource(Segment.RESOURCE_KEY, handlingSegment));
             }
+            return canHandle;
         }
     }
 
@@ -1068,11 +1069,15 @@ class WorkPackage implements SegmentProgressContext {
         }
 
         @Override
-        public void addToBatch(
+        public boolean addToBatch(
                 List<MessageStream.Entry<? extends EventMessage>> eventBatch,
                 TrackingToken wrappedToken
         ) {
-            processingEntries.forEach(entry -> entry.addToBatch(eventBatch, wrappedToken));
+            boolean added = false;
+            for (ProcessingEntry entry : processingEntries) {
+                added |= entry.addToBatch(eventBatch, wrappedToken);
+            }
+            return added;
         }
     }
 }
