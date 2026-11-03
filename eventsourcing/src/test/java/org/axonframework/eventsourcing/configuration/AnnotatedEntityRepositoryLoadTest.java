@@ -39,7 +39,6 @@ import static org.axonframework.messaging.eventhandling.EventTestUtils.asEventMe
  * {@link org.axonframework.eventsourcing.EventSourcingRepository}.
  *
  * @author Mateusz Nowak
- * @since 5.4.0
  */
 class AnnotatedEntityRepositoryLoadTest {
 

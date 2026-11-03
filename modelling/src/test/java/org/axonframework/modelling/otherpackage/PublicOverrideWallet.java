@@ -21,7 +21,6 @@ package org.axonframework.modelling.otherpackage;
  * the event handler annotation, so a subclass in yet another package can override it again.
  *
  * @author Mateusz Nowak
- * @since 5.4.0
  */
 public class PublicOverrideWallet extends PackagePrivateHandlerWallet {
 

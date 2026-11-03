@@ -40,7 +40,6 @@ import static org.axonframework.messaging.eventhandling.EventTestUtils.asEventMe
  * commands, including for child entities holding such an instance.
  *
  * @author Mateusz Nowak
- * @since 5.4.0
  */
 class AnnotatedEntityMetamodelSubclassInstanceTest {
 

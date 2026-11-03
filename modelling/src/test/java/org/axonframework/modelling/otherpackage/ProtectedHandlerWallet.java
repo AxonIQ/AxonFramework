@@ -28,7 +28,6 @@ import java.util.List;
  * overrides it in Java.
  *
  * @author Mateusz Nowak
- * @since 5.4.0
  */
 public class ProtectedHandlerWallet {
 

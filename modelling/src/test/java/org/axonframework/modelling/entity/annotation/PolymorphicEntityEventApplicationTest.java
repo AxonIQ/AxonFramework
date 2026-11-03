@@ -44,7 +44,6 @@ import static org.axonframework.messaging.eventhandling.EventTestUtils.asEventMe
  * Tests that the {@link AnnotatedEntityMetamodel} of a polymorphic entity applies each event to the entity exactly once.
  *
  * @author Mateusz Nowak
- * @since 5.4.0
  */
 class PolymorphicEntityEventApplicationTest {
 

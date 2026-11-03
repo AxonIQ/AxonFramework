@@ -681,10 +681,6 @@ public final class ReflectionUtils {
      * when no class declares one. Private and static methods are returned as is, as they are never overridden. A
      * compiler-generated bridge method resolves to the method it bridges, and a package-private method overridden from
      * another package resolves through the whole chain of overrides.
-     * <p>
-     * This method is meant for framework-internal use: it exists to let annotated handler inspection count each
-     * dispatch target once, and its resolution rules may be extended for further language features. It cannot carry
-     * the {@code @Internal} annotation, as this package must not depend on the annotation package.
      *
      * @param type   the runtime type of the instance the method is invoked on
      * @param method the invoked method, declared by {@code type} or one of its supertypes
@@ -772,9 +768,6 @@ public final class ReflectionUtils {
     /**
      * Returns all supertypes of the given {@code type}: its superclasses and every interface it implements, directly or
      * through a supertype. The type itself is not included.
-     * <p>
-     * This method is meant for framework-internal use: it serves {@link #dispatchTarget(Class, Method)} and the
-     * ordering of annotated handlers by the specificity of their declaring type.
      *
      * @param type the type to collect the supertypes of
      * @return a new set with all supertypes of {@code type}
