@@ -27,7 +27,7 @@
 
     <artifactId>university-springcloud-domain</artifactId>
 
-    <name>Axon Framework Examples - Spring Cloud - Domain</name>
+    <name>Axoniq Framework Example - University Spring Cloud Domain</name>
     <description>
         Command, event, query, handler, and controller code shared by every Spring Boot variant of the Spring Cloud
         message distribution example. Kept free of any Spring Boot dependency so the exact same classes run
