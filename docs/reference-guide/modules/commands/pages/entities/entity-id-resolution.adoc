@@ -203,7 +203,7 @@ Axon selects the definition of an annotated entity in this order:
 
 . The definition set on the `entityIdResolverDefinition` attribute of the annotation.
 . The `EntityIdResolverDefinition` registered as a component.
-. The definition creating the `AnnotationBasedEntityIdResolver`.
+. The default `EntityIdResolverDefinition` that creates the `AnnotationBasedEntityIdResolver`.
 
 [NOTE]
 ====
