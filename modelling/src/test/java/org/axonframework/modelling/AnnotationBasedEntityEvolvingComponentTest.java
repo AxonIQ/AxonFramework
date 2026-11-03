@@ -893,6 +893,87 @@ class AnnotationBasedEntityEvolvingComponentTest {
             // then
             assertThat(result.ran).containsExactly("ShoppingBasket.on", "GiftBasket.on");
         }
+
+        static class DoublingWallet extends Wallet {
+
+            @EventHandler
+            void onDouble(Deposited event) {
+                ran.add("DoublingWallet.onDouble");
+                balance *= 2;
+            }
+        }
+
+        static class SuperCallingOverrideWallet extends DoublingWallet {
+
+            @Override
+            @EventHandler
+            void onDeposit(Deposited event) {
+                ran.add("SuperCallingOverrideWallet.onDeposit");
+                super.onDeposit(event);
+            }
+        }
+
+        static class ReplacingOverrideWallet extends DoublingWallet {
+
+            @Override
+            @EventHandler
+            void onDeposit(Deposited event) {
+                ran.add("ReplacingOverrideWallet.onDeposit");
+                balance += event.amount();
+            }
+        }
+
+        static class UnannotatedOverrideWallet extends DoublingWallet {
+
+            @Override
+            void onDeposit(Deposited event) {
+                ran.add("UnannotatedOverrideWallet.onDeposit");
+                super.onDeposit(event);
+            }
+        }
+
+        @Test
+        void annotatedOverrideCallingSuperKeepsThePositionOfTheHandlerItOverrides() {
+            // given - the override is declared below DoublingWallet, but overrides a handler declared above it
+            var wallet = new SuperCallingOverrideWallet();
+
+            // when
+            var result = evolve(SuperCallingOverrideWallet.class, wallet, new Deposited(10));
+
+            // then - deposit first, then double
+            assertThat(result.ran).containsExactly("SuperCallingOverrideWallet.onDeposit",
+                                                   "Wallet.onDeposit",
+                                                   "DoublingWallet.onDouble");
+            assertThat(result.balance).isEqualTo(20);
+        }
+
+        @Test
+        void annotatedOverrideWithoutSuperKeepsThePositionOfTheHandlerItOverrides() {
+            // given
+            var wallet = new ReplacingOverrideWallet();
+
+            // when
+            var result = evolve(ReplacingOverrideWallet.class, wallet, new Deposited(10));
+
+            // then
+            assertThat(result.ran).containsExactly("ReplacingOverrideWallet.onDeposit", "DoublingWallet.onDouble");
+            assertThat(result.balance).isEqualTo(20);
+        }
+
+        @Test
+        void unannotatedOverrideKeepsThePositionOfTheHandlerItOverrides() {
+            // given
+            var wallet = new UnannotatedOverrideWallet();
+
+            // when
+            var result = evolve(UnannotatedOverrideWallet.class, wallet, new Deposited(10));
+
+            // then
+            assertThat(result.ran).containsExactly("UnannotatedOverrideWallet.onDeposit",
+                                                   "Wallet.onDeposit",
+                                                   "DoublingWallet.onDouble");
+            assertThat(result.balance).isEqualTo(20);
+        }
     }
 
     @Nested

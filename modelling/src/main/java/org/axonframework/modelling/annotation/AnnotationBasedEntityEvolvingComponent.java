@@ -60,10 +60,11 @@ import static java.util.Objects.requireNonNull;
  * lookups without reflection, message type resolution, cache mutation, or a scan of all handlers. Resolution failures
  * are also reported during initialization instead of on the first matching event.
  * <p>
- * An overriding method counts as one handler; call {@code super} to run the overridden one. Separate methods for the
- * same event all run, parent handlers first, each receiving the entity returned by the previous one. Within one class
- * the order is unspecified. If a handler returns an entity the next handler cannot run on, evolving fails with a
- * {@link StateEvolvingException}. Handlers of the returned type do not run for the same event.
+ * An overriding method counts as one handler and runs where the handler it overrides runs; call {@code super} to run
+ * the overridden one. Separate methods for the same event all run, parent handlers first, each receiving the entity
+ * returned by the previous one. Within one class the order is unspecified. If a handler returns an entity the next
+ * handler cannot run on, evolving fails with a {@link StateEvolvingException}. Handlers of the returned type do not run
+ * for the same event.
  *
  * @param <E> The entity type to evolve.
  * @author Mateusz Nowak
@@ -225,11 +226,13 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
             Class<?> entityType,
             List<MessageHandlingMember<? super E>> handlers
     ) {
-        // A stable sort, keeping the inspector's order among handlers declared on equally specific types
-        return ReflectionUtils.uniqueByDispatchTarget(entityType, handlers, handler -> handler.unwrap(Method.class))
-                              .stream()
-                              .sorted(LEAST_SPECIFIC_DECLARING_TYPE_FIRST)
-                              .toList();
+        // Sorting before merging lets an override take the position of the handler it overrides, as merging keeps
+        // the position where a dispatch target first appears. The sort is stable, keeping the inspector's order among
+        // handlers declared on equally specific types.
+        List<MessageHandlingMember<? super E>> parentFirst = handlers.stream()
+                                                                     .sorted(LEAST_SPECIFIC_DECLARING_TYPE_FIRST)
+                                                                     .toList();
+        return ReflectionUtils.uniqueByDispatchTarget(entityType, parentFirst, handler -> handler.unwrap(Method.class));
     }
 
     private static Optional<Class<?>> declaringClass(MessageHandlingMember<?> handler) {
