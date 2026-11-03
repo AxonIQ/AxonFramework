@@ -7,6 +7,7 @@ For a parent entity that owns child entities, see xref:commands:entities/entity-
 == How the handlers run
 
 An overriding method counts as one handler and runs where the handler it overrides runs; call `super` to run the overridden one.
+A method that becomes a handler only in a subclass, because only its override is annotated, runs at that subclass's position.
 Separate methods for the same event all run, parent handlers first, each receiving the entity returned by the previous one.
 Within one class the order is unspecified.
 If a handler returns an entity the next handler cannot run on, evolving fails with a `StateEvolvingException`.

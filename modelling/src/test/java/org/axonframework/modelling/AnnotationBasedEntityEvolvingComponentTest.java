@@ -960,6 +960,52 @@ class AnnotationBasedEntityEvolvingComponentTest {
             assertThat(result.balance).isEqualTo(20);
         }
 
+        static class PlainDepositWallet {
+
+            int balance;
+            final List<String> ran = new ArrayList<>();
+
+            // not a handler: only the override in LateHandlerWallet is annotated
+            void onDeposit(Deposited event) {
+                ran.add("PlainDepositWallet.onDeposit");
+                balance += event.amount();
+            }
+        }
+
+        static class DoublingPlainDepositWallet extends PlainDepositWallet {
+
+            @EventHandler
+            void onDouble(Deposited event) {
+                ran.add("DoublingPlainDepositWallet.onDouble");
+                balance *= 2;
+            }
+        }
+
+        static class LateHandlerWallet extends DoublingPlainDepositWallet {
+
+            @Override
+            @EventHandler
+            void onDeposit(Deposited event) {
+                ran.add("LateHandlerWallet.onDeposit");
+                super.onDeposit(event);
+            }
+        }
+
+        @Test
+        void methodThatBecomesAHandlerOnlyInASubclassRunsAtThatSubclassPosition() {
+            // given - PlainDepositWallet.onDeposit is a plain method, so the handler is declared by LateHandlerWallet
+            var wallet = new LateHandlerWallet();
+
+            // when
+            var result = evolve(LateHandlerWallet.class, wallet, new Deposited(10));
+
+            // then - the handler of the parent class runs first: double, then deposit
+            assertThat(result.ran).containsExactly("DoublingPlainDepositWallet.onDouble",
+                                                   "LateHandlerWallet.onDeposit",
+                                                   "PlainDepositWallet.onDeposit");
+            assertThat(result.balance).isEqualTo(10);
+        }
+
         @Test
         void unannotatedOverrideKeepsThePositionOfTheHandlerItOverrides() {
             // given
