@@ -25,6 +25,9 @@ include::example$commands/entities/eventsourcedentity/EnrollStudentCommand.java[
 Note that this is not required on static creational command handlers, since no entity exists yet at that point.
 Hence, there is no entity to target yet!
 
+The `@TargetEntityId` annotation is the default way to resolve the entity identifier.
+See xref:commands:entities/entity-id-resolution.adoc[Entity identifier resolution] for the alternatives, such as resolving the identifier from metadata.
+
 Axon also needs to know which events belong to this entity's stream.
 Mark the identifier field on your events with `@EventTag`, and set `tagKey` on the entity annotation to the same key:
 
