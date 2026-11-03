@@ -22,14 +22,18 @@ import org.axonframework.messaging.core.DelayedMessageStream;
 import org.axonframework.messaging.core.MessageHandlerInterceptor;
 import org.axonframework.messaging.core.MessageHandlerInterceptorChain;
 import org.axonframework.messaging.core.MessageStream;
+import org.axonframework.messaging.core.correlation.MessageOriginProvider;
 import org.axonframework.messaging.core.sequencing.SequencingPolicy;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Deque;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ConcurrentMap;
 
 /**
@@ -53,6 +57,7 @@ public class CommandSequencingInterceptor<M extends CommandMessage> implements M
 
     private final SequencingPolicy<? super CommandMessage> sequencingPolicy;
     private final ConcurrentMap<Object, CompletableFuture<Void>> inProgress;
+    private final ConcurrentMap<Object, Deque<ActiveExecution>> lockStacks;
 
     /**
      * Construct a {@code CommandSequencingInterceptor} that sequences command execution based on the supplied
@@ -65,6 +70,7 @@ public class CommandSequencingInterceptor<M extends CommandMessage> implements M
         Objects.requireNonNull(sequencingPolicy, "The sequencingPolicy must not be null");
         this.sequencingPolicy = sequencingPolicy;
         this.inProgress = new ConcurrentHashMap<>();
+        this.lockStacks = new ConcurrentHashMap<>();
     }
 
     @Override
@@ -73,6 +79,35 @@ public class CommandSequencingInterceptor<M extends CommandMessage> implements M
                                               MessageHandlerInterceptorChain<M> interceptorChain) {
         Object sequenceIdentifier = sequencingPolicy.sequenceIdentifierFor(message, context).orElse(null);
         if (sequenceIdentifier != null) {
+            Deque<ActiveExecution> stack = lockStacks.get(sequenceIdentifier);
+            if (stack != null) {
+                ActiveExecution currentHolder = stack.peek();
+                if (currentHolder != null && currentHolder.shouldForwardLock(message)) {
+                    logger.debug(
+                            "Forwarding lock for [{}] in {} to nested command [{}].",
+                            sequenceIdentifier,
+                            context,
+                            message.identifier()
+                    );
+                    ActiveExecution childExecution = new ActiveExecution(
+                            message.identifier(),
+                            message.metadata().get(MessageOriginProvider.DEFAULT_CORRELATION_KEY)
+                    );
+                    stack.push(childExecution);
+
+                    context.doFinally(ctx -> {
+                        logger.debug(
+                                "Nested command [{}] completed. Returning lock to parent in {}.",
+                                childExecution.commandIdentifier(),
+                                sequenceIdentifier
+                        );
+                        stack.remove(childExecution);
+                    });
+
+                    return interceptorChain.proceed(message, context);
+                }
+            }
+
             // await turn to sequence command execution
             logger.debug("Sequencing command execution for [{}] in {}", sequenceIdentifier, context);
 
@@ -93,12 +128,24 @@ public class CommandSequencingInterceptor<M extends CommandMessage> implements M
 
             return DelayedMessageStream.create(
                     previousLock.handle((r, e) -> {
+                        ActiveExecution rootExecution = new ActiveExecution(
+                                message.identifier(),
+                                message.metadata().get(MessageOriginProvider.DEFAULT_CORRELATION_KEY)
+                        );
+                        Deque<ActiveExecution> newStack =
+                                lockStacks.computeIfAbsent(sequenceIdentifier, k -> new ConcurrentLinkedDeque<>());
+                        newStack.push(rootExecution);
+
                         context.doFinally(ctx -> {
                             logger.debug(
                                     "Processing command for [{}] completed in {}. Passing lock to next command.",
                                     sequenceIdentifier,
                                     ctx
                             );
+                            newStack.remove(rootExecution);
+                            if (newStack.isEmpty()) {
+                                lockStacks.remove(sequenceIdentifier, newStack);
+                            }
                             currentLock.complete(null);
                         });
                         logger.debug(
@@ -111,6 +158,29 @@ public class CommandSequencingInterceptor<M extends CommandMessage> implements M
         } else {
             logger.debug("Missing sequence identifier, skipping command execution sequencing in {}", context);
             return interceptorChain.proceed(message, context);
+        }
+    }
+
+    private record ActiveExecution(
+            String commandIdentifier,
+            @Nullable String correlationId
+    ) {
+        boolean shouldForwardLock(CommandMessage message) {
+            return isAncestorOf(message);
+        }
+
+        boolean isAncestorOf(CommandMessage message) {
+            String msgCorrelationId = message.metadata().get(MessageOriginProvider.DEFAULT_CORRELATION_KEY);
+            String msgCausationId = message.metadata().get(MessageOriginProvider.DEFAULT_CAUSATION_KEY);
+            if (msgCorrelationId != null) {
+                if (msgCorrelationId.equals(commandIdentifier) || msgCorrelationId.equals(correlationId)) {
+                    return true;
+                }
+            }
+            if (msgCausationId != null && msgCausationId.equals(commandIdentifier)) {
+                return true;
+            }
+            return false;
         }
     }
 }
