@@ -77,6 +77,8 @@
                         <configuration>
                             <rules>
                                 <bannedDependencies>
+                                    <!-- Spring Boot is an optional dependency for the auto-configuration -->
+                                    <searchTransitive>false</searchTransitive>
                                     <excludes>
                                         <exclude>org.springframework</exclude>
                                     </excludes>
