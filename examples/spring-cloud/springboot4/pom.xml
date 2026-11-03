@@ -29,7 +29,7 @@
 
     <name>Axoniq Framework Example - University Spring Boot 4 Spring Cloud</name>
     <description>
-        University example using Spring Boot 4.1 and Spring Cloud 2025.1 to distribute commands and queries without
+        University example using Spring Boot 4.0 and Spring Cloud 2025.1 to distribute commands and queries without
         Axon Server.
     </description>
 
