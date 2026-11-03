@@ -16,6 +16,8 @@
 
 package org.axonframework.messaging.core;
 
+import org.jspecify.annotations.Nullable;
+
 import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -120,12 +122,13 @@ public record MessageType(QualifiedName qualifiedName, String version) implement
      * {@code MessageType}.
      *
      * @param namespace The namespace used to invoke {@link QualifiedName#QualifiedName(String, String)} constructor for
-     *                  the {@code MessageType} under construction.
+     *                  the {@code MessageType} under construction. May be {@code null} or empty, in which case the
+     *                  {@code MessageType} has no namespace.
      * @param localName The local qualifiedName used to invoke {@link QualifiedName#QualifiedName(String, String)}
      *                  constructor for the {@code MessageType} under construction.
      * @param version   The version for the {@code MessageType} under construction.
      */
-    public MessageType(String namespace,
+    public MessageType(@Nullable String namespace,
                        String localName,
                        String version) {
         this(new QualifiedName(namespace, localName), version);
