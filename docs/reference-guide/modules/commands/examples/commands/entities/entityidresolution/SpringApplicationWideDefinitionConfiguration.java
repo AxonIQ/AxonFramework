@@ -14,14 +14,19 @@
  * limitations under the License.
  */
 
-package org.axonframework.examples.springcloud;
+package commands.entities.entityidresolution;
 
-/**
- * Command requesting a new course to be added to the catalog.
- *
- * @param courseId the unique identifier for the new course
- * @param name     the course name
- */
-public record CreateCourse(String courseId, String name) {
+import org.axonframework.modelling.annotation.EntityIdResolverDefinition;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 
+// tag::spring[]
+@Configuration
+public class SpringApplicationWideDefinitionConfiguration {
+
+    @Bean
+    public EntityIdResolverDefinition entityIdResolverDefinition() {
+        return new MetadataFallbackEntityIdResolverDefinition(); // <1>
+    }
 }
+// end::spring[]

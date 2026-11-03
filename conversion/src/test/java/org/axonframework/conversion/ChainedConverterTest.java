@@ -190,14 +190,13 @@ class ChainedConverterTest {
 
     @Test
     void discontinuousChainIsRejected() {
-        try {
-            //noinspection rawtypes,unchecked
-            testSubject = new ChainedConverter(Arrays.<ContentTypeConverter>asList(
-                    numberToStringConverter, bytesToInputStreamConverter
-            ));
-            fail("Expected IllegalArgumentException");
-        } catch (IllegalArgumentException e) {
-            assertTrue(e.getMessage().contains("continuous chain"), "Wrong message: " + e.getMessage());
-        }
+        //noinspection rawtypes,unchecked
+        IllegalArgumentException e = assertThrows(
+                IllegalArgumentException.class,
+                () -> new ChainedConverter(Arrays.<ContentTypeConverter>asList(
+                        numberToStringConverter, bytesToInputStreamConverter
+                ))
+        );
+        assertTrue(e.getMessage().contains("continuous chain"), "Wrong message: " + e.getMessage());
     }
 }

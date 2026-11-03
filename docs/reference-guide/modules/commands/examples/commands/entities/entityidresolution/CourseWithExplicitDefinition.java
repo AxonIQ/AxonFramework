@@ -14,13 +14,16 @@
  * limitations under the License.
  */
 
-package org.axonframework.examples.springcloud;
+package commands.entities.entityidresolution;
 
-/**
- * HTTP request body for renaming a course through {@link CourseController}.
- *
- * @param name the new course name
- */
-public record RenameCourseRequest(String name) {
+import org.axonframework.eventsourcing.annotation.EventSourcedEntity;
 
+// tag::explicit-definition[]
+@EventSourcedEntity(
+        tagKey = "courseId",
+        entityIdResolverDefinition = MetadataFallbackEntityIdResolverDefinition.class // <1>
+)
+public class CourseWithExplicitDefinition {
+    // Entity state and handlers omitted.
 }
+// end::explicit-definition[]

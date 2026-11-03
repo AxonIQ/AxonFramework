@@ -14,13 +14,14 @@
  * limitations under the License.
  */
 
-package org.axonframework.examples.springcloud;
+package org.axonframework.examples.springcloud.domain;
 
 /**
- * Query requesting the current view of a single course, also used as the update filter for the subscription query.
+ * Event signaling that a course was renamed.
  *
- * @param courseId the unique identifier of the course to find
+ * @param courseId the unique identifier of the renamed course
+ * @param name     the new course name
  */
-public record FindCourse(String courseId) {
+public record CourseRenamed(String courseId, String name) {
 
 }

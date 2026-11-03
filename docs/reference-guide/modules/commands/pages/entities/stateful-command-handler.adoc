@@ -60,6 +60,8 @@ Useful when the command targets multiple entities (see <<inject_multiple_entitie
 
 Without either attribute set, Axon falls back to the default resolver, which reads the field marked with `@TargetEntityId` on the command payload (the form used in the example above).
 
+See xref:commands:entities/entity-id-resolution.adoc[Entity identifier resolution] for the available resolvers and how to write your own.
+
 [#missing_injected_entity]
 == Handling a missing entity
 
