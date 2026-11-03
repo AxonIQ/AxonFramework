@@ -31,16 +31,19 @@ import java.lang.reflect.Type;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -788,6 +791,50 @@ public final class ReflectionUtils {
             }
         }
         return supertypes;
+    }
+
+    /**
+     * Returns the given candidates with compiler-generated bridge methods removed and one candidate per dispatch
+     * target: for each method the JVM would run on an instance of the given type, the candidate declared by the most
+     * specific type. Private and static methods are never overridden, so each one is its own dispatch target.
+     * Candidates without a method are kept as they are. The candidates are returned in the order in which their
+     * dispatch targets first appear.
+     * <p>
+     * javac copies the annotations of an overriding method onto the bridge method it generates, so without this filter
+     * annotation scanning finds two annotated methods that run the same body. Spring applies the same rule when it
+     * detects annotated methods, through {@code ReflectionUtils.USER_DECLARED_METHODS} and
+     * {@code ClassUtils.getMostSpecificMethod}.
+     *
+     * @param type       the runtime type the methods are invoked on
+     * @param candidates the candidates to filter, such as annotated message handlers
+     * @param methodOf   the method a candidate stands for, or an empty optional when it does not stand for one
+     * @param <T>        the candidate type
+     * @return the candidates without bridge methods, one per dispatch target
+     */
+    public static <T> List<T> uniqueByDispatchTarget(Class<?> type,
+                                                     Collection<T> candidates,
+                                                     Function<? super T, Optional<Method>> methodOf) {
+        Objects.requireNonNull(type, "The type may not be null.");
+        Objects.requireNonNull(candidates, "The candidates may not be null.");
+        Objects.requireNonNull(methodOf, "The method function may not be null.");
+        Map<Object, T> byDispatchTarget = new LinkedHashMap<>();
+        for (T candidate : candidates) {
+            Optional<Method> method = methodOf.apply(candidate);
+            if (method.filter(Method::isBridge).isPresent()) {
+                continue;
+            }
+            Object target = method.<Object>map(m -> dispatchTarget(type, m)).orElse(candidate);
+            byDispatchTarget.merge(target, candidate, (existing, replacement) ->
+                    declaringTypeSpecificity(methodOf.apply(replacement))
+                            > declaringTypeSpecificity(methodOf.apply(existing)) ? replacement : existing
+            );
+        }
+        return List.copyOf(byDispatchTarget.values());
+    }
+
+    private static int declaringTypeSpecificity(Optional<Method> method) {
+        // A subtype always has more supertypes than any of its supertypes, for classes and interfaces alike
+        return method.map(m -> allSupertypes(m.getDeclaringClass()).size()).orElse(0);
     }
 
     private ReflectionUtils() {

@@ -28,6 +28,7 @@ import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -797,6 +798,149 @@ class ReflectionUtilsTest {
 
             // then
             assertThat(target).isEqualTo(LoudGreeter.class.getDeclaredMethod("on", String.class));
+        }
+    }
+
+    @Nested
+    class UniqueByDispatchTarget {
+
+        static class Parent {
+
+            void on(String event) {
+            }
+
+            void first(String event) {
+            }
+
+            void second(String event) {
+            }
+        }
+
+        static class Child extends Parent {
+
+            @Override
+            void on(String event) {
+            }
+        }
+
+        static class GenericParent<T> {
+
+            void on(T event) {
+            }
+        }
+
+        static class StringChild extends GenericParent<String> {
+
+            @Override
+            void on(String event) {
+            }
+        }
+
+        static class PrivateParent {
+
+            @SuppressWarnings("unused")
+            private void on(String event) {
+            }
+        }
+
+        static class PrivateChild extends PrivateParent {
+
+            @SuppressWarnings("unused")
+            private void on(String event) {
+            }
+        }
+
+        static class StaticParent {
+
+            static void on(String event) {
+            }
+        }
+
+        static class StaticChild extends StaticParent {
+
+            static void on(String event) {
+            }
+        }
+
+        private static List<Method> unique(Class<?> type, Method... candidates) {
+            return uniqueByDispatchTarget(type, List.of(candidates), Optional::of);
+        }
+
+        @Test
+        void dropsBridgeMethodOfGenericOverride() throws NoSuchMethodException {
+            // given - javac adds a bridge on(Object) to StringChild that forwards to on(String)
+            Method bridge = StringChild.class.getDeclaredMethod("on", Object.class);
+            Method override = StringChild.class.getDeclaredMethod("on", String.class);
+            Method parentMethod = GenericParent.class.getDeclaredMethod("on", Object.class);
+
+            // when
+            List<Method> result = unique(StringChild.class, parentMethod, bridge, override);
+
+            // then
+            assertThat(bridge.isBridge()).isTrue();
+            assertThat(result).containsExactly(override);
+        }
+
+        @Test
+        void keepsOneCandidatePerOverride() throws NoSuchMethodException {
+            // given
+            Method parentMethod = Parent.class.getDeclaredMethod("on", String.class);
+            Method override = Child.class.getDeclaredMethod("on", String.class);
+
+            // when
+            List<Method> result = unique(Child.class, parentMethod, override);
+
+            // then
+            assertThat(result).containsExactly(override);
+        }
+
+        @Test
+        void keepsPrivateMethodsOfParentAndChildSeparately() throws NoSuchMethodException {
+            // given - private methods are never overridden
+            Method parentMethod = PrivateParent.class.getDeclaredMethod("on", String.class);
+            Method childMethod = PrivateChild.class.getDeclaredMethod("on", String.class);
+
+            // when
+            List<Method> result = unique(PrivateChild.class, parentMethod, childMethod);
+
+            // then
+            assertThat(result).containsExactly(parentMethod, childMethod);
+        }
+
+        @Test
+        void keepsStaticMethodsOfParentAndChildSeparately() throws NoSuchMethodException {
+            // given - static methods are hidden, not overridden
+            Method parentMethod = StaticParent.class.getDeclaredMethod("on", String.class);
+            Method childMethod = StaticChild.class.getDeclaredMethod("on", String.class);
+
+            // when
+            List<Method> result = unique(StaticChild.class, parentMethod, childMethod);
+
+            // then
+            assertThat(result).containsExactly(parentMethod, childMethod);
+        }
+
+        @Test
+        void keepsCandidatesWithoutMethod() {
+            // when
+            List<String> result = uniqueByDispatchTarget(Child.class, List.of("first", "second"),
+                                                         candidate -> Optional.empty());
+
+            // then
+            assertThat(result).containsExactly("first", "second");
+        }
+
+        @Test
+        void preservesTheOrderOfTheCandidates() throws NoSuchMethodException {
+            // given
+            Method second = Parent.class.getDeclaredMethod("second", String.class);
+            Method first = Parent.class.getDeclaredMethod("first", String.class);
+
+            // when
+            List<Method> result = unique(Child.class, second, first);
+
+            // then
+            assertThat(result).containsExactly(second, first);
         }
     }
 

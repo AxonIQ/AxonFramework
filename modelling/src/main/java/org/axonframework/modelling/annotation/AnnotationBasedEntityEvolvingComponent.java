@@ -41,7 +41,6 @@ import java.lang.reflect.Member;
 import java.lang.reflect.Method;
 import java.util.Collection;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -209,10 +208,6 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
     ) {
         return handlers.stream()
                        .filter(handler -> handler.canHandleMessageType(EventMessage.class))
-                       // javac copies handler annotations onto the bridges it generates, and a bridge runs the same
-                       // body as the method it bridges; for an override of a generic parent method, the bridge would
-                       // otherwise count as a second handler
-                       .filter(handler -> handler.unwrap(Method.class).filter(Method::isBridge).isEmpty())
                        .collect(Collectors.groupingBy(handler -> eventName(handler, messageTypeResolver)))
                        .entrySet().stream()
                        .collect(Collectors.toUnmodifiableMap(
@@ -230,19 +225,11 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
             Class<?> entityType,
             List<MessageHandlingMember<? super E>> handlers
     ) {
-        Map<Object, MessageHandlingMember<? super E>> byDispatchTarget = new LinkedHashMap<>();
-        for (var handler : handlers) {
-            Object target = handler.unwrap(Method.class)
-                                   .<Object>map(method -> ReflectionUtils.dispatchTarget(entityType, method))
-                                   .orElse(handler);
-            byDispatchTarget.merge(target, handler, (existing, replacement) ->
-                    declaringTypeSpecificity(replacement) > declaringTypeSpecificity(existing) ? replacement : existing
-            );
-        }
         // A stable sort, keeping the inspector's order among handlers declared on equally specific types
-        return byDispatchTarget.values().stream()
-                               .sorted(LEAST_SPECIFIC_DECLARING_TYPE_FIRST)
-                               .toList();
+        return ReflectionUtils.uniqueByDispatchTarget(entityType, handlers, handler -> handler.unwrap(Method.class))
+                              .stream()
+                              .sorted(LEAST_SPECIFIC_DECLARING_TYPE_FIRST)
+                              .toList();
     }
 
     private static Optional<Class<?>> declaringClass(MessageHandlingMember<?> handler) {
