@@ -39,6 +39,8 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -106,10 +108,13 @@ class CourseControllerSmokeTest {
         String dataLine;
         try (BufferedReader reader = new BufferedReader(
                 new InputStreamReader(response.body(), StandardCharsets.UTF_8))) {
-            dataLine = reader.lines()
-                             .filter(line -> line.startsWith("data:"))
-                             .findFirst()
-                             .orElse(null);
+            // The request timeout only covers the headers, so the blocking read needs its own deadline.
+            dataLine = CompletableFuture.supplyAsync(() -> reader.lines()
+                                                                 .filter(line -> line.startsWith("data:"))
+                                                                 .findFirst()
+                                                                 .orElse(null))
+                                        .orTimeout(5, TimeUnit.SECONDS)
+                                        .join();
         }
 
         assertThat(dataLine).isNotNull()
