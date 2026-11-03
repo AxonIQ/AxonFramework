@@ -52,6 +52,10 @@ the classpath, so sharing them would mean merging profile-specific properties ac
 dependent precedence, a strictly worse failure mode than two small, deliberately near-identical files. Mirror any
 change to one module's `application*.yml` into the other's.
 
+Likewise, `UniversityApplication`, `EurekaServerConfiguration`, `EurekaTransportConfiguration`, and the smoke test are
+near-identical copies in both app modules. This is deliberate: each variant stays a self-contained example a user can
+lift out and run without a further shared module for the Spring Cloud wiring.
+
 Porting the connector itself to a new Spring Boot version only ever touches a `springboot*` module's `pom.xml` and its
 own `UniversityApplication`/`Eureka*Configuration` classes; the `domain` module and its test never need to change.
 
