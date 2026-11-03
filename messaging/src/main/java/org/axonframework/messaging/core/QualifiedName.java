@@ -36,9 +36,9 @@ import static org.axonframework.common.ReflectionUtils.resolvePrimitiveWrapperTy
  * {@link MessageHandler MessageHandlers}, and other components that require naming. To combine a qualified
  * qualifiedName with a version, consider using the {@link MessageType}.
  *
- * @param name The qualifiedName of this {@code QualifiedName}. Must not be {@code null}, blank, or contain a hash
+ * @param name the qualifiedName of this {@code QualifiedName}. Must not be {@code null}, blank, or contain a hash
  *             ({@code #}), since that character is reserved by {@link MessageType} as the separator between a qualified
- *             name and version in its String representation.
+ *             name and version in its String representation
  * @author Allard Buijze
  * @author Mitchell Herrijgers
  * @author Steven van Beelen
@@ -107,7 +107,7 @@ public record QualifiedName(String name) {
      * Note that for nested classes the simple name does <b>not</b> include the enclosing class(es). Classes without a
      * simple name (e.g. anonymous classes) fall back to {@link Class#getName()}.
      *
-     * @param clazz The {@code Class} from which to derive the {@link #name()}.
+     * @param clazz the {@code Class} from which to derive the {@link #name()}
      */
     public QualifiedName(Class<?> clazz) {
         this(deriveNameOf((Class<?>) resolvePrimitiveWrapperTypeIfPrimitive(requireNonNull(
