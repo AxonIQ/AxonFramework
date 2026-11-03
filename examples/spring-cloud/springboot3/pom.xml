@@ -34,7 +34,6 @@
     </description>
 
     <properties>
-        <axoniq-framework.version>${project.version}</axoniq-framework.version>
         <!--
         Deliberately not aligned with the framework's own jackson2.version (2.22.3): that version resolves only
         through the internal Nexus mirror core modules use, and is not published to Maven Central. 2.22 is the
@@ -73,12 +72,12 @@
         <dependency>
             <groupId>io.axoniq.framework</groupId>
             <artifactId>axoniq-spring-boot-starter</artifactId>
-            <version>${project.version}</version>
+            <version>${axoniq-framework.version}</version>
         </dependency>
         <dependency>
             <groupId>io.axoniq.framework</groupId>
             <artifactId>axoniq-springcloud</artifactId>
-            <version>${project.version}</version>
+            <version>${axoniq-framework.version}</version>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>

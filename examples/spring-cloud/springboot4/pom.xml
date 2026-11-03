@@ -34,7 +34,6 @@
     </description>
 
     <properties>
-        <axoniq-framework.version>${project.version}</axoniq-framework.version>
         <spring-boot.version>4.0.6</spring-boot.version>
         <spring-cloud.version>2025.1.0</spring-cloud.version>
         <jackson.version>3.2.3</jackson.version>
@@ -82,12 +81,12 @@
         <dependency>
             <groupId>io.axoniq.framework</groupId>
             <artifactId>axoniq-spring-boot-starter</artifactId>
-            <version>${project.version}</version>
+            <version>${axoniq-framework.version}</version>
         </dependency>
         <dependency>
             <groupId>io.axoniq.framework</groupId>
             <artifactId>axoniq-springcloud</artifactId>
-            <version>${project.version}</version>
+            <version>${axoniq-framework.version}</version>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
