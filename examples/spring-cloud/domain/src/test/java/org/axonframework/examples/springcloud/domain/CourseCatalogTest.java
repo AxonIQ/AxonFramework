@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.axonframework.examples.springcloud;
+package org.axonframework.examples.springcloud.domain;
 
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.messaging.core.Metadata;
