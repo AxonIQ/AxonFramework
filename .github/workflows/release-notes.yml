@@ -39,12 +39,11 @@ jobs:
         echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
         echo "RELEASE_DATE=$(date +'%b %d, %Y')" >> $GITHUB_OUTPUT
 
-    - name: Add Release Notes to cache
-      id: cache-notes
-      uses: actions/cache@v6
+    - name: Upload Release Notes for the announcement job
+      uses: actions/upload-artifact@v4
       with:
+        name: release-notes
         path: ${{ env.RELEASE_NOTES_FILE }}
-        key: notes
 
     - name: Create a Draft Release Notes on GitHub
       id: create_release
@@ -64,12 +63,11 @@ jobs:
     - name: Get authorities certificates
       run: openssl s_client -showcerts -connect discuss.axoniq.io:443 </dev/null | sed -n -e '/-.BEGIN/,/-.END/ p' > $CA_FILE
 
-    - name: Retrieve Release Notes from cache
-      id: cache-notes
-      uses: actions/cache@v6
+    - name: Download Release Notes
+      uses: actions/download-artifact@v4
       with:
-        path: ${{ needs.create-release-notes.outputs.notes }}
-        key: notes
+        name: release-notes
+        path: temp_release_notes
 
     - name: Read release notes file
       id: read_release_notes
