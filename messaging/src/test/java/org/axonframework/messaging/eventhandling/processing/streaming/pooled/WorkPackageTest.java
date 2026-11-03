@@ -36,6 +36,7 @@ import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.SimpleEntry;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkTestUtils;
 import org.axonframework.common.FutureUtils;
 import org.axonframework.common.util.DelegateScheduledExecutorService;
@@ -93,7 +94,7 @@ class WorkPackageTest {
         batchProcessor = new TestBatchProcessor();
         segment = Segment.ROOT_SEGMENT;
         initialTrackingToken = new GlobalSequenceTrackingToken(0L);
-        tokenStore.initializeSegment(initialTrackingToken, PROCESSOR_NAME, segment, null);
+        tokenStore.initializeSegment(initialTrackingToken, PROCESSOR_NAME, segment, new StubProcessingContext());
 
         trackerStatus = new TrackerStatus(segment, initialTrackingToken);
         trackerStatusUpdates = new ArrayList<>();
@@ -518,7 +519,7 @@ class WorkPackageTest {
     }
 
     private TrackingToken fetchStoredToken() {
-        return FutureUtils.joinAndUnwrap(tokenStore.fetchToken(PROCESSOR_NAME, segment.getSegmentId(), null));
+        return FutureUtils.joinAndUnwrap(tokenStore.fetchToken(PROCESSOR_NAME, segment.getSegmentId(), new StubProcessingContext()));
     }
 
     @Test

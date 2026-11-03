@@ -55,7 +55,7 @@ class InMemoryTokenStoreTest {
             testSubject.initializeTokenSegments("test1", 7, null, createProcessingContext())
         );
 
-        List<Segment> actual = joinAndUnwrap(testSubject.fetchSegments("test1", null));
+        List<Segment> actual = joinAndUnwrap(testSubject.fetchSegments("test1", createProcessingContext()));
 
         assertThat(actual).containsExactlyInAnyOrderElementsOf(createdSegments);
     }
@@ -89,13 +89,13 @@ class InMemoryTokenStoreTest {
                 createProcessingContext()
         ));
 
-        List<Segment> actual = joinAndUnwrap(testSubject.fetchSegments("test1", null));
+        List<Segment> actual = joinAndUnwrap(testSubject.fetchSegments("test1", createProcessingContext()));
 
         assertThat(actual).containsExactlyInAnyOrderElementsOf(createdSegments);
 
         for (Segment segment : actual) {
             assertEquals(new GlobalSequenceTrackingToken(10),
-                         joinAndUnwrap(testSubject.fetchToken("test1", segment, null)));
+                         joinAndUnwrap(testSubject.fetchToken("test1", segment, createProcessingContext())));
         }
     }
 
@@ -108,7 +108,7 @@ class InMemoryTokenStoreTest {
         );
 
         assertEquals(new GlobalSequenceTrackingToken(1),
-                     joinAndUnwrap(testSubject.fetchToken("test1", 0, null)));
+                     joinAndUnwrap(testSubject.fetchToken("test1", 0, createProcessingContext())));
     }
 
     @Test
@@ -121,15 +121,15 @@ class InMemoryTokenStoreTest {
         ));
 
         assertEquals(new GlobalSequenceTrackingToken(1),
-                     joinAndUnwrap(testSubject.fetchToken("test1", 0, null)));
+                     joinAndUnwrap(testSubject.fetchToken("test1", 0, createProcessingContext())));
         assertEquals(new GlobalSequenceTrackingToken(1),
-                     joinAndUnwrap(testSubject.fetchToken("test1", 1, null)));
+                     joinAndUnwrap(testSubject.fetchToken("test1", 1, createProcessingContext())));
     }
 
     @Test
     void initializeTokensWhileAlreadyPresent() {
         assertThrows(UnableToClaimTokenException.class,
-                     () -> joinAndUnwrap(testSubject.fetchToken("test1", 1, null)));
+                     () -> joinAndUnwrap(testSubject.fetchToken("test1", 1, createProcessingContext())));
     }
 
     @Test
@@ -137,15 +137,15 @@ class InMemoryTokenStoreTest {
         prepareTokenStore(createProcessingContext());
 
         {
-            List<Segment> segments = joinAndUnwrap(testSubject.fetchSegments("proc1", null));
+            List<Segment> segments = joinAndUnwrap(testSubject.fetchSegments("proc1", createProcessingContext()));
             assertThat(segments.size(), is(2));
         }
         {
-            List<Segment> segments = joinAndUnwrap(testSubject.fetchSegments("proc2", null));
+            List<Segment> segments = joinAndUnwrap(testSubject.fetchSegments("proc2", createProcessingContext()));
             assertThat(segments.size(), is(1));
         }
         {
-            List<Segment> segments = joinAndUnwrap(testSubject.fetchSegments("proc3", null));
+            List<Segment> segments = joinAndUnwrap(testSubject.fetchSegments("proc3", createProcessingContext()));
             assertThat(segments.size(), is(0));
         }
     }
@@ -156,20 +156,20 @@ class InMemoryTokenStoreTest {
 
         {
             final List<Segment> segments =
-                    joinAndUnwrap(testSubject.fetchAvailableSegments("proc1", null));
+                    joinAndUnwrap(testSubject.fetchAvailableSegments("proc1", createProcessingContext()));
             assertThat(segments.size(), is(2));
             assertThat(segments.get(0).getSegmentId(), is(0));
             assertThat(segments.get(1).getSegmentId(), is(1));
         }
         {
             final List<Segment> segments =
-                    joinAndUnwrap(testSubject.fetchAvailableSegments("proc2", null));
+                    joinAndUnwrap(testSubject.fetchAvailableSegments("proc2", createProcessingContext()));
             assertThat(segments.size(), is(1));
             assertThat(segments.getFirst().getSegmentId(), is(0));
         }
         {
             final List<Segment> segments =
-                    joinAndUnwrap(testSubject.fetchAvailableSegments("proc3", null));
+                    joinAndUnwrap(testSubject.fetchAvailableSegments("proc3", createProcessingContext()));
             assertThat(segments.size(), is(0));
         }
     }
@@ -181,7 +181,7 @@ class InMemoryTokenStoreTest {
         void fetchTokenForMissingSegmentReturnsFailedFuture() {
             // when
             CompletableFuture<TrackingToken> result = assertDoesNotThrow(
-                    () -> testSubject.fetchToken("test1", 1, null)
+                    () -> testSubject.fetchToken("test1", 1, createProcessingContext())
             );
 
             // then
@@ -232,6 +232,11 @@ class InMemoryTokenStoreTest {
         }
     }
 
+    @Test
+    void shouldRejectANullProcessingContext() {
+        assertThrows(NullPointerException.class, () -> testSubject.fetchSegments("test1", null));
+    }
+
     private ProcessingContext createProcessingContext() {
         return new StubProcessingContext();
     }
@@ -241,7 +246,7 @@ class InMemoryTokenStoreTest {
         joinAndUnwrap(testSubject.initializeTokenSegments("proc1", 2, null, ctx));
         joinAndUnwrap(testSubject.initializeTokenSegments("proc2", 1, null, ctx));
 
-        assertNull(joinAndUnwrap(testSubject.fetchToken("test", 0, null)));
+        assertNull(joinAndUnwrap(testSubject.fetchToken("test", 0, createProcessingContext())));
         joinAndUnwrap(testSubject.storeToken(new GlobalSequenceTrackingToken(1L), "proc1", 0, ctx));
         joinAndUnwrap(testSubject.storeToken(new GlobalSequenceTrackingToken(2L), "proc1", 1, ctx));
         joinAndUnwrap(testSubject.storeToken(new GlobalSequenceTrackingToken(2L), "proc2", 0, ctx));

@@ -17,6 +17,7 @@
 package org.axonframework.messaging.eventhandling.processing.streaming.pooled;
 
 import org.axonframework.common.FutureUtils;
+import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.eventhandling.processing.streaming.progress.SegmentProgressStrategyFactory;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
@@ -63,7 +64,7 @@ class SegmentProgressStrategyHarnessTest extends SegmentProgressStrategyTestSupp
 
     private long storedPosition() {
         TrackingToken token = FutureUtils.joinAndUnwrap(
-                tokenStore().fetchToken(PROCESSOR_NAME, Segment.ROOT_SEGMENT.getSegmentId(), null)
+                tokenStore().fetchToken(PROCESSOR_NAME, Segment.ROOT_SEGMENT.getSegmentId(), new StubProcessingContext())
         );
         return token == null ? -1L : token.position().orElse(-1L);
     }
