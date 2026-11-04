@@ -23,6 +23,7 @@ import jakarta.validation.constraints.Positive;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
 import org.axonframework.messaging.core.MessageType;
+import org.axonframework.messaging.core.annotation.QualifiedName;
 import org.axonframework.messaging.eventhandling.EventBus;
 import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
@@ -71,7 +72,7 @@ class ProxiedHandlerIT {
         assertThat(AopUtils.isAopProxy(proxiedQueryHandler)).isTrue();
         assertThat(AopUtils.isAopProxy(scopeProxiedQueryHandler)).isTrue();
 
-        eventBus.publish(null, new GenericEventMessage(MessageType.fromString("my-message#1"), "hello"));
+        eventBus.publish(null, new GenericEventMessage(new MessageType("proxytest", "my-message", "1"), "hello"));
 
         await().untilAsserted(() -> assertThat(ProxiedEventHandler.callCount).isEqualTo(1));
         await().untilAsserted(() -> assertThat(ScopeProxiedEventHandler.callCount).isEqualTo(1));
@@ -103,7 +104,7 @@ class ProxiedHandlerIT {
     static class ProxiedEventHandler {
         static volatile int callCount;
 
-        @EventHandler(eventName = "my-message")
+        @EventHandler(event = @QualifiedName(namespace = "proxytest", name = "my-message"))
         public void on(@NotBlank String event) {
             callCount++;
         }
@@ -115,7 +116,7 @@ class ProxiedHandlerIT {
     static class ScopeProxiedEventHandler {
         static volatile int callCount;
 
-        @EventHandler(eventName = "my-message")
+        @EventHandler(event = @QualifiedName(namespace = "proxytest", name = "my-message"))
         public void on(@NotBlank String event) {
             callCount++;
         }

@@ -15,6 +15,7 @@
  */
 package root.conversion.messagetypes;
 
+import org.axonframework.messaging.core.annotation.QualifiedName;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 
@@ -66,10 +67,10 @@ class UserProjection {
 class UserJsonProjection {
 
     // tag::json-node-handler[]
-    @EventHandler(eventName = "com.example.events.UserRegistered") //<1>
+    @EventHandler(event = @QualifiedName(namespace = "com.example.events", name = "UserRegistered")) //<1>
     public void on(JsonNode event) {
         // Receives the same event as a JsonNode
-        // Must use the fully qualified name (namespace + name)
+        // Must declare the full name (namespace and name)
         String userId = event.get("userId").asString();
         // Process using JSON directly
     }

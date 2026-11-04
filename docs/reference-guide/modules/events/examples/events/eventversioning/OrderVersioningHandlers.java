@@ -29,7 +29,7 @@ class OrderVersioningHandlers {
     // end::enriched-order-handler[]
 
     // tag::legacy-order-handler[]
-    @EventHandler(eventName = "OrderPlaced")
+    @EventHandler
     public void on(OrderPlacedEvent event) {
         // Old handling flow...
     }

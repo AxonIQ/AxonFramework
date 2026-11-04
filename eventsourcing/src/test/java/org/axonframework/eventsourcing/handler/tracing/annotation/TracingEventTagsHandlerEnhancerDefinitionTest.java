@@ -23,15 +23,20 @@ import org.axonframework.eventsourcing.eventstore.AnnotationBasedTagResolver;
 import org.axonframework.eventsourcing.eventstore.TagResolver;
 import org.axonframework.eventsourcing.tracing.configuration.EventSourcingTracingSettings;
 import org.axonframework.messaging.commandhandling.CommandMessage;
+import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
+import org.axonframework.messaging.core.MessageTypeResolver;
+import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.annotation.HandlerEnhancerDefinition;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
+import org.axonframework.messaging.core.annotation.WrappedMessageHandlingMember;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.GenericEventMessage;
+import org.axonframework.messaging.eventhandling.annotation.EventHandlingMember;
 import org.axonframework.messaging.eventstreaming.Tag;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.BeforeEach;
@@ -188,6 +193,46 @@ class TracingEventTagsHandlerEnhancerDefinitionTest {
     }
 
     @Nested
+    class EventNames {
+
+        @Test
+        void delegatesEventNamesToTheWrappedEventHandlingMember() {
+            // given a member declaring a name that cannot be derived from its payload type
+            QualifiedName declaredName = new QualifiedName("com.acme", "RoomBooked");
+            MessageHandlingMember<Object> member = new NamedEventHandlingMember<>(
+                    new StubHandlingMember<>(EventMessage.class, String.class), declaredName
+            );
+
+            // when
+            MessageHandlingMember<Object> wrapped = testSubject.wrapHandler(member);
+
+            // then
+            assertThat(wrapped).isNotSameAs(member);
+            assertThat(wrapped).isInstanceOfSatisfying(
+                    EventHandlingMember.class,
+                    eventMember -> assertThat(eventMember.eventNames(new ClassBasedMessageTypeResolver()))
+                            .containsExactly(declaredName)
+            );
+        }
+
+        @Test
+        void fallsBackToThePayloadTypeNameWhenTheWrappedMemberIsNoEventHandlingMember() {
+            // given
+            StubHandlingMember<Object> member = new StubHandlingMember<>(EventMessage.class, String.class);
+
+            // when
+            MessageHandlingMember<Object> wrapped = testSubject.wrapHandler(member);
+
+            // then
+            assertThat(wrapped).isInstanceOfSatisfying(
+                    EventHandlingMember.class,
+                    eventMember -> assertThat(eventMember.eventNames(new ClassBasedMessageTypeResolver()))
+                            .containsExactly(new QualifiedName(String.class))
+            );
+        }
+    }
+
+    @Nested
     class ServiceLoaderDiscovery {
 
         @Test
@@ -206,6 +251,25 @@ class TracingEventTagsHandlerEnhancerDefinitionTest {
     }
 
     private record TaggedPayload(@EventTag(key = "Dwelling") String dwellingId) {
+    }
+
+    /**
+     * {@link EventHandlingMember} wrapping a {@link StubHandlingMember}, returning a fixed set of event names.
+     */
+    private static final class NamedEventHandlingMember<T> extends WrappedMessageHandlingMember<T>
+            implements EventHandlingMember<T> {
+
+        private final QualifiedName eventName;
+
+        private NamedEventHandlingMember(MessageHandlingMember<T> delegate, QualifiedName eventName) {
+            super(delegate);
+            this.eventName = eventName;
+        }
+
+        @Override
+        public Set<QualifiedName> eventNames(MessageTypeResolver messageTypeResolver) {
+            return Set.of(eventName);
+        }
     }
 
     /**

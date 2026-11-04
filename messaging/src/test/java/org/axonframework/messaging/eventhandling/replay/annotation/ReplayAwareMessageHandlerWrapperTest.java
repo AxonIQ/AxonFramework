@@ -17,8 +17,10 @@
 package org.axonframework.messaging.eventhandling.replay.annotation;
 
 import org.axonframework.messaging.commandhandling.CommandMessage;
+import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
+import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.annotation.HandlerAttributes;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.core.annotation.WrappedMessageHandlingMember;
@@ -105,11 +107,6 @@ class ReplayAwareMessageHandlerWrapperTest {
 
         void setAttribute(String key, Object value) {
             customAttributes.put(key, value);
-        }
-
-        @Override
-        public String eventName() {
-            return eventName;
         }
 
         @Override
@@ -297,7 +294,7 @@ class ReplayAwareMessageHandlerWrapperTest {
         @Test
         void wrapsDirectEventHandlingMemberWhenReplayNotAllowed() {
             // given
-            StubEventHandlingMember original = new StubEventHandlingMember("TestEvent", false);
+            StubEventHandlingMember original = new StubEventHandlingMember("com.acme.TestEvent", false);
 
             // when
             MessageHandlingMember<Object> result = testSubject.wrapHandler(original);
@@ -314,7 +311,7 @@ class ReplayAwareMessageHandlerWrapperTest {
         @Test
         void wrapsAlreadyWrappedEventHandlingMemberWhenReplayNotAllowed() {
             // given - EventHandlingMember wrapped by a generic wrapper that doesn't implement EventHandlingMember
-            StubEventHandlingMember eventMember = new StubEventHandlingMember("TestEvent", false);
+            StubEventHandlingMember eventMember = new StubEventHandlingMember("com.acme.TestEvent", false);
             GenericWrapper<Object> wrappedMember = new GenericWrapper<>(eventMember);
 
             // when
@@ -326,14 +323,15 @@ class ReplayAwareMessageHandlerWrapperTest {
                     .hasValue(eventMember);
             assertThat(result.attribute(HandlerAttributes.ALLOW_REPLAY))
                     .hasValue(false);
-            assertThat(result.unwrap(EventHandlingMember.class).get().eventName())
-                    .isEqualTo("TestEvent");
+            assertThat(result.unwrap(EventHandlingMember.class).get()
+                             .eventNames(new ClassBasedMessageTypeResolver()))
+                    .containsExactly(new QualifiedName("com.acme", "TestEvent"));
         }
 
         @Test
         void doesNotWrapEventHandlingMemberWhenReplayIsAllowed() {
             // given
-            StubEventHandlingMember original = new StubEventHandlingMember("TestEvent", true);
+            StubEventHandlingMember original = new StubEventHandlingMember("com.acme.TestEvent", true);
 
             // when
             MessageHandlingMember<Object> result = testSubject.wrapHandler(original);
@@ -478,7 +476,7 @@ class ReplayAwareMessageHandlerWrapperTest {
         @Test
         void preservesAllowReplayFalseAttribute() {
             // given - Handler with allowReplay = false
-            StubEventHandlingMember original = new StubEventHandlingMember("TestEvent", false);
+            StubEventHandlingMember original = new StubEventHandlingMember("com.acme.TestEvent", false);
             MessageHandlingMember<Object> wrapped = testSubject.wrapHandler(original);
 
             // when - Wrapped handler is created, it should preserve the false value
@@ -491,7 +489,7 @@ class ReplayAwareMessageHandlerWrapperTest {
         @Test
         void delegatesOtherAttributesToWrappedHandler() {
             // given - Handler with custom attribute
-            StubEventHandlingMember original = new StubEventHandlingMember("TestEvent", false);
+            StubEventHandlingMember original = new StubEventHandlingMember("com.acme.TestEvent", false);
             original.setAttribute("customAttribute", "customValue");
             MessageHandlingMember<Object> wrapped = testSubject.wrapHandler(original);
 
@@ -505,20 +503,20 @@ class ReplayAwareMessageHandlerWrapperTest {
         @Test
         void delegatesEventNameAttributeToWrappedHandler() {
             // given - Handler with event name
-            StubEventHandlingMember original = new StubEventHandlingMember("TestEvent", false);
+            StubEventHandlingMember original = new StubEventHandlingMember("com.acme.TestEvent", false);
             MessageHandlingMember<Object> wrapped = testSubject.wrapHandler(original);
 
             // when - Request EVENT_NAME attribute
             Optional<String> eventName = wrapped.attribute(HandlerAttributes.EVENT_NAME);
 
             // then - Should delegate to wrapped handler
-            assertThat(eventName).hasValue("TestEvent");
+            assertThat(eventName).hasValue("com.acme.TestEvent");
         }
 
         @Test
         void delegatesUnknownAttributesToWrappedHandler() {
             // given - Handler with custom attribute
-            StubEventHandlingMember original = new StubEventHandlingMember("TestEvent", false);
+            StubEventHandlingMember original = new StubEventHandlingMember("com.acme.TestEvent", false);
             original.setAttribute("unknownAttribute", 123);
             MessageHandlingMember<Object> wrapped = testSubject.wrapHandler(original);
 
@@ -536,7 +534,7 @@ class ReplayAwareMessageHandlerWrapperTest {
         @Test
         void blocksHandlerInvocationDuringReplay() {
             // given
-            StubEventHandlingMember original = new StubEventHandlingMember("TestEvent", false);
+            StubEventHandlingMember original = new StubEventHandlingMember("com.acme.TestEvent", false);
             MessageHandlingMember<Object> wrapped = testSubject.wrapHandler(original);
             EventMessage event = EventTestUtils.asEventMessage("test-payload");
             TrackingToken replayToken = ReplayToken.createReplayToken(new GlobalSequenceTrackingToken(100L));
@@ -555,7 +553,7 @@ class ReplayAwareMessageHandlerWrapperTest {
         @Test
         void allowsHandlerInvocationWithRegularToken() {
             // given
-            StubEventHandlingMember original = new StubEventHandlingMember("TestEvent", false);
+            StubEventHandlingMember original = new StubEventHandlingMember("com.acme.TestEvent", false);
             MessageHandlingMember<Object> wrapped = testSubject.wrapHandler(original);
             EventMessage event = EventTestUtils.asEventMessage("test-payload");
             TrackingToken regularToken = new GlobalSequenceTrackingToken(100L);
@@ -575,7 +573,7 @@ class ReplayAwareMessageHandlerWrapperTest {
         @Test
         void allowsHandlerInvocationWithoutToken() {
             // given
-            StubEventHandlingMember original = new StubEventHandlingMember("TestEvent", false);
+            StubEventHandlingMember original = new StubEventHandlingMember("com.acme.TestEvent", false);
             MessageHandlingMember<Object> wrapped = testSubject.wrapHandler(original);
             EventMessage event = EventTestUtils.asEventMessage("test-payload");
             ProcessingContext context = createContextWithoutToken();
@@ -594,7 +592,7 @@ class ReplayAwareMessageHandlerWrapperTest {
         @Test
         void blocksWrappedHandlerInvocationDuringReplay() {
             // given - EventHandlingMember wrapped by a generic wrapper
-            StubEventHandlingMember eventMember = new StubEventHandlingMember("TestEvent", false);
+            StubEventHandlingMember eventMember = new StubEventHandlingMember("com.acme.TestEvent", false);
             GenericWrapper<Object> wrappedMember = new GenericWrapper<>(eventMember);
             MessageHandlingMember<Object> replayWrapped = testSubject.wrapHandler(wrappedMember);
             EventMessage event = EventTestUtils.asEventMessage("test-payload");

@@ -41,7 +41,7 @@ import java.util.Optional;
  * {@link MessageType#version()}. The default annotation for the name and version is the {@link Message} annotation,
  * from which the {@link Message#name() name} and {@link Message#version()} attributes will be used respectively. The
  * namespace attribute is determined by the {@link Namespace} annotation instead. The {@code Message} annotation is
- * meta-annotated with the namespace annotation as a fallback.
+ * (indirectly) meta-annotated with the namespace annotation as a fallback.
  * <p>
  * Allows for defining a fallback {@code MessageTypeResolver}, for when the defined annotations are not present.
  * <p>

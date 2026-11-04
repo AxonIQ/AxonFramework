@@ -25,6 +25,8 @@ import org.axonframework.messaging.tracing.SpanFactory;
 import org.axonframework.messaging.tracing.configuration.MessagingTracingSettings;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
+import org.axonframework.messaging.core.MessageTypeResolver;
+import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.annotation.HandlerEnhancerDefinition;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.core.annotation.WrappedMessageHandlingMember;
@@ -37,6 +39,7 @@ import java.lang.reflect.Executable;
 import java.lang.reflect.Type;
 import java.util.Arrays;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -207,8 +210,8 @@ public final class TracingHandlerEnhancerDefinition implements HandlerEnhancerDe
         }
 
         @Override
-        public String eventName() {
-            return delegateAs(EventHandlingMember.class).map(EventHandlingMember::eventName).orElse("");
+        public Set<QualifiedName> eventNames(MessageTypeResolver messageTypeResolver) {
+            return EventHandlingMember.eventNamesOf(super.delegate, messageTypeResolver);
         }
     }
 

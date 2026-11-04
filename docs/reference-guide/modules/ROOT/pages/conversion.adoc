@@ -73,7 +73,7 @@ include::example$root/conversion/messagetypes/UserRegistrationHandlers.java[tag=
 Both handlers process the same event, but each receives it in the format most convenient for their needs.
 The conversion happens automatically based on the handler's parameter type.
 
-<1> when using a generic type like `JsonNode`, you must specify the `eventName` attribute with the fully qualified name (namespace and local name) to indicate which event the handler processes.
+<1> when using a generic type like `JsonNode`, you must specify the `event` attribute with the namespace and local name of the event to indicate which event the handler processes.
 
 This approach:
 
