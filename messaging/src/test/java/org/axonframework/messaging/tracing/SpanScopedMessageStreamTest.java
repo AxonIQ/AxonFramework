@@ -61,6 +61,13 @@ class SpanScopedMessageStreamTest extends MessageStreamTestSuite {
     }
 
     @Override
+    protected List<ProducedCase> producedCases() {
+        return List.of(
+            new ProducedCase(2, p -> new SpanScopedMessageStream<>(p.stream(0, 1), SCOPE))
+        );
+    }
+
+    @Override
     protected List<ErrorCase> errorCases() {
         return List.of(
             new ErrorCase(0, new SpanScopedMessageStream<>(MessageStream.failed(new RuntimeException("oops")), SCOPE)),

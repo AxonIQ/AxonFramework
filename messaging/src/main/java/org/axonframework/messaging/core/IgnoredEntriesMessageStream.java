@@ -25,6 +25,10 @@ import org.axonframework.messaging.core.MessageStream.Entry;
  * This allows users to define a {@code MessageStream} of any type and force it to a
  * {@link MessageStream.Empty} stream instance, effectively ignoring the results while
  * maintaining the processing of the stream.
+ * <p>
+ * The entries of the {@code delegate} are read and discarded whenever this stream is read, as by
+ * {@link #hasNextAvailable()}, so this stream only drives its delegate when it is consumed, like
+ * any other stream. Signals from the delegate are passed on without reading from it.
  *
  * @param <M> The type of {@link Message} from the delegate stream that will be ignored.
  * @author Mateusz Nowak
@@ -44,7 +48,7 @@ class IgnoredEntriesMessageStream<M extends Message> extends AbstractMessageStre
     IgnoredEntriesMessageStream(MessageStream<M> delegate) {
         this.delegate = delegate;
 
-        delegate.setCallback(this::onDelegateProgress);
+        delegate.setCallback(this::signalProgress);
 
         if (delegate.isCompleted()) {
             initialize(delegate.error()
@@ -54,16 +58,12 @@ class IgnoredEntriesMessageStream<M extends Message> extends AbstractMessageStre
         }
     }
 
-    private void onDelegateProgress() {
-        while (delegate.hasNextAvailable()) {
+    @Override
+    protected FetchResult<Entry<Message>> fetchNext() {
+        while (delegate.hasNextAvailable()) {  // the entries are ignored, but reading them is what drives the delegate
             delegate.next();
         }
 
-        signalProgress();
-    }
-
-    @Override
-    protected FetchResult<Entry<Message>> fetchNext() {
         if (delegate.isCompleted()) {
             return delegate.error()
                            .map(FetchResult::<Entry<Message>>error)

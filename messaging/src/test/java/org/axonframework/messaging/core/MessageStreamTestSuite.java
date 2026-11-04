@@ -28,9 +28,21 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableMap;
+import java.util.Queue;
+import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
+import java.util.function.Function;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -40,6 +52,12 @@ import static org.awaitility.Awaitility.await;
 /**
  * Test suite for {@link MessageStream} implementations. To use, subclass
  * the suite and implement {@link #cases()} and/or {@link #errorCases()}.
+ * <p>
+ * Subclasses can also implement {@link #producedCases()}, with streams built on sources that a
+ * {@link Producer} feeds from threads of its own. These cases check how a stream treats its
+ * sources: that it does not read from them on the thread that signals it, that
+ * {@link MessageStream#isCompleted()} does not read from them, and that signals arriving while
+ * its consumer handles a callback are not lost.
  *
  * @author John Hendrikx
  */
@@ -117,6 +135,45 @@ public abstract class MessageStreamTestSuite {
      * @return list of {@link ErrorCase} instances; defaults to an empty list
      */
     protected List<ErrorCase> errorCases() {
+        return List.of();
+    }
+
+    /**
+     * Describes a {@link MessageStream} test case built on sources produced by a {@link Producer}. The stream under
+     * test is created when the test runs, by applying {@code streamFactory} to that test's producer, which delivers
+     * the entries with indexes {@code 0} up to {@code expectedSize}, unless the stream under test drops some.
+     *
+     * @param discriminator an optional label appended to the test name to distinguish cases; may be {@code null}
+     * @param expectedSize  the number of items the stream under test is expected to produce
+     * @param streamFactory creates the stream under test from the sources of the given producer
+     */
+    public record ProducedCase(String discriminator, int expectedSize,
+                               Function<MessageStreamTestSuite.Producer, MessageStream<? extends Message>> streamFactory) {
+
+        /**
+         * Creates a produced test case without a discriminator label.
+         *
+         * @param expectedSize  the number of items the stream under test is expected to produce
+         * @param streamFactory creates the stream under test from the sources of the given producer
+         */
+        public ProducedCase(int expectedSize,
+                            Function<MessageStreamTestSuite.Producer, MessageStream<? extends Message>> streamFactory) {
+            this(null, expectedSize, streamFactory);
+        }
+
+        @Override
+        public String toString() {
+            return "produced" + (discriminator == null ? "" : "(" + discriminator + ")") + "[" + expectedSize + "]";
+        }
+    }
+
+    /**
+     * Returns the list of produced stream test cases to run. Subclasses override this method to supply the cases
+     * exercised by the inherited produced tests.
+     *
+     * @return list of {@link ProducedCase} instances; defaults to an empty list
+     */
+    protected List<ProducedCase> producedCases() {
         return List.of();
     }
 
@@ -271,6 +328,124 @@ public abstract class MessageStreamTestSuite {
         ).toList());
     }
 
+    /**
+     * Consumes the stream on the test thread, with a callback that only records that it was called. Any read from
+     * a produced source on a producer thread must then come from the stream under test reacting to a signal.
+     */
+    @ParameterizedTest(allowZeroInvocations = true, name = "{0}")
+    @MethodSource("producedCases")
+    void callbacksDoNotReadOnTheSignallingThread(ProducedCase c) throws Exception {
+        Producer producer = new Producer();
+        MessageStream<? extends Message> stream = c.streamFactory().apply(producer);
+
+        List<Message> received = consumeOnTestThread(stream, producer, false);
+
+        assertThat(received).describedAs("received").isEqualTo(range(0, c.expectedSize));
+        assertThat(producer.readsOnProducerThreads()).describedAs("reads on producer threads").isEmpty();
+    }
+
+    /**
+     * Consumes the stream like {@link #callbacksDoNotReadOnTheSignallingThread(ProducedCase)}, but before every read
+     * asks {@link MessageStream#isCompleted()} a few times, which must not read from the produced sources.
+     */
+    @ParameterizedTest(allowZeroInvocations = true, name = "{0}")
+    @MethodSource("producedCases")
+    void isCompletedDoesNotRead(ProducedCase c) throws Exception {
+        Producer producer = new Producer();
+        MessageStream<? extends Message> stream = c.streamFactory().apply(producer);
+
+        List<Message> received = consumeOnTestThread(stream, producer, true);
+
+        assertThat(received).describedAs("received").isEqualTo(range(0, c.expectedSize));
+    }
+
+    /**
+     * Holds back the consumer's first callback while all remaining entries arrive. The consumer drained the stream
+     * before that, so the stream must call it back again for it to see them.
+     */
+    @ParameterizedTest(allowZeroInvocations = true, name = "{0}")
+    @MethodSource("producedCases")
+    void signalsArrivingDuringACallbackAreNotLost(ProducedCase c) throws Exception {
+        Producer producer = new Producer();
+        MessageStream<? extends Message> stream = c.streamFactory().apply(producer);
+        List<Message> received = new ArrayList<>();
+        CountDownLatch completed = new CountDownLatch(1);
+        CountDownLatch firstCallback = new CountDownLatch(1);
+        AtomicBoolean holdFirstCallback = new AtomicBoolean(true);
+
+        stream.setCallback(() -> {
+            synchronized (received) {
+                drain(stream, received);
+            }
+
+            if (stream.isCompleted()) {
+                completed.countDown();
+            }
+            else if (holdFirstCallback.compareAndSet(true, false)) {
+                firstCallback.countDown();
+                producer.deliverRemainingAndWait();  // every remaining signal arrives while this callback runs
+            }
+        });
+
+        producer.deliverNextAndWait();
+
+        if (!firstCallback.await(2, TimeUnit.SECONDS)) {
+            producer.deliverRemainingAndWait();  // the first entry caused no callback, so there was nothing to hold
+        }
+
+        assertThat(completed.await(10, TimeUnit.SECONDS)).describedAs("completed: " + stream).isTrue();
+
+        synchronized (received) {
+            assertThat(received).describedAs("received").isEqualTo(range(0, c.expectedSize));
+        }
+    }
+
+    /**
+     * Consumes the given stream on the test thread until it completes, reading only after its callback was called.
+     * When {@code checkIsCompleted} is set, asks {@link MessageStream#isCompleted()} before every read and fails if
+     * that read from the produced sources.
+     */
+    private List<Message> consumeOnTestThread(MessageStream<? extends Message> stream,
+                                              Producer producer,
+                                              boolean checkIsCompleted) throws InterruptedException {
+        Semaphore signals = new Semaphore(0);
+        List<Message> received = new ArrayList<>();
+
+        stream.setCallback(signals::release);
+        producer.deliverAll();
+
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+
+        while (true) {
+            if (checkIsCompleted) {
+                int readsBefore = producer.reads();
+
+                stream.isCompleted();
+                stream.isCompleted();
+
+                assertThat(producer.reads()).describedAs("reads by isCompleted()").isEqualTo(readsBefore);
+            }
+
+            drain(stream, received);
+
+            if (stream.isCompleted()) {
+                return received;
+            }
+
+            long remaining = deadline - System.nanoTime();
+
+            if (!signals.tryAcquire(Math.max(0, remaining), TimeUnit.NANOSECONDS)) {
+                fail("Stream did not complete, received " + received + ": " + stream);
+            }
+        }
+    }
+
+    private static void drain(MessageStream<? extends Message> stream, List<Message> received) {
+        while (stream.hasNextAvailable()) {
+            stream.next().ifPresent(e -> received.add(e.message()));
+        }
+    }
+
     private Message next(Case c) throws Exception {
         await().alias("stream::hasNextAvailable").until(c.stream::hasNextAvailable);
 
@@ -335,5 +510,181 @@ public abstract class MessageStreamTestSuite {
         int end = start + total;
 
         return Stream.iterate(start, e -> e != end, e -> e + 1).map(this::msg).toList();
+    }
+
+    /**
+     * Creates sources for a {@link ProducedCase} and feeds them from producer threads of its own, the way a storage
+     * engine or a remote connection feeds a stream. Entries are delivered in index order across all sources it created,
+     * and each source is sealed right after its last entry, so the order in which entries arrive is the same on every
+     * run. The producer records every read from its sources, and which of those happened on a producer thread.
+     */
+    public final class Producer {
+
+        private final List<ProducedStream> streams = new ArrayList<>();
+        private final NavigableMap<Integer, ProducedStream> deliveries = new TreeMap<>();
+        private final Set<Thread> producerThreads = ConcurrentHashMap.newKeySet();
+        private final List<String> readsOnProducerThreads = new CopyOnWriteArrayList<>();
+        private final AtomicInteger reads = new AtomicInteger();
+
+        /**
+         * Creates a source that will produce the entries with the given indexes, in the given order.
+         *
+         * @param indexes the indexes of the entries this source produces, each used by one source only
+         * @return a source fed by this producer
+         */
+        public MessageStream<Message> stream(int... indexes) {
+            ProducedStream stream = new ProducedStream(streams.size());
+
+            for (int index : indexes) {
+                if (deliveries.put(index, stream) != null) {
+                    throw new IllegalArgumentException("Index " + index + " is produced by more than one source");
+                }
+            }
+
+            streams.add(stream);
+
+            return stream;
+        }
+
+        int reads() {
+            return reads.get();
+        }
+
+        List<String> readsOnProducerThreads() {
+            return readsOnProducerThreads;
+        }
+
+        /**
+         * Delivers all entries from a producer thread, a few milliseconds apart, without waiting for that.
+         */
+        void deliverAll() {
+            startProducer(() -> {
+                while (deliverNext()) {
+                    LockSupport.parkNanos(Duration.ofMillis(5).toNanos());
+                }
+            });
+        }
+
+        /**
+         * Delivers the next entry from a producer thread, and waits until that was done.
+         */
+        void deliverNextAndWait() throws InterruptedException {
+            join(startProducer(this::deliverNext));
+        }
+
+        /**
+         * Delivers all remaining entries from a producer thread, and waits until that was done.
+         */
+        void deliverRemainingAndWait() {
+            try {
+                join(startProducer(() -> {
+                    while (deliverNext()) {
+                        // deliver everything
+                    }
+                }));
+            }
+            catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+
+                throw new IllegalStateException(e);
+            }
+        }
+
+        /**
+         * Delivers the next entry, then seals every source that has nothing left to deliver.
+         *
+         * @return {@code true} if more entries remain to be delivered
+         */
+        private boolean deliverNext() {
+            Map.Entry<Integer, ProducedStream> next;
+
+            synchronized (this) {
+                next = deliveries.pollFirstEntry();
+            }
+
+            if (next != null) {
+                next.getValue().deliver(entry(next.getKey()));
+            }
+
+            for (ProducedStream stream : streams) {
+                boolean finished;
+
+                synchronized (this) {
+                    finished = !deliveries.containsValue(stream);
+                }
+
+                if (finished) {
+                    stream.seal();
+                }
+            }
+
+            synchronized (this) {
+                return !deliveries.isEmpty();
+            }
+        }
+
+        private Thread startProducer(Runnable action) {
+            Thread thread = Thread.ofPlatform().name("producer").unstarted(action);
+
+            producerThreads.add(thread);
+            thread.start();
+
+            return thread;
+        }
+
+        private void join(Thread thread) throws InterruptedException {
+            if (!thread.join(Duration.ofSeconds(10))) {
+                throw new IllegalStateException("Producer did not finish delivering");
+            }
+        }
+
+        /**
+         * Source fed by its {@link Producer}. Reports completion from what it holds, without reading.
+         */
+        private final class ProducedStream extends AbstractMessageStream<Message> {
+
+            private final Queue<Entry<Message>> buffer = new ConcurrentLinkedQueue<>();
+            private final int number;
+            private volatile boolean sealed;
+
+            ProducedStream(int number) {
+                this.number = number;
+            }
+
+            void deliver(Entry<Message> entry) {
+                buffer.add(entry);
+                signalProgress();
+            }
+
+            void seal() {
+                if (!sealed) {
+                    sealed = true;
+                    signalProgress();
+                }
+            }
+
+            @Override
+            protected FetchResult<Entry<Message>> fetchNext() {
+                reads.incrementAndGet();
+
+                if (producerThreads.contains(Thread.currentThread())) {
+                    readsOnProducerThreads.add("source " + number + " was read on a producer thread");
+                }
+
+                boolean sealedNow = sealed;  // read before the buffer, as entries are added until it is sealed
+                Entry<Message> entry = buffer.poll();
+
+                if (entry != null) {
+                    return FetchResult.of(entry);
+                }
+
+                return sealedNow ? FetchResult.completed() : FetchResult.notReady();
+            }
+
+            @Override
+            protected String describeFlags() {
+                return "source-" + number + (sealed ? "|SEALED" : "");
+            }
+        }
     }
 }
