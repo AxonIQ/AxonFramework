@@ -114,5 +114,12 @@ class PooledStreamingEventProcessorConfigurationTest {
             assertThatThrownBy(() -> testSubject.noCapacityDelay(0)).isInstanceOf(AxonConfigurationException.class);
             assertThatThrownBy(() -> testSubject.noCapacityDelay(-1)).isInstanceOf(AxonConfigurationException.class);
         }
+
+        @Test
+        void noCapacityDelayAcceptsAtMostOneSecond() {
+            assertThat(testSubject.noCapacityDelay(1000).noCapacityDelay()).isEqualTo(1000);
+            assertThatThrownBy(() -> testSubject.noCapacityDelay(1001))
+                    .isInstanceOf(AxonConfigurationException.class);
+        }
     }
 }

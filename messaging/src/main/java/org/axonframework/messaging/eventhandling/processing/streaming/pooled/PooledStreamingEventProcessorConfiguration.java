@@ -61,6 +61,7 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 
 import static org.axonframework.common.BuilderUtils.assertNonNull;
+import static org.axonframework.common.BuilderUtils.assertThat;
 import static org.axonframework.common.BuilderUtils.assertStrictPositive;
 
 /**
@@ -421,17 +422,20 @@ public class PooledStreamingEventProcessorConfiguration extends EventProcessorCo
 
     /**
      * Specifies the time in milliseconds the coordinator of this processor waits before it offers events to its work
-     * packages again, when none of them has room for more. The coordinator is not told when a work package makes room,
-     * so this wait bounds the throughput of a processor whose work packages handle their events faster than it: a work
-     * package holds at most a fixed number of events, and handles no more than that per wait. Defaults to {@code 100}
-     * milliseconds.
+     * packages again, when one of them has no room for more. The coordinator offers each event to all work packages
+     * together, so one full work package delays the others as well. The coordinator is not told when a work package
+     * makes room, so this wait bounds the throughput of a processor whose work packages handle their events faster
+     * than it: a work package holds at most a fixed number of events, and handles no more than that per wait. Must be
+     * between 1 and 1000 milliseconds. Defaults to {@code 100} milliseconds.
      *
-     * @param noCapacityDelay The time in milliseconds the coordinator waits before it offers events again, when no
-     *                        work package has room for them.
-     * @return The current instance, for fluent interfacing.
+     * @param noCapacityDelay the time in milliseconds the coordinator waits before it offers events again, when a
+     *                        work package has no room for them
+     * @return the current instance, for fluent interfacing
      */
     public PooledStreamingEventProcessorConfiguration noCapacityDelay(long noCapacityDelay) {
-        assertStrictPositive(noCapacityDelay, "The no capacity delay should be a higher value than zero");
+        assertThat(noCapacityDelay,
+                   delay -> delay > 0 && delay <= 1000,
+                   "The no capacity delay should be between 1 and 1000 milliseconds");
         this.noCapacityDelay = noCapacityDelay;
         return this;
     }
@@ -708,10 +712,10 @@ public class PooledStreamingEventProcessorConfiguration extends EventProcessorCo
     }
 
     /**
-     * Returns the time in milliseconds the coordinator waits before it offers events again, when no work package has
+     * Returns the time in milliseconds the coordinator waits before it offers events again, when a work package has no
      * room for them.
      *
-     * @return The no capacity delay.
+     * @return the no capacity delay
      */
     public long noCapacityDelay() {
         return noCapacityDelay;
