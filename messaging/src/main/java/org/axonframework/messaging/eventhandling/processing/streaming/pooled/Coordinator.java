@@ -562,8 +562,8 @@ class Coordinator {
         }
 
         /**
-         * Sets the time the coordinator waits before it offers events to its work packages again, when none of them
-         * has room for more. Defaults to {@code 100}.
+         * Sets the time the coordinator waits before it offers events to its work packages again, when one of them has
+         * no room for more. Defaults to {@code 100}.
          *
          * @param noCapacityDelay the time in milliseconds
          * @return the current Builder instance, for fluent interfacing
