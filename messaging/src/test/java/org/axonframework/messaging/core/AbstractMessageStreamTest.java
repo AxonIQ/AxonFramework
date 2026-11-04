@@ -22,16 +22,26 @@ import org.axonframework.messaging.core.MessageStream.Entry;
 import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.*;
 
+import java.time.Duration;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
 import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.awaitility.Awaitility.await;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * Tests for {@link AbstractMessageStream} focusing on the internal state machine: callback mechanics,
@@ -544,6 +554,14 @@ class AbstractMessageStreamTest {
                                           .hasMessage("failure")
                                           .hasSuppressedException(onCompletedException);
             }
+
+            @Test
+            void closeLeavesErrorEmpty() {
+                stream.close();
+
+                assertThat(stream.onCompletedCount()).isEqualTo(1);
+                assertThat(stream.error()).isEmpty(); // a closed stream's state stays as it was when closed
+            }
         }
 
         @Test
@@ -976,6 +994,547 @@ class AbstractMessageStreamTest {
 
             // then
             assertThat(callbackCount).hasValue(1);
+        }
+    }
+
+    /*
+     * fetchNext() may block, for example while it waits for a database connection. These tests hold
+     * back a fetchNext() call and check how the rest of the stream behaves meanwhile: other calls do
+     * not wait for it, only one fetch runs at a time, signals are not lost, and close() takes effect
+     * immediately, with onCompleted() running once the fetch in progress has returned.
+     */
+    @Nested
+    class WhileFetchNextIsInProgress {
+
+        private final GatedStream stream = new GatedStream();
+        private final AtomicInteger callbackCount = new AtomicInteger();
+
+        @AfterEach
+        void releaseHeldBackFetches() {
+            stream.releaseAllGates(); // never leave threads blocked when an assertion fails
+        }
+
+        @Nested
+        class OtherCallsDoNotWait {
+
+            @BeforeEach
+            void holdBackAFetch() throws InterruptedException {
+                Gate gate = stream.holdBackNextFetch(FetchResult::notReady);
+
+                inBackground(stream::next);
+                gate.awaitEntered();
+            }
+
+            @Test
+            void signalProgressReturnsWithoutWaitingForFetchNext() throws InterruptedException {
+                assertReturnsPromptly(stream::triggerSignalProgress);
+            }
+
+            @Test
+            void isCompletedReturnsWithoutWaitingForFetchNext() throws InterruptedException {
+                AtomicBoolean completed = new AtomicBoolean(true);
+
+                assertReturnsPromptly(() -> completed.set(stream.isCompleted()));
+                assertThat(completed).isFalse();
+            }
+
+            @Test
+            void errorReturnsWithoutWaitingForFetchNext() throws InterruptedException {
+                assertReturnsPromptly(stream::error);
+            }
+
+            @Test
+            void nextReturnsEmptyWithoutWaitingOrFetchingAgain() throws InterruptedException {
+                AtomicReference<Optional<Entry<Message>>> result = new AtomicReference<>();
+
+                assertReturnsPromptly(() -> result.set(stream.next()));
+                assertThat(result.get()).isEmpty();
+                assertThat(stream.fetchNextCount()).isEqualTo(1);
+            }
+
+            @Test
+            void hasNextAvailableReturnsFalseWithoutWaitingOrFetchingAgain() throws InterruptedException {
+                AtomicBoolean available = new AtomicBoolean(true);
+
+                assertReturnsPromptly(() -> available.set(stream.hasNextAvailable()));
+                assertThat(available).isFalse();
+                assertThat(stream.fetchNextCount()).isEqualTo(1);
+            }
+        }
+
+        @Nested
+        class OnlyOneFetchRuns {
+
+            @Test
+            void callsMadeDuringAFetchDoNotOverlapIt() throws InterruptedException {
+                Gate gate = stream.holdBackNextFetch(FetchResult::notReady);
+
+                inBackground(stream::next);
+                gate.awaitEntered();
+
+                List<Thread> callers = List.of(
+                    inBackground(stream::next),
+                    inBackground(stream::peek),
+                    inBackground(stream::hasNextAvailable)
+                );
+
+                awaitReturnedOrBlocked(callers);
+                gate.release();
+
+                for (Thread caller : callers) {
+                    assertThat(caller.join(Duration.ofSeconds(5))).isTrue();
+                }
+
+                assertThat(stream.overlappingFetches()).isFalse();
+            }
+
+            @Test
+            void callerThatFoundNothingDuringAFetchIsCalledBackWhenTheFetchReturns() throws InterruptedException {
+                stream.setCallback(callbackCount::incrementAndGet); // nothing is available yet, so no callback
+
+                Gate gate = stream.holdBackNextFetch(() -> FetchResult.of(entryOf("fetched")));
+
+                inBackground(stream::next);
+                gate.awaitEntered();
+
+                Thread caller = inBackground(stream::hasNextAvailable);
+
+                awaitReturnedOrBlocked(List.of(caller));
+
+                int callbacksBeforeRelease = callbackCount.get();
+
+                gate.release();
+
+                // the caller learned nothing during the fetch, so it must be told to look again
+                await().until(() -> callbackCount.get() > callbacksBeforeRelease);
+            }
+        }
+
+        @Nested
+        class SignalsAreNotLost {
+
+            @Test
+            void callbackFiresWhenAFetchReturnsNotReadyAfterASignal() throws InterruptedException {
+                Entry<Message> entry = entryOf("late");
+                Gate gate = stream.holdBackNextFetch(FetchResult::notReady);
+
+                inBackground(() -> stream.setCallback(callbackCount::incrementAndGet));
+                gate.awaitEntered();
+
+                Thread producer = inBackground(() -> {
+                    stream.enqueue(FetchResult.of(entry)); // too late for the fetch in progress
+                    stream.triggerSignalProgress();
+                });
+
+                awaitReturnedOrBlocked(List.of(producer));
+                gate.release();
+
+                await().until(() -> callbackCount.get() > 0);
+                assertThat(stream.next()).contains(entry);
+            }
+
+            @Test
+            void signalDuringAFetchThatReturnsAValueLosesNothing() throws InterruptedException {
+                Entry<Message> fetched = entryOf("fetched");
+                Entry<Message> signalled = entryOf("signalled");
+                AtomicReference<Optional<Entry<Message>>> readerResult = new AtomicReference<>();
+
+                stream.setCallback(callbackCount::incrementAndGet);
+
+                Gate gate = stream.holdBackNextFetch(() -> FetchResult.of(fetched));
+                Thread reader = inBackground(() -> readerResult.set(stream.next()));
+
+                gate.awaitEntered();
+
+                Thread producer = inBackground(() -> {
+                    stream.enqueue(FetchResult.of(signalled));
+                    stream.triggerSignalProgress();
+                });
+
+                awaitReturnedOrBlocked(List.of(producer));
+                gate.release();
+
+                assertThat(reader.join(Duration.ofSeconds(5))).isTrue();
+                assertThat(readerResult.get()).contains(fetched);
+                assertThat(stream.next()).contains(signalled);
+            }
+        }
+
+        @Nested
+        class WhenClosed {
+
+            @Test
+            void closeReturnsWithoutWaitingForFetchNext() throws InterruptedException {
+                Gate gate = stream.holdBackNextFetch(FetchResult::notReady);
+
+                inBackground(stream::next);
+                gate.awaitEntered();
+
+                assertReturnsPromptly(stream::close);
+            }
+
+            @Test
+            void streamStateIsFinalAsSoonAsCloseReturns() throws InterruptedException {
+                Gate gate = stream.holdBackNextFetch(() -> FetchResult.of(entryOf("fetched")));
+
+                inBackground(stream::next);
+                gate.awaitEntered();
+
+                assertReturnsPromptly(stream::close);
+
+                // the fetch is still in progress here
+                assertThat(stream.next()).isEmpty();
+                assertThat(stream.peek()).isEmpty();
+                assertThat(stream.hasNextAvailable()).isFalse();
+                assertThat(stream.isCompleted()).isTrue();
+                assertThat(stream.error()).isEmpty();
+            }
+
+            @Test
+            void onCompletedRunsOnceAfterTheFetchInProgressReturns() throws InterruptedException {
+                Gate gate = stream.holdBackNextFetch(FetchResult::notReady);
+
+                inBackground(stream::next);
+                gate.awaitEntered();
+
+                Thread closer = inBackground(stream::close);
+
+                awaitReturnedOrBlocked(List.of(closer));
+
+                assertThat(stream.onCompletedCount()).isZero();
+
+                gate.release();
+
+                assertThat(closer.join(Duration.ofSeconds(5))).isTrue();
+                await().until(() -> stream.onCompletedCount() == 1);
+                assertThat(stream.onCompletedDuringFetch()).isFalse();
+            }
+
+            @Test
+            void valueReturnedByTheFetchInProgressIsNotAvailableAfterClose() throws InterruptedException {
+                Entry<Message> fetched = entryOf("fetched");
+                AtomicReference<Optional<Entry<Message>>> readerResult = new AtomicReference<>();
+                Gate gate = stream.holdBackNextFetch(() -> FetchResult.of(fetched));
+                Thread reader = inBackground(() -> readerResult.set(stream.next()));
+
+                gate.awaitEntered();
+                closeDuringTheFetch(gate);
+
+                assertThat(reader.join(Duration.ofSeconds(5))).isTrue();
+
+                // the call that started the fetch overlapped the close, so it may still return the value
+                assertThat(readerResult.get()).satisfiesAnyOf(
+                    result -> assertThat(result).isEmpty(),
+                    result -> assertThat(result).contains(fetched)
+                );
+                assertThat(stream.next()).isEmpty();
+                assertThat(stream.peek()).isEmpty();
+            }
+
+            @Test
+            void errorReturnedByTheFetchInProgressDoesNotSetError() throws InterruptedException {
+                Gate gate = stream.holdBackNextFetch(() -> FetchResult.error(new IllegalStateException("failure")));
+                Thread reader = inBackground(stream::next);
+
+                gate.awaitEntered();
+                closeDuringTheFetch(gate);
+
+                assertThat(reader.join(Duration.ofSeconds(5))).isTrue();
+                assertThat(stream.error()).isEmpty();
+            }
+
+            @Test
+            void exceptionThrownByTheFetchInProgressDoesNotSetError() throws InterruptedException {
+                Gate gate = stream.holdBackNextFetch(() -> {
+                    throw new IllegalStateException("failure");
+                });
+                Thread reader = inBackground(stream::next);
+
+                gate.awaitEntered();
+                closeDuringTheFetch(gate);
+
+                assertThat(reader.join(Duration.ofSeconds(5))).isTrue();
+                assertThat(stream.error()).isEmpty();
+            }
+
+            @Test
+            void completedReturnedByTheFetchInProgressRunsOnCompletedOnce() throws InterruptedException {
+                Gate gate = stream.holdBackNextFetch(FetchResult::completed);
+                Thread reader = inBackground(stream::next);
+
+                gate.awaitEntered();
+                closeDuringTheFetch(gate);
+
+                assertThat(reader.join(Duration.ofSeconds(5))).isTrue();
+                await().until(() -> stream.onCompletedCount() == 1);
+                assertThat(stream.onCompletedCount()).isEqualTo(1);
+            }
+
+            @Test
+            void failingOnCompletedAfterTheFetchInProgressDoesNotSetError() throws InterruptedException {
+                stream.failOnCompleted(new IllegalStateException("cleanup failed"));
+
+                Gate gate = stream.holdBackNextFetch(FetchResult::notReady);
+                Thread reader = inBackground(stream::next);
+
+                gate.awaitEntered();
+                closeDuringTheFetch(gate);
+
+                assertThat(reader.join(Duration.ofSeconds(5))).isTrue();
+                await().until(() -> stream.onCompletedCount() == 1);
+                assertThat(stream.error()).isEmpty();
+            }
+
+            @Test
+            void fetchNextIsNotCalledAgainAfterClose() throws InterruptedException {
+                Gate gate = stream.holdBackNextFetch(FetchResult::notReady);
+                Thread reader = inBackground(stream::next);
+
+                gate.awaitEntered();
+                closeDuringTheFetch(gate);
+
+                assertThat(reader.join(Duration.ofSeconds(5))).isTrue();
+
+                int fetches = stream.fetchNextCount();
+
+                stream.next();
+                stream.peek();
+                stream.hasNextAvailable();
+
+                assertThat(stream.fetchNextCount()).isEqualTo(fetches);
+            }
+
+            /**
+             * Closes the stream from another thread while the fetch held back by the given gate is in
+             * progress, then releases that fetch and waits for the close to have returned.
+             */
+            private void closeDuringTheFetch(Gate gate) throws InterruptedException {
+                Thread closer = inBackground(stream::close);
+
+                awaitReturnedOrBlocked(List.of(closer));
+                gate.release();
+
+                assertThat(closer.join(Duration.ofSeconds(5))).isTrue();
+            }
+        }
+
+        /*
+         * On Java 21 to 23, a virtual thread waiting inside synchronized code keeps its carrier thread.
+         * These tests occupy every carrier of the default scheduler that way, and then check that a
+         * virtual thread which can release the waiting ones still gets to run. On Java 24 and later,
+         * waiting virtual threads always release their carrier, so the tests prove nothing there.
+         */
+        @Nested
+        class WithVirtualThreadsOnJava21 {
+
+            private final int carriers = Integer.getInteger(
+                "jdk.virtualThreadScheduler.parallelism", Runtime.getRuntime().availableProcessors()
+            );
+
+            @BeforeEach
+            void requireJavaVersionThatKeepsCarriersOfWaitingVirtualThreads() {
+                assumeTrue(Runtime.version().feature() < 24, "only Java 21 to 23 keep the carrier");
+            }
+
+            @Test
+            void virtualThreadsWaitingInFetchNextLeaveCarriersForOtherVirtualThreads() throws InterruptedException {
+                List<Gate> gates = new ArrayList<>();
+
+                try {
+                    for (int i = 0; i < carriers; i++) {
+                        GatedStream readerStream = new GatedStream();
+
+                        gates.add(readerStream.holdBackNextFetch(FetchResult::notReady));
+                        Thread.ofVirtual().start(readerStream::next);
+                    }
+
+                    for (Gate gate : gates) {
+                        gate.awaitEntered();
+                    }
+
+                    Thread releaser = Thread.ofVirtual().start(() -> gates.forEach(Gate::release));
+
+                    assertThat(releaser.join(Duration.ofSeconds(2))).isTrue();
+                }
+                finally {
+                    gates.forEach(Gate::release);
+                }
+            }
+
+            @Test
+            void virtualThreadsSignallingDuringAFetchLeaveCarriersForOtherVirtualThreads() throws InterruptedException {
+                Gate gate = stream.holdBackNextFetch(FetchResult::notReady);
+
+                inBackground(stream::next); // a platform thread, which needs no carrier
+                gate.awaitEntered();
+
+                List<Thread> signallers = new ArrayList<>();
+
+                for (int i = 0; i < carriers; i++) {
+                    signallers.add(Thread.ofVirtual().start(stream::triggerSignalProgress));
+                }
+
+                awaitReturnedOrBlocked(signallers);
+
+                Thread releaser = Thread.ofVirtual().start(gate::release);
+
+                assertThat(releaser.join(Duration.ofSeconds(2))).isTrue();
+            }
+        }
+
+        private static Thread inBackground(Runnable action) {
+            return Thread.ofPlatform().start(action);
+        }
+
+        private static void assertReturnsPromptly(Runnable action) throws InterruptedException {
+            assertThat(inBackground(action).join(Duration.ofSeconds(2))).as("returned within 2 seconds").isTrue();
+        }
+
+        /**
+         * Waits until each of the given threads has either returned, or is blocked waiting to enter a
+         * monitor, which is how a call that waits for the fetch in progress shows up.
+         */
+        private static void awaitReturnedOrBlocked(List<Thread> threads) {
+            await().until(() -> threads.stream()
+                                       .allMatch(t -> !t.isAlive() || t.getState() == Thread.State.BLOCKED));
+        }
+    }
+
+    /**
+     * Holds back one {@link AbstractMessageStream#fetchNext()} call until released, and then lets it
+     * complete with a given outcome, which may also throw.
+     */
+    private static final class Gate {
+
+        private final CountDownLatch entered = new CountDownLatch(1);
+        private final CountDownLatch released = new CountDownLatch(1);
+        private final Supplier<FetchResult<Entry<Message>>> outcome;
+
+        Gate(Supplier<FetchResult<Entry<Message>>> outcome) {
+            this.outcome = outcome;
+        }
+
+        void awaitEntered() throws InterruptedException {
+            assertThat(entered.await(5, TimeUnit.SECONDS)).as("fetchNext() was entered").isTrue();
+        }
+
+        void release() {
+            released.countDown();
+        }
+
+        FetchResult<Entry<Message>> pass() {
+            entered.countDown();
+
+            try {
+                if (!released.await(10, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("fetchNext() was never released.");
+                }
+            }
+            catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+
+                throw new IllegalStateException(e);
+            }
+
+            return outcome.get();
+        }
+    }
+
+    /**
+     * {@link AbstractMessageStream} whose {@link #fetchNext()} calls can be held back by a {@link Gate},
+     * and which records how {@code fetchNext()} and {@code onCompleted()} calls relate to each other.
+     */
+    private static class GatedStream extends AbstractMessageStream<Message> {
+
+        private final Queue<FetchResult<Entry<Message>>> results = new ConcurrentLinkedQueue<>();
+        private final Queue<Gate> pendingGates = new ConcurrentLinkedQueue<>();
+        private final List<Gate> allGates = new CopyOnWriteArrayList<>();
+        private final AtomicInteger fetchNextCount = new AtomicInteger();
+        private final AtomicInteger onCompletedCount = new AtomicInteger();
+        private final AtomicBoolean fetching = new AtomicBoolean();
+        private final AtomicBoolean overlappingFetches = new AtomicBoolean();
+        private final AtomicBoolean onCompletedDuringFetch = new AtomicBoolean();
+        private volatile RuntimeException onCompletedFailure;
+
+        Gate holdBackNextFetch(Supplier<FetchResult<Entry<Message>>> outcome) {
+            Gate gate = new Gate(outcome);
+
+            pendingGates.add(gate);
+            allGates.add(gate);
+
+            return gate;
+        }
+
+        void releaseAllGates() {
+            allGates.forEach(Gate::release);
+        }
+
+        void enqueue(FetchResult<Entry<Message>> result) {
+            results.add(result);
+        }
+
+        void triggerSignalProgress() {
+            signalProgress();
+        }
+
+        void failOnCompleted(RuntimeException failure) {
+            this.onCompletedFailure = failure;
+        }
+
+        int fetchNextCount() {
+            return fetchNextCount.get();
+        }
+
+        int onCompletedCount() {
+            return onCompletedCount.get();
+        }
+
+        boolean overlappingFetches() {
+            return overlappingFetches.get();
+        }
+
+        boolean onCompletedDuringFetch() {
+            return onCompletedDuringFetch.get();
+        }
+
+        @NonNull
+        @Override
+        protected FetchResult<Entry<Message>> fetchNext() {
+            if (!fetching.compareAndSet(false, true)) {
+                overlappingFetches.set(true);
+            }
+
+            try {
+                fetchNextCount.incrementAndGet();
+
+                Gate gate = pendingGates.poll();
+
+                if (gate != null) {
+                    return gate.pass();
+                }
+
+                FetchResult<Entry<Message>> result = results.poll();
+
+                return result != null ? result : FetchResult.notReady();
+            }
+            finally {
+                fetching.set(false);
+            }
+        }
+
+        @Override
+        protected void onCompleted() {
+            if (fetching.get()) {
+                onCompletedDuringFetch.set(true);
+            }
+
+            onCompletedCount.incrementAndGet();
+
+            RuntimeException failure = onCompletedFailure;
+
+            if (failure != null) {
+                throw failure;
+            }
         }
     }
 }
