@@ -318,7 +318,8 @@ public interface MessageStream<M extends Message> {
      * stream completes.
      * <p>
      * Unlike simply closing the stream, the returned stream will still cause upstream entries to be consumed and any
-     * registered callbacks to be invoked.
+     * registered callbacks to be invoked. The entries are consumed when the returned stream is read, as by
+     * {@link Single#asCompletableFuture()}, like with any other stream.
      *
      * @return An Empty stream that ignores all results.
      */

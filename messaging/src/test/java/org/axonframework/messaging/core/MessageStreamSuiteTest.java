@@ -80,6 +80,15 @@ class MessageStreamSuiteTest {
     @Nested
     class ConcatenatingTest extends MessageStreamTestSuite {
         @Override
+        protected List<ProducedCase> producedCases() {
+            return List.of(
+                new ProducedCase(3, p -> new ConcatenatingMessageStream<>(p.stream(0, 1), p.stream(2))),
+                new ProducedCase("first-empty", 2, p -> new ConcatenatingMessageStream<>(p.stream(), p.stream(0, 1))),
+                new ProducedCase("second-empty", 2, p -> new ConcatenatingMessageStream<>(p.stream(0, 1), p.stream()))
+            );
+        }
+
+        @Override
         protected List<Case> cases() {
             return List.of(
                 new Case(0, new ConcatenatingMessageStream<>(MessageStream.empty(), MessageStream.empty())),
@@ -104,6 +113,13 @@ class MessageStreamSuiteTest {
     @Nested
     class CloseCallbackTest extends MessageStreamTestSuite {
         @Override
+        protected List<ProducedCase> producedCases() {
+            return List.of(
+                new ProducedCase(2, p -> new CloseCallbackMessageStream<>(p.stream(0, 1), () -> {}))
+            );
+        }
+
+        @Override
         protected List<Case> cases() {
             return List.of(
                 new Case(0, new CloseCallbackMessageStream<>(MessageStream.empty(), () -> {})),
@@ -123,6 +139,13 @@ class MessageStreamSuiteTest {
     @Nested
     class CompletionCallbackTest extends MessageStreamTestSuite {
         @Override
+        protected List<ProducedCase> producedCases() {
+            return List.of(
+                new ProducedCase(2, p -> new CompletionCallbackMessageStream<>(p.stream(0, 1), () -> {}))
+            );
+        }
+
+        @Override
         protected List<Case> cases() {
             return List.of(
                 new Case(0, new CompletionCallbackMessageStream<>(MessageStream.empty(), () -> {})),
@@ -141,6 +164,14 @@ class MessageStreamSuiteTest {
 
     @Nested
     class FilteringTest extends MessageStreamTestSuite {
+        @Override
+        protected List<ProducedCase> producedCases() {
+            return List.of(
+                new ProducedCase(2, p -> new FilteringMessageStream<>(p.stream(0, 1), m -> true)),
+                new ProducedCase("trailing-rejected", 2, p -> new FilteringMessageStream<>(p.stream(0, 1, 3), m -> (int) m.message().payload() < 2))
+            );
+        }
+
         @Override
         protected List<Case> cases() {
             return List.of(
@@ -236,6 +267,14 @@ class MessageStreamSuiteTest {
     @Nested
     class IgnoreEntriesTest extends MessageStreamTestSuite {
         @Override
+        protected List<ProducedCase> producedCases() {
+            return List.of(
+                new ProducedCase(0, p -> new IgnoredEntriesMessageStream<>(p.stream(0, 1))),
+                new ProducedCase("empty", 0, p -> new IgnoredEntriesMessageStream<>(p.stream()))
+            );
+        }
+
+        @Override
         protected List<Case> cases() {
             return List.of(
                 new Case(0, new IgnoredEntriesMessageStream<>(MessageStream.empty())),
@@ -284,6 +323,13 @@ class MessageStreamSuiteTest {
     @Nested
     class OnErrorContinueTest extends MessageStreamTestSuite {
         @Override
+        protected List<ProducedCase> producedCases() {
+            return List.of(
+                new ProducedCase(2, p -> new OnErrorContinueMessageStream<>(p.stream(0, 1), e -> { throw new AssertionError(); }))
+            );
+        }
+
+        @Override
         protected List<Case> cases() {
             return List.of(
                 new Case(0, new OnErrorContinueMessageStream<>(MessageStream.empty(), e -> { throw new AssertionError(); })),
@@ -306,6 +352,13 @@ class MessageStreamSuiteTest {
     @Nested
     class TruncateFirstTest extends MessageStreamTestSuite {
         @Override
+        protected List<ProducedCase> producedCases() {
+            return List.of(
+                new ProducedCase(1, p -> new TruncateFirstMessageStream<>(p.stream(0, 1)))
+            );
+        }
+
+        @Override
         protected List<Case> cases() {
             return List.of(
                 new Case(0, new TruncateFirstMessageStream<>(MessageStream.empty())),
@@ -326,6 +379,14 @@ class MessageStreamSuiteTest {
 
     @Nested
     class FlatMappedTest extends MessageStreamTestSuite {
+        @Override
+        protected List<ProducedCase> producedCases() {
+            return List.of(
+                new ProducedCase(2, p -> new FlatMappedMessageStream<>(p.stream(0, 1), e -> MessageStream.just(e.message()))),
+                new ProducedCase("filtered-all", 0, p -> new FlatMappedMessageStream<>(p.stream(0, 1), e -> MessageStream.empty()))
+            );
+        }
+
         @Override
         protected List<Case> cases() {
             return List.of(
@@ -350,6 +411,14 @@ class MessageStreamSuiteTest {
 
     @Nested
     class MapMultiTest extends MessageStreamTestSuite {
+        @Override
+        protected List<ProducedCase> producedCases() {
+            return List.of(
+                new ProducedCase(2, p -> new MapMultiMessageStream<>(p.stream(0, 1), (e, c) -> c.accept(e))),
+                new ProducedCase("filtered-all", 0, p -> new MapMultiMessageStream<>(p.stream(0, 1), (e, c) -> {}))
+            );
+        }
+
         @Override
         protected List<Case> cases() {
             return List.of(
@@ -418,6 +487,17 @@ class MessageStreamSuiteTest {
     @Nested
     class DelayedTest extends MessageStreamTestSuite {
         @Override
+        protected List<ProducedCase> producedCases() {
+            return List.of(
+                new ProducedCase(2, p -> {
+                    MessageStream<Message> source = p.stream(0, 1);
+
+                    return DelayedMessageStream.create(later(() -> source));
+                })
+            );
+        }
+
+        @Override
         protected List<Case> cases() {
             return List.of(
                 new Case("completed", 2, DelayedMessageStream.create(CompletableFuture.completedFuture(MessageStream.fromItems(msg(0), msg(1))))),
@@ -462,6 +542,17 @@ class MessageStreamSuiteTest {
     @Nested
     class LazyTest extends MessageStreamTestSuite {
         @Override
+        protected List<ProducedCase> producedCases() {
+            return List.of(
+                new ProducedCase(2, p -> {
+                    MessageStream<Message> source = p.stream(0, 1);  // created here, so the producer knows it
+
+                    return new LazyMessageStream<Message>(() -> source);
+                })
+            );
+        }
+
+        @Override
         protected List<Case> cases() {
             return List.of(
                 new Case(0, new LazyMessageStream<Message>(MessageStream::empty)),
@@ -483,6 +574,13 @@ class MessageStreamSuiteTest {
 
     @Nested
     class MappedTest extends MessageStreamTestSuite {
+        @Override
+        protected List<ProducedCase> producedCases() {
+            return List.of(
+                new ProducedCase(2, p -> new MappedMessageStream<Message, Message>(p.stream(0, 1), e -> e))
+            );
+        }
+
         @Override
         protected List<Case> cases() {
             return List.of(
@@ -506,6 +604,13 @@ class MessageStreamSuiteTest {
 
     @Nested
     class OnNextTest extends MessageStreamTestSuite {
+        @Override
+        protected List<ProducedCase> producedCases() {
+            return List.of(
+                new ProducedCase(2, p -> new OnNextMessageStream<>(p.stream(0, 1), e -> {}))
+            );
+        }
+
         @Override
         protected List<Case> cases() {
             return List.of(
