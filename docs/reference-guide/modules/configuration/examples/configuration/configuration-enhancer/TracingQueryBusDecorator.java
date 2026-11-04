@@ -29,6 +29,7 @@ import org.axonframework.messaging.tracing.SpanFactory;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
+import java.util.OptionalInt;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
@@ -77,9 +78,26 @@ class TracingQueryBusDecorator implements QueryBus {
 
     @NonNull
     @Override
+    public CompletableFuture<OptionalInt> emitUpdateAndCount(
+            @NonNull Predicate<QueryMessage> filter,
+            @NonNull Supplier<SubscriptionQueryUpdateMessage> updateSupplier,
+            @Nullable ProcessingContext context
+    ) {
+        return delegate.emitUpdateAndCount(filter, updateSupplier, context);
+    }
+
+    @NonNull
+    @Override
     public CompletableFuture<Void> completeSubscriptions(@NonNull Predicate<QueryMessage> filter,
                                                          @Nullable ProcessingContext context) {
         return delegate.completeSubscriptions(filter, context);
+    }
+
+    @NonNull
+    @Override
+    public CompletableFuture<OptionalInt> completeSubscriptionsAndCount(@NonNull Predicate<QueryMessage> filter,
+                                                                        @Nullable ProcessingContext context) {
+        return delegate.completeSubscriptionsAndCount(filter, context);
     }
 
     @NonNull
@@ -88,6 +106,16 @@ class TracingQueryBusDecorator implements QueryBus {
                                                                       @NonNull Throwable cause,
                                                                       @Nullable ProcessingContext context) {
         return delegate.completeSubscriptionsExceptionally(filter, cause, context);
+    }
+
+    @NonNull
+    @Override
+    public CompletableFuture<OptionalInt> completeSubscriptionsExceptionallyAndCount(
+            @NonNull Predicate<QueryMessage> filter,
+            @NonNull Throwable cause,
+            @Nullable ProcessingContext context
+    ) {
+        return delegate.completeSubscriptionsExceptionallyAndCount(filter, cause, context);
     }
 
     @Override
