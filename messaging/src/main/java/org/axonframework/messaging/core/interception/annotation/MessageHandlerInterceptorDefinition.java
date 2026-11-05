@@ -56,6 +56,8 @@ public class MessageHandlerInterceptorDefinition implements HandlerEnhancerDefin
             // when enhancer definitions are composed more than once. Wrapping an already-wrapped member would nest
             // MessageInterceptingMembers, and each before-style layer independently proceeds the chain -- invoking the
             // actual handler once per redundant wrapping. Returning the existing wrapper keeps a single proceed.
+            // The same check leaves members that a higher-priority enhancer already turned into an interceptor, such
+            // as non-void interceptor methods with their own semantics, instead of rejecting them below.
             if (original.unwrap(MessageInterceptingMember.class).isPresent()) {
                 return original;
             }

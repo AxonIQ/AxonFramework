@@ -49,15 +49,13 @@ import java.lang.annotation.Target;
  *     <li>The method must be {@code static} and return a non-null {@link EventCriteria}. Being static, it does not
  *     depend on the state of the handling object, and on an entity it also covers commands creating the entity.</li>
  *     <li>A parameter of type {@code EventCriteria} receives the criteria accumulated through sourcing, across every
- *     entity the command loaded. For a command that loaded nothing, they restrict nothing, or select the tags of the
- *     appended events when an entity is created without loading, and the result is checked from
- *     {@link org.axonframework.eventsourcing.eventstore.ConsistencyMarker#ORIGIN}.</li>
+ *     entity the command loaded.</li>
  *     <li>Other parameters are resolved like those of any message handler, when the events are appended. Use
  *     parameters that resolve without side effects, such as the {@link CommandMessage}, a
  *     {@link org.axonframework.messaging.core.annotation.MetadataValue} or a configured component.</li>
- *     <li>At most one builder or {@link AppendCriteriaInterceptor} applies to a command. When several match, the
- *     command fails rather than letting one silently win.</li>
  * </ul>
+ * The rules of {@link AppendCriteriaInterceptor}, which backs this annotation, apply as well: at most one builder or
+ * interceptor per command, and how a command that loaded nothing is checked.
  * <p>
  * Example narrowing the boundary of withdrawals, while deposits keep their sourcing criteria:
  * <pre>

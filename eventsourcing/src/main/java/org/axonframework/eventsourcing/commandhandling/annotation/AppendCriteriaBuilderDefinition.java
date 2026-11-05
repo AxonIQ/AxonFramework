@@ -27,6 +27,7 @@ import org.axonframework.messaging.core.Context.ResourceKey;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageHandlerInterceptorChain;
 import org.axonframework.messaging.core.MessageStream;
+import org.axonframework.messaging.core.annotation.HandlerAttributes;
 import org.axonframework.messaging.core.annotation.HandlerEnhancerDefinition;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.core.annotation.WrappedMessageHandlingMember;
@@ -68,8 +69,10 @@ public class AppendCriteriaBuilderDefinition implements HandlerEnhancerDefinitio
 
     @Override
     public <T> MessageHandlingMember<T> wrapHandler(MessageHandlingMember<T> original) {
-        if (original.unwrap(AppendCriteriaBuilderMember.class).isPresent()) {
-            // the flattened enhancer list may hold this definition more than once
+        // every builder is an interceptor, so a map lookup skips the annotation scan for all other handlers
+        if (original.attribute(HandlerAttributes.INTERCEPTOR_MESSAGE_TYPE).isEmpty()
+                // the flattened enhancer list may hold this definition more than once
+                || original.unwrap(AppendCriteriaBuilderMember.class).isPresent()) {
             return original;
         }
         return original.unwrap(Method.class)
