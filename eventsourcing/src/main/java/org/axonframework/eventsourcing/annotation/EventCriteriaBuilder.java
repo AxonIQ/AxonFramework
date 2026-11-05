@@ -38,10 +38,11 @@ import java.lang.annotation.Target;
  * by declaring it as such. Note that the first parameter must be the identifier, and cannot be a component.
  * <p>
  * When no builder accepts the identifier, the criteria fall back to a tag derived from the identifier, see
- * {@link EventSourcedEntity#tagKey()}. The
- * {@link org.axonframework.eventsourcing.commandhandling.annotation.AppendCriteriaBuilder}, which resolves the append
- * criteria of a command rather than the sourcing criteria of an entity, deliberately has no such fallback: once a class
- * declares one, every command it handles needs one.
+ * {@link EventSourcedEntity#tagKey()}.
+ * <p>
+ * These builders decide what an entity loads. To decide what may conflict with a command's decision instead, use an
+ * {@link org.axonframework.eventsourcing.commandhandling.annotation.AppendCriteriaBuilder}. Commands no such builder
+ * matches keep the criteria they were sourced with.
  *
  * @author Mitchell Herrijgers
  * @see TargetEntityId
