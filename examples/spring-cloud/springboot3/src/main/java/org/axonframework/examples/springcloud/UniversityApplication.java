@@ -16,10 +16,12 @@
 
 package org.axonframework.examples.springcloud;
 
+import org.axonframework.examples.springcloud.domain.CourseDomainConfiguration;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.cloud.client.discovery.event.HeartbeatEvent;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.annotation.Import;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 
@@ -31,6 +33,7 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 @SpringBootApplication
 @EnableScheduling
+@Import(CourseDomainConfiguration.class)
 public class UniversityApplication {
 
     private final ApplicationEventPublisher publisher;

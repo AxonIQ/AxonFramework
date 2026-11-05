@@ -33,7 +33,10 @@ include::example$migration/paths/aggregates/polymorphismmigration/AxonConfig.jav
 Axon Framework 5 (AutoDetected)::
 +
 --
-In most cases, you can rely on auto-detection of polymorphic entities by Axon Framework 5. Simply register the base type, and the framework will discover the subtypes automatically.
+Register the base type.
+Axon Framework 5 discovers the subtypes of a sealed base type automatically.
+For other hierarchies, list the subtypes in `concreteTypes`:
+
 [source,java]
 ----
 include::example$migration/paths/aggregates/polymorphismmigration/autodetected/GiftCard.java[tag=autodetected-entity,indent=0]

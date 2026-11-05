@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
@@ -152,11 +153,77 @@ class QueueMessageStreamTest extends MessageStreamTest<EventMessage> {
         assertFalse(testSubject.offer(msg3, Context.empty()));
 
         assertThat(testSubject.next()).map(Entry::message).contains(msg2);
-        assertFalse(testSubject.isCompleted());  // not yet completed, because haven't gone past end yet
 
-        assertThat(testSubject.hasNextAvailable()).isFalse();
-        assertTrue(testSubject.isCompleted());  // completed as next element was attempted to be accessed
-
+        // sealed and drained, so the stream is completed
         assertTrue(testSubject.isCompleted());
+        assertFalse(testSubject.hasNextAvailable());
+        assertTrue(testSubject.isCompleted());
+    }
+
+    @Nested
+    class WhenSealedWhileTheConsumerIsWaiting {
+
+        /*
+         * Sealing is the producer's only signal that the stream ended: it fires the callback once and never
+         * again. A consumer whose idle path does not read from the stream therefore has that one invocation
+         * to observe the end, and short-circuit evaluation is enough to skip a read.
+         */
+
+        @Test
+        void thenAConsumerThatOnlyChecksTheStatusObservesTheEnd() {
+            // given: a consumer woken by the seal, whose guard short-circuits before it reads
+            QueueMessageStream<EventMessage> testSubject = new QueueMessageStream<>();
+            AtomicBoolean observedEnd = new AtomicBoolean();
+
+            testSubject.setCallback(() -> {
+                if (testSubject.isCompleted() && !testSubject.hasNextAvailable()) {
+                    observedEnd.set(true);
+                }
+            });
+
+            // when: the producer ends the stream, which is the last signal the consumer receives
+            testSubject.seal();
+
+            // then
+            assertTrue(observedEnd.get());
+        }
+
+        @Test
+        void thenAConsumerThatDrainsFirstObservesTheEnd() {
+            // given: the same consumer, with entries left to hand out before the end
+            QueueMessageStream<EventMessage> testSubject = new QueueMessageStream<>();
+            EventMessage message = createRandomMessage();
+            AtomicBoolean observedEnd = new AtomicBoolean();
+
+            testSubject.offer(message, Context.empty());
+            testSubject.setCallback(() -> {
+                while (testSubject.hasNextAvailable()) {
+                    testSubject.next();
+                }
+                if (testSubject.isCompleted()) {
+                    observedEnd.set(true);
+                }
+            });
+
+            // when
+            testSubject.seal();
+
+            // then
+            assertTrue(observedEnd.get());
+        }
+
+        @Test
+        void thenASealedExceptionallyStreamReportsItsErrorWithoutBeingRead() {
+            // given
+            QueueMessageStream<EventMessage> testSubject = new QueueMessageStream<>();
+            RuntimeException failure = new RuntimeException("producer failed");
+
+            // when
+            testSubject.sealExceptionally(failure);
+
+            // then
+            assertTrue(testSubject.isCompleted());
+            assertThat(testSubject.error()).contains(failure);
+        }
     }
 }

@@ -239,6 +239,20 @@ By default, the tag key matches the field name, but you can override it by speci
 
 When an `OrderPlacedEvent` is appended, the `TagResolver` automatically extracts `orderId` and `region` as tags from the annotated fields.
 
+The `@EventTag` annotation can also be placed on methods, and it can be repeated to derive several tags from the same member.
+
+When the same tag occurs in many events, you can define your own annotation and meta-annotate it with `@EventTag`:
+
+[source,java]
+----
+include::example$events/eventpublishing/eventtagging/metaannotation/OrderShippedEvent.java[tag=event-tag-meta-annotation,indent=0]
+----
+
+Every member annotated with `@OrderIdTag` results in a tag with key `orderId`, regardless of the member's name.
+For the `OrderShippedEvent`, this yields the tags `orderId` and `carrier`.
+Custom annotations can be combined with direct `@EventTag` annotations on the same member, and can themselves be used as meta-annotations.
+If your custom annotation declares a `key` attribute, its value overrides the key of every `@EventTag` meta-annotation on that custom annotation.
+
 === Custom tag resolution
 
 For more complex scenarios where annotation-based tagging is insufficient, you can implement a custom `TagResolver`:

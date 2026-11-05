@@ -21,6 +21,8 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.ConfigurationEnhancer;
 import org.axonframework.extension.metrics.micrometer.MetricsConfigurationEnhancer;
+import org.axonframework.extension.metrics.micrometer.MicrometerMetricsConfiguration;
+import org.axonframework.extension.metrics.micrometer.MicrometerMetricsConfigurationEnhancer;
 import org.axonframework.extension.springboot.autoconfig.AxonAutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigureAfter;
@@ -65,29 +67,28 @@ public class MicrometerMetricsAutoConfiguration {
     }
 
     /**
-     * Bean creation method constructing a {@link MetricsConfigurationEnhancer} with the given {@code registry}, which
-     * will attach a default set of {@link org.axonframework.messaging.monitoring.MessageMonitor MessageMonitors} to
-     * Axon's infrastructure components.
+     * Bean creation method constructing a {@link MicrometerMetricsConfiguration} with the given {@code registry}, which
+     * the {@link MetricsConfigurationEnhancer} uses to attach a default set of
+     * {@link org.axonframework.messaging.monitoring.MessageMonitor MessageMonitors} to Axon's infrastructure
+     * components.
      *
      * @param registry   the {@link MeterRegistry} to be used by the {@link MetricsConfigurationEnhancer} to register
      *                   metrics with
      * @param properties the {@link MetricsProperties} used to configure the {@link MetricsConfigurationEnhancer}
-     * @return a {@link MetricsConfigurationEnhancer} that will attach a default set of
-     * {@link org.axonframework.messaging.monitoring.MessageMonitor MessageMonitors} to Axon's infrastructure
-     * components
+     * @return a {@link MicrometerMetricsConfiguration} driving the {@link MetricsConfigurationEnhancer}
      */
     @Bean
     @ConditionalOnMissingBean
     @ConditionalOnProperty(value = "axon.metrics.enabled", havingValue = "true", matchIfMissing = true)
-    public MetricsConfigurationEnhancer metricsConfigurationEnhancer(MeterRegistry registry,
-                                                                     MetricsProperties properties) {
-        return new MetricsConfigurationEnhancer(registry, properties.getMicrometer().isDimensional());
+    public MicrometerMetricsConfiguration micrometerMetricsConfiguration(MeterRegistry registry,
+                                                                         MetricsProperties properties) {
+        return new MicrometerMetricsConfiguration(registry, properties.getMicrometer().isDimensional());
     }
 
     /**
-     * Bean creation method constructing a {@link ConfigurationEnhancer} that disables
-     * {@link MetricsConfigurationEnhancer} that is only constructed when {@code axon.metrics.enabled} is set to
-     * {@code false}.
+     * Bean creation method constructing a {@link ConfigurationEnhancer} that disables the
+     * {@link MetricsConfigurationEnhancer} and {@link MicrometerMetricsConfigurationEnhancer} that is only constructed
+     * when {@code axon.metrics.enabled} is set to {@code false}.
      *
      * @return a {@link ConfigurationEnhancer} {@link MetricsConfigurationEnhancer} that is only constructed when
      * {@code axon.metrics.enabled} is set to {@code false}
@@ -98,7 +99,8 @@ public class MicrometerMetricsAutoConfiguration {
         return new ConfigurationEnhancer() {
             @Override
             public void enhance(ComponentRegistry registry) {
-                registry.disableEnhancer(MetricsConfigurationEnhancer.class);
+                registry.disableEnhancer(MetricsConfigurationEnhancer.class)
+                        .disableEnhancer(MicrometerMetricsConfigurationEnhancer.class);
             }
 
             @Override

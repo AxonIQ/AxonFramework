@@ -263,4 +263,28 @@ class FlatMappedMessageStreamTest extends MessageStreamTest<Message> {
             assertThat(outer.isCompleted()).isTrue();
         }
     }
+
+    @Nested
+    class WhenCompletionStatusRequested {
+
+        @Test
+        void withTheLastInnerEntryHandedOutThenReportsCompletedWithoutBeingReadAgain() {
+            // given
+            MessageStream<Message> outer = MessageStream.fromIterable(List.of(createRandomMessage(),
+                                                                              createRandomMessage()));
+            MessageStream<Message> stream = outer.flatMap(
+                    entry -> MessageStream.fromIterable(List.of(entry.message(), entry.message()))
+            );
+
+            // when / then
+            for (int i = 0; i < 3; i++) {
+                assertThat(stream.next()).isPresent();
+                assertThat(stream.isCompleted()).isFalse();
+            }
+
+            assertThat(stream.next()).isPresent();
+            assertThat(stream.isCompleted()).isTrue();
+            assertThat(stream.error()).isEmpty();
+        }
+    }
 }

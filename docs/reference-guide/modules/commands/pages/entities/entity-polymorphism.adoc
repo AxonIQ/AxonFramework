@@ -2,7 +2,7 @@
 :navtitle: Polymorphic entities
 
 A polymorphic entity lets multiple concrete types share a common abstract parent, each with their own command and event sourcing handlers.
-The concrete type is determined at creation time and does not change.
+The entity creator determines the concrete type when the entity is created.
 
 [TIP]
 ====
@@ -100,14 +100,18 @@ Axon automatically collects all concrete (non-sealed) leaf types by recursively 
 
 == Constraints
 
-* For non-sealed entity classes, subtypes not listed in `concreteTypes` are silently ignored; their command and event handlers will not be registered and commands targeting them will fail at runtime.
+* For non-sealed entity classes, list every concrete class the `@EntityCreator` can return in `concreteTypes`.
+Axon finds the command and event handlers of a subtype only when it is listed.
+If the creator returns an instance of an unlisted class, creating or loading the entity fails with an error naming the class, also when the class declares no handlers.
 For sealed entity classes, all concrete (non-sealed) leaf types in the sealed hierarchy are discovered automatically; no explicit listing in `concreteTypes` is needed.
 * Each command may have at most one handler anywhere in the hierarchy.
 Axon throws `DuplicateCommandHandlerSubscriptionException` at startup if the same command appears in more than one class within the same entity type.
 This applies to both instance and creational command handlers.
 * `@EventSourcingHandler` methods can be declared on both the parent and subtypes; the parent's handler is called first, then the subtype's.
+See xref:commands:entities/entity-inheritance.adoc[Entity inheritance].
 * Parent fields read or assigned by subtype constructors must be at least `protected`; `private` fields cannot be accessed from subclasses.
-* The concrete type is fixed at creation time; an entity cannot change its type at runtime.
+* The entity creator decides the initial concrete type.
+An event sourcing handler of an immutable entity may return another concrete type of the hierarchy; see xref:commands:entities/entity-inheritance.adoc[Entity inheritance].
 
 == Further reading
 

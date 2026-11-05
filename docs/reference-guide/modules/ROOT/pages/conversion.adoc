@@ -233,6 +233,7 @@ You'll need to add the `jackson-dataformat-xml` dependency to your project:
 </dependency>
 ----
 
+[#avro_converter]
 === AvroConverter
 
 The `AvroConverter` uses https://avro.apache.org/[Apache Avro] to serialize objects to and from https://avro.apache.org/docs/1.12.0/specification/#binary-encoding[binary single-object-encoded format].

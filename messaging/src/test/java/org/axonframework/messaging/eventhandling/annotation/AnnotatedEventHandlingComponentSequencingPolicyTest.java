@@ -30,6 +30,7 @@ import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.EventTestUtils;
 import org.axonframework.messaging.eventhandling.GenericEventMessage;
+import org.axonframework.messaging.eventhandling.SimpleEventHandlingComponent;
 import org.axonframework.messaging.eventhandling.conversion.DelegatingEventConverter;
 import org.axonframework.messaging.core.sequencing.FullConcurrencyPolicy;
 import org.axonframework.messaging.core.sequencing.MetadataSequencingPolicy;
@@ -37,6 +38,8 @@ import org.axonframework.messaging.core.sequencing.PropertySequencingPolicy;
 import org.axonframework.messaging.core.sequencing.SequentialPerAggregatePolicy;
 import org.axonframework.messaging.core.sequencing.SequentialPolicy;
 import org.junit.jupiter.api.*;
+
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.axonframework.messaging.core.sequencing.SequentialPolicy.FULL_SEQUENTIAL_POLICY;
@@ -415,6 +418,133 @@ class AnnotatedEventHandlingComponentSequencingPolicyTest {
 
             @EventHandler
             @SequencingPolicy(type = FullConcurrencyPolicy.class)
+            void handleOrder(OrderEvent event) {
+            }
+        }
+    }
+
+    @Nested
+    class ProcessorWideFallbackPolicy {
+
+        private final org.axonframework.messaging.core.sequencing.SequencingPolicy<EventMessage> fallbackPolicy =
+                (event, context) -> Optional.of("processor-wide");
+
+        @Test
+        void should_use_fallback_policy_when_no_policy_annotation() {
+            // given
+            var component = annotatedEventHandlingComponent(new EventHandlerWithoutPolicy());
+            applyFallbackPolicy(component);
+            var event = EventTestUtils.asEventMessage("test-event");
+
+            // when
+            var sequenceIdentifier = component.sequenceIdentifierFor(event, messageProcessingContext(event));
+
+            // then
+            assertThat(sequenceIdentifier).isEqualTo("processor-wide");
+        }
+
+        @Test
+        void should_prefer_class_policy_over_fallback_policy() {
+            // given
+            var component = annotatedEventHandlingComponent(new ClassLevelPolicyEventHandler());
+            applyFallbackPolicy(component);
+            var event = EventTestUtils.asEventMessage("test-event");
+
+            // when
+            var sequenceIdentifier = component.sequenceIdentifierFor(event, messageProcessingContext(event));
+
+            // then
+            assertThat(sequenceIdentifier).isEqualTo(FULL_SEQUENTIAL_POLICY);
+        }
+
+        @Test
+        void should_prefer_method_policy_over_fallback_policy() {
+            // given
+            var component = annotatedEventHandlingComponent(new MethodLevelPolicyEventHandler());
+            applyFallbackPolicy(component);
+            var event = EventTestUtils.asEventMessage("test-event");
+
+            // when
+            var sequenceIdentifier = component.sequenceIdentifierFor(event, messageProcessingContext(event));
+
+            // then
+            assertThat(sequenceIdentifier).isEqualTo(event.identifier());
+        }
+
+        @Test
+        void should_use_fallback_policy_for_handlers_without_policy_next_to_handlers_with_one() {
+            // given
+            var component = annotatedEventHandlingComponent(new MixedHandlersEventHandler());
+            applyFallbackPolicy(component);
+            var stringEvent = EventTestUtils.asEventMessage("test-event");
+            var orderEvent = EventTestUtils.asEventMessage(new OrderEvent("order-1", "item-1"));
+
+            // when
+            var stringSequenceId = component.sequenceIdentifierFor(stringEvent, messageProcessingContext(stringEvent));
+            var orderSequenceId = component.sequenceIdentifierFor(orderEvent, messageProcessingContext(orderEvent));
+
+            // then
+            assertThat(stringSequenceId).isEqualTo(FULL_SEQUENTIAL_POLICY);
+            assertThat(orderSequenceId).isEqualTo("processor-wide");
+        }
+
+        @Test
+        void should_not_fall_back_to_default_policy_when_processor_policy_resolves_no_sequence_identifier() {
+            // given
+            var component = annotatedEventHandlingComponent(new EventHandlerWithoutPolicy());
+            component.unwrap(SimpleEventHandlingComponent.class)
+                     .orElseThrow()
+                     .overridePolicyWhenDefault((event, context) -> Optional.empty());
+            var event = EventTestUtils.asEventMessage("test-event");
+
+            // when
+            var sequenceIdentifier = component.sequenceIdentifierFor(event, messageProcessingContext(event));
+
+            // then
+            assertThat(sequenceIdentifier).isEqualTo(event.identifier());
+        }
+
+        private void applyFallbackPolicy(AnnotatedEventHandlingComponent<?> component) {
+            component.unwrap(SimpleEventHandlingComponent.class)
+                     .orElseThrow()
+                     .overridePolicyWhenDefault(fallbackPolicy);
+        }
+
+        @SuppressWarnings("unused")
+        private static class EventHandlerWithoutPolicy {
+
+            @EventHandler
+            void handle(String event) {
+            }
+        }
+
+        @SuppressWarnings({"DefaultAnnotationParam", "unused"})
+        @SequencingPolicy(type = SequentialPolicy.class)
+        private static class ClassLevelPolicyEventHandler {
+
+            @EventHandler
+            void handle(String event) {
+            }
+        }
+
+        @SuppressWarnings("unused")
+        private static class MethodLevelPolicyEventHandler {
+
+            @EventHandler
+            @SequencingPolicy(type = FullConcurrencyPolicy.class)
+            void handle(String event) {
+            }
+        }
+
+        @SuppressWarnings({"DefaultAnnotationParam", "unused"})
+        private static class MixedHandlersEventHandler {
+
+            @EventHandler
+            @SequencingPolicy(type = SequentialPolicy.class)
+            void handleString(String event) {
+            }
+
+            @EventHandler
             void handleOrder(OrderEvent event) {
             }
         }

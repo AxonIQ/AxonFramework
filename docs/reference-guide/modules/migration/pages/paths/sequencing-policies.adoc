@@ -87,6 +87,32 @@ include::example$migration/paths/sequencingpolicies/CustomerIdSequencingPolicy.j
 ----
 ====
 
+Axon Framework 4 registered a sequencing policy per processing group on the `EventProcessingConfigurer`, whereas Axon Framework 5 sets it on the `PooledStreamingEventProcessorConfiguration`:
+
+[tabs]
+====
+Axon Framework 4::
++
+[source,java,role=axon4]
+----
+configurer.eventProcessing()
+          .registerSequencingPolicy(
+              "order-processor",
+              config -> new CustomerIdSequencingPolicy()
+          )
+          .registerDefaultSequencingPolicy(
+                  config -> new CustomerIdSequencingPolicy()
+          );
+----
+
+Axon Framework 5::
++
+[source,java]
+----
+include::example$migration/paths/sequencingpolicies/processorwide/AxonConfig.java[tag=processor-sequencing-policy-config,indent=0]
+----
+====
+
 == Changed default: from `SequentialPerAggregatePolicy` to `HierarchicalSequencingPolicy`
 
 In Axon Framework 4, the default sequencing policy for streaming event processors was `SequentialPerAggregatePolicy`.
@@ -111,6 +137,14 @@ This is the safe default, but limits parallelism: see the section below on defin
 
 Because the default policy adapts automatically to your event store type, it can introduce unexpected performance implications when migrating to a DCB-based event store.
 We therefore strongly recommend always defining a sequencing policy that explicitly matches your application's ordering requirements.
+
+The following options configure a sequencing policy, from the highest to the lowest precedence:
+
+. `@SequencingPolicy` on an event handler method.
+. `@SequencingPolicy` on the event handler class.
+. A `SequencingPolicy` given when you create the event handling component manually.
+. A xref:events:event-processors/streaming.adoc#sequencing_policies[processor-wide `SequencingPolicy`] on a pooled streaming event processor.
+. The default `HierarchicalSequencingPolicy`, used when none of the above is set.
 
 For the available built-in policies and configuration options, see xref:events:event-processors/streaming.adoc#sequencing_policies[Sequencing Policies].
 The two main configuration approaches are shown below.

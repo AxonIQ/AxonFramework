@@ -2143,6 +2143,33 @@ class PooledStreamingEventProcessorTest {
         }
 
         @Test
+        void splitSegmentDuringReplayKeepsBothSegmentsReplaying() {
+            // given - a single segment in the middle of a replay that has not yet reached the token at reset
+            TrackingToken replayingToken = ReplayToken.createReplayToken(new GlobalSequenceTrackingToken(100),
+                                                                         new GlobalSequenceTrackingToken(10));
+            joinAndUnwrap(tokenStore.initializeTokenSegments(PROCESSOR_NAME,
+                                                             1,
+                                                             replayingToken,
+                                                             createProcessingContext()));
+            withTestSubject(List.of(), c -> c.initialSegmentCount(1));
+            startEventProcessor();
+            await().atMost(2, TimeUnit.SECONDS)
+                   .untilAsserted(() -> assertThat(testSubject.processingStatus().get(0))
+                           .isNotNull()
+                           .satisfies(status -> assertThat(status.isReplaying()).isTrue()));
+
+            // when
+            Boolean splitResult = joinAndUnwrap(testSubject.splitSegment(0));
+
+            // then - both halves are claimed again and still report the replay
+            assertThat(splitResult).isTrue();
+            await().atMost(2, TimeUnit.SECONDS)
+                   .untilAsserted(() -> assertThat(testSubject.processingStatus())
+                           .containsOnlyKeys(0, 1)
+                           .allSatisfy((segmentId, status) -> assertThat(status.isReplaying()).isTrue()));
+        }
+
+        @Test
         void splitAndMergeSegmentOfGroupOf4() {
             // given
             int testSegmentId = 2;

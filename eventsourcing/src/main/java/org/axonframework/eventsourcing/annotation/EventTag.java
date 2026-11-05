@@ -79,6 +79,19 @@ import java.lang.annotation.Target;
  * If placed on a method, that method must contain no parameters and returns non-void value.
  * <p>
  * This annotation is repeatable, allowing multiple tags to be created from the same field or method.
+ * <p>
+ * This annotation can also be used as a meta-annotation, to define custom tag annotations:
+ * <pre>
+ * {@literal @}Retention(RetentionPolicy.RUNTIME)
+ * {@literal @}Target({ElementType.FIELD, ElementType.METHOD})
+ * {@literal @}EventTag(key = "orderId")
+ * public {@literal @}interface OrderIdTag {
+ * }
+ * </pre>
+ * A member annotated with {@code @OrderIdTag} results in a tag with key {@code "orderId"}. When the custom annotation
+ * declares a {@code key} attribute itself, its value overrides the {@link #key()} of every {@code EventTag}
+ * meta-annotation on that custom annotation.
+ * Custom annotations may be combined with direct use of this annotation on the same member, each resulting in tags.
  *
  * @author Mateusz Nowak
  * @since 5.0.0

@@ -63,6 +63,31 @@ public final class SpringUtils {
     public static boolean isQualifierMatch(String beanName,
                                            ConfigurableListableBeanFactory beanFactory,
                                            String qualifier) {
+        return isQualifierMatch(beanName, beanFactory, qualifier, true);
+    }
+
+    /**
+     * Match if the given {@code qualifier} can be found on the
+     * {@link org.springframework.beans.factory.config.BeanDefinition} of the given {@code beanName}, like
+     * {@link #isQualifierMatch(String, ConfigurableListableBeanFactory, String)} does.
+     * <p>
+     * With {@code allowFactoryBeanInit} set to {@code false}, the match is made without initializing any
+     * {@link org.springframework.beans.factory.FactoryBean}. A qualifier on the class of an object created by a
+     * {@code FactoryBean} is then only found when the type of that object can be determined from the bean definition.
+     * This allows checking qualifiers while the application context is still creating its beans.
+     *
+     * @param beanName             the name of the bean to check the qualifier of
+     * @param beanFactory          the bean factory to retrieve information about the given {@code beanName} from
+     * @param qualifier            the qualifier to match with the qualifier of the given {@code beanName}
+     * @param allowFactoryBeanInit whether a {@link org.springframework.beans.factory.FactoryBean} may be initialized
+     *                             to determine the type of the bean
+     * @return {@code true} if the {@code qualifier} is found on the {@code beanName}, {@code false} otherwise
+     * @since 5.5.0
+     */
+    public static boolean isQualifierMatch(String beanName,
+                                           ConfigurableListableBeanFactory beanFactory,
+                                           String qualifier,
+                                           boolean allowFactoryBeanInit) {
         if (!beanFactory.containsBean(beanName)) {
             return false;
         }
@@ -104,7 +129,7 @@ public final class SpringUtils {
             }
 
             // Corresponding qualifier on bean implementation class? (for custom user types)
-            Class<?> beanType = beanFactory.getType(beanName);
+            Class<?> beanType = beanFactory.getType(beanName, allowFactoryBeanInit);
             if (beanType != null) {
                 Qualifier targetAnnotation = getAnnotation(beanType, Qualifier.class);
                 if (targetAnnotation != null) {

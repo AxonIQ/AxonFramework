@@ -30,6 +30,7 @@ import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.messaging.eventhandling.conversion.DelegatingEventConverter;
 import org.axonframework.messaging.eventhandling.conversion.EventConverter;
+import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.*;
 import org.mockito.*;
@@ -37,6 +38,8 @@ import org.mockito.junit.jupiter.*;
 
 import java.util.Collections;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -451,6 +454,99 @@ class AnnotationBasedEventSourcedEntityFactoryTest {
             public String getId() {
                 return id;
             }
+        }
+    }
+
+    @Nested
+    class CreatedEntityClass {
+
+        private AnnotationBasedEventSourcedEntityFactory<Account, String> factory;
+
+        @BeforeEach
+        void setUp() {
+            factory = new AnnotationBasedEventSourcedEntityFactory<>(
+                    Account.class,
+                    String.class,
+                    Collections.singleton(ListedAccount.class),
+                    parameterResolverFactory,
+                    messageTypeResolver,
+                    converter
+            );
+        }
+
+        private Account create(String id) {
+            return factory.create(id, eventMessage, StubProcessingContext.forMessage(eventMessage));
+        }
+
+        @Test
+        void returnsEntityOfTheEntityTypeItself() {
+            // when
+            var entity = create("self");
+
+            // then
+            assertThat(entity).isExactlyInstanceOf(Account.class);
+        }
+
+        @Test
+        void returnsEntityOfListedConcreteType() {
+            // when
+            var entity = create("listed");
+
+            // then
+            assertThat(entity).isExactlyInstanceOf(ListedAccount.class);
+        }
+
+        @Test
+        void failsClearlyForUnlistedSubclassDeclaringHandlers() {
+            // when
+            var thrown = catchThrowable(() -> create("savings"));
+
+            // then
+            assertThat(thrown).isInstanceOf(AxonConfigurationException.class)
+                              .hasMessageContaining(Account.class.getName())
+                              .hasMessageContaining(Savings.class.getName())
+                              .hasMessageContaining("concreteTypes")
+                              .hasMessageContaining("sealed");
+        }
+
+        @Test
+        void failsClearlyForUnlistedSubclassWithoutHandlers() {
+            // when
+            var thrown = catchThrowable(() -> create("handler-free"));
+
+            // then
+            assertThat(thrown).isInstanceOf(AxonConfigurationException.class)
+                              .hasMessageContaining(HandlerFreeSavings.class.getName())
+                              .hasMessageContaining("concreteTypes");
+        }
+
+        public static class Account {
+
+            @EntityCreator(payloadQualifiedNames = "matching-test-type")
+            public static Account create(@InjectEntityId String id, EventMessage message) {
+                return switch (id) {
+                    case "listed" -> new ListedAccount();
+                    case "savings" -> new Savings();
+                    case "handler-free" -> new HandlerFreeSavings();
+                    default -> new Account();
+                };
+            }
+        }
+
+        public static class ListedAccount extends Account {
+
+        }
+
+        public static class Savings extends Account {
+
+            @EventSourcingHandler
+            void on(String event) {
+                // handler declared on an unlisted subclass
+            }
+        }
+
+        public static class HandlerFreeSavings extends Account {
+
         }
     }
 

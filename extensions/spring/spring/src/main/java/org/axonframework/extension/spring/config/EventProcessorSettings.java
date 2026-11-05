@@ -163,5 +163,27 @@ public sealed interface EventProcessorSettings {
          */
         @Nullable
         String tokenStore();
+
+        /**
+         * Name of the bean acting as the {@link org.axonframework.messaging.core.sequencing.SequencingPolicy} this
+         * pooled streaming processor applies to its assigned event handling components that do not define a more
+         * specific one.
+         * <p>
+         * A {@link org.axonframework.messaging.core.annotation.SequencingPolicy} on an event handler method or class,
+         * and a policy given when an event handling component was created manually, take precedence over this policy.
+         * <p>
+         * Defaults to {@code null}, in which case no processor-wide policy applies and each assigned event handling
+         * component keeps deciding its own sequencing. Without a more specific policy, that is a
+         * {@link org.axonframework.messaging.core.sequencing.HierarchicalSequencingPolicy} pairing a
+         * {@link org.axonframework.messaging.core.sequencing.SequentialPerAggregatePolicy} with a
+         * {@link org.axonframework.messaging.core.sequencing.SequentialPolicy}.
+         *
+         * @return only used if non-null
+         * @since 5.5.0
+         */
+        @Nullable
+        default String sequencingPolicy() {
+            return null;
+        }
     }
 }

@@ -34,6 +34,7 @@ import org.axonframework.messaging.core.sequencing.HierarchicalSequencingPolicy;
 import org.axonframework.messaging.core.sequencing.MetadataSequencingPolicy;
 import org.axonframework.messaging.core.sequencing.NoOpSequencingPolicy;
 import org.axonframework.messaging.core.sequencing.PropertySequencingPolicy;
+import org.axonframework.messaging.core.sequencing.SequencingPolicy;
 import org.axonframework.messaging.core.sequencing.SequentialPerAggregatePolicy;
 import org.axonframework.messaging.core.sequencing.SequentialPolicy;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
@@ -391,6 +392,87 @@ class SimpleEventHandlingComponentSequencingPolicyTest {
 
             // then nothing is logged, as the secondary SequentialPolicy answers when the primary policy cannot
             assertThat(appender.getEvents()).isEmpty();
+        }
+    }
+
+    @Nested
+    class ProcessorWideFallbackPolicy {
+
+        private final SequencingPolicy<EventMessage> fallbackPolicy = (event, context) -> Optional.of("fallback");
+
+        @Test
+        void shouldReplaceTheDefaultPolicy() {
+            // given
+            var component = SimpleEventHandlingComponent.create("test")
+                                                        .overridePolicyWhenDefault(fallbackPolicy);
+            var event = EventTestUtils.asEventMessage("test-event");
+
+            // when
+            var sequenceIdentifier = component.sequenceIdentifierFor(event, messageProcessingContext(event));
+
+            // then
+            assertThat(sequenceIdentifier).isEqualTo("fallback");
+        }
+
+        @Test
+        void shouldBeIgnoredWhenThePolicyWasSetExplicitly() {
+            // given
+            var component = SimpleEventHandlingComponent.create("test", SequentialPolicy.INSTANCE)
+                                                        .overridePolicyWhenDefault(fallbackPolicy);
+            var event = EventTestUtils.asEventMessage("test-event");
+
+            // when
+            var sequenceIdentifier = component.sequenceIdentifierFor(event, messageProcessingContext(event));
+
+            // then
+            assertThat(sequenceIdentifier).isEqualTo(FULL_SEQUENTIAL_POLICY);
+        }
+
+        @Test
+        void shouldBeIgnoredWhenAnExplicitPolicyEqualsTheDefaultBehavior() {
+            // given an explicit policy that behaves exactly like the default
+            var component = SimpleEventHandlingComponent.create(
+                    "test",
+                    new HierarchicalSequencingPolicy<>(SequentialPerAggregatePolicy.INSTANCE, SequentialPolicy.INSTANCE)
+            ).overridePolicyWhenDefault(fallbackPolicy);
+            var event = EventTestUtils.asEventMessage("test-event");
+
+            // when
+            var sequenceIdentifier = component.sequenceIdentifierFor(event, messageProcessingContext(event));
+
+            // then
+            assertThat(sequenceIdentifier).isEqualTo(AGGREGATE_IDENTIFIER);
+        }
+
+        @Test
+        void shouldNotFallBackToTheDefaultPolicyWhenTheProcessorPolicyResolvesNoSequenceIdentifier() {
+            // given
+            var component = SimpleEventHandlingComponent.create("test")
+                                                        .overridePolicyWhenDefault((event, context) -> Optional.empty());
+            var event = EventTestUtils.asEventMessage("test-event");
+
+            // when
+            var sequenceIdentifier = component.sequenceIdentifierFor(event, messageProcessingContext(event));
+
+            // then
+            assertThat(sequenceIdentifier).isEqualTo(event.identifier());
+        }
+
+        @Test
+        void shouldNotAffectNestedComponentsWithTheirOwnPolicy() {
+            // given
+            var nested = SimpleEventHandlingComponent.create("nested", SequentialPolicy.INSTANCE);
+            nested.subscribe(new QualifiedName("java.lang", "String"), new PlainEventHandler());
+            var component = SimpleEventHandlingComponent.create("test")
+                                                        .overridePolicyWhenDefault(fallbackPolicy);
+            component.subscribe(new QualifiedName("java.lang", "String"), createEventHandlerFromComponent(nested));
+            var event = EventTestUtils.asEventMessage("test-event");
+
+            // when
+            var sequenceIdentifier = component.sequenceIdentifierFor(event, messageProcessingContext(event));
+
+            // then
+            assertThat(sequenceIdentifier).isEqualTo(FULL_SEQUENTIAL_POLICY);
         }
     }
 

@@ -844,6 +844,15 @@ include::example$events/eventprocessors/streaming/sequencingpolicy/declarative/A
 ----
 --
 
+Processor-wide Sequencing Policy configuration - pooled streaming processors::
++
+--
+[source,java]
+----
+include::example$events/eventprocessors/streaming/sequencingpolicy/processorwide/AxonConfig.java[tag=processor-wide-sequencing-policy-defaults,indent=0]
+----
+--
+
 Autodetected Sequencing Policy configuration - Spring Boot::
 +
 --

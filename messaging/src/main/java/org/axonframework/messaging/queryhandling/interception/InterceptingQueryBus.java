@@ -35,8 +35,10 @@ import org.axonframework.messaging.queryhandling.SubscriptionQueryUpdateMessage;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.OptionalInt;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.BiFunction;
+import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
@@ -154,15 +156,32 @@ public class InterceptingQueryBus implements QueryBus {
     public CompletableFuture<Void> emitUpdate(Predicate<QueryMessage> filter,
                                               Supplier<SubscriptionQueryUpdateMessage> updateSupplier,
                                               @Nullable ProcessingContext context) {
+        return interceptUpdate(updateSupplier, context,
+                               supplier -> delegate.emitUpdate(filter, supplier, context));
+    }
+
+    @Override
+    public CompletableFuture<OptionalInt> emitUpdateAndCount(Predicate<QueryMessage> filter,
+                                                             Supplier<SubscriptionQueryUpdateMessage> updateSupplier,
+                                                             @Nullable ProcessingContext context) {
+        return interceptUpdate(updateSupplier, context,
+                               supplier -> delegate.emitUpdateAndCount(filter, supplier, context));
+    }
+
+    private <R> CompletableFuture<R> interceptUpdate(
+            Supplier<SubscriptionQueryUpdateMessage> updateSupplier,
+            @Nullable ProcessingContext context,
+            Function<Supplier<SubscriptionQueryUpdateMessage>, CompletableFuture<R>> emit
+    ) {
         if (updateDispatchInterceptors.isEmpty()) {
-            return delegate.emitUpdate(filter, updateSupplier, context);
+            return emit.apply(updateSupplier);
         }
 
         try {
             SubscriptionQueryUpdateMessage update = updateSupplier.get();
             SubscriptionQueryUpdateMessage intercepted = interceptingResponseUpdateDispatcher.intercept(update,
                                                                                                         context);
-            return delegate.emitUpdate(filter, () -> intercepted, context);
+            return emit.apply(() -> intercepted);
         } catch (Exception e) {
             return CompletableFuture.failedFuture(e);
         }
@@ -175,12 +194,27 @@ public class InterceptingQueryBus implements QueryBus {
     }
 
     @Override
+    public CompletableFuture<OptionalInt> completeSubscriptionsAndCount(Predicate<QueryMessage> filter,
+                                                                        @Nullable ProcessingContext context) {
+        return delegate.completeSubscriptionsAndCount(filter, context);
+    }
+
+    @Override
     public CompletableFuture<Void> completeSubscriptionsExceptionally(
             Predicate<QueryMessage> filter,
             Throwable cause,
             @Nullable ProcessingContext context
     ) {
         return delegate.completeSubscriptionsExceptionally(filter, cause, context);
+    }
+
+    @Override
+    public CompletableFuture<OptionalInt> completeSubscriptionsExceptionallyAndCount(
+            Predicate<QueryMessage> filter,
+            Throwable cause,
+            @Nullable ProcessingContext context
+    ) {
+        return delegate.completeSubscriptionsExceptionallyAndCount(filter, cause, context);
     }
 
     private MessageStream<?> dispatchQuery(Message message,

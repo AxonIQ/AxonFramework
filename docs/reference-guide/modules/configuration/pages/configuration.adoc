@@ -28,6 +28,13 @@ Without such a component, it returns the single component registered under a sub
 When several components match, the lookup throws an `AmbiguousComponentMatchException`.
 With Spring, lookups by type follow Spring's bean resolution instead, as described in xref:spring.adoc#axon-components-as-spring-beans[Axon components as Spring beans].
 
+[TIP]
+====
+Message handlers can receive components from the `Configuration` as parameters.
+Annotate the parameter with `@InjectComponent`, optionally with a `name`.
+See xref:messaging-concepts:supported-parameters-annotated-handlers.adoc#inject-component[Injecting components with `@InjectComponent`].
+====
+
 Additional retrieval methods let you handle optional components and named components:
 
 `getOptionalComponent(Class<C>)` / `getOptionalComponent(TypeReference<C>)`::
@@ -37,6 +44,7 @@ The `Optional` is only empty when no component matches; several matching compone
 `getComponent(Class<C>, String name)` / `getComponent(TypeReference<C>, String name)`::
 Returns the component registered under the given type and name.
 Used when multiple components of the same type exist (for example, multiple `EventProcessor` instances).
+With Spring, the name also matches a bean alias or `@Qualifier`, as described in xref:spring.adoc#axon-components-as-spring-beans[Axon components as Spring beans].
 
 `getOptionalComponent(Class<C>, String name)` / `getOptionalComponent(TypeReference<C>, String name)`::
 Returns an `Optional` for the component registered under the given type and name.

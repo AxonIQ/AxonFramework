@@ -67,6 +67,7 @@ import java.util.Optional;
 import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.SortedSet;
+import java.util.TreeSet;
 import java.util.stream.Stream;
 
 import static java.util.Objects.requireNonNull;
@@ -119,6 +120,7 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
     private final List<AnnotatedEntityMetamodel<?>> concreteMetamodels = new LinkedList<>();
     private final List<AnnotatedEntityMetamodel<?>> childMetamodels = new LinkedList<>();
     private final List<QualifiedName> commandsToSkip;
+    private final @Nullable Class<?> polymorphicSuperType;
 
     /**
      * Instantiate an annotated {@link EntityMetamodel} of a concrete entity type.
@@ -145,13 +147,10 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
             MessageConverter messageConverter,
             EventConverter eventConverter
     ) {
-        return new AnnotatedEntityMetamodel<>(entityType,
-                                              Set.of(),
-                                              parameterResolverFactory,
-                                              handlerDefinition, messageTypeResolver,
-                                              messageConverter,
-                                              eventConverter,
-                                              List.of());
+        return new AnnotatedEntityMetamodel<>(
+                entityType, Set.of(), parameterResolverFactory, handlerDefinition, messageTypeResolver,
+                messageConverter, eventConverter, List.of(), null
+        );
     }
 
     /**
@@ -222,13 +221,10 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
         requireNonNull(concreteTypes, "The concreteTypes may not be null.");
         Assert.isTrue(!concreteTypes.isEmpty(),
                       () -> "The concreteTypes set must not be empty for a polymorphic entity type.");
-        return new AnnotatedEntityMetamodel<>(entityType,
-                                              concreteTypes,
-                                              parameterResolverFactory,
-                                              handlerDefinition, messageTypeResolver,
-                                              messageConverter,
-                                              eventConverter,
-                                              List.of());
+        return new AnnotatedEntityMetamodel<>(
+                entityType, concreteTypes, parameterResolverFactory, handlerDefinition, messageTypeResolver,
+                messageConverter, eventConverter, List.of(), null
+        );
     }
 
     /**
@@ -250,11 +246,14 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
      *                                 format
      * @param commandsToSkip           the creational commands to skip when initializing the metamodel. This prevents a
      *                                 concrete implementation from re-registering a creational command handler already
-     *                                 registered by the polymorphic super type, which {@link PolymorphicEntityMetamodel}
-     *                                 would otherwise reject as a clash between concrete types. Instance command
-     *                                 handlers are never skipped: each concrete type re-registers any it inherits, so
-     *                                 that its own command handler interceptors still apply when it handles the
-     *                                 command directly
+     *                                 registered by the polymorphic super type, which
+     *                                 {@link PolymorphicEntityMetamodel} would otherwise reject as a clash between
+     *                                 concrete types. Instance command handlers are never skipped: each concrete type
+     *                                 re-registers any it inherits, so that its own command handler interceptors still
+     *                                 apply when it handles the command directly
+     * @param polymorphicSuperType     the polymorphic super type this metamodel is a concrete type of, or {@code null}
+     *                                 when it is not a polymorphic entity. Used to ensure registered interceptors
+     *                                 aren't added on both the parent and the child entity
      */
     private AnnotatedEntityMetamodel(
             Class<E> entityType,
@@ -263,9 +262,11 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
             HandlerDefinition handlerDefinition, MessageTypeResolver messageTypeResolver,
             MessageConverter messageConverter,
             EventConverter eventConverter,
-            List<QualifiedName> commandsToSkip
+            List<QualifiedName> commandsToSkip,
+            @Nullable Class<?> polymorphicSuperType
     ) {
         this.commandsToSkip = requireNonNull(commandsToSkip, "The commandsToSkip may not be null.");
+        this.polymorphicSuperType = polymorphicSuperType;
         this.entityType = requireNonNull(entityType, "The entityType may not be null.");
         this.parameterResolverFactory = requireNonNull(parameterResolverFactory,
                                                        "The parameterResolverFactory may not be null.");
@@ -286,8 +287,13 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
         AnnotatedHandlerInspector<E> inspected = inspectType(
                 entityType, messageTypeResolver, parameterResolverFactory, handlerDefinition
         );
+        // A handler of a concrete type may move the entity to a sibling type, as in a sealed state machine, so the
+        // evolver accepts any type of the polymorphic hierarchy instead of dropping the result. The cast is safe
+        // because concrete metamodels are only reached through the PolymorphicEntityMetamodel of the super type.
+        //noinspection unchecked
+        Class<E> evolvedType = polymorphicSuperType != null ? (Class<E>) polymorphicSuperType : entityType;
         builder.entityEvolver(new AnnotationBasedEntityEvolvingComponent<>(
-                entityType, inspected, eventConverter, messageTypeResolver
+                evolvedType, inspected, eventConverter, messageTypeResolver
         ));
         initializeDetectedHandlers(builder, inspected);
         registerCommandInterceptors(builder, inspected);
@@ -309,12 +315,9 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
                 hasMemberEntities ? Collections.emptySet() : concreteTypes
         );
 
+        // The super type metamodel evolves nothing: every concrete metamodel already holds the inherited event
+        // handlers and child entities, so evolving through both would apply each event twice.
         var builder = PolymorphicEntityMetamodel.forSuperType(entityType);
-        builder.entityEvolver(new AnnotationBasedEntityEvolvingComponent<>(entityType,
-                                                                           inspected,
-                                                                           eventConverter,
-                                                                           messageTypeResolver));
-        initializeChildren(builder);
         // Creational commands present on the super type must not be re-registered on a concrete type: see
         // initializeDetectedHandlers and the commandsToSkip javadoc for why.
         List<QualifiedName> registeredCreationalCommands = initializeDetectedHandlers(builder, inspected);
@@ -322,7 +325,7 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
         concreteTypes.forEach(concreteType -> {
             AnnotatedEntityMetamodel<? extends E> createdConcreteEntityModel = new AnnotatedEntityMetamodel<>(
                     concreteType, Set.of(), parameterResolverFactory, handlerDefinition, messageTypeResolver,
-                    messageConverter, eventConverter, registeredCreationalCommands
+                    messageConverter, eventConverter, registeredCreationalCommands, entityType
             );
             concreteMetamodels.add(createdConcreteEntityModel);
             builder.addConcreteType(createdConcreteEntityModel);
@@ -417,12 +420,17 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
      * annotated interceptor methods is fixed after inspection.
      */
     private void registerCommandInterceptors(EntityMetamodelBuilder<E> builder, AnnotatedHandlerInspector<E> inspected) {
-        SortedSet<MessageHandlingMember<? super E>> interceptors =
+        SortedSet<MessageHandlingMember<? super E>> allInterceptors =
                 inspected.getAllInterceptors().getOrDefault(entityType, Collections.emptySortedSet());
+        SortedSet<MessageHandlingMember<? super E>> interceptors = polymorphicSuperType == null
+                ? allInterceptors
+                : withoutSuperTypeInterceptors(allInterceptors, polymorphicSuperType);
         if (interceptors.isEmpty()) {
             return;
         }
-        MessageHandlerInterceptorMemberChain<E> instanceChain = inspected.chainedInterceptor(entityType);
+        MessageHandlerInterceptorMemberChain<E> instanceChain = polymorphicSuperType == null
+                ? inspected.chainedInterceptor(entityType)
+                : new ChainedMessageHandlerInterceptorMember<>(interceptors.iterator());
         MessageHandlerInterceptorMemberChain<E> creationalChain = staticInterceptorChain(interceptors);
         builder.commandHandlerInterceptor((command, entity, context, chain) ->
                 (entity == null ? creationalChain : instanceChain)
@@ -431,6 +439,31 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
                         .first()
                         .cast()
         );
+    }
+
+    /**
+     * Removes the interceptors declared on the {@link #polymorphicSuperType} (or any type above it) from the given
+     * {@code interceptors}.
+     * <p>
+     * A concrete type inherits those through inspection, yet the {@link PolymorphicEntityMetamodel} already wraps every
+     * command of the polymorphic entity in them. Keeping them would invoke each of them twice for commands handled by
+     * this concrete type.
+     */
+    private SortedSet<MessageHandlingMember<? super E>> withoutSuperTypeInterceptors(
+            SortedSet<MessageHandlingMember<? super E>> interceptors,
+            Class<?> superType
+    ) {
+        SortedSet<MessageHandlingMember<? super E>> own = new TreeSet<>(interceptors.comparator());
+        interceptors.stream()
+                    .filter(interceptor -> !isDeclaredOn(superType, interceptor))
+                    .forEach(own::add);
+        return own;
+    }
+
+    private boolean isDeclaredOn(Class<?> superType, MessageHandlingMember<? super E> member) {
+        return member.unwrap(Method.class)
+                     .map(method -> method.getDeclaringClass().isAssignableFrom(superType))
+                     .orElse(false);
     }
 
     /**
@@ -603,13 +636,10 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
      */
     private <C> AnnotatedEntityMetamodel<C> createChildEntityModel(Class<C> clazz) {
         logger.debug("Creating child entity metamodel for class: {}", clazz);
-        return new AnnotatedEntityMetamodel<>(clazz,
-                                              Set.of(),
-                                              parameterResolverFactory,
-                                              handlerDefinition, messageTypeResolver,
-                                              messageConverter,
-                                              eventConverter,
-                                              List.of());
+        return new AnnotatedEntityMetamodel<>(
+                clazz, Set.of(), parameterResolverFactory, handlerDefinition, messageTypeResolver, messageConverter,
+                eventConverter, List.of(), null
+        );
     }
 
     @Override

@@ -33,6 +33,9 @@ When Axon looks up a component by type and several beans of that type exist, it 
 Without either, the lookup throws an `AmbiguousComponentMatchException`, so the application fails to start when Axon needs that component during startup.
 
 Properties that refer to a component by its name, such as the `source` and `token-store` settings of an event processor, use these bean names.
+A lookup by name returns the bean with that name.
+Without such a bean, it returns the single bean of the requested type that has the name as an alias or in its `@Qualifier`.
+When several beans of that type have the name as their qualifier, the lookup throws an `AmbiguousComponentMatchException`.
 
 [source,java]
 ----
