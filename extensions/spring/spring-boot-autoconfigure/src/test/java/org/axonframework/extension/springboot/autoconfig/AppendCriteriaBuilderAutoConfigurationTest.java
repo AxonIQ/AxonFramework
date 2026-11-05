@@ -24,13 +24,12 @@ import org.axonframework.eventsourcing.commandhandling.annotation.AppendCriteria
 import org.axonframework.eventsourcing.configuration.EventSourcedEntityModule;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.commandhandling.gateway.CommandGateway;
-import org.axonframework.messaging.core.MessageStream;
-import org.axonframework.messaging.core.annotation.HandlerDefinition;
+import org.axonframework.messaging.core.annotation.HandlerEnhancerDefinition;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
-import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
@@ -38,18 +37,15 @@ import org.springframework.context.annotation.EnableMBeanExport;
 import org.springframework.jmx.support.RegistrationPolicy;
 import org.springframework.test.context.ContextConfiguration;
 
-import java.lang.reflect.Method;
 import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.function.Function;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Test class validating that {@link AppendCriteriaBuilder} methods apply in a Spring Boot application, to both a
- * command-handling bean and an event-sourced entity, including when Spring composes the
- * {@link HandlerDefinition} from {@code HandlerDefinition} beans.
+ * command-handling bean and an event-sourced entity, including when Spring composes the handler enhancers from
+ * {@link HandlerEnhancerDefinition} beans.
  *
  * @author Mateusz Nowak
  */
@@ -80,13 +76,13 @@ class AppendCriteriaBuilderAutoConfigurationTest {
     }
 
     @Test
-    void buildersApplyWhenSpringComposesTheHandlerDefinitionFromBeans() {
+    void buildersApplyWhenSpringComposesTheHandlerEnhancersFromBeans() {
         new ApplicationContextRunner()
-                .withUserConfiguration(TestContext.class, HandlerDefinitionBeanContext.class)
+                .withUserConfiguration(TestContext.class, HandlerEnhancerDefinitionBeanContext.class)
                 .withPropertyValues("axon.eventstorage.jpa.polling-interval=0")
                 .run(context -> {
-                    // given a HandlerDefinition bean, which makes Spring compose the HandlerDefinition component
-                    assertThat(context).hasBean("noOpHandlerDefinition");
+                    // given a HandlerEnhancerDefinition bean, which makes Spring compose the enhancers
+                    assertThat(context).hasBean("noOpHandlerEnhancerDefinition");
 
                     // when
                     CommandGateway commandGateway = context.getBean(CommandGateway.class);
@@ -115,19 +111,14 @@ class AppendCriteriaBuilderAutoConfigurationTest {
         }
     }
 
-    private static class HandlerDefinitionBeanContext {
+    private static class HandlerEnhancerDefinitionBeanContext {
 
         @Bean
-        public HandlerDefinition noOpHandlerDefinition() {
-            return new HandlerDefinition() {
+        public HandlerEnhancerDefinition noOpHandlerEnhancerDefinition() {
+            return new HandlerEnhancerDefinition() {
                 @Override
-                public <T> Optional<MessageHandlingMember<T>> createHandler(
-                        Class<T> declaringType,
-                        Method method,
-                        ParameterResolverFactory parameterResolverFactory,
-                        Function<Object, MessageStream<?>> messageStreamResolver
-                ) {
-                    return Optional.empty();
+                public <T> MessageHandlingMember<T> wrapHandler(MessageHandlingMember<T> original) {
+                    return original;
                 }
             };
         }

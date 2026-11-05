@@ -40,6 +40,7 @@ import org.axonframework.messaging.commandhandling.CommandHandlingComponent;
 import org.axonframework.messaging.commandhandling.GenericCommandMessage;
 import org.axonframework.messaging.commandhandling.SimpleCommandHandlingComponent;
 import org.axonframework.messaging.commandhandling.interception.InterceptingCommandHandlingComponent;
+import org.axonframework.messaging.core.ApplicationContext;
 import org.axonframework.messaging.core.EmptyApplicationContext;
 import org.axonframework.messaging.core.FluxUtils;
 import org.axonframework.messaging.core.MessageStream;
@@ -54,6 +55,7 @@ import org.axonframework.messaging.eventhandling.conversion.EventConverter;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.messaging.eventstreaming.Tag;
 import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -286,12 +288,22 @@ class AggregateBasedJpaStorageEngineBackedEventStoreIT extends
                 return MessageStream.empty();
             });
             return new InterceptingCommandHandlingComponent(
-                    List.of(new AppendCriteriaInterceptor(eventStore, resolver)), handler
+                    List.of(new AppendCriteriaInterceptor(resolver)), handler
             );
         }
 
         private CompletableFuture<Void> execute(CommandHandlingComponent component, String userId) {
-            return unitOfWork().executeWithResult(context -> {
+            // the interceptor takes the EventStore from the context, so the unit of work has to provide it
+            UnitOfWork unitOfWork = new TransactionalUnitOfWorkFactory(
+                    springTransactionManager,
+                    new SimpleUnitOfWorkFactory(new ApplicationContext() {
+                        @Override
+                        public <C> C component(Class<C> type, @Nullable String name) {
+                            return type.cast(eventStore);
+                        }
+                    })
+            ).create();
+            return unitOfWork.executeWithResult(context -> {
                 component.handle(new GenericCommandMessage(new MessageType(REGISTER_USER), userId), context);
                 return CompletableFuture.completedFuture(null);
             });

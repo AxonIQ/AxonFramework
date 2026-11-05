@@ -29,14 +29,18 @@ import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.commandhandling.GenericCommandMessage;
 import org.axonframework.messaging.commandhandling.SimpleCommandHandlingComponent;
 import org.axonframework.messaging.commandhandling.interception.InterceptingCommandHandlingComponent;
+import org.axonframework.messaging.core.ApplicationContext;
 import org.axonframework.messaging.core.FluxUtils;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.QualifiedName;
+import org.axonframework.messaging.core.unitofwork.SimpleUnitOfWorkFactory;
+import org.axonframework.messaging.core.unitofwork.UnitOfWork;
 import org.axonframework.messaging.eventhandling.SimpleEventBus;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.jspecify.annotations.Nullable;
 
 import java.util.List;
 import java.util.Map;
@@ -47,7 +51,6 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.axonframework.common.util.AssertUtils.awaitExceptionalCompletion;
 import static org.axonframework.common.util.AssertUtils.awaitSuccessfulCompletion;
-import static org.axonframework.messaging.core.unitofwork.UnitOfWorkTestUtils.aUnitOfWork;
 import static org.axonframework.messaging.eventhandling.EventTestUtils.asEventMessage;
 
 /**
@@ -110,7 +113,7 @@ class AppendCriteriaConcurrencyTest {
             CommandHandlingComponent component = appendOnlyComponent(eventStore);
 
             // when
-            CompletableFuture<Void> result = aUnitOfWork().executeWithResult(context -> {
+            CompletableFuture<Void> result = aUnitOfWork(eventStore).executeWithResult(context -> {
                 eventStore.publish(null, List.of(asEventMessage(new TenantDecision("tenant-one"))))
                         .orTimeout(5, TimeUnit.SECONDS).join();
                 component.handle(command, context);
@@ -128,7 +131,7 @@ class AppendCriteriaConcurrencyTest {
             CommandHandlingComponent component = unconditionalComponent(eventStore);
 
             // when an event is stored concurrently
-            CompletableFuture<Void> result = aUnitOfWork().executeWithResult(context -> {
+            CompletableFuture<Void> result = aUnitOfWork(eventStore).executeWithResult(context -> {
                 eventStore.publish(null, List.of(asEventMessage(new TenantDecision("tenant-one"))))
                         .orTimeout(5, TimeUnit.SECONDS).join();
                 component.handle(command(Map.of("tenantId", "tenant-one")), context);
@@ -146,7 +149,7 @@ class AppendCriteriaConcurrencyTest {
             CommandHandlingComponent component = appendOnlyComponent(eventStore);
 
             // when
-            CompletableFuture<Void> result = aUnitOfWork().executeWithResult(context -> {
+            CompletableFuture<Void> result = aUnitOfWork(eventStore).executeWithResult(context -> {
                 component.handle(command(Map.of("tenantId", "tenant-one")), context);
                 return CompletableFuture.completedFuture(null);
             });
@@ -175,15 +178,13 @@ class AppendCriteriaConcurrencyTest {
             return MessageStream.empty();
         });
         CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
-                List.of(new AppendCriteriaInterceptor(
-                        eventStore,
-                        (command, context, accumulatedCriteria) -> restrictToUsed
+                List.of(new AppendCriteriaInterceptor((command, context, accumulatedCriteria) -> restrictToUsed
                                 ? accumulatedCriteria.withEventTypes(Set.of(new QualifiedName(CreditsUsed.class)))
                                 : accumulatedCriteria
                 )),
                 delegate
         );
-        return execute(component, command(Map.of()));
+        return execute(eventStore, component, command(Map.of()));
     }
 
     private static CompletableFuture<Void> executeMultiAccountDecision(String concurrentAccount) {
@@ -201,14 +202,12 @@ class AppendCriteriaConcurrencyTest {
             return MessageStream.empty();
         });
         CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
-                List.of(new AppendCriteriaInterceptor(
-                        eventStore,
-                        (command, context, accumulatedCriteria) ->
+                List.of(new AppendCriteriaInterceptor((command, context, accumulatedCriteria) ->
                                 accumulatedCriteria.withEventTypes(Set.of(new QualifiedName(CreditsUsed.class)))
                 )),
                 delegate
         );
-        return execute(component, command(Map.of()));
+        return execute(eventStore, component, command(Map.of()));
     }
 
     private static CommandHandlingComponent appendOnlyComponent(EventStore eventStore) {
@@ -219,9 +218,7 @@ class AppendCriteriaConcurrencyTest {
             return MessageStream.empty();
         });
         return new InterceptingCommandHandlingComponent(
-                List.of(new AppendCriteriaInterceptor(
-                        eventStore,
-                        (command, context, sourcingCriteria) ->
+                List.of(new AppendCriteriaInterceptor((command, context, sourcingCriteria) ->
                                 EventCriteria.havingTags("tenant", command.metadata().get("tenantId"))
                 )),
                 delegate
@@ -240,19 +237,32 @@ class AppendCriteriaConcurrencyTest {
             return MessageStream.empty();
         });
         return new InterceptingCommandHandlingComponent(
-                List.of(new AppendCriteriaInterceptor(
-                        eventStore,
-                        (command, context, sourcingCriteria) -> sourcingCriteria
+                List.of(new AppendCriteriaInterceptor((command, context, sourcingCriteria) -> sourcingCriteria
                 )),
                 delegate
         );
     }
 
-    private static CompletableFuture<Void> execute(CommandHandlingComponent component, CommandMessage command) {
-        return aUnitOfWork().executeWithResult(context -> {
+    private static CompletableFuture<Void> execute(EventStore eventStore,
+                                                   CommandHandlingComponent component,
+                                                   CommandMessage command) {
+        return aUnitOfWork(eventStore).executeWithResult(context -> {
             component.handle(command, context);
             return CompletableFuture.completedFuture(null);
         });
+    }
+
+    /**
+     * Creates a unit of work whose context provides the given {@code eventStore}, as the interceptor takes it from
+     * there.
+     */
+    private static UnitOfWork aUnitOfWork(EventStore eventStore) {
+        return new SimpleUnitOfWorkFactory(new ApplicationContext() {
+            @Override
+            public <C> C component(Class<C> type, @Nullable String name) {
+                return type.cast(eventStore);
+            }
+        }).create();
     }
 
     private static EventStore eventStore() {

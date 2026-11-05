@@ -25,7 +25,6 @@ import org.axonframework.integrationtests.testsuite.administration.commands.Crea
 import org.axonframework.integrationtests.testsuite.administration.common.PersonIdentifier;
 import org.axonframework.integrationtests.testsuite.administration.common.PersonType;
 import org.axonframework.integrationtests.testsuite.administration.state.mutable.MutablePerson;
-import org.axonframework.integrationtests.testsuite.administration.state.mutable.MutableTask;
 import org.axonframework.modelling.entity.EntityMetamodel;
 import org.junit.jupiter.api.Test;
 
@@ -40,13 +39,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 public abstract class MutableReflectionEntityModelAdministrationIT extends AbstractAdministrationIT {
 
     @Test
-    void appendCriteriaBuilderOnTheRootEntityCoversItsSubclassesButNotOtherEntities() {
-        // given MutablePerson declares the only builder in its hierarchy, and MutableTask declares its own
+    void appendCriteriaBuilderOnTheRootEntityCoversItsSubclassesAndChildEntities() {
+        // given MutablePerson declares the only builder in its hierarchy
         PersonIdentifier identifier = new PersonIdentifier(PersonType.EMPLOYEE, createId("builder-employee"));
         MutablePerson.resetAppendCriteriaCommands();
-        MutableTask.resetAppendCriteriaCommands();
 
-        // when commands declared by both MutablePerson and MutableEmployee are handled
+        // when commands of MutablePerson, of its subclass MutableEmployee, and of its child MutableTask are handled
         commandGateway.send(new CreateEmployee(identifier, "person@axon.test", "Developer", 1000.0))
                       .getResultMessage().orTimeout(5, TimeUnit.SECONDS).join();
         commandGateway.send(new ChangeEmailAddress(identifier, "updated@axon.test"))
@@ -56,11 +54,10 @@ public abstract class MutableReflectionEntityModelAdministrationIT extends Abstr
         commandGateway.send(new CompleteTaskCommand(identifier, "task"))
                       .getResultMessage().orTimeout(5, TimeUnit.SECONDS).join();
 
-        // then the inherited builder covers the subclass' commands too, without MutableEmployee redeclaring it
-        assertThat(MutablePerson.appendCriteriaCommands())
-                .containsExactly(CreateEmployee.class, ChangeEmailAddress.class, AssignTaskCommand.class);
-        // while a separate child entity keeps its own builder
-        assertThat(MutableTask.appendCriteriaCommands()).containsExactly(CompleteTaskCommand.class);
+        // then the builder intercepts them all, like any command handler interceptor on the root entity
+        assertThat(MutablePerson.appendCriteriaCommands()).containsExactly(
+                CreateEmployee.class, ChangeEmailAddress.class, AssignTaskCommand.class, CompleteTaskCommand.class
+        );
     }
 
     @Override

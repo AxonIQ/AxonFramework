@@ -24,11 +24,14 @@ import org.axonframework.messaging.commandhandling.CommandHandlingComponent;
 import org.axonframework.messaging.commandhandling.GenericCommandMessage;
 import org.axonframework.messaging.commandhandling.SimpleCommandHandlingComponent;
 import org.axonframework.messaging.commandhandling.interception.InterceptingCommandHandlingComponent;
+import org.axonframework.messaging.core.ApplicationContext;
 import org.axonframework.messaging.core.Context;
 import org.axonframework.messaging.core.FluxUtils;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.core.unitofwork.SimpleUnitOfWorkFactory;
+import org.axonframework.messaging.core.unitofwork.UnitOfWork;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.messaging.eventhandling.SimpleEventBus;
@@ -404,15 +407,13 @@ class DefaultEventStoreTransactionTest {
                 return MessageStream.empty();
             });
             CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
-                    List.of(new AppendCriteriaInterceptor(
-                            eventStore,
-                            (command, context, sourcingCriteria) -> unrelatedCriteria
+                    List.of(new AppendCriteriaInterceptor((command, context, sourcingCriteria) -> unrelatedCriteria
                     )),
                     delegate
             );
 
             // when
-            var uow = aUnitOfWork();
+            var uow = aUnitOfWorkProviding(eventStore);
             uow.runOnPreInvocation(context -> component.handle(
                     new GenericCommandMessage(new MessageType(commandName), FIRST_AGGREGATE_ID), context
             ));
@@ -423,7 +424,7 @@ class DefaultEventStoreTransactionTest {
                     .hasCauseInstanceOf(IllegalStateException.class)
                     .hasStackTraceContaining("aggregate-based consistency marker")
                     // the message points at the two ways out, so a reader knows what to change
-                    .hasStackTraceContaining("return the supplied sourcing criteria unchanged")
+                    .hasStackTraceContaining("Return the sourcing criteria unchanged")
                     .hasStackTraceContaining("move the entity to a tag-based event store");
         }
 
@@ -444,15 +445,13 @@ class DefaultEventStoreTransactionTest {
                 return MessageStream.empty();
             });
             CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
-                    List.of(new AppendCriteriaInterceptor(
-                            eventStore,
-                            (command, context, sourcingCriteria) -> sourcingCriteria
+                    List.of(new AppendCriteriaInterceptor((command, context, sourcingCriteria) -> sourcingCriteria
                     )),
                     delegate
             );
 
             // when
-            var uow = aUnitOfWork();
+            var uow = aUnitOfWorkProviding(eventStore);
             uow.runOnPreInvocation(context -> component.handle(
                     new GenericCommandMessage(new MessageType(commandName), FIRST_AGGREGATE_ID), context
             ));
@@ -1069,5 +1068,18 @@ class DefaultEventStoreTransactionTest {
         assertEquals(expected.payload(), actual.payload());
         assertEquals(expected.timestamp(), actual.timestamp());
         assertEquals(expected.metadata(), actual.metadata());
+    }
+
+    /**
+     * Creates a unit of work whose context provides the given {@code eventStore}, as an
+     * {@link AppendCriteriaInterceptor} takes it from there.
+     */
+    private static UnitOfWork aUnitOfWorkProviding(EventStore eventStore) {
+        return new SimpleUnitOfWorkFactory(new ApplicationContext() {
+            @Override
+            public <C> C component(Class<C> type, @Nullable String name) {
+                return type.cast(eventStore);
+            }
+        }).create();
     }
 }

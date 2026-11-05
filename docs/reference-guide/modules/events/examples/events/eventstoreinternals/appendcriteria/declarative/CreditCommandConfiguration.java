@@ -19,7 +19,6 @@ package events.eventstoreinternals.appendcriteria.declarative;
 import org.axonframework.eventsourcing.annotation.EventTag;
 import org.axonframework.eventsourcing.commandhandling.AppendCriteriaInterceptor;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
-import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.messaging.commandhandling.SimpleCommandHandlingComponent;
 import org.axonframework.messaging.commandhandling.configuration.CommandHandlingModule;
 import org.axonframework.messaging.core.MessageStream;
@@ -40,7 +39,6 @@ public class CreditCommandConfiguration {
                                                                 (command, context) -> MessageStream.empty())
                                      )
                                      .intercepted(configuration -> new AppendCriteriaInterceptor(
-                                             configuration.getComponent(EventStore.class),
                                              (command, context, sourcingCriteria) ->
                                                      switch (command.type().qualifiedName().fullName()) {
                                                          case "credits.UseCredits" ->

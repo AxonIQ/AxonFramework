@@ -18,7 +18,6 @@ package events.eventstoreinternals.appendcriteria.entity;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.eventsourcing.annotation.EventTag;
 import org.axonframework.eventsourcing.commandhandling.AppendCriteriaInterceptor;
-import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.modelling.entity.EntityCommandHandlerInterceptor;
@@ -32,7 +31,6 @@ public class DeclarativeEntityAppendCriteria {
     public static EntityMetamodel<CreditBalance> messagingModel(Configuration configuration,
                                                                 EntityMetamodelBuilder<CreditBalance> builder) {
         AppendCriteriaInterceptor appendCriteria = new AppendCriteriaInterceptor(
-                configuration.getComponent(EventStore.class),
                 (command, context, sourcingCriteria) -> switch (command.type().qualifiedName().fullName()) {
                     case "credits.UseCredits" ->
                             sourcingCriteria.withEventTypes(new QualifiedName(CreditsUsed.class));

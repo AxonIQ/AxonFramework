@@ -21,7 +21,6 @@ import org.axonframework.eventsourcing.EventSourcedEntityFactory;
 import org.axonframework.eventsourcing.commandhandling.AppendCriteriaInterceptor;
 import org.axonframework.eventsourcing.configuration.EventSourcedEntityModule;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
-import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.integrationtests.testsuite.administration.commands.AssignTaskCommand;
 import org.axonframework.integrationtests.testsuite.administration.commands.ChangeEmailAddress;
 import org.axonframework.integrationtests.testsuite.administration.commands.CompleteTaskCommand;
@@ -96,10 +95,8 @@ public abstract class MutableBuilderEntityModelAdministrationIT extends Abstract
         ParameterResolverFactory parameterResolverFactory = configuration.getComponent(ParameterResolverFactory.class);
         HandlerDefinition handlerDefinition = configuration.getComponent(HandlerDefinition.class);
         EventConverter eventConverter = configuration.getComponent(EventConverter.class);
-        // Polymorphic metamodel interceptors only cover the commands its supertype handles, so the concrete types that
-        // handle their own commands register the same interceptor as well.
+        // Registered once on the polymorphic metamodel, which also wraps the commands its concrete types handle.
         AppendCriteriaInterceptor appendCriteria = new AppendCriteriaInterceptor(
-                configuration.getComponent(EventStore.class),
                 (command, context, sourcingCriteria) -> {
                     appendCriteriaCommands.add(command.payloadType());
                     return sourcingCriteria;
@@ -281,7 +278,6 @@ public abstract class MutableBuilderEntityModelAdministrationIT extends Abstract
                                   ))
                                   .build()
                 )
-                .commandHandlerInterceptor(EntityCommandHandlerInterceptor.of(appendCriteria))
                 .build();
 
         // Customer is a concrete entity type
@@ -304,7 +300,6 @@ public abstract class MutableBuilderEntityModelAdministrationIT extends Abstract
                             return MessageStream.empty().cast();
                         })
                 )
-                .commandHandlerInterceptor(EntityCommandHandlerInterceptor.of(appendCriteria))
                 .build();
 
         // Person is the polymorphic entity type

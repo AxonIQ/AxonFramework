@@ -16,12 +16,9 @@
 
 package org.axonframework.eventsourcing.commandhandling.annotation;
 
-import org.axonframework.common.configuration.Configuration;
-import org.axonframework.eventsourcing.commandhandling.AppendCriteriaResolver;
+import org.axonframework.eventsourcing.commandhandling.AppendCriteriaInterceptor;
 import org.axonframework.messaging.commandhandling.CommandMessage;
-import org.axonframework.messaging.core.Metadata;
-import org.axonframework.messaging.core.annotation.MetadataValue;
-import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.commandhandling.interception.annotation.CommandHandlerInterceptor;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 
 import java.lang.annotation.ElementType;
@@ -30,45 +27,39 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Marks a static method that resolves the append criteria for the commands of one type handled by its declaring class.
+ * Marks a static method deciding the append criteria of the commands it accepts, replacing the criteria accumulated
+ * through sourcing while such a command is handled.
  * <p>
- * The method must return a non-null {@link EventCriteria}. Its first parameter is the command type it covers: a command
- * payload type, which also covers the payload's subtypes, or {@link CommandMessage}, which covers every command no
- * payload-typed builder covers. Additional parameters may be the accumulated sourcing {@link EventCriteria},
- * {@link CommandMessage}, {@link Metadata}, a {@code String} annotated with {@link MetadataValue},
- * {@link ProcessingContext}, {@link Configuration}, or a synchronously available configured component. Any other
- * parameter fails at startup.
+ * Sourcing is unaffected: an {@link org.axonframework.eventsourcing.annotation.EventCriteriaBuilder} still decides what
+ * an entity loads. An append criteria builder narrows or widens what may conflict with the decision instead, so a
+ * concurrent event the decision does not depend on no longer rejects the command, or a command that loaded nothing
+ * still guards a unique key.
  * <p>
- * As for {@link org.axonframework.eventsourcing.annotation.EventCriteriaBuilder}, these parameters are not resolved
- * through the {@link org.axonframework.messaging.core.annotation.ParameterResolverFactory} that resolves message
- * handler parameters, so custom parameter resolvers do not apply. A builder runs while the append condition is
- * finalized at commit, where handler parameters such as an event appender, a command dispatcher, or an injected entity
- * would append events, dispatch commands, or source events from within the commit.
+ * The annotation is a {@link CommandHandlerInterceptor}, so a builder is placed and matched like any command handler
+ * interceptor: on a command-handling class or an entity, applying to the commands handled there whose payload is
+ * assignable to the builder's first parameter. That parameter is the command payload, which is converted to the
+ * handler's payload type first, so a builder also matches a command named through
+ * {@link org.axonframework.messaging.commandhandling.annotation.Command#name()}. A first parameter of type
+ * {@link CommandMessage} matches every command. Commands no builder matches keep their sourcing criteria.
  * <p>
- * The builder runs separately for every command invocation. Its result replaces the complete sourcing-derived append
- * criteria for that command's transaction.
+ * Unlike a regular interceptor, the method does not run before the handler. It runs when the command's events are
+ * appended, once everything was sourced, and its result becomes the command's append criteria; the consistency marker
+ * obtained while sourcing is kept. Hence:
+ * <ul>
+ *     <li>The method must be {@code static} and return a non-null {@link EventCriteria}. Being static, it does not
+ *     depend on the state of the handling object, and on an entity it also covers commands creating the entity.</li>
+ *     <li>A parameter of type {@code EventCriteria} receives the criteria accumulated through sourcing, across every
+ *     entity the command loaded. For a command that loaded nothing, they restrict nothing, or select the tags of the
+ *     appended events when an entity is created without loading, and the result is checked from
+ *     {@link org.axonframework.eventsourcing.eventstore.ConsistencyMarker#ORIGIN}.</li>
+ *     <li>Other parameters are resolved like those of any message handler, when the events are appended. Use
+ *     parameters that resolve without side effects, such as the {@link CommandMessage}, a
+ *     {@link org.axonframework.messaging.core.annotation.MetadataValue} or a configured component.</li>
+ *     <li>At most one builder or {@link AppendCriteriaInterceptor} applies to a command. When several match, the
+ *     command fails rather than letting one silently win.</li>
+ * </ul>
  * <p>
- * A class may declare several builders, one per command type, like
- * {@link org.axonframework.eventsourcing.annotation.EventCriteriaBuilder} allows one per identifier type. Each
- * {@link org.axonframework.messaging.commandhandling.annotation.CommandHandler} is matched at startup with the builder
- * whose command type is the most specific supertype of the payload it handles. Two builders for the same command type
- * on one class are rejected, and so is a payload accepted by several builders of which none is more specific than the
- * others.
- * <p>
- * <b>Unlike {@code @EventCriteriaBuilder}, there is no fallback.</b> Once a class has a builder, every command handler
- * on it has to be matched by one, and startup fails otherwise. Falling back to the sourcing criteria would be silent:
- * for a command that sources nothing, a forgotten builder turns a uniqueness check into an unconditional append. To
- * keep the sourcing criteria for a command on purpose, declare a builder for it that returns them unchanged.
- * <p>
- * Builders are inherited. The builders that apply to the handlers a class declares are the ones on that class and on
- * its superclasses; for the same command type, the closest declaration wins. A base class may contribute builders
- * without declaring any command handler itself. Interfaces are not searched, as the method is required to be
- * {@code static}. Handlers a class inherits are matched against the builders of the class declaring them, so a builder
- * on a subclass does not apply to handlers inherited from its superclass. Startup fails when such a builder would be
- * the one selected for an inherited handler, such as a subclass builder for a command only its superclass handles, as
- * it would never run. Declare the builder on the superclass instead, or redeclare the handler on the subclass.
- * <p>
- * Example of a command-handling class narrowing the boundary of one command and keeping it for another:
+ * Example narrowing the boundary of withdrawals, while deposits keep their sourcing criteria:
  * <pre>
  * class AccountCommandHandler {
  *
@@ -89,20 +80,16 @@ import java.lang.annotation.Target;
  *                                      MessageTypeResolver messageTypeResolver) {
  *         return sourcingCriteria.withEventTypes(messageTypeResolver, MoneyWithdrawn.class);
  *     }
- *
- *     // Every handler needs a builder, so this one keeps the sourcing criteria on purpose.
- *     {@literal @}AppendCriteriaBuilder
- *     static EventCriteria deposits(DepositMoney command, EventCriteria sourcingCriteria) {
- *         return sourcingCriteria;
- *     }
  * }
  * </pre>
  *
  * @author Mateusz Nowak
- * @see AppendCriteriaResolver
+ * @see AppendCriteriaInterceptor
  * @since 5.5.0
  */
-@Target(ElementType.METHOD)
+@CommandHandlerInterceptor
 @Retention(RetentionPolicy.RUNTIME)
+@Target({ElementType.METHOD, ElementType.ANNOTATION_TYPE})
 public @interface AppendCriteriaBuilder {
+
 }
