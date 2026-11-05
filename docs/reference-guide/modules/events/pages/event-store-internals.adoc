@@ -175,13 +175,18 @@ include::example$events/eventstoreinternals/appendcriteria/annotation/UsernameCo
 * The append fails if a matching event already exists or is appended concurrently.
 * Tag the appended events with the values the criteria use, as the example does with `tenantId`.
 * Returning the supplied criteria keeps the command unconditional.
-* Narrowing the supplied criteria with `withEventTypes` checks every event of those types in the history.
-Give commands that source nothing their own builder when a `CommandMessage` builder narrows every command.
+* Setting event types with `withEventTypes` on the supplied criteria defines a boundary where there was none, so every event of those types in the history is checked.
+A `CommandMessage` builder that does this applies it to every command that sources nothing, so give those commands their own builder.
+* A command that sourced something checks its append criteria only after the position it read, whatever the criteria select.
+To check a key from the beginning of the history, use a command that sources nothing.
 
 === Choosing a narrower boundary
 
 A narrower boundary can change how stored events explain a decision: a rejection may describe the state before a concurrent event that the boundary excluded.
 Keep the default boundary when that order matters more than avoiding retries, for example for audit records.
+
+A builder is a static method, so its result can be tested without running a command.
+Assert with `criteria.matches(eventType, tags)` that it selects the events the decision depends on, as an event type name that matches nothing silently selects nothing.
 
 [IMPORTANT]
 ====
