@@ -160,9 +160,15 @@ Without annotations, register an `AppendCriteriaInterceptor` on the command-hand
 include::example$events/eventstoreinternals/appendcriteria/declarative/CreditCommandConfiguration.java[tag=declarative-append-criteria,indent=0]
 ----
 
-The interceptor applies its `AppendCriteriaResolver` to every command of every component in the module.
-The resolver receives the command as dispatched, so read a serialized payload with `payloadAs`.
-A command reaching more than one resolver, for example a builder and an interceptor, fails.
+`forCommand` registers criteria per command name, the way `SimpleCommandHandlingComponent` subscribes handlers.
+Commands are matched by name, so the payload is not converted, and commands without registered criteria keep their sourcing criteria, here `credits.TopUpCredits`.
+Registering the same name twice fails right away.
+Pass an `AppendCriteriaResolver` instead of a function when the criteria depend on the command or the context.
+
+To decide for every command of every component in the module, pass one `AppendCriteriaResolver` to the `AppendCriteriaInterceptor` constructor.
+That resolver receives the command as dispatched, so read a serialized payload with `payloadAs`.
+Criteria registered with `forCommand` take precedence over it for their command.
+A command whose criteria more than one resolver decides, for example a builder and an interceptor, fails.
 
 === Commands without sourcing
 

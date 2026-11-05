@@ -38,20 +38,13 @@ public class CreditCommandConfiguration {
                                                      .subscribe(new QualifiedName("credits.TopUpCredits"),
                                                                 (command, context) -> MessageStream.empty())
                                      )
-                                     .intercepted(configuration -> new AppendCriteriaInterceptor(
-                                             (command, sourcingCriteria, context) ->
-                                                     switch (command.type().qualifiedName().fullName()) {
-                                                         case "credits.UseCredits" ->
-                                                                 sourcingCriteria.withEventTypes(
-                                                                         new QualifiedName(CreditsUsed.class)
-                                                                 );
-                                                         case "credits.TopUpCredits" -> sourcingCriteria;
-                                                         default -> throw new IllegalArgumentException(
-                                                                 "Unsupported command: "
-                                                                         + command.type().qualifiedName()
-                                                         );
-                                                     }
-                                     ))
+                                     .intercepted(configuration -> AppendCriteriaInterceptor
+                                             .create()
+                                             .forCommand(new QualifiedName("credits.UseCredits"),
+                                                         sourcingCriteria -> sourcingCriteria.withEventTypes(
+                                                                 new QualifiedName(CreditsUsed.class)
+                                                         ))
+                                     )
         );
     }
 }

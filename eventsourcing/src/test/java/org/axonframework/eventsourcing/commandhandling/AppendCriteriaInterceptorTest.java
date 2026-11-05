@@ -55,11 +55,14 @@ import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.UnaryOperator;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -300,6 +303,149 @@ class AppendCriteriaInterceptorTest {
 
             // then
             assertThat(storageEngine.latestToken().orTimeout(5, TimeUnit.SECONDS).join().position()).hasValue(-1);
+        }
+    }
+
+    /**
+     * Covers registering criteria per command name through {@link AppendCriteriaInterceptor#create()} and
+     * {@link AppendCriteriaInterceptor#forCommand(QualifiedName, AppendCriteriaResolver)}.
+     */
+    @Nested
+    class PerCommand {
+
+        private static final QualifiedName CREDITS_CHANGED = new QualifiedName("credits.CreditsChanged");
+
+        private final Map<QualifiedName, AppendCondition> finalConditions = new ConcurrentHashMap<>();
+
+        @Test
+        void namedCommandGetsItsCriteriaWhileOtherCommandsKeepTheirSourcingCriteria() {
+            // given
+            CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
+                    List.of(AppendCriteriaInterceptor.create()
+                                                     .forCommand(USE_CREDITS,
+                                                                 sourcing -> sourcing.withEventTypes(CREDITS_CHANGED))),
+                    observingComponent()
+            );
+
+            // when
+            handleSuccessfully(component, command(USE_CREDITS, "one"));
+            handleSuccessfully(component, command(TOP_UP_CREDITS, "two"));
+
+            // then
+            assertThat(finalConditions.get(USE_CREDITS).criteria())
+                    .isEqualTo(EventCriteria.havingTags(ACCOUNT_ONE).withEventTypes(CREDITS_CHANGED));
+            assertThat(finalConditions.get(TOP_UP_CREDITS).criteria())
+                    .isEqualTo(EventCriteria.havingTags(ACCOUNT_TWO));
+        }
+
+        @Test
+        void resolverRegisteredForACommandReceivesTheCommandAndItsSourcingCriteria() {
+            // given
+            List<CommandMessage> resolvedCommands = new ArrayList<>();
+            List<EventCriteria> receivedSourcingCriteria = new ArrayList<>();
+            EventCriteria decision = EventCriteria.havingTags("decision", "use-credits");
+            CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
+                    List.of(AppendCriteriaInterceptor.create()
+                                                     .forCommand(USE_CREDITS, (command, sourcing, context) -> {
+                                                         resolvedCommands.add(command);
+                                                         receivedSourcingCriteria.add(sourcing);
+                                                         return decision;
+                                                     })),
+                    observingComponent()
+            );
+            CommandMessage use = command(USE_CREDITS, "one");
+
+            // when
+            handleSuccessfully(component, use);
+            handleSuccessfully(component, command(TOP_UP_CREDITS, "two"));
+
+            // then the resolver only ran for the command it was registered for
+            assertThat(resolvedCommands).containsExactly(use);
+            assertThat(receivedSourcingCriteria).containsExactly(EventCriteria.havingTags(ACCOUNT_ONE));
+            assertThat(finalConditions.get(USE_CREDITS).criteria()).isEqualTo(decision);
+        }
+
+        @Test
+        void namedCommandTakesPrecedenceOverTheResolverGivenToTheConstructor() {
+            // given
+            EventCriteria named = EventCriteria.havingTags("decision", "named");
+            EventCriteria fallback = EventCriteria.havingTags("decision", "fallback");
+            CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
+                    List.of(new AppendCriteriaInterceptor((command, sourcing, context) -> fallback)
+                                    .forCommand(USE_CREDITS, sourcing -> named)),
+                    observingComponent()
+            );
+
+            // when
+            handleSuccessfully(component, command(USE_CREDITS, "one"));
+            handleSuccessfully(component, command(TOP_UP_CREDITS, "two"));
+
+            // then
+            assertThat(finalConditions.get(USE_CREDITS).criteria()).isEqualTo(named);
+            assertThat(finalConditions.get(TOP_UP_CREDITS).criteria()).isEqualTo(fallback);
+        }
+
+        @Test
+        void unlistedCommandIsLeftForAnotherInterceptorToDecide() {
+            // given an inner interceptor covering every command, behind one naming only another command
+            EventCriteria inner = EventCriteria.havingTags("decision", "inner");
+            CommandHandlingComponent innerComponent = new InterceptingCommandHandlingComponent(
+                    List.of(new AppendCriteriaInterceptor((command, sourcing, context) -> inner)),
+                    observingComponent()
+            );
+            CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
+                    List.of(AppendCriteriaInterceptor.create().forCommand(USE_CREDITS, sourcing -> sourcing)),
+                    innerComponent
+            );
+
+            // when
+            handleSuccessfully(component, command(TOP_UP_CREDITS, "two"));
+
+            // then the outer interceptor did not claim the command, so the inner one applied without a conflict
+            assertThat(finalConditions.get(TOP_UP_CREDITS).criteria()).isEqualTo(inner);
+        }
+
+        @Test
+        void registeringTheSameCommandTwiceFails() {
+            // given
+            AppendCriteriaInterceptor interceptor = AppendCriteriaInterceptor.create()
+                                                                             .forCommand(USE_CREDITS, s -> s);
+
+            // when / then
+            assertThatThrownBy(() -> interceptor.forCommand(USE_CREDITS, s -> s))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("credits.UseCredits");
+        }
+
+        @Test
+        void rejectsNullArguments() {
+            AppendCriteriaInterceptor interceptor = AppendCriteriaInterceptor.create();
+            //noinspection DataFlowIssue
+            assertThatThrownBy(() -> interceptor.forCommand(null, s -> s))
+                    .isInstanceOf(NullPointerException.class);
+            //noinspection DataFlowIssue
+            assertThatThrownBy(() -> interceptor.forCommand(USE_CREDITS, (UnaryOperator<EventCriteria>) null))
+                    .isInstanceOf(NullPointerException.class);
+            //noinspection DataFlowIssue
+            assertThatThrownBy(() -> interceptor.forCommand(USE_CREDITS, (AppendCriteriaResolver) null))
+                    .isInstanceOf(NullPointerException.class);
+        }
+
+        private CommandHandlingComponent observingComponent() {
+            SimpleCommandHandlingComponent component = SimpleCommandHandlingComponent.create("observed");
+            component.subscribe(USE_CREDITS, this::observeAndHandle);
+            component.subscribe(TOP_UP_CREDITS, this::observeAndHandle);
+            return component;
+        }
+
+        private MessageStream.Single<CommandResultMessage> observeAndHandle(CommandMessage command,
+                                                                           ProcessingContext context) {
+            // registered after the interceptor's override, so it observes the condition that override produced
+            eventStore.transaction(context).overrideAppendCondition(condition -> {
+                finalConditions.put(command.type().qualifiedName(), condition);
+                return condition;
+            });
+            return sourceAccountAndAppend(command, context);
         }
     }
 
