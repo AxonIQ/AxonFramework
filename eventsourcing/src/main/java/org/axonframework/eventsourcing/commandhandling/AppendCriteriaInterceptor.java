@@ -16,7 +16,6 @@
 
 package org.axonframework.eventsourcing.commandhandling;
 
-import org.axonframework.eventsourcing.eventstore.AggregateBasedConsistencyMarker;
 import org.axonframework.eventsourcing.eventstore.AppendCondition;
 import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.messaging.commandhandling.CommandMessage;
@@ -71,8 +70,8 @@ import static java.util.Objects.requireNonNull;
  *     key without a preliminary read. Returning {@link EventCriteria#havingAnyTag()} for such a command keeps it
  *     unchecked. An entity created without loading is the exception: its resolver receives criteria selecting the
  *     tags of the appended events, which are checked from {@code ORIGIN} as well.</li>
- *     <li>A command that sourced through an {@link AggregateBasedConsistencyMarker} can only keep its sourcing
- *     criteria, as that marker tracks a single aggregate sequence. Returning other criteria fails the command.</li>
+ *     <li>An aggregate-based event store detects conflicts only through the sequence of each aggregate it appends
+ *     to, so the resolved criteria have no effect there.</li>
  * </ul>
  *
  * @author Mateusz Nowak
@@ -117,16 +116,6 @@ public final class AppendCriteriaInterceptor implements MessageHandlerIntercepto
         if (AppendCondition.none().equals(current)) {
             // Nothing was sourced, so criteria restricting nothing mean no boundary rather than a check from ORIGIN.
             return criteria.hasCriteria() ? AppendCondition.withCriteria(criteria) : AppendCondition.none();
-        }
-        if (current.consistencyMarker() instanceof AggregateBasedConsistencyMarker
-                && !current.criteria().equals(criteria)) {
-            throw new IllegalStateException(
-                    ("Cannot apply append criteria for command [%s]. An aggregate-based consistency marker tracks a "
-                            + "single aggregate sequence, so it cannot express a boundary that differs from the "
-                            + "sourcing criteria. Return the sourcing criteria unchanged for this command, or move "
-                            + "the entity to a tag-based event store.")
-                            .formatted(command.type().qualifiedName())
-            );
         }
         return current.replaceCriteria(criteria);
     }

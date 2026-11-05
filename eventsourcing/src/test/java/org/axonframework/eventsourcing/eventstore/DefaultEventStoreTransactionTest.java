@@ -390,8 +390,8 @@ class DefaultEventStoreTransactionTest {
         }
 
         @Test
-        void rejectsChangedAppendCriteriaForAnAggregateBasedConsistencyMarker() {
-            // given
+        void keepsCheckingTheAggregateSequenceWhenAppendCriteriaChangeForAnAggregateBasedConsistencyMarker() {
+            // given a resolver returning criteria unrelated to the sourced aggregate
             EventCriteria unrelatedCriteria = EventCriteria.havingTags(new Tag("other", "boundary"));
             EventStore eventStore = new StorageEngineBackedEventStore(
                     aggregateStorageEngine,
@@ -418,14 +418,10 @@ class DefaultEventStoreTransactionTest {
                     new GenericCommandMessage(new MessageType(commandName), FIRST_AGGREGATE_ID), context
             ));
 
-            // then
-            assertThatThrownBy(() -> awaitExceptionalCompletion(uow.execute()))
-                    .isInstanceOf(CompletionException.class)
-                    .hasCauseInstanceOf(IllegalStateException.class)
-                    .hasStackTraceContaining("aggregate-based consistency marker")
-                    // the message points at the two ways out, so a reader knows what to change
-                    .hasStackTraceContaining("Return the sourcing criteria unchanged")
-                    .hasStackTraceContaining("move the entity to a tag-based event store");
+            // then aggregate-based storage ignores the criteria and continues the sourced aggregate's sequence, so a
+            // concurrent event of that aggregate still conflicts
+            awaitSuccessfulCompletion(uow.execute());
+            assertThat(aggregateStorageEngine.assignedSequenceNumbers).containsEntry(FIRST_AGGREGATE_ID, 3L);
         }
 
         @Test

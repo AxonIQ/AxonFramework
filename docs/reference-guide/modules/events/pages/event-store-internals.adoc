@@ -194,8 +194,9 @@ Assert with `criteria.matches(eventType, tags)` that it selects the events the d
 [IMPORTANT]
 ====
 Aggregate-based storage detects conflicts only through the sequence numbers of the aggregates it appends to.
-For a command that sourced events, append criteria other than the supplied sourcing criteria fail.
-For a command that sourced nothing, only criteria selecting the appended aggregates by their tag are checked, and other criteria are ignored.
+It does not check append criteria, so an append criteria builder has no effect there.
+A command that sourced an aggregate still conflicts with any concurrent event of that aggregate, whatever its builder returns.
+A command that sourced nothing only conflicts when it creates an aggregate that already exists.
 Reserving a unique key, as in the `UsernameCommandHandler` example, requires a criteria-aware event store.
 ====
 

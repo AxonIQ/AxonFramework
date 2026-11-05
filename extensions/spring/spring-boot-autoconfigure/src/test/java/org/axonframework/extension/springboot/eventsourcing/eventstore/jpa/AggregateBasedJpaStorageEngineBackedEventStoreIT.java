@@ -204,7 +204,7 @@ class AggregateBasedJpaStorageEngineBackedEventStoreIT extends
         }
 
         @Test
-        void narrowedCriteriaOfASourcedCommandAreRejected() {
+        void narrowedCriteriaOfASourcedCommandHaveNoEffect() {
             // given
             String userId = UUID.randomUUID().toString();
             CommandHandlingComponent component = registration(
@@ -216,10 +216,9 @@ class AggregateBasedJpaStorageEngineBackedEventStoreIT extends
             // when
             CompletableFuture<Void> result = execute(component, userId);
 
-            // then
-            assertThatThrownBy(() -> result.orTimeout(5, TimeUnit.SECONDS).join())
-                    .hasStackTraceContaining("aggregate-based consistency marker");
-            assertThat(storedEventCount(userId)).isZero();
+            // then aggregate-based storage ignores the criteria and checks the sourced aggregate's sequence instead
+            result.orTimeout(5, TimeUnit.SECONDS).join();
+            assertThat(storedEventCount(userId)).isOne();
         }
 
         @Test
