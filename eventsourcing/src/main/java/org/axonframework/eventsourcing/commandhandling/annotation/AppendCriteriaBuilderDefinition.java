@@ -111,7 +111,7 @@ public class AppendCriteriaBuilderDefinition implements HandlerEnhancerDefinitio
             return interceptor.interceptOnHandle(command, context, chain);
         }
 
-        private EventCriteria invoke(CommandMessage command, ProcessingContext context, EventCriteria sourcing) {
+        private EventCriteria invoke(CommandMessage command, EventCriteria sourcing, ProcessingContext context) {
             var result = super.handle(command, context.withResource(SOURCING_CRITERIA, sourcing), null)
                               .first()
                               .asCompletableFuture();

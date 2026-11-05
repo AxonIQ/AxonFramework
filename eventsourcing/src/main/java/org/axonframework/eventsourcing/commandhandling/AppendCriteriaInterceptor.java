@@ -111,7 +111,7 @@ public final class AppendCriteriaInterceptor implements MessageHandlerIntercepto
     }
 
     private AppendCondition override(CommandMessage command, ProcessingContext context, AppendCondition current) {
-        EventCriteria criteria = requireNonNull(resolver.resolve(command, context, current.criteria()),
+        EventCriteria criteria = requireNonNull(resolver.resolve(command, current.criteria(), context),
                                                 "The append criteria resolver returned null.");
         if (AppendCondition.none().equals(current)) {
             // Nothing was sourced, so criteria restricting nothing mean no boundary rather than a check from ORIGIN.

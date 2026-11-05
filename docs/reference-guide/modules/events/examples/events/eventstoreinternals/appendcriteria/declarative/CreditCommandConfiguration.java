@@ -39,7 +39,7 @@ public class CreditCommandConfiguration {
                                                                 (command, context) -> MessageStream.empty())
                                      )
                                      .intercepted(configuration -> new AppendCriteriaInterceptor(
-                                             (command, context, sourcingCriteria) ->
+                                             (command, sourcingCriteria, context) ->
                                                      switch (command.type().qualifiedName().fullName()) {
                                                          case "credits.UseCredits" ->
                                                                  sourcingCriteria.withEventTypes(

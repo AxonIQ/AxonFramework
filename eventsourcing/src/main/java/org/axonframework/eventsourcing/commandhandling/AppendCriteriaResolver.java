@@ -50,12 +50,12 @@ public interface AppendCriteriaResolver {
     /**
      * Resolves the append criteria for the given {@code command}.
      *
-     * @param command the command being handled
-     * @param context the context in which the command is handled
+     * @param command          the command being handled
      * @param sourcingCriteria the complete criteria accumulated through sourcing for this command invocation
+     * @param context          the context in which the command is handled
      * @return the complete append criteria for this command, never {@code null}
      */
     EventCriteria resolve(CommandMessage command,
-                          ProcessingContext context,
-                          EventCriteria sourcingCriteria);
+                          EventCriteria sourcingCriteria,
+                          ProcessingContext context);
 }

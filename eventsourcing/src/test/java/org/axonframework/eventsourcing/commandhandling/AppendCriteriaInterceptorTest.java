@@ -94,7 +94,7 @@ class AppendCriteriaInterceptorTest {
             List<CommandMessage> resolvedCommands = new ArrayList<>();
             List<EventCriteria> receivedSourcingCriteria = new ArrayList<>();
             CommandHandlingComponent delegate = componentSourcingOneAccountPerCommand();
-            AppendCriteriaResolver resolver = (command, context, sourcingCriteria) -> {
+            AppendCriteriaResolver resolver = (command, sourcingCriteria, context) -> {
                 resolvedCommands.add(command);
                 receivedSourcingCriteria.add(sourcingCriteria);
                 return sourcingCriteria;
@@ -136,7 +136,7 @@ class AppendCriteriaInterceptorTest {
                 return MessageStream.empty();
             });
             CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
-                    List.of(new AppendCriteriaInterceptor((command, context, sourcingCriteria) -> {
+                    List.of(new AppendCriteriaInterceptor((command, sourcingCriteria, context) -> {
                                 received.add(sourcingCriteria);
                                 return sourcingCriteria;
                             }
@@ -177,7 +177,7 @@ class AppendCriteriaInterceptorTest {
                 return MessageStream.empty();
             });
             CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
-                    List.of(new AppendCriteriaInterceptor((command, context, criteria) -> commandCriteria
+                    List.of(new AppendCriteriaInterceptor((command, criteria, context) -> commandCriteria
                     )),
                     delegate
             );
@@ -206,7 +206,7 @@ class AppendCriteriaInterceptorTest {
                 return MessageStream.empty();
             });
             CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
-                    List.of(new AppendCriteriaInterceptor((command, context, sourcingCriteria) -> {
+                    List.of(new AppendCriteriaInterceptor((command, sourcingCriteria, context) -> {
                                 receivedSourcingCriteria.set(sourcingCriteria);
                                 return commandCriteria;
                             }
@@ -237,7 +237,7 @@ class AppendCriteriaInterceptorTest {
                 return MessageStream.empty();
             });
             CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
-                    List.of(new AppendCriteriaInterceptor((command, context, sourcingCriteria) -> sourcingCriteria)),
+                    List.of(new AppendCriteriaInterceptor((command, sourcingCriteria, context) -> sourcingCriteria)),
                     delegate
             );
 
@@ -258,7 +258,7 @@ class AppendCriteriaInterceptorTest {
                 return MessageStream.empty();
             });
             CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
-                    List.of(new AppendCriteriaInterceptor((command, context, sourcingCriteria) -> {
+                    List.of(new AppendCriteriaInterceptor((command, sourcingCriteria, context) -> {
                                 throw new IllegalStateException("Cannot resolve append criteria");
                             }
                     )),
@@ -286,7 +286,7 @@ class AppendCriteriaInterceptorTest {
                 return MessageStream.empty();
             });
             CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
-                    List.of(new AppendCriteriaInterceptor((command, context, sourcingCriteria) -> null)),
+                    List.of(new AppendCriteriaInterceptor((command, sourcingCriteria, context) -> null)),
                     delegate
             );
             var uow = aUnitOfWork();
@@ -312,11 +312,11 @@ class AppendCriteriaInterceptorTest {
             SimpleCommandHandlingComponent delegate = SimpleCommandHandlingComponent.create("duplicate");
             delegate.subscribe(USE_CREDITS, (command, context) -> MessageStream.empty());
             CommandHandlingComponent first = new InterceptingCommandHandlingComponent(
-                    List.of(new AppendCriteriaInterceptor((command, context, sourcingCriteria) -> sourcingCriteria)),
+                    List.of(new AppendCriteriaInterceptor((command, sourcingCriteria, context) -> sourcingCriteria)),
                     delegate
             );
             CommandHandlingComponent second = new InterceptingCommandHandlingComponent(
-                    List.of(new AppendCriteriaInterceptor((command, context, sourcingCriteria) -> sourcingCriteria)),
+                    List.of(new AppendCriteriaInterceptor((command, sourcingCriteria, context) -> sourcingCriteria)),
                     first
             );
             CommandMessage command = command(USE_CREDITS, "one");
@@ -352,7 +352,7 @@ class AppendCriteriaInterceptorTest {
                                                  .commandHandlers()
                                                  .commandHandlingComponent(c -> observingComponent(finalCondition))
                                                  .intercepted(c -> new AppendCriteriaInterceptor(
-                                                         (command, context, sourcingCriteria) -> {
+                                                         (command, sourcingCriteria, context) -> {
                                                              resolvedCommands.add(command);
                                                              return commandCriteria;
                                                          }
@@ -385,7 +385,7 @@ class AppendCriteriaInterceptorTest {
                     .instanceCommandHandler(USE_CREDITS, (command, entity, context) ->
                             sourceAccountAndAppend(command, context, finalCondition))
                     .commandHandlerInterceptor(EntityCommandHandlerInterceptor.of(
-                            new AppendCriteriaInterceptor((command, context, sourcingCriteria) -> commandCriteria)
+                            new AppendCriteriaInterceptor((command, sourcingCriteria, context) -> commandCriteria)
                     ))
                     .build();
 
@@ -414,7 +414,7 @@ class AppendCriteriaInterceptorTest {
                         return MessageStream.empty().cast();
                     })
                     .commandHandlerInterceptor(EntityCommandHandlerInterceptor.of(
-                            new AppendCriteriaInterceptor((command, context, sourcingCriteria) -> reservation)
+                            new AppendCriteriaInterceptor((command, sourcingCriteria, context) -> reservation)
                     ))
                     .build();
 
@@ -448,7 +448,7 @@ class AppendCriteriaInterceptorTest {
                                       ))
                                       .build())
                     .commandHandlerInterceptor(EntityCommandHandlerInterceptor.of(
-                            new AppendCriteriaInterceptor((command, context, sourcingCriteria) -> {
+                            new AppendCriteriaInterceptor((command, sourcingCriteria, context) -> {
                                 resolvedCommands.add(command);
                                 return commandCriteria;
                             })
@@ -469,7 +469,7 @@ class AppendCriteriaInterceptorTest {
         @Test
         void interceptorsOnBothParentAndChildEntityFailForAForwardedCommand() {
             // given the same command reaching an interceptor on the parent and another on the child it is forwarded to
-            AppendCriteriaResolver resolver = (command, context, sourcingCriteria) -> sourcingCriteria;
+            AppendCriteriaResolver resolver = (command, sourcingCriteria, context) -> sourcingCriteria;
             EntityMetamodel<Card> cardMetamodel = ConcreteEntityMetamodel
                     .forEntityClass(Card.class)
                     .instanceCommandHandler(REPLACE_CARD, (command, card, context) ->

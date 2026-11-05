@@ -97,7 +97,7 @@ public abstract class MutableBuilderEntityModelAdministrationIT extends Abstract
         EventConverter eventConverter = configuration.getComponent(EventConverter.class);
         // Registered once on the polymorphic metamodel, which also wraps the commands its concrete types handle.
         AppendCriteriaInterceptor appendCriteria = new AppendCriteriaInterceptor(
-                (command, context, sourcingCriteria) -> {
+                (command, sourcingCriteria, context) -> {
                     appendCriteriaCommands.add(command.payloadType());
                     return sourcingCriteria;
                 }

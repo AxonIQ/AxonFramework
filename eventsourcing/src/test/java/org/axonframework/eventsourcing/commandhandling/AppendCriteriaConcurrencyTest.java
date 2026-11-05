@@ -178,7 +178,7 @@ class AppendCriteriaConcurrencyTest {
             return MessageStream.empty();
         });
         CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
-                List.of(new AppendCriteriaInterceptor((command, context, accumulatedCriteria) -> restrictToUsed
+                List.of(new AppendCriteriaInterceptor((command, accumulatedCriteria, context) -> restrictToUsed
                                 ? accumulatedCriteria.withEventTypes(Set.of(new QualifiedName(CreditsUsed.class)))
                                 : accumulatedCriteria
                 )),
@@ -202,7 +202,7 @@ class AppendCriteriaConcurrencyTest {
             return MessageStream.empty();
         });
         CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
-                List.of(new AppendCriteriaInterceptor((command, context, accumulatedCriteria) ->
+                List.of(new AppendCriteriaInterceptor((command, accumulatedCriteria, context) ->
                                 accumulatedCriteria.withEventTypes(Set.of(new QualifiedName(CreditsUsed.class)))
                 )),
                 delegate
@@ -218,7 +218,7 @@ class AppendCriteriaConcurrencyTest {
             return MessageStream.empty();
         });
         return new InterceptingCommandHandlingComponent(
-                List.of(new AppendCriteriaInterceptor((command, context, sourcingCriteria) ->
+                List.of(new AppendCriteriaInterceptor((command, sourcingCriteria, context) ->
                                 EventCriteria.havingTags("tenant", command.metadata().get("tenantId"))
                 )),
                 delegate
@@ -237,7 +237,7 @@ class AppendCriteriaConcurrencyTest {
             return MessageStream.empty();
         });
         return new InterceptingCommandHandlingComponent(
-                List.of(new AppendCriteriaInterceptor((command, context, sourcingCriteria) -> sourcingCriteria
+                List.of(new AppendCriteriaInterceptor((command, sourcingCriteria, context) -> sourcingCriteria
                 )),
                 delegate
         );

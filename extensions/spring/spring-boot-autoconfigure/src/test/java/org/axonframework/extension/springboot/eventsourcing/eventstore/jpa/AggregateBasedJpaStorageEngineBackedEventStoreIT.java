@@ -157,7 +157,7 @@ class AggregateBasedJpaStorageEngineBackedEventStoreIT extends
             String userId = UUID.randomUUID().toString();
             CommandHandlingComponent component = registration(
                     false,
-                    (command, context, sourcingCriteria) -> EventCriteria.havingTags(new Tag("username", userId))
+                    (command, sourcingCriteria, context) -> EventCriteria.havingTags(new Tag("username", userId))
             );
 
             // when
@@ -174,7 +174,7 @@ class AggregateBasedJpaStorageEngineBackedEventStoreIT extends
             // given a command that loads nothing and declares criteria selecting the aggregate it creates
             String userId = UUID.randomUUID().toString();
             CommandHandlingComponent component = registration(
-                    false, (command, context, sourcingCriteria) -> userCriteria(userId)
+                    false, (command, sourcingCriteria, context) -> userCriteria(userId)
             );
             execute(component, userId).orTimeout(5, TimeUnit.SECONDS).join();
 
@@ -192,7 +192,7 @@ class AggregateBasedJpaStorageEngineBackedEventStoreIT extends
             // given
             String userId = UUID.randomUUID().toString();
             CommandHandlingComponent component = registration(
-                    true, (command, context, sourcingCriteria) -> sourcingCriteria
+                    true, (command, sourcingCriteria, context) -> sourcingCriteria
             );
 
             // when
@@ -209,7 +209,7 @@ class AggregateBasedJpaStorageEngineBackedEventStoreIT extends
             String userId = UUID.randomUUID().toString();
             CommandHandlingComponent component = registration(
                     true,
-                    (command, context, sourcingCriteria) ->
+                    (command, sourcingCriteria, context) ->
                             sourcingCriteria.withEventTypes(new QualifiedName("test.OtherEvent"))
             );
 
