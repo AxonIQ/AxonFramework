@@ -43,16 +43,11 @@ public class CreditCommandHandler {
         eventAppender.append(new CreditsToppedUp(command.accountId(), command.amount()));
     }
 
-    // a concurrent top-up only raises the balance, so only a concurrent CreditsUsed can invalidate this decision
+    // a concurrent top-up only raises the balance, so only a concurrent CreditsUsed can invalidate this decision;
+    // TopUpCredits has no builder and keeps its sourcing criteria
     @AppendCriteriaBuilder
     static EventCriteria appendCriteria(UseCredits command, EventCriteria sourcingCriteria) {
         return sourcingCriteria.withEventTypes(new QualifiedName(CreditsUsed.class));
-    }
-
-    // every command the class handles needs a builder, so this one keeps the sourcing criteria explicitly
-    @AppendCriteriaBuilder
-    static EventCriteria appendCriteria(TopUpCredits command, EventCriteria sourcingCriteria) {
-        return sourcingCriteria;
     }
 }
 // end::annotated-append-criteria[]

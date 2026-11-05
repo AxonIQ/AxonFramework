@@ -35,7 +35,6 @@ public class UsernameCommandHandler {
     @AppendCriteriaBuilder
     static EventCriteria appendCriteria(
             RegisterUsername command,
-            EventCriteria sourcingCriteria,
             @MetadataValue(value = "tenantId", required = true) String tenantId
     ) {
         return EventCriteria.havingTags(

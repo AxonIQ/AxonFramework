@@ -123,7 +123,7 @@ A narrower boundary avoids conflicts, and retries, on concurrent events the deci
 
 === Declaring append criteria
 
-Declare an `@AppendCriteriaBuilder` per command type on the command-handling class:
+Declare an `@AppendCriteriaBuilder` on the command-handling class, for the commands whose boundary differs:
 
 [source,java]
 ----
@@ -136,17 +136,20 @@ When the command loads several entities, the supplied criteria are the union of 
 Event types are `QualifiedName` or `String` names, and `new QualifiedName(SomeEvent.class)` gives the default name of an event class.
 For events named with `@Event`, or with a custom `MessageTypeResolver`, use `withEventTypes(MessageTypeResolver, Class<?>...)`.
 
+`@AppendCriteriaBuilder` is a `@CommandHandlerInterceptor`, so it is found and matched like any command handler interceptor.
+It does not run before the handler, though: it runs when the events are appended, once everything was sourced.
+
 Builder rules:
 
-* A builder covers the command type of its first parameter and its subtypes.
-The most specific matching builder applies, and a builder taking `CommandMessage` covers commands no other builder covers.
-* Once a class declares a builder, every command it handles needs one, or startup fails.
-To keep the default boundary for a command, return the supplied criteria, as the `TopUpCredits` builder does.
-* Builders on superclasses apply to the handlers a class declares, and for the same command type the closest declaration wins.
-A builder does not apply to handlers inherited from a superclass, and startup fails when one would be selected for such a handler.
-Declare the builder on the superclass, or redeclare the handler.
-* Further parameters can be `CommandMessage`, `Metadata`, a `String` annotated with `@MetadataValue`, `ProcessingContext`, `Configuration`, or a configured component.
-* Two builders for the same command type on one class, or an ambiguous match, fail at startup with an `AxonConfigurationException`.
+* A builder applies to the commands handled on its class whose payload is assignable to its first parameter.
+A first parameter of type `CommandMessage` applies to every command.
+The payload is converted to the handler's type first, so a builder also matches serialized commands and commands named with `@Command(name = ...)`.
+* Commands without a matching builder keep their sourcing criteria.
+* At most one builder applies to a command.
+When two builders, or a builder and an `AppendCriteriaInterceptor`, match the same command, the command fails.
+* A builder is `static` and returns `EventCriteria`, or startup fails with an `AxonConfigurationException`.
+* An `EventCriteria` parameter receives the sourcing criteria.
+Other parameters are resolved like handler parameters when the events are appended, so use parameters without side effects, such as `CommandMessage`, a `@MetadataValue`, or a configured component.
 
 === Declarative configuration
 
@@ -176,7 +179,7 @@ include::example$events/eventstoreinternals/appendcriteria/annotation/UsernameCo
 * Tag the appended events with the values the criteria use, as the example does with `tenantId`.
 * Returning the supplied criteria keeps the command unconditional.
 * Setting event types with `withEventTypes` on the supplied criteria defines a boundary where there was none, so every event of those types in the history is checked.
-A `CommandMessage` builder that does this applies it to every command that sources nothing, so give those commands their own builder.
+A `CommandMessage` builder that does this applies it to every command that sources nothing.
 * A command that sourced something checks its append criteria only after the position it read, whatever the criteria select.
 To check a key from the beginning of the history, use a command that sources nothing.
 
@@ -209,9 +212,9 @@ include::example$events/eventstoreinternals/appendcriteria/entity/Account.java[t
 `@EventCriteriaBuilder` selects the events the entity reads, and `@AppendCriteriaBuilder` selects the events a command handled by the entity conflicts with.
 Above, a withdrawal reads deposits, but a concurrent deposit cannot overdraw the account, so deposits are not part of the boundary.
 
-* Builders on an entity apply to the commands that entity handles, not to every use of the entity.
+* Builders on an entity apply to the commands that entity handles, including commands creating it, not to every use of the entity.
 * A nested entity declares builders for its own handlers, as `Card` does.
-* In a polymorphic hierarchy, a builder on the root entity covers the handlers of its subclasses.
+Builders of the parent entity also see the commands forwarded to its children, so keep them to the parent's own command types.
 
 For a declaratively built entity, register the `AppendCriteriaInterceptor` on the metamodel builder through `EntityCommandHandlerInterceptor.of`:
 
@@ -221,7 +224,7 @@ include::example$events/eventstoreinternals/appendcriteria/entity/DeclarativeEnt
 ----
 
 The interceptor covers the creational and instance commands of the entity, and the commands forwarded to its child entities.
-On a polymorphic entity, it only covers the commands the shared supertype handles, so register it on each concrete type as well.
+On a polymorphic entity, register it once on the polymorphic metamodel, which also covers the commands of its concrete types.
 
 [#conditions]
 == Append, source, and stream conditions
