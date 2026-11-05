@@ -40,6 +40,7 @@ import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.annotation.AnnotatedHandlerInspector;
 import org.axonframework.messaging.core.annotation.HandlerDefinition;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
+import org.axonframework.messaging.core.annotation.MessageIdentifier;
 import org.axonframework.messaging.core.annotation.MetadataValue;
 import org.axonframework.messaging.core.annotation.MultiParameterResolverFactory;
 import org.axonframework.messaging.core.annotation.ParameterResolver;
@@ -51,6 +52,7 @@ import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.messaging.eventstreaming.Tag;
+import org.axonframework.modelling.annotation.InjectEntity;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
@@ -373,6 +375,21 @@ class AppendCriteriaBuilderTest {
         }
 
         @Test
+        void builderInjectingAnEntityIsRejectedAtStartup() {
+            assertThatThrownBy(() -> component(new EntityInjectingBuilderHandler()))
+                    .isInstanceOf(AxonConfigurationException.class)
+                    .hasMessageContaining("must resolve without waiting");
+        }
+
+        @Test
+        void builderWithAnAnnotatedParameterOutsideTheAllowListIsRejectedAtStartup() {
+            // the allow-list starts strict on purpose: allowing more later is not a breaking change
+            assertThatThrownBy(() -> component(new MessageIdentifierBuilderHandler()))
+                    .isInstanceOf(AxonConfigurationException.class)
+                    .hasMessageContaining("must resolve without waiting");
+        }
+
+        @Test
         void nonStaticBuilderIsRejectedAtStartup() {
             assertThatThrownBy(() -> component(new NonStaticBuilderHandler()))
                     .isInstanceOf(AxonConfigurationException.class)
@@ -661,6 +678,22 @@ class AppendCriteriaBuilderTest {
         static EventCriteria all(CommandMessage command, EventCriteria sourcingCriteria) {
             invocations.add(command.payload());
             return sourcingCriteria;
+        }
+    }
+
+    static class EntityInjectingBuilderHandler extends CreditsHandlerWithoutBuilder {
+
+        @AppendCriteriaBuilder
+        static EventCriteria use(UseCredits command, @InjectEntity(idProperty = "accountId") Object account) {
+            return EventCriteria.havingAnyTag();
+        }
+    }
+
+    static class MessageIdentifierBuilderHandler extends CreditsHandlerWithoutBuilder {
+
+        @AppendCriteriaBuilder
+        static EventCriteria use(UseCredits command, @MessageIdentifier String identifier) {
+            return EventCriteria.havingAnyTag();
         }
     }
 

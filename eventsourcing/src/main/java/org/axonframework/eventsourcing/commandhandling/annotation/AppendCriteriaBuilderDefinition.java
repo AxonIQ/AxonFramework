@@ -25,11 +25,14 @@ import org.axonframework.eventsourcing.commandhandling.AppendCriteriaInterceptor
 import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.core.Context.ResourceKey;
 import org.axonframework.messaging.core.Message;
+import org.axonframework.messaging.core.Metadata;
 import org.axonframework.messaging.core.MessageHandlerInterceptorChain;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.annotation.HandlerAttributes;
 import org.axonframework.messaging.core.annotation.HandlerEnhancerDefinition;
+import org.axonframework.messaging.core.annotation.InjectComponent;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
+import org.axonframework.messaging.core.annotation.MetadataValue;
 import org.axonframework.messaging.core.annotation.WrappedMessageHandlingMember;
 import org.axonframework.messaging.core.interception.annotation.InterceptorChainParameterResolverFactory;
 import org.axonframework.messaging.core.interception.annotation.MessageHandlerInterceptorDefinition;
@@ -40,6 +43,8 @@ import org.jspecify.annotations.Nullable;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.lang.reflect.Parameter;
+import java.util.Set;
 
 /**
  * {@link HandlerEnhancerDefinition} turning {@link AppendCriteriaBuilder} methods into an
@@ -66,6 +71,13 @@ public class AppendCriteriaBuilderDefinition implements HandlerEnhancerDefinitio
      * The resource holding the sourcing criteria while an {@link AppendCriteriaBuilder} method is invoked.
      */
     static final ResourceKey<EventCriteria> SOURCING_CRITERIA = ResourceKey.withLabel("sourcingCriteria");
+
+    /**
+     * Parameter types an {@link AppendCriteriaBuilder} may declare after its payload, as they resolve without waiting.
+     */
+    private static final Set<Class<?>> IMMEDIATE_TYPES = Set.of(
+            EventCriteria.class, CommandMessage.class, Message.class, Metadata.class, ProcessingContext.class
+    );
 
     @Override
     public <T> MessageHandlingMember<T> wrapHandler(MessageHandlingMember<T> original) {
@@ -96,6 +108,26 @@ public class AppendCriteriaBuilderDefinition implements HandlerEnhancerDefinitio
                                 + delegate.signature()
                 );
             }
+            // An allow-list, like @EventCriteriaBuilder's: allowing more parameters later does not break anyone.
+            Parameter[] parameters = method.getParameters();
+            for (int i = 1; i < parameters.length; i++) {
+                if (!resolvesImmediately(parameters[i])) {
+                    throw new AxonConfigurationException(
+                            ("An @AppendCriteriaBuilder parameter must resolve without waiting, as the method runs "
+                                    + "while the append condition is finalized: [%s]. Use the command, its metadata, "
+                                    + "the sourcing criteria or a component. Violating method: %s")
+                                    .formatted(parameters[i], delegate.signature())
+                    );
+                }
+            }
+        }
+
+        private static boolean resolvesImmediately(Parameter parameter) {
+            return IMMEDIATE_TYPES.contains(parameter.getType())
+                    || AnnotationUtils.isAnnotationPresent(parameter, MetadataValue.class)
+                    || AnnotationUtils.isAnnotationPresent(parameter, InjectComponent.class)
+                    // an unannotated type is a configured component
+                    || parameter.getAnnotations().length == 0;
         }
 
         @Override

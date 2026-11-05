@@ -149,7 +149,9 @@ The payload is converted to the handler's type first, so a builder also matches 
 When two builders, or a builder and an `AppendCriteriaInterceptor`, match the same command, the command fails.
 * A builder is `static` and returns `EventCriteria`, or startup fails with an `AxonConfigurationException`.
 * An `EventCriteria` parameter receives the sourcing criteria.
-Other parameters are resolved like handler parameters when the events are appended, so use parameters without side effects, such as `CommandMessage`, a `@MetadataValue`, or a configured component.
+Other parameters are resolved when the events are appended, so they must resolve without waiting.
+As for an `@EventCriteriaBuilder`, only an allow-list is accepted, checked at startup: `CommandMessage` or `Message`, `Metadata`, a `@MetadataValue`, `ProcessingContext`, and a configured component, unannotated or through `@InjectComponent`.
+Injecting an entity, for example, fails at startup.
 
 === Declarative configuration
 

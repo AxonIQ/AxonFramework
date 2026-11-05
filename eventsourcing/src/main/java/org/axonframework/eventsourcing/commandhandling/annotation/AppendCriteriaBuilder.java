@@ -50,9 +50,14 @@ import java.lang.annotation.Target;
  *     depend on the state of the handling object, and on an entity it also covers commands creating the entity.</li>
  *     <li>A parameter of type {@code EventCriteria} receives the criteria accumulated through sourcing, across every
  *     entity the command loaded.</li>
- *     <li>Other parameters are resolved like those of any message handler, when the events are appended. Use
- *     parameters that resolve without side effects, such as the {@link CommandMessage}, a
- *     {@link org.axonframework.messaging.core.annotation.MetadataValue} or a configured component.</li>
+ *     <li>Other parameters are resolved when the events are appended, so they must resolve without waiting. Like for
+ *     an {@link org.axonframework.eventsourcing.annotation.EventCriteriaBuilder}, only these are allowed, which is
+ *     checked at startup: the {@link CommandMessage} or {@link org.axonframework.messaging.core.Message},
+ *     {@link org.axonframework.messaging.core.Metadata}, a
+ *     {@link org.axonframework.messaging.core.annotation.MetadataValue}, the
+ *     {@link org.axonframework.messaging.core.unitofwork.ProcessingContext}, and a configured component, unannotated
+ *     or through {@link org.axonframework.messaging.core.annotation.InjectComponent}. Injecting an entity is
+ *     rejected.</li>
  * </ul>
  * The rules of {@link AppendCriteriaInterceptor}, which backs this annotation, apply as well: at most one builder or
  * interceptor per command, and how a command that loaded nothing is checked.
