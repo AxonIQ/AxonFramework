@@ -19,6 +19,7 @@ package org.axonframework.eventsourcing.eventstore.jpa;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.TypedQuery;
 import org.axonframework.common.TypeReference;
+import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.common.jdbc.PersistenceExceptionResolver;
 import org.axonframework.common.tx.TransactionalExecutor;
@@ -408,7 +409,43 @@ public class AggregateBasedJpaEventStorageEngine implements EventStorageEngine {
                             .getResultList();
     }
 
-    private List<AggregateEventEntry> queryEventsBy(EntityManager entityManager, GapAwareTrackingToken token) {
+    /**
+     * Queries the next batch of {@link AggregateEventEntry entries} that follow the given {@code token}, as used by
+     * {@link #stream(StreamingCondition)}.
+     * <p>
+     * The result contains every entry with a global index higher than the given {@link GapAwareTrackingToken#getIndex()
+     * token's index}, plus any entry whose global index is among the {@link GapAwareTrackingToken#getGaps() gaps} of
+     * the token. A {@code null} token yields the entries from the start of the event store. Entries are ordered by
+     * global index (ascending), and at most {@code batchSize} entries are returned.
+     * <p>
+     * <b>Internal API:</b> this operation is exposed only so that custom integrations can adjust how this engine reads
+     * from the underlying table, for example to add database-specific hints or locking. It is not part of the public
+     * API and may change or be removed in any minor or patch release, without prior notice. Subclasses overriding it
+     * do so at their own risk and should re-verify their implementation on every upgrade.
+     * <p>
+     * Overriding implementations should be careful about the following:
+     * <ul>
+     *     <li>The result <b>must</b> be ordered by global index, ascending. The caller advances the token over the
+     *     entries in the order returned, and an out-of-order result leads to incorrect gap tracking, and thus to
+     *     skipped or duplicated events.</li>
+     *     <li>The entries at the token's gaps <b>must</b> be included. Omitting them means events that were committed
+     *     late (out of global index order) are never delivered.</li>
+     *     <li>The result size is used to detect the head of the event store: fewer than {@code batchSize} entries is
+     *     interpreted as "no more events right now". Returning more or fewer entries than the batch size for any
+     *     other reason, such as additional filtering in the query, can cause the stream to stall or to poll
+     *     needlessly. Filtering by the {@code StreamingCondition} is done by the caller, not by this operation.</li>
+     *     <li>The given {@code entityManager} belongs to a transaction owned by the caller. Do not commit, roll back or
+     *     close it.</li>
+     *     <li>This operation is invoked repeatedly while streaming, so its cost directly affects every active stream
+     *     and its polling latency.</li>
+     * </ul>
+     *
+     * @param entityManager the {@link EntityManager} to query with, participating in the caller's transaction
+     * @param token         the {@link GapAwareTrackingToken} to read beyond, or {@code null} to read from the start
+     * @return the next batch of entries, ordered by global index, containing at most {@code batchSize} entries
+     */
+    @Internal
+    protected List<AggregateEventEntry> queryEventsBy(EntityManager entityManager, GapAwareTrackingToken token) {
         TypedQuery<AggregateEventEntry> eventsByTokenQuery =
                 token == null || token.getGaps().isEmpty()
                         ? entityManager.createQuery(EVENTS_BY_TOKEN_QUERY, AggregateEventEntry.class)
