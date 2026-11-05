@@ -25,11 +25,15 @@ import org.axonframework.eventsourcing.eventstore.AppendCondition;
 import org.axonframework.eventsourcing.eventstore.AppendEventsTransactionRejectedException;
 import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.eventsourcing.eventstore.SourcingCondition;
+import org.axonframework.messaging.commandhandling.CommandBus;
+import org.axonframework.messaging.commandhandling.CommandHandlingComponent;
 import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.commandhandling.GenericCommandMessage;
 import org.axonframework.messaging.commandhandling.annotation.AnnotatedCommandHandlingComponent;
 import org.axonframework.messaging.commandhandling.annotation.Command;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
+import org.axonframework.messaging.commandhandling.gateway.CommandDispatcher;
+import org.axonframework.messaging.commandhandling.interception.InterceptingCommandHandlingComponent;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.QualifiedName;
@@ -224,12 +228,77 @@ class AppendCriteriaBuilderTest {
     }
 
     @Nested
+    class WithOtherDecisions {
+
+        @Test
+        void interceptorForAnotherCommandLeavesTheBuilderToDecide() {
+            // given an interceptor with criteria for TopUpCredits only, around a builder for UseCredits
+            CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
+                    List.of(AppendCriteriaInterceptor.create()
+                                                     .forCommand(new QualifiedName(TopUpCredits.class), s -> s)),
+                    component(new CreditsHandler())
+            );
+
+            // when
+            CompletableFuture<?> use = handle(component, command(new UseCredits("one")));
+            CompletableFuture<?> topUp = handle(component, command(new TopUpCredits("two")));
+
+            // then both commands are decided once, so neither fails as a duplicate
+            assertThat(use).succeedsWithin(5, TimeUnit.SECONDS);
+            assertThat(topUp).succeedsWithin(5, TimeUnit.SECONDS);
+            assertThat(invocations).containsExactly(new UseCredits("one"));
+        }
+
+        @Test
+        void commandDispatchedFromAHandlerIsDecidedSeparately() {
+            // given a catch-all builder on a handler that dispatches a second command while handling the first
+            CommandBus commandBus = configuration.getComponent(CommandBus.class);
+            commandBus.subscribe(component(new NestedDispatchHandler()));
+
+            // when
+            CompletableFuture<?> result = commandBus.dispatch(command(new UseCredits("outer")), null)
+                                                    .orTimeout(5, TimeUnit.SECONDS);
+
+            // then each dispatch gets its own unit of work, so the builder decides both without a duplicate failure
+            assertThat(result).succeedsWithin(5, TimeUnit.SECONDS);
+            assertThat(invocations).containsExactlyInAnyOrder(new UseCredits("outer"), new TopUpCredits("nested"));
+        }
+    }
+
+    @Nested
     class Failures {
 
         @Test
         void twoBuildersMatchingOneCommandFailTheCommand() {
             // given
             var component = component(new OverlappingBuildersHandler());
+
+            // when
+            CompletableFuture<?> result = handle(component, command(new UseCredits("one")));
+
+            // then
+            assertThatThrownBy(result::join).hasMessageContaining("already defined them for this command");
+        }
+
+        @Test
+        void superclassAndSubclassBuildersMatchingOneCommandFailTheCommand() {
+            // given
+            var component = component(new SubclassBuilderHandler());
+
+            // when
+            CompletableFuture<?> result = handle(component, command(new UseCredits("one")));
+
+            // then
+            assertThatThrownBy(result::join).hasMessageContaining("already defined them for this command");
+        }
+
+        @Test
+        void interceptorAndBuilderDecidingOneCommandFailTheCommand() {
+            // given a module-style interceptor deciding every command, around a component with a builder
+            CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
+                    List.of(new AppendCriteriaInterceptor((command, sourcingCriteria, context) -> sourcingCriteria)),
+                    component(new CreditsHandler())
+            );
 
             // when
             CompletableFuture<?> result = handle(component, command(new UseCredits("one")));
@@ -338,7 +407,7 @@ class AppendCriteriaBuilderTest {
         );
     }
 
-    private CompletableFuture<?> handle(AnnotatedCommandHandlingComponent<?> component, CommandMessage command) {
+    private CompletableFuture<?> handle(CommandHandlingComponent component, CommandMessage command) {
         return configuration.getComponent(UnitOfWorkFactory.class)
                             .create()
                             .executeWithResult(context -> component.handle(command, context)
@@ -564,6 +633,34 @@ class AppendCriteriaBuilderTest {
                     return true;
                 }
             };
+        }
+    }
+
+    static class SubclassBuilderHandler extends SupertypeBuilderHandler {
+
+        @AppendCriteriaBuilder
+        static EventCriteria use(UseCredits command, EventCriteria sourcingCriteria) {
+            return sourcingCriteria;
+        }
+    }
+
+    static class NestedDispatchHandler {
+
+        @CommandHandler
+        void handle(UseCredits command, ProcessingContext context, CommandDispatcher dispatcher) {
+            dispatcher.send(new TopUpCredits("nested")).getResultMessage().orTimeout(5, TimeUnit.SECONDS).join();
+            sourceAndAppend(context, command.accountId());
+        }
+
+        @CommandHandler
+        void handle(TopUpCredits command, ProcessingContext context) {
+            sourceAndAppend(context, command.accountId());
+        }
+
+        @AppendCriteriaBuilder
+        static EventCriteria all(CommandMessage command, EventCriteria sourcingCriteria) {
+            invocations.add(command.payload());
+            return sourcingCriteria;
         }
     }
 

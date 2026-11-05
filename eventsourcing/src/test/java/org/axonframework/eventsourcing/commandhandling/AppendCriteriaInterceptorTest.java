@@ -227,6 +227,37 @@ class AppendCriteriaInterceptorTest {
         }
 
         @Test
+        void resolverOfAnEntityCreatedWithoutLoadingReceivesTheTagsOfTheAppendedEvents() {
+            // given a creational command that appends without loading, as an entity metamodel marks it
+            AtomicReference<EventCriteria> receivedSourcingCriteria = new AtomicReference<>();
+            AtomicReference<AppendCondition> finalCondition = new AtomicReference<>();
+            SimpleCommandHandlingComponent delegate = SimpleCommandHandlingComponent.create("create-without-load");
+            delegate.subscribe(USE_CREDITS, (command, context) -> {
+                context.putResource(EntityMetamodel.CREATE_WITHOUT_LOAD, true);
+                eventStore.transaction(context).overrideAppendCondition(condition -> {
+                    finalCondition.set(condition);
+                    return condition;
+                });
+                eventStore.transaction(context).appendEvent(asEventMessage(new CreditsChanged("new")));
+                return MessageStream.empty();
+            });
+            CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
+                    List.of(new AppendCriteriaInterceptor((command, sourcingCriteria, context) -> {
+                        receivedSourcingCriteria.set(sourcingCriteria);
+                        return sourcingCriteria;
+                    })),
+                    delegate
+            );
+
+            // when
+            handleSuccessfully(component, command(USE_CREDITS, "new"));
+
+            // then the resolver receives criteria selecting the appended event's tags, checked from ORIGIN
+            assertThat(receivedSourcingCriteria.get()).isEqualTo(EventCriteria.havingTags("accountId", "new"));
+            assertThat(finalCondition.get().consistencyMarker()).isEqualTo(ConsistencyMarker.ORIGIN);
+        }
+
+        @Test
         void resolverAddingNoRestrictionLeavesANonSourcingCommandUnconditional() {
             // given a command that sources nothing, whose resolver returns the criteria it was supplied
             AtomicReference<AppendCondition> finalCondition = new AtomicReference<>();
