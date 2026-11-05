@@ -33,23 +33,33 @@ import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.QualifiedName;
+import org.axonframework.messaging.core.annotation.AnnotatedHandlerInspector;
 import org.axonframework.messaging.core.annotation.HandlerDefinition;
+import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.core.annotation.MetadataValue;
+import org.axonframework.messaging.core.annotation.MultiParameterResolverFactory;
+import org.axonframework.messaging.core.annotation.ParameterResolver;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
 import org.axonframework.messaging.core.conversion.MessageConverter;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.messaging.eventstreaming.Tag;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Executable;
+import java.lang.reflect.Parameter;
 import java.nio.charset.StandardCharsets;
+import java.util.Collection;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -253,6 +263,47 @@ class AppendCriteriaBuilderTest {
         }
 
         @Test
+        void builderWithAParameterThatIsNotAvailableYetFailsTheCommand() {
+            // given a builder parameter whose value only arrives later, while builders run synchronously on append
+            var component = component(new PendingParameterBuilderHandler(),
+                                      new PendingValueParameterResolverFactory());
+
+            // when
+            CompletableFuture<?> result = handle(component, command(new UseCredits("one")));
+
+            // then
+            assertThatThrownBy(result::join).hasMessageContaining("must have parameters available without waiting");
+        }
+
+        @Test
+        void builderInvokedOutsideAnInterceptorChainFails() {
+            // given the builder as inspected, invoked without the interceptor chain that normally runs it
+            MessageHandlingMember<? super CreditsHandler> builder =
+                    AnnotatedHandlerInspector.inspectType(CreditsHandler.class,
+                                                          configuration.getComponent(MessageTypeResolver.class),
+                                                          configuration.getComponent(ParameterResolverFactory.class),
+                                                          configuration.getComponent(HandlerDefinition.class),
+                                                          Set.of())
+                                             .getAllInterceptors()
+                                             .values()
+                                             .stream()
+                                             .flatMap(Collection::stream)
+                                             .findFirst()
+                                             .orElseThrow();
+
+            // when
+            CompletableFuture<?> result = builder.handle(command(new UseCredits("one")),
+                                                         new StubProcessingContext(),
+                                                         null)
+                                                 .first()
+                                                 .asCompletableFuture();
+
+            // then
+            assertThatThrownBy(result::join)
+                    .hasMessageContaining("only intercepts commands within an interceptor chain");
+        }
+
+        @Test
         void nonStaticBuilderIsRejectedAtStartup() {
             assertThatThrownBy(() -> component(new NonStaticBuilderHandler()))
                     .isInstanceOf(AxonConfigurationException.class)
@@ -268,9 +319,19 @@ class AppendCriteriaBuilderTest {
     }
 
     private <T> AnnotatedCommandHandlingComponent<T> component(T target) {
+        return component(target, configuration.getComponent(ParameterResolverFactory.class));
+    }
+
+    private <T> AnnotatedCommandHandlingComponent<T> component(T target, ParameterResolverFactory additionalFactory) {
+        return component(target, MultiParameterResolverFactory.ordered(
+                additionalFactory, configuration.getComponent(ParameterResolverFactory.class)
+        ));
+    }
+
+    private <T> AnnotatedCommandHandlingComponent<T> component(T target, MultiParameterResolverFactory factory) {
         return new AnnotatedCommandHandlingComponent<>(
                 target,
-                configuration.getComponent(ParameterResolverFactory.class),
+                factory,
                 configuration.getComponent(HandlerDefinition.class),
                 configuration.getComponent(MessageTypeResolver.class),
                 configuration.getComponent(MessageConverter.class)
@@ -464,6 +525,45 @@ class AppendCriteriaBuilderTest {
         @AppendCriteriaBuilder
         EventCriteria use(UseCredits command) {
             return EventCriteria.havingAnyTag();
+        }
+    }
+
+    static class PendingParameterBuilderHandler extends CreditsHandlerWithoutBuilder {
+
+        @AppendCriteriaBuilder
+        static EventCriteria use(UseCredits command, PendingValue value) {
+            return EventCriteria.havingAnyTag();
+        }
+    }
+
+    record PendingValue() {
+
+    }
+
+    /**
+     * Resolves a {@link PendingValue} parameter to a value that never arrives.
+     */
+    static class PendingValueParameterResolverFactory implements ParameterResolverFactory {
+
+        @Nullable
+        @Override
+        public ParameterResolver<PendingValue> createInstance(Executable executable,
+                                                              Parameter[] parameters,
+                                                              int parameterIndex) {
+            if (parameters[parameterIndex].getType() != PendingValue.class) {
+                return null;
+            }
+            return new ParameterResolver<>() {
+                @Override
+                public CompletableFuture<PendingValue> resolveParameterValue(ProcessingContext context) {
+                    return new CompletableFuture<>();
+                }
+
+                @Override
+                public boolean matches(ProcessingContext context) {
+                    return true;
+                }
+            };
         }
     }
 

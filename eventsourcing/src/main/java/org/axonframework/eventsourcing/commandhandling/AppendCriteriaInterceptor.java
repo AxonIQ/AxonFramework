@@ -70,6 +70,8 @@ import static java.util.Objects.requireNonNull;
  *     key without a preliminary read. Returning {@link EventCriteria#havingAnyTag()} for such a command keeps it
  *     unchecked. An entity created without loading is the exception: its resolver receives criteria selecting the
  *     tags of the appended events, which are checked from {@code ORIGIN} as well.</li>
+ *     <li>The resolver is registered before the command is handled, so an override the handler registers itself
+ *     through {@code overrideAppendCondition} is applied after it and receives the resolved criteria.</li>
  *     <li>An aggregate-based event store detects conflicts only through the sequence of each aggregate it appends
  *     to, so the resolved criteria have no effect there.</li>
  * </ul>
