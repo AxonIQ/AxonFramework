@@ -44,23 +44,21 @@ class ConcatenatingMessageStream<M extends Message> extends AbstractMessageStrea
      * - a consumer thread invoking fetchNext() and other message stream methods
      * - callback threads from the currently active stream invoking signalProgress() indirectly
      *
-     * All mutable state (streams, active, and stream lifecycle transitions) is guarded by
-     * this instance's monitor (using synchronized methods).
+     * All mutable state (streams, active, and stream lifecycle transitions) is only accessed from
+     * fetchNext(), terminalState(), onCompleted() and describeDelegates(), which AbstractMessageStream
+     * never runs concurrently with each other, and orders consecutive calls of.
      *
      * Key properties:
      * - Stream switching (closing the previous stream, selecting the next, and registering a callback)
-     *   is performed atomically under the same lock.
+     *   happens within a single fetchNext() call, so it is never observed halfway.
      * - The active stream and streams collection are always consistent with each other.
-     * - Callbacks may arrive concurrently, but any interaction with state is serialized through
-     *   the same monitor.
-     *
-     * Given the expected low contention and short critical sections, synchronized provides a
-     * simple and reliable way to enforce these guarantees.
+     * - Callbacks may arrive concurrently, but only reach this stream's signalProgress(), which
+     *   does not access this state.
      */
 
-    private final List<MessageStream<M>> streams;  // only access under synchronization
+    private final List<MessageStream<M>> streams;  // see the concurrency model above
 
-    private MessageStream<M> active;  // only access under synchronization
+    private MessageStream<M> active;  // see the concurrency model above
 
     /**
      * Construct a {@link MessageStream stream} that initially consume from the {@code first MessageStream}, followed by
