@@ -22,18 +22,27 @@ import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.TestInstance.Lifecycle;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
-import reactor.core.publisher.Sinks;
-import reactor.core.publisher.Sinks.Many;
 
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableMap;
+import java.util.Queue;
+import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
+import java.util.function.Function;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -43,6 +52,12 @@ import static org.awaitility.Awaitility.await;
 /**
  * Test suite for {@link MessageStream} implementations. To use, subclass
  * the suite and implement {@link #cases()} and/or {@link #errorCases()}.
+ * <p>
+ * Subclasses can also implement {@link #producedCases()}, with streams built on sources that a
+ * {@link Producer} feeds from threads of its own. These cases check how a stream treats its
+ * sources: that it does not read from them on the thread that signals it, that
+ * {@link MessageStream#isCompleted()} does not read from them, and that signals arriving while
+ * its consumer handles a callback are not lost.
  *
  * @author John Hendrikx
  */
@@ -58,7 +73,7 @@ public abstract class MessageStreamTestSuite {
      * @param expectedSize  the number of items the stream is expected to produce
      * @param stream        the stream under test
      */
-    protected record Case(String discriminator, int expectedSize, MessageStream<? extends Message> stream) {
+    public record Case(String discriminator, int expectedSize, MessageStream<? extends Message> stream) {
 
         /**
          * Creates a bounded test case without a discriminator label.
@@ -85,7 +100,7 @@ public abstract class MessageStreamTestSuite {
      * @param itemsBeforeError the number of items the stream is expected to produce before failing
      * @param stream           the stream under test
      */
-    protected record ErrorCase(String discriminator, int itemsBeforeError, MessageStream<? extends Message> stream) {
+    public record ErrorCase(String discriminator, int itemsBeforeError, MessageStream<? extends Message> stream) {
 
         /**
          * Creates an error test case without a discriminator label.
@@ -120,6 +135,45 @@ public abstract class MessageStreamTestSuite {
      * @return list of {@link ErrorCase} instances; defaults to an empty list
      */
     protected List<ErrorCase> errorCases() {
+        return List.of();
+    }
+
+    /**
+     * Describes a {@link MessageStream} test case built on sources produced by a {@link Producer}. The stream under
+     * test is created when the test runs, by applying {@code streamFactory} to that test's producer, which delivers
+     * the entries with indexes {@code 0} up to {@code expectedSize}, unless the stream under test drops some.
+     *
+     * @param discriminator an optional label appended to the test name to distinguish cases; may be {@code null}
+     * @param expectedSize  the number of items the stream under test is expected to produce
+     * @param streamFactory creates the stream under test from the sources of the given producer
+     */
+    public record ProducedCase(String discriminator, int expectedSize,
+                               Function<MessageStreamTestSuite.Producer, MessageStream<? extends Message>> streamFactory) {
+
+        /**
+         * Creates a produced test case without a discriminator label.
+         *
+         * @param expectedSize  the number of items the stream under test is expected to produce
+         * @param streamFactory creates the stream under test from the sources of the given producer
+         */
+        public ProducedCase(int expectedSize,
+                            Function<MessageStreamTestSuite.Producer, MessageStream<? extends Message>> streamFactory) {
+            this(null, expectedSize, streamFactory);
+        }
+
+        @Override
+        public String toString() {
+            return "produced" + (discriminator == null ? "" : "(" + discriminator + ")") + "[" + expectedSize + "]";
+        }
+    }
+
+    /**
+     * Returns the list of produced stream test cases to run. Subclasses override this method to supply the cases
+     * exercised by the inherited produced tests.
+     *
+     * @return list of {@link ProducedCase} instances; defaults to an empty list
+     */
+    protected List<ProducedCase> producedCases() {
         return List.of();
     }
 
@@ -274,6 +328,124 @@ public abstract class MessageStreamTestSuite {
         ).toList());
     }
 
+    /**
+     * Consumes the stream on the test thread, with a callback that only records that it was called. Any read from
+     * a produced source on a producer thread must then come from the stream under test reacting to a signal.
+     */
+    @ParameterizedTest(allowZeroInvocations = true, name = "{0}")
+    @MethodSource("producedCases")
+    void callbacksDoNotReadOnTheSignallingThread(ProducedCase c) throws Exception {
+        Producer producer = new Producer();
+        MessageStream<? extends Message> stream = c.streamFactory().apply(producer);
+
+        List<Message> received = consumeOnTestThread(stream, producer, false);
+
+        assertThat(received).describedAs("received").isEqualTo(range(0, c.expectedSize));
+        assertThat(producer.readsOnProducerThreads()).describedAs("reads on producer threads").isEmpty();
+    }
+
+    /**
+     * Consumes the stream like {@link #callbacksDoNotReadOnTheSignallingThread(ProducedCase)}, but before every read
+     * asks {@link MessageStream#isCompleted()} a few times, which must not read from the produced sources.
+     */
+    @ParameterizedTest(allowZeroInvocations = true, name = "{0}")
+    @MethodSource("producedCases")
+    void isCompletedDoesNotRead(ProducedCase c) throws Exception {
+        Producer producer = new Producer();
+        MessageStream<? extends Message> stream = c.streamFactory().apply(producer);
+
+        List<Message> received = consumeOnTestThread(stream, producer, true);
+
+        assertThat(received).describedAs("received").isEqualTo(range(0, c.expectedSize));
+    }
+
+    /**
+     * Holds back the consumer's first callback while all remaining entries arrive. The consumer drained the stream
+     * before that, so the stream must call it back again for it to see them.
+     */
+    @ParameterizedTest(allowZeroInvocations = true, name = "{0}")
+    @MethodSource("producedCases")
+    void signalsArrivingDuringACallbackAreNotLost(ProducedCase c) throws Exception {
+        Producer producer = new Producer();
+        MessageStream<? extends Message> stream = c.streamFactory().apply(producer);
+        List<Message> received = new ArrayList<>();
+        CountDownLatch completed = new CountDownLatch(1);
+        CountDownLatch firstCallback = new CountDownLatch(1);
+        AtomicBoolean holdFirstCallback = new AtomicBoolean(true);
+
+        stream.setCallback(() -> {
+            synchronized (received) {
+                drain(stream, received);
+            }
+
+            if (stream.isCompleted()) {
+                completed.countDown();
+            }
+            else if (holdFirstCallback.compareAndSet(true, false)) {
+                firstCallback.countDown();
+                producer.deliverRemainingAndWait();  // every remaining signal arrives while this callback runs
+            }
+        });
+
+        producer.deliverNextAndWait();
+
+        if (!firstCallback.await(2, TimeUnit.SECONDS)) {
+            producer.deliverRemainingAndWait();  // the first entry caused no callback, so there was nothing to hold
+        }
+
+        assertThat(completed.await(10, TimeUnit.SECONDS)).describedAs("completed: " + stream).isTrue();
+
+        synchronized (received) {
+            assertThat(received).describedAs("received").isEqualTo(range(0, c.expectedSize));
+        }
+    }
+
+    /**
+     * Consumes the given stream on the test thread until it completes, reading only after its callback was called.
+     * When {@code checkIsCompleted} is set, asks {@link MessageStream#isCompleted()} before every read and fails if
+     * that read from the produced sources.
+     */
+    private List<Message> consumeOnTestThread(MessageStream<? extends Message> stream,
+                                              Producer producer,
+                                              boolean checkIsCompleted) throws InterruptedException {
+        Semaphore signals = new Semaphore(0);
+        List<Message> received = new ArrayList<>();
+
+        stream.setCallback(signals::release);
+        producer.deliverAll();
+
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+
+        while (true) {
+            if (checkIsCompleted) {
+                int readsBefore = producer.reads();
+
+                stream.isCompleted();
+                stream.isCompleted();
+
+                assertThat(producer.reads()).describedAs("reads by isCompleted()").isEqualTo(readsBefore);
+            }
+
+            drain(stream, received);
+
+            if (stream.isCompleted()) {
+                return received;
+            }
+
+            long remaining = deadline - System.nanoTime();
+
+            if (!signals.tryAcquire(Math.max(0, remaining), TimeUnit.NANOSECONDS)) {
+                fail("Stream did not complete, received " + received + ": " + stream);
+            }
+        }
+    }
+
+    private static void drain(MessageStream<? extends Message> stream, List<Message> received) {
+        while (stream.hasNextAvailable()) {
+            stream.next().ifPresent(e -> received.add(e.message()));
+        }
+    }
+
     private Message next(Case c) throws Exception {
         await().alias("stream::hasNextAvailable").until(c.stream::hasNextAvailable);
 
@@ -340,325 +512,186 @@ public abstract class MessageStreamTestSuite {
         return Stream.iterate(start, e -> e != end, e -> e + 1).map(this::msg).toList();
     }
 
-    /*
-     * Inlined tests for our standard streams:
+    /**
+     * Creates sources for a {@link ProducedCase} and feeds them from producer threads of its own, the way a storage
+     * engine or a remote connection feeds a stream. Entries are delivered in index order across all sources it created,
+     * and each source is sealed right after its last entry, so the order in which entries arrive is the same on every
+     * run. The producer records every read from its sources, and which of those happened on a producer thread.
      */
+    public final class Producer {
 
-    static class EmptyTest extends MessageStreamTestSuite {
-        @Override
-        protected List<Case> cases() {
-            return List.of(
-                new Case(0, new EmptyMessageStream<>())
-            );
-        }
-    }
+        private final List<ProducedStream> streams = new ArrayList<>();
+        private final NavigableMap<Integer, ProducedStream> deliveries = new TreeMap<>();
+        private final Set<Thread> producerThreads = ConcurrentHashMap.newKeySet();
+        private final List<String> readsOnProducerThreads = new CopyOnWriteArrayList<>();
+        private final AtomicInteger reads = new AtomicInteger();
 
-    static class SingleValueTest extends MessageStreamTestSuite {
-        @Override
-        protected List<Case> cases() {
-            return List.of(
-                new Case(1, new SingleValueMessageStream<>(entry(0))),
-                new Case(1, new SingleValueMessageStream<>(delayedEntry(0)))
-            );
-        }
+        /**
+         * Creates a source that will produce the entries with the given indexes, in the given order.
+         *
+         * @param indexes the indexes of the entries this source produces, each used by one source only
+         * @return a source fed by this producer
+         */
+        public MessageStream<Message> stream(int... indexes) {
+            ProducedStream stream = new ProducedStream(streams.size());
 
-        @Override
-        protected List<ErrorCase> errorCases() {
-            return List.of(
-                new ErrorCase(0, new SingleValueMessageStream<>(CompletableFuture.failedFuture(new RuntimeException("oops")))),
-                new ErrorCase(0, new SingleValueMessageStream<>(delayedFailedEntry()))
-            );
-        }
-    }
-
-    static class FailedTest extends MessageStreamTestSuite {
-        @Override
-        protected List<ErrorCase> errorCases() {
-            return List.of(
-                new ErrorCase(0, new FailedMessageStream<>(new RuntimeException("oops")))
-            );
-        }
-    }
-
-    static class ConcatenatingTest extends MessageStreamTestSuite {
-        @Override
-        protected List<Case> cases() {
-            return List.of(
-                new Case(0, new ConcatenatingMessageStream<>(MessageStream.empty(), MessageStream.empty())),
-                new Case(3, new ConcatenatingMessageStream<>(MessageStream.empty(), MessageStream.fromItems(msg(0), msg(1), msg(2)))),
-                new Case(3, new ConcatenatingMessageStream<>(MessageStream.just(msg(0)), MessageStream.fromItems(msg(1), msg(2)))),
-                new Case(3, new ConcatenatingMessageStream<>(MessageStream.fromItems(msg(0), msg(1)), MessageStream.just(msg(2)))),
-                new Case(3, new ConcatenatingMessageStream<>(MessageStream.fromItems(msg(0), msg(1), msg(2)), MessageStream.empty()))
-            );
-        }
-
-        @Override
-        protected List<ErrorCase> errorCases() {
-            return List.of(
-                new ErrorCase(0, new ConcatenatingMessageStream<>(MessageStream.empty(), MessageStream.failed(new RuntimeException("oops")))),
-                new ErrorCase(0, new ConcatenatingMessageStream<>(MessageStream.failed(new RuntimeException("oops")), MessageStream.empty())),
-                new ErrorCase(2, new ConcatenatingMessageStream<>(MessageStream.fromItems(msg(0), msg(1)), MessageStream.failed(new RuntimeException("oops")))),
-                new ErrorCase(0, new ConcatenatingMessageStream<>(MessageStream.failed(new RuntimeException("oops")), MessageStream.fromItems(msg(0), msg(1))))
-            );
-        }
-    }
-
-    static class CloseCallbackTest extends MessageStreamTestSuite {
-        @Override
-        protected List<Case> cases() {
-            return List.of(
-                new Case(0, new CloseCallbackMessageStream<>(MessageStream.empty(), () -> {})),
-                new Case(1, new CloseCallbackMessageStream<>(MessageStream.just(msg(0)), () -> {})),
-                new Case(2, new CloseCallbackMessageStream<>(MessageStream.fromItems(msg(0), msg(1)), () -> {}))
-            );
-        }
-
-        @Override
-        protected List<ErrorCase> errorCases() {
-            return List.of(
-                new ErrorCase(0, new CloseCallbackMessageStream<>(MessageStream.failed(new RuntimeException("oops")), () -> {}))
-            );
-        }
-    }
-
-    static class CompletionCallbackTest extends MessageStreamTestSuite {
-        @Override
-        protected List<Case> cases() {
-            return List.of(
-                new Case(0, new CompletionCallbackMessageStream<>(MessageStream.empty(), () -> {})),
-                new Case(1, new CompletionCallbackMessageStream<>(MessageStream.just(msg(0)), () -> {})),
-                new Case(2, new CompletionCallbackMessageStream<>(MessageStream.fromItems(msg(0), msg(1)), () -> {}))
-            );
-        }
-
-        @Override
-        protected List<ErrorCase> errorCases() {
-            return List.of(
-                new ErrorCase(0, new CompletionCallbackMessageStream<>(MessageStream.failed(new RuntimeException("oops")), () -> {}))
-            );
-        }
-    }
-
-    static class FilteringTest extends MessageStreamTestSuite {
-        @Override
-        protected List<Case> cases() {
-            return List.of(
-                new Case(0, new FilteringMessageStream<>(MessageStream.empty(), m -> false)),
-                new Case(0, new FilteringMessageStream<>(MessageStream.empty(), m -> true)),
-                new Case(0, new FilteringMessageStream<>(MessageStream.just(msg(0)), m -> false)),
-                new Case(1, new FilteringMessageStream<>(MessageStream.just(msg(0)), m -> true)),
-                new Case(0, new FilteringMessageStream<>(MessageStream.fromItems(msg(0), msg(1)), m -> false)),
-                new Case(1, new FilteringMessageStream<>(MessageStream.fromItems(msg(0), msg(1)), m -> m.message().payload().toString().equals("0"))),
-                new Case(1, new FilteringMessageStream<>(MessageStream.fromItems(msg(1), msg(0)), m -> m.message().payload().toString().equals("0"))),
-                new Case(2, new FilteringMessageStream<>(MessageStream.fromItems(msg(0), msg(1)), m -> true))
-            );
-        }
-
-        @Override
-        protected List<ErrorCase> errorCases() {
-            return List.of(
-                new ErrorCase(0, new FilteringMessageStream<>(MessageStream.failed(new RuntimeException("oops")), m -> true))
-            );
-        }
-    }
-
-    static class FluxTest extends MessageStreamTestSuite {
-        @Override
-        protected List<Case> cases() {
-            return List.of(
-                new Case(0, new FluxMessageStream<>(reactor.core.publisher.Flux.empty())),
-                new Case(1, new FluxMessageStream<>(reactor.core.publisher.Flux.just(entry(0)))),
-                new Case(3, new FluxMessageStream<>(reactor.core.publisher.Flux.fromIterable(List.of(entry(0), entry(1), entry(2))))),
-                hotStream(0),
-                hotStream(1),
-                hotStream(3)
-            );
-        }
-
-        @Override
-        protected List<ErrorCase> errorCases() {
-            return List.of(
-                new ErrorCase(0, new FluxMessageStream<>(reactor.core.publisher.Flux.error(new RuntimeException("cold-error")))),
-                new ErrorCase(2, new FluxMessageStream<>(reactor.core.publisher.Flux.concat(
-                    reactor.core.publisher.Flux.fromIterable(List.of(entry(0), entry(1))),
-                    reactor.core.publisher.Flux.error(new RuntimeException("cold-error"))
-                ))),
-                hotErrorStream(0),
-                hotErrorStream(2)
-            );
-        }
-
-        private Case hotStream(int size) {
-            Many<Entry<Message>> sink = Sinks.many().unicast().<Entry<Message>>onBackpressureBuffer();
-            List<Entry<Message>> entries = new ArrayList<>();
-
-            for (int i = 0; i < size; i++) {
-                entries.add(entry(i));
+            for (int index : indexes) {
+                if (deliveries.put(index, stream) != null) {
+                    throw new IllegalArgumentException("Index " + index + " is produced by more than one source");
+                }
             }
 
-            Thread.ofVirtual().start(() -> {
-                for (Entry<Message> e : entries) {
-                    LockSupport.parkNanos(Duration.ofMillis(10).toNanos());
+            streams.add(stream);
 
-                    sink.tryEmitNext(e);
-                }
-
-                sink.tryEmitComplete();
-            });
-
-            return new Case("hot", size, new FluxMessageStream<>(sink.asFlux()));
+            return stream;
         }
 
-        private ErrorCase hotErrorStream(int itemsBeforeError) {
-            Many<Entry<Message>> sink = Sinks.many().unicast().<Entry<Message>>onBackpressureBuffer();
-            List<Entry<Message>> entries = new ArrayList<>();
+        int reads() {
+            return reads.get();
+        }
 
-            for (int i = 0; i < itemsBeforeError; i++) {
-                entries.add(entry(i));
+        List<String> readsOnProducerThreads() {
+            return readsOnProducerThreads;
+        }
+
+        /**
+         * Delivers all entries from a producer thread, a few milliseconds apart, without waiting for that.
+         */
+        void deliverAll() {
+            startProducer(() -> {
+                while (deliverNext()) {
+                    LockSupport.parkNanos(Duration.ofMillis(5).toNanos());
+                }
+            });
+        }
+
+        /**
+         * Delivers the next entry from a producer thread, and waits until that was done.
+         */
+        void deliverNextAndWait() throws InterruptedException {
+            join(startProducer(this::deliverNext));
+        }
+
+        /**
+         * Delivers all remaining entries from a producer thread, and waits until that was done.
+         */
+        void deliverRemainingAndWait() {
+            try {
+                join(startProducer(() -> {
+                    while (deliverNext()) {
+                        // deliver everything
+                    }
+                }));
+            }
+            catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+
+                throw new IllegalStateException(e);
+            }
+        }
+
+        /**
+         * Delivers the next entry, then seals every source that has nothing left to deliver.
+         *
+         * @return {@code true} if more entries remain to be delivered
+         */
+        private boolean deliverNext() {
+            Map.Entry<Integer, ProducedStream> next;
+
+            synchronized (this) {
+                next = deliveries.pollFirstEntry();
             }
 
-            Thread.ofVirtual().start(() -> {
-                for (Entry<Message> e : entries) {
-                    LockSupport.parkNanos(Duration.ofMillis(10).toNanos());
+            if (next != null) {
+                next.getValue().deliver(entry(next.getKey()));
+            }
 
-                    sink.tryEmitNext(e);
+            for (ProducedStream stream : streams) {
+                boolean finished;
+
+                synchronized (this) {
+                    finished = !deliveries.containsValue(stream);
                 }
 
-                sink.tryEmitError(new RuntimeException("hot-error"));
-            });
+                if (finished) {
+                    stream.seal();
+                }
+            }
 
-            return new ErrorCase("hot", itemsBeforeError, new FluxMessageStream<>(sink.asFlux()));
-        }
-    }
-
-    static class IgnoreEntriesTest extends MessageStreamTestSuite {
-        @Override
-        protected List<Case> cases() {
-            return List.of(
-                new Case(0, new IgnoredEntriesMessageStream<>(MessageStream.empty())),
-                new Case(0, new IgnoredEntriesMessageStream<>(MessageStream.just(msg(0)))),
-                new Case(0, new IgnoredEntriesMessageStream<>(MessageStream.fromItems(msg(0), msg(1))))
-            );
+            synchronized (this) {
+                return !deliveries.isEmpty();
+            }
         }
 
-        @Override
-        protected List<ErrorCase> errorCases() {
-            return List.of(
-                new ErrorCase(0, new IgnoredEntriesMessageStream<>(MessageStream.failed(new RuntimeException("oops"))))
-            );
-        }
-    }
+        private Thread startProducer(Runnable action) {
+            Thread thread = Thread.ofPlatform().name("producer").unstarted(action);
 
-    static class IteratorTest extends MessageStreamTestSuite {
-        @Override
-        protected List<Case> cases() {
-            return List.of(
-                new Case(0, new IteratorMessageStream<>(List.<Entry<Message>>of().iterator())),
-                new Case(1, new IteratorMessageStream<>(List.of(entry(0)).iterator())),
-                new Case(3, new IteratorMessageStream<>(List.of(entry(0), entry(1), entry(2)).iterator()))
-            );
+            producerThreads.add(thread);
+            thread.start();
+
+            return thread;
         }
 
-        @Override
-        protected List<ErrorCase> errorCases() {
-            return List.of(
-                new ErrorCase(0, new IteratorMessageStream<>(new Iterator<>() {
-                    @Override
-                    public boolean hasNext() {
-                        throw new RuntimeException("Bad iterator");
-                    }
-
-                    @Override
-                    public Entry<Message> next() {
-                        throw new RuntimeException("Bad iterator");
-                    }
-                }))
-            );
-        }
-    }
-
-    static class OnErrorContinueTest extends MessageStreamTestSuite {
-        @Override
-        protected List<Case> cases() {
-            return List.of(
-                new Case(0, new OnErrorContinueMessageStream<>(MessageStream.empty(), e -> { throw new AssertionError(); })),
-                new Case(0, new OnErrorContinueMessageStream<>(new SingleValueMessageStream<>(delayedFailedEntry()), e -> MessageStream.empty())),
-                new Case(0, new OnErrorContinueMessageStream<>(MessageStream.failed(new RuntimeException("oops")), e -> MessageStream.empty())),
-                new Case(2, new OnErrorContinueMessageStream<>(MessageStream.fromItems(msg(0), msg(1)), e -> { throw new AssertionError(); })),
-                new Case(2, new OnErrorContinueMessageStream<>(new SingleValueMessageStream<>(delayedFailedEntry()), e -> MessageStream.fromItems(msg(0), msg(1)))),
-                new Case(2, new OnErrorContinueMessageStream<>(MessageStream.failed(new RuntimeException("oops")), e -> MessageStream.fromItems(msg(0), msg(1))))
-            );
+        private void join(Thread thread) throws InterruptedException {
+            if (!thread.join(Duration.ofSeconds(10))) {
+                throw new IllegalStateException("Producer did not finish delivering");
+            }
         }
 
-        @Override
-        protected List<ErrorCase> errorCases() {
-            return List.of(
-                new ErrorCase(0, new OnErrorContinueMessageStream<>(MessageStream.failed(new RuntimeException("oops-1")), e -> MessageStream.failed(new RuntimeException("oops-2"))))
-            );
-        }
-    }
+        /**
+         * Source fed by its {@link Producer}. Reports completion from what it holds, without reading.
+         */
+        private final class ProducedStream extends AbstractMessageStream<Message> {
 
-    static class TruncateFirstTest extends MessageStreamTestSuite {
-        @Override
-        protected List<Case> cases() {
-            return List.of(
-                new Case(0, new TruncateFirstMessageStream<>(MessageStream.empty())),
-                new Case(1, new TruncateFirstMessageStream<>(MessageStream.just(msg(0)))),
-                new Case(1, new TruncateFirstMessageStream<>(MessageStream.fromItems(msg(0), msg(1)))),
-                new Case(1, new TruncateFirstMessageStream<>(new SingleValueMessageStream<>(delayedEntry(0))))
-            );
-        }
+            private final Queue<Entry<Message>> buffer = new ConcurrentLinkedQueue<>();
+            private final int number;
+            private volatile boolean sealed;
 
-        @Override
-        protected List<ErrorCase> errorCases() {
-            return List.of(
-                new ErrorCase(0, new TruncateFirstMessageStream<>(MessageStream.failed(new RuntimeException("oops")))),
-                new ErrorCase(0, new TruncateFirstMessageStream<>(new SingleValueMessageStream<>(CompletableFuture.failedFuture(new RuntimeException("oops")))))
-            );
-        }
-    }
+            ProducedStream(int number) {
+                this.number = number;
+            }
 
-    static class FlatMappedTest extends MessageStreamTestSuite {
-        @Override
-        protected List<Case> cases() {
-            return List.of(
-                new Case(0, new FlatMappedMessageStream<>(MessageStream.empty(), e -> MessageStream.just(e.message()))),
-                new Case(1, new FlatMappedMessageStream<>(MessageStream.just(msg(0)), e -> MessageStream.just(e.message()))),
-                new Case(3, new FlatMappedMessageStream<>(MessageStream.fromItems(msg(0), msg(1), msg(2)), e -> MessageStream.just(e.message()))),
-                new Case("filtered-all", 0, new FlatMappedMessageStream<>(MessageStream.fromItems(msg(0), msg(1)), e -> MessageStream.empty())),
-                new Case("1-to-3", 3, new FlatMappedMessageStream<>(MessageStream.just(msg(0)), e -> MessageStream.fromItems(msg(0), msg(1), msg(2)))),
-                new Case("async-inner", 1, new FlatMappedMessageStream<>(MessageStream.just(msg(0)), e -> new SingleValueMessageStream<>(delayedEntry(0))))
-            );
-        }
+            void deliver(Entry<Message> entry) {
+                buffer.add(entry);
+                signalProgress();
+            }
 
-        @Override
-        protected List<ErrorCase> errorCases() {
-            return List.of(
-                new ErrorCase(0, new FlatMappedMessageStream<>(MessageStream.failed(new RuntimeException("oops")), e -> MessageStream.just(e.message()))),
-                new ErrorCase(2, new FlatMappedMessageStream<>(MessageStream.fromItems(msg(0), msg(1)).concatWith(MessageStream.failed(new RuntimeException("oops"))), e -> MessageStream.just(e.message()))),
-                new ErrorCase("inner-error", 0, new FlatMappedMessageStream<>(MessageStream.just(msg(0)), e -> MessageStream.failed(new RuntimeException("inner-oops"))))
-            );
-        }
-    }
+            void seal() {
+                if (!sealed) {
+                    sealed = true;
+                    signalProgress();
+                }
+            }
 
-    static class MapMultiTest extends MessageStreamTestSuite {
-        @Override
-        protected List<Case> cases() {
-            return List.of(
-                new Case(0, new MapMultiMessageStream<>(MessageStream.empty(), (e, c) -> c.accept(e))),
-                new Case(1, new MapMultiMessageStream<>(MessageStream.just(msg(0)), (e, c) -> c.accept(e))),
-                new Case(3, new MapMultiMessageStream<>(MessageStream.fromItems(msg(0), msg(1), msg(2)), (e, c) -> c.accept(e))),
-                new Case("filtered-all", 0, new MapMultiMessageStream<>(MessageStream.fromItems(msg(0), msg(1)), (e, c) -> {})),
-                new Case("async", 1, new MapMultiMessageStream<>(new SingleValueMessageStream<>(delayedEntry(0)), (e, c) -> c.accept(e)))
-            );
-        }
+            @Override
+            protected FetchResult<Entry<Message>> fetchNext() {
+                reads.incrementAndGet();
 
-        @Override
-        protected List<ErrorCase> errorCases() {
-            return List.of(
-                new ErrorCase(0, new MapMultiMessageStream<>(MessageStream.failed(new RuntimeException("oops")), (e, c) -> c.accept(e))),
-                new ErrorCase(2, new MapMultiMessageStream<>(MessageStream.fromItems(msg(0), msg(1)).concatWith(MessageStream.failed(new RuntimeException("oops"))), (e, c) -> c.accept(e)))
-            );
+                if (producerThreads.contains(Thread.currentThread())) {
+                    readsOnProducerThreads.add("source " + number + " was read on a producer thread");
+                }
+
+                boolean sealedNow = sealed;  // read before the buffer, as entries are added until it is sealed
+                Entry<Message> entry = buffer.poll();
+
+                if (entry != null) {
+                    return FetchResult.of(entry);
+                }
+
+                return sealedNow ? FetchResult.completed() : FetchResult.notReady();
+            }
+
+            @Override
+            protected FetchResult.NoValue<Entry<Message>> terminalState() {
+                boolean sealedNow = sealed;
+
+                return sealedNow && buffer.isEmpty() ? FetchResult.completed() : FetchResult.notReady();
+            }
+
+            @Override
+            protected String describeFlags() {
+                return "source-" + number + (sealed ? "|SEALED" : "");
+            }
         }
     }
 }
