@@ -52,6 +52,8 @@ updates:
       versions: [ "[3.37.0,)" ]
     - dependency-name: "org.apache.maven:apache-maven"
       versions: [ "3.10.0" ]
+    # The examples use the Axoniq Framework snapshot on purpose, to match this reactor; a release is not an upgrade.
+    - dependency-name: "io.axoniq.framework:*"
 
 
 - package-ecosystem: maven
