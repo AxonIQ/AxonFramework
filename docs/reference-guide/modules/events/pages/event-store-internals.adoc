@@ -118,7 +118,7 @@ Sourcing criteria select the events that rebuild state.
 Append criteria select the concurrent events that conflict with a command's decision.
 By default, the append criteria of a command are its complete sourcing criteria: the OR-union of everything it sourced.
 
-A command can narrow or replace that boundary.
+A command can narrow or replace that boundary when possible and/or necessary.
 A narrower boundary avoids conflicts, and retries, on concurrent events the decision does not depend on.
 
 === Declaring append criteria
@@ -136,6 +136,17 @@ When the command loads several entities, the supplied criteria are the union of 
 Event types are `QualifiedName` or `String` names, and `new QualifiedName(SomeEvent.class)` gives the default name of an event class.
 For events named with `@Event`, or with a custom `MessageTypeResolver`, use `withEventTypes(MessageTypeResolver, Class<?>...)`.
 
+An event-sourced entity that handles commands declares append criteria the same way, next to its `@EventCriteriaBuilder`:
+
+[source,java]
+----
+include::example$events/eventstoreinternals/appendcriteria/entity/Account.java[tag=entity-owned-append-criteria,indent=0]
+----
+
+`@EventCriteriaBuilder` selects the events the entity reads, and `@AppendCriteriaBuilder` selects the events a command handled by the entity conflicts with.
+Above, a withdrawal reads deposits, but a concurrent deposit cannot overdraw the account, so deposits are not part of the boundary.
+Builders on an entity apply to the commands that entity handles, including commands creating it, not to every use of the entity.
+
 `@AppendCriteriaBuilder` is a `@CommandHandlerInterceptor`, so it is found and matched like any command handler interceptor.
 It does not run before the handler, though: it runs when the events are appended, once everything was sourced.
 
@@ -147,6 +158,8 @@ The payload is converted to the handler's type first, so a builder also matches 
 * Commands without a matching builder keep their sourcing criteria.
 * At most one builder applies to a command.
 When two builders, or a builder and an `AppendCriteriaInterceptor`, match the same command, the command fails.
+* A nested entity declares builders for its own handlers, as `Card` does above.
+Builders of the parent entity also see the commands forwarded to its children, so keep them to the parent's own command types.
 * A builder is `static` and returns `EventCriteria`, or startup fails with an `AxonConfigurationException`.
 * An `EventCriteria` parameter receives the sourcing criteria.
 Other parameters are resolved when the events are appended, so they must resolve without waiting.
@@ -171,6 +184,16 @@ To decide for every command of every component in the module, pass one `AppendCr
 That resolver receives the command as dispatched, so read a serialized payload with `payloadAs`.
 Criteria registered with `forCommand` take precedence over it for their command.
 A command whose criteria more than one resolver decides, for example a builder and an interceptor, fails.
+
+For a declaratively built entity, register the interceptor on the metamodel builder through `EntityCommandHandlerInterceptor.of`:
+
+[source,java]
+----
+include::example$events/eventstoreinternals/appendcriteria/entity/DeclarativeEntityAppendCriteria.java[tag=declarative-entity-append-criteria,indent=0]
+----
+
+The interceptor covers the creational and instance commands of the entity, and the commands forwarded to its child entities.
+On a polymorphic entity, register it once on the polymorphic metamodel, which also covers the commands of its concrete types.
 
 === Commands without sourcing
 
@@ -199,41 +222,13 @@ Keep the default boundary when that order matters more than avoiding retries, fo
 A builder is a static method, so its result can be tested without running a command.
 Assert with `criteria.matches(eventType, tags)` that it selects the events the decision depends on, as an event type name that matches nothing silently selects nothing.
 
-[IMPORTANT]
-====
+=== Aggregate-based storage
+
 Aggregate-based storage detects conflicts only through the sequence numbers of the aggregates it appends to.
 It does not check append criteria, so an append criteria builder has no effect there.
 A command that sourced an aggregate still conflicts with any concurrent event of that aggregate, whatever its builder returns.
 A command that sourced nothing only conflicts when it creates an aggregate that already exists.
 Reserving a unique key, as in the `UsernameCommandHandler` example, requires a criteria-aware event store.
-====
-
-[#entity_owned_command_append_criteria]
-=== Entity-owned command handlers
-
-An event-sourced entity that handles commands declares append criteria the same way, next to its `@EventCriteriaBuilder`:
-
-[source,java]
-----
-include::example$events/eventstoreinternals/appendcriteria/entity/Account.java[tag=entity-owned-append-criteria,indent=0]
-----
-
-`@EventCriteriaBuilder` selects the events the entity reads, and `@AppendCriteriaBuilder` selects the events a command handled by the entity conflicts with.
-Above, a withdrawal reads deposits, but a concurrent deposit cannot overdraw the account, so deposits are not part of the boundary.
-
-* Builders on an entity apply to the commands that entity handles, including commands creating it, not to every use of the entity.
-* A nested entity declares builders for its own handlers, as `Card` does.
-Builders of the parent entity also see the commands forwarded to its children, so keep them to the parent's own command types.
-
-For a declaratively built entity, register the `AppendCriteriaInterceptor` on the metamodel builder through `EntityCommandHandlerInterceptor.of`:
-
-[source,java]
-----
-include::example$events/eventstoreinternals/appendcriteria/entity/DeclarativeEntityAppendCriteria.java[tag=declarative-entity-append-criteria,indent=0]
-----
-
-The interceptor covers the creational and instance commands of the entity, and the commands forwarded to its child entities.
-On a polymorphic entity, register it once on the polymorphic metamodel, which also covers the commands of its concrete types.
 
 [#conditions]
 == Append, source, and stream conditions

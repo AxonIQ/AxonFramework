@@ -30,16 +30,10 @@ public class DeclarativeEntityAppendCriteria {
     //                                 .messagingModel(DeclarativeEntityAppendCriteria::messagingModel)
     public static EntityMetamodel<CreditBalance> messagingModel(Configuration configuration,
                                                                 EntityMetamodelBuilder<CreditBalance> builder) {
-        AppendCriteriaInterceptor appendCriteria = new AppendCriteriaInterceptor(
-                (command, sourcingCriteria, context) -> switch (command.type().qualifiedName().fullName()) {
-                    case "credits.UseCredits" ->
-                            sourcingCriteria.withEventTypes(new QualifiedName(CreditsUsed.class));
-                    case "credits.TopUpCredits" -> sourcingCriteria;
-                    default -> throw new IllegalArgumentException(
-                            "Unsupported command: " + command.type().qualifiedName()
-                    );
-                }
-        );
+        AppendCriteriaInterceptor appendCriteria = AppendCriteriaInterceptor
+                .create()
+                .forCommand(new QualifiedName("credits.UseCredits"),
+                            sourcingCriteria -> sourcingCriteria.withEventTypes(new QualifiedName(CreditsUsed.class)));
         return builder
                 .instanceCommandHandler(new QualifiedName("credits.UseCredits"),
                                         (command, balance, context) -> MessageStream.empty().cast())
