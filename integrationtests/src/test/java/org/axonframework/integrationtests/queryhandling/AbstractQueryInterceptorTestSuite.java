@@ -71,8 +71,7 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
         @Test
         void dispatchModifyRequestMessage() {
             // given
-            AxonConfiguration interceptingConfig = createMessagingConfigurer()
-                    .build();
+            AxonConfiguration interceptingConfig = createMessagingConfigurer().start();
             try {
                 QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
 
@@ -105,7 +104,7 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
             AxonConfiguration interceptingConfig = createMessagingConfigurer()
                     .registerQueryDispatchInterceptor(config -> dispatchInterceptor1)
                     .registerQueryDispatchInterceptor(config -> dispatchInterceptor2)
-                    .build();
+                    .start();
             try {
                 QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
 
@@ -143,7 +142,7 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
             AxonConfiguration interceptingConfig = createMessagingConfigurer()
                     .registerQueryDispatchInterceptor(config -> dispatchInterceptor1)
                     .registerQueryDispatchInterceptor(config -> dispatchInterceptor2)
-                    .build();
+                    .start();
             try {
                 QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
 
@@ -179,7 +178,7 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
 
             AxonConfiguration interceptingConfig = createMessagingConfigurer()
                     .registerQueryDispatchInterceptor(config -> countingInterceptor)
-                    .build();
+                    .start();
             try {
                 QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
 
@@ -211,7 +210,7 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
 
             AxonConfiguration interceptingConfig = createMessagingConfigurer()
                     .registerQueryDispatchInterceptor(config -> throwingInterceptor)
-                    .build();
+                    .start();
             try {
                 QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
 
@@ -242,7 +241,7 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
 
             AxonConfiguration interceptingConfig = createMessagingConfigurer()
                     .registerQueryDispatchInterceptor(config -> failingInterceptor)
-                    .build();
+                    .start();
             try {
                 QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
 
@@ -281,7 +280,7 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
             AxonConfiguration interceptingConfig = createMessagingConfigurer()
                     .registerQueryHandlerInterceptor(config -> handlerInterceptor1)
                     .registerQueryHandlerInterceptor(config -> handlerInterceptor2)
-                    .build();
+                    .start();
             try {
                 QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
 
@@ -317,7 +316,7 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
             AxonConfiguration interceptingConfig = createMessagingConfigurer()
                     .registerQueryHandlerInterceptor(config -> handlerInterceptor1)
                     .registerQueryHandlerInterceptor(config -> handlerInterceptor2)
-                    .build();
+                    .start();
             try {
                 QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
 
@@ -352,7 +351,7 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
 
             AxonConfiguration interceptingConfig = createMessagingConfigurer()
                     .registerQueryHandlerInterceptor(config -> countingInterceptor)
-                    .build();
+                    .start();
             try {
                 QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
 
@@ -382,7 +381,7 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
             // given
 
             AxonConfiguration interceptingConfig = createMessagingConfigurer()
-                    .build();
+                    .start();
             try {
                 QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
 
@@ -414,7 +413,7 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
 
             AxonConfiguration interceptingConfig = createMessagingConfigurer()
                     .registerQueryHandlerInterceptor(config -> failingInterceptor)
-                    .build();
+                    .start();
             try {
                 QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
 
@@ -448,7 +447,7 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
 
             AxonConfiguration interceptingConfig = createMessagingConfigurer()
                     .registerDispatchInterceptor(config -> failingInterceptor)
-                    .build();
+                    .start();
             try {
                 QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
 
@@ -510,7 +509,7 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
             AxonConfiguration interceptingConfig = createMessagingConfigurer()
                     .registerQueryHandlerInterceptor(config -> handlerInterceptor1)
                     .registerQueryHandlerInterceptor(config -> handlerInterceptor2)
-                    .build();
+                    .start();
             try {
                 QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
 
@@ -553,7 +552,7 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
             AxonConfiguration interceptingConfig = createMessagingConfigurer()
                     .registerQueryDispatchInterceptor(config -> dispatchInterceptor1)
                     .registerQueryDispatchInterceptor(config -> dispatchInterceptor2)
-                    .build();
+                    .start();
             try {
                 QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
 
@@ -605,7 +604,7 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
             AxonConfiguration interceptingConfig = createMessagingConfigurer()
                     .registerQueryDispatchInterceptor(config -> dispatchInterceptor1)
                     .registerQueryDispatchInterceptor(config -> dispatchInterceptor2)
-                    .build();
+                    .start();
             try {
                 QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
 
@@ -660,7 +659,7 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
             AxonConfiguration interceptingConfig = createMessagingConfigurer()
                     .registerDispatchInterceptor(config -> genericInterceptor1)
                     .registerDispatchInterceptor(config -> genericInterceptor2)
-                    .build();
+                    .start();
             try {
                 QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
 
@@ -721,7 +720,7 @@ public abstract class AbstractQueryInterceptorTestSuite extends AbstractQueryTes
 
             AxonConfiguration interceptingConfig = createMessagingConfigurer()
                     .registerDispatchInterceptor(config -> genericFailingInterceptor)
-                    .build();
+                    .start();
             try {
                 QueryBus interceptingQueryBus = interceptingConfig.getComponent(QueryBus.class);
 
