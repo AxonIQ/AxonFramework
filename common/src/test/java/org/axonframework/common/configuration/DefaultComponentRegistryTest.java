@@ -258,6 +258,32 @@ class DefaultComponentRegistryTest {
     }
 
     @Test
+    void canRegisterMultipleEnhancersOfTheSameTypeUnderDifferentNames() {
+        AtomicInteger invocationCounter = new AtomicInteger(0);
+        ConfigurationEnhancer enhancer1 = registry -> invocationCounter.incrementAndGet();
+        ConfigurationEnhancer enhancer2 = registry -> invocationCounter.incrementAndGet();
+
+        testSubject.registerEnhancer("first", enhancer1)
+                   .registerEnhancer("second", enhancer2);
+
+        testSubject.build(mock());
+
+        assertEquals(2, invocationCounter.get());
+    }
+
+    @Test
+    void registerEnhancerWithTypeAndNameCombination() {
+        AtomicBoolean invoked = new AtomicBoolean(false);
+        ConfigurationEnhancer enhancer = registry -> invoked.set(true);
+
+        testSubject.registerEnhancer(ConfigurationEnhancer.class, "named", enhancer);
+
+        testSubject.build(mock());
+
+        assertTrue(invoked.get());
+    }
+
+    @Test
     void buildWillScanAndCallEnhancersFromClasspathIfNotDisabled() {
         TestConfigurationEnhancer.withActiveTestEnhancer(() -> {
             testSubject.build(new StubLifecycleRegistry());
