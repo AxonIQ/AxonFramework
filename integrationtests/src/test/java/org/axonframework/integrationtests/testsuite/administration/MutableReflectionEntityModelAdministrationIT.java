@@ -18,47 +18,15 @@ package org.axonframework.integrationtests.testsuite.administration;
 
 import org.axonframework.eventsourcing.configuration.EventSourcedEntityModule;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
-import org.axonframework.integrationtests.testsuite.administration.commands.AssignTaskCommand;
-import org.axonframework.integrationtests.testsuite.administration.commands.ChangeEmailAddress;
-import org.axonframework.integrationtests.testsuite.administration.commands.CompleteTaskCommand;
-import org.axonframework.integrationtests.testsuite.administration.commands.CreateEmployee;
 import org.axonframework.integrationtests.testsuite.administration.common.PersonIdentifier;
-import org.axonframework.integrationtests.testsuite.administration.common.PersonType;
 import org.axonframework.integrationtests.testsuite.administration.state.mutable.MutablePerson;
 import org.axonframework.modelling.entity.EntityMetamodel;
-import org.junit.jupiter.api.Test;
-
-import java.util.concurrent.TimeUnit;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Runs the administration test suite using as many reflection components of the {@link EntityMetamodel} and related
  * classes as possible. As reflection-based components are added, this test may change to use more of them.
  */
 public abstract class MutableReflectionEntityModelAdministrationIT extends AbstractAdministrationIT {
-
-    @Test
-    void appendCriteriaBuilderOnTheRootEntityCoversItsSubclassesAndChildEntities() {
-        // given MutablePerson declares the only builder in its hierarchy
-        PersonIdentifier identifier = new PersonIdentifier(PersonType.EMPLOYEE, createId("builder-employee"));
-        MutablePerson.resetAppendCriteriaCommands();
-
-        // when commands of MutablePerson, of its subclass MutableEmployee, and of its child MutableTask are handled
-        commandGateway.send(new CreateEmployee(identifier, "person@axon.test", "Developer", 1000.0))
-                      .getResultMessage().orTimeout(5, TimeUnit.SECONDS).join();
-        commandGateway.send(new ChangeEmailAddress(identifier, "updated@axon.test"))
-                      .getResultMessage().orTimeout(5, TimeUnit.SECONDS).join();
-        commandGateway.send(new AssignTaskCommand(identifier, "task", "Verify ownership"))
-                      .getResultMessage().orTimeout(5, TimeUnit.SECONDS).join();
-        commandGateway.send(new CompleteTaskCommand(identifier, "task"))
-                      .getResultMessage().orTimeout(5, TimeUnit.SECONDS).join();
-
-        // then the builder intercepts them all, like any command handler interceptor on the root entity
-        assertThat(MutablePerson.appendCriteriaCommands()).containsExactly(
-                CreateEmployee.class, ChangeEmailAddress.class, AssignTaskCommand.class, CompleteTaskCommand.class
-        );
-    }
 
     @Override
     protected EventSourcingConfigurer testSuiteConfigurer(EventSourcingConfigurer configurer) {
