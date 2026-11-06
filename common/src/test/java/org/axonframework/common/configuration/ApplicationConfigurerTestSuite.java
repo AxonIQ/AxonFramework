@@ -1228,6 +1228,32 @@ public abstract class ApplicationConfigurerTestSuite<C extends ApplicationConfig
         }
 
         @Test
+        protected void registerEnhancerWithNameAllowsMultipleEnhancersOfSameClass() {
+            AtomicInteger counter = new AtomicInteger(0);
+            ConfigurationEnhancer enhancer1 = registry -> counter.incrementAndGet();
+            ConfigurationEnhancer enhancer2 = registry -> counter.incrementAndGet();
+
+            testSubject.componentRegistry(cr -> cr.registerEnhancer("enhancer1", enhancer1)
+                                                  .registerEnhancer("enhancer2", enhancer2));
+
+            buildConfiguration();
+
+            assertEquals(2, counter.get());
+        }
+
+        @Test
+        protected void registerEnhancerWithTypeAndNameRegistersEnhancer() {
+            AtomicBoolean invoked = new AtomicBoolean(false);
+            ConfigurationEnhancer enhancer = registry -> invoked.set(true);
+
+            testSubject.componentRegistry(cr -> cr.registerEnhancer(ConfigurationEnhancer.class, "customName", enhancer));
+
+            buildConfiguration();
+
+            assertTrue(invoked.get());
+        }
+
+        @Test
         protected void registeredEnhancersAreInvokedDuringBuild() {
             AtomicBoolean invoked = new AtomicBoolean(false);
 
