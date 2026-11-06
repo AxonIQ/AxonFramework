@@ -38,10 +38,15 @@ import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.annotation.AnnotatedHandlerInspector;
+import org.axonframework.messaging.core.annotation.AnnotatedMessageHandlingMemberDefinition;
+import org.axonframework.messaging.core.annotation.ClasspathHandlerEnhancerDefinition;
 import org.axonframework.messaging.core.annotation.HandlerDefinition;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.core.annotation.MessageIdentifier;
+import org.axonframework.messaging.core.annotation.InjectComponent;
 import org.axonframework.messaging.core.annotation.MetadataValue;
+import org.axonframework.messaging.core.annotation.MultiHandlerDefinition;
+import org.axonframework.messaging.core.annotation.MultiHandlerEnhancerDefinition;
 import org.axonframework.messaging.core.annotation.MultiParameterResolverFactory;
 import org.axonframework.messaging.core.annotation.ParameterResolver;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
@@ -166,6 +171,32 @@ class AppendCriteriaBuilderTest {
         }
 
         @Test
+        void builderDecidesItsCommandOnceWhenTheHandlerEnhancersAreComposedTwice() {
+            // given the classpath enhancers twice, as when a framework composes them from several sources
+            MultiHandlerEnhancerDefinition classpathEnhancers = ClasspathHandlerEnhancerDefinition.forClass(getClass());
+            var handlerDefinition = MultiHandlerDefinition.ordered(
+                    List.of(new AnnotatedMessageHandlingMemberDefinition()),
+                    MultiHandlerEnhancerDefinition.ordered(classpathEnhancers, classpathEnhancers)
+            );
+            var component = new AnnotatedCommandHandlingComponent<>(
+                    new CreditsHandler(),
+                    configuration.getComponent(ParameterResolverFactory.class),
+                    handlerDefinition,
+                    configuration.getComponent(MessageTypeResolver.class),
+                    configuration.getComponent(MessageConverter.class)
+            );
+
+            // when
+            handle(component, command(new UseCredits("one"))).join();
+
+            // then the builder is wrapped once, so it does not count as a second decision for the command
+            assertThat(invocations).hasSize(1);
+            assertThat(appendConditions).singleElement()
+                                        .extracting(AppendCondition::criteria)
+                                        .isEqualTo(ACCOUNT_ONE.withEventTypes(CREDITS_USED));
+        }
+
+        @Test
         void builderReceivesTheSerializedPayloadConvertedForTheHandler() {
             // given a payload as it arrives from a distributed command bus
             var component = component(new CreditsHandler());
@@ -194,7 +225,10 @@ class AppendCriteriaBuilderTest {
 
             // then
             assertThat(invocations).containsExactly(
-                    ACCOUNT_ONE, "acme", configuration.getComponent(MessageTypeResolver.class)
+                    ACCOUNT_ONE,
+                    "acme",
+                    configuration.getComponent(MessageTypeResolver.class),
+                    configuration.getComponent(EventStore.class)
             );
         }
     }
@@ -558,8 +592,9 @@ class AppendCriteriaBuilderTest {
         static EventCriteria criteria(UseCredits command,
                                       EventCriteria sourcingCriteria,
                                       @MetadataValue("tenantId") String tenantId,
-                                      MessageTypeResolver messageTypeResolver) {
-            invocations.addAll(List.of(sourcingCriteria, tenantId, messageTypeResolver));
+                                      MessageTypeResolver messageTypeResolver,
+                                      @InjectComponent EventStore eventStore) {
+            invocations.addAll(List.of(sourcingCriteria, tenantId, messageTypeResolver, eventStore));
             return sourcingCriteria;
         }
     }
