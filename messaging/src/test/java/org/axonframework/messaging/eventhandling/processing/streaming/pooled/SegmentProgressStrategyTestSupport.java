@@ -22,6 +22,7 @@ import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.SimpleEntry;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkTestUtils;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.EventTestUtils;
@@ -81,7 +82,7 @@ public abstract class SegmentProgressStrategyTestSupport {
         executorService = new DelegateScheduledExecutorService(Executors.newScheduledThreadPool(1));
         segment = Segment.ROOT_SEGMENT;
         initialToken = new GlobalSequenceTrackingToken(0L);
-        tokenStore.initializeSegment(initialToken, PROCESSOR_NAME, segment, null);
+        tokenStore.initializeSegment(initialToken, PROCESSOR_NAME, segment, new StubProcessingContext());
     }
 
     @AfterEach
@@ -124,7 +125,7 @@ public abstract class SegmentProgressStrategyTestSupport {
      * @param segment the segment to initialize
      */
     protected void initializeSegment(Segment segment) {
-        tokenStore.initializeSegment(initialToken, PROCESSOR_NAME, segment, null);
+        tokenStore.initializeSegment(initialToken, PROCESSOR_NAME, segment, new StubProcessingContext());
     }
 
     /**

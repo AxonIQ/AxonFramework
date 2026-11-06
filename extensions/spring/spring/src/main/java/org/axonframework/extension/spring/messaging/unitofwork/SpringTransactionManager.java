@@ -30,8 +30,11 @@ import org.axonframework.messaging.core.unitofwork.transaction.TransactionManage
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.jta.JtaTransactionManager;
 import org.springframework.transaction.support.DefaultTransactionDefinition;
 
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.util.Objects;
 
 /**
@@ -43,6 +46,13 @@ import java.util.Objects;
  * @since 2.0
  */
 public class SpringTransactionManager implements TransactionManager {
+
+    private static final String NON_TRANSACTIONAL_CONNECTION_MESSAGE =
+            "The connection returned by the ConnectionProvider is not part of a transaction (auto-commit is enabled), "
+                    + "so every statement would be committed on its own. Make sure the ConnectionProvider returns "
+                    + "connections of the DataSource that is managed by the transaction manager in use, for example by "
+                    + "using the same DataSource instance for both, and that the transaction manager can actually "
+                    + "expose that DataSource.";
 
     private final PlatformTransactionManager transactionManager;
     private final EntityManagerProvider entityManagerProvider;
@@ -114,15 +124,56 @@ public class SpringTransactionManager implements TransactionManager {
             }
 
             if (connectionProvider != null) {
+                ConnectionProvider provider = transactionalConnectionProvider();
+
                 pc.putResource(
                     JdbcTransactionalExecutorProvider.SUPPLIER_KEY,
-                    CachingSupplier.of(() -> new ConnectionExecutor(connectionProvider))
+                    CachingSupplier.of(() -> new ConnectionExecutor(provider))
                 );
             }
 
             pc.runOnCommit(p -> transaction.commit());
             pc.onError((p, phase, e) -> transaction.rollback());
         });
+    }
+
+    /*
+     * Returns a provider that refuses connections that auto-commit. Such a connection is not part of the transaction
+     * of the transaction manager, and every statement run on it would be committed on its own.
+     *
+     * A JTA transaction manager is exempt: the connections of an XA data source do not reliably report whether they
+     * take part in a global transaction (some report auto-commit until their first statement).
+     */
+    private ConnectionProvider transactionalConnectionProvider() {
+        if (transactionManager instanceof JtaTransactionManager) {
+            return connectionProvider;
+        }
+
+        return () -> {
+            Connection connection = connectionProvider.getConnection();
+
+            try {
+                if (connection.getAutoCommit()) {
+                    throw new NonTransactionalConnectionException(NON_TRANSACTIONAL_CONNECTION_MESSAGE);
+                }
+            }
+            catch (SQLException | RuntimeException e) {
+                closeQuietly(connection, e);
+
+                throw e;
+            }
+
+            return connection;
+        };
+    }
+
+    private static void closeQuietly(Connection connection, Exception cause) {
+        try {
+            connection.close();
+        }
+        catch (SQLException | RuntimeException e) {
+            cause.addSuppressed(e);
+        }
     }
 
     @Override
