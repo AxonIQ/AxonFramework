@@ -131,6 +131,9 @@ The `EventAppender` is `ProcessingContext`-aware and ensures events are publishe
 Never try to store or reuse an `EventAppender` across different command invocations.
 ====
 
+Appended events are checked against the consistency boundary the command sourced.
+To check a different boundary for a command, for example fewer event types, or uniqueness for a command that loads nothing, see xref:events:event-store-internals.adoc#command_append_criteria[Append criteria per command].
+
 == Injectable parameters
 
 Command handlers support several types of injectable parameters beyond just the command payload.
