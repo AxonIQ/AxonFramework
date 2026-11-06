@@ -113,6 +113,40 @@ class AnnotatedCommandHandlingComponentTest {
     }
 
     @Test
+    void subscribesCommandHandlerWithVersionRange() {
+        Object annotatedCommandHandler = new Object() {
+            @SuppressWarnings("unused")
+            @CommandHandler(commandName = "myCommandName", versionRange = "1.0-2.0")
+            public void handle(String command) {
+                // Unimportant
+            }
+        };
+        MessageTypeResolver messageTypeResolver = spy(new AnnotationMessageTypeResolver());
+        AnnotatedCommandHandlingComponent<Object> annotatedComponent = new AnnotatedCommandHandlingComponent<>(
+                annotatedCommandHandler,
+                ClasspathParameterResolverFactory.forClass(annotatedCommandHandler.getClass()),
+                ClasspathHandlerDefinition.forClass(annotatedCommandHandler.getClass()),
+                messageTypeResolver,
+                new DelegatingMessageConverter(PassThroughConverter.INSTANCE)
+        );
+
+        CommandMessage testCommand = new GenericCommandMessage(new MessageType("myCommandName", "1.5"), "payload");
+        MessageStream.Single<CommandResultMessage> resultStream =
+                annotatedComponent.handle(testCommand, StubProcessingContext.forMessage(testCommand));
+
+        assertTrue(resultStream.isCompleted());
+        assertFalse(resultStream.error().isPresent());
+        
+        CommandMessage outOfRangeCommand = new GenericCommandMessage(new MessageType("myCommandName", "2.5"), "payload");
+        MessageStream.Single<CommandResultMessage> outOfRangeStream =
+                annotatedComponent.handle(outOfRangeCommand, StubProcessingContext.forMessage(outOfRangeCommand));
+        
+        assertTrue(outOfRangeStream.isCompleted());
+        assertTrue(outOfRangeStream.error().isPresent());
+        assertTrue(outOfRangeStream.error().get() instanceof NoHandlerForCommandException);
+    }
+
+    @Test
     void subscribesCommandHandlerThroughMessageTypeResolverWhenCommandNameIsEmpty() {
         QualifiedName expectedName = new QualifiedName("defaultName");
 
