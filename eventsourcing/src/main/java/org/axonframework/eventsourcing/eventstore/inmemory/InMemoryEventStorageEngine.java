@@ -238,13 +238,17 @@ public class InMemoryEventStorageEngine implements EventStorageEngine {
 
     @Override
     public MessageStream<EventMessage> stream(StreamingCondition condition) {
+        StreamingCondition resolvedCondition = resolveSpecialStreamingPosition(condition);
         if (logger.isDebugEnabled()) {
-            logger.debug("Start streaming events with condition [{}].", condition);
+            logger.debug("Start streaming events with condition [{}].", resolvedCondition);
         }
 
         // Set end to the Long.MAX-VALUE, to reflect it's an infinite stream.
         MapBackedMessageStream messageStream =
-                new MapBackedStreamingEventMessageStream(condition.position().position().orElse(-1), condition);
+                new MapBackedStreamingEventMessageStream(
+                        resolvedCondition.position().position().orElse(-1),
+                        resolvedCondition
+                );
         openStreams.add(messageStream);
         return messageStream;
     }
