@@ -16,8 +16,13 @@
 
 package org.axonframework.integrationtests.testsuite.student;
 
+import org.axonframework.eventsourcing.annotation.EventSourcedEntity;
+import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
+import org.axonframework.eventsourcing.annotation.reflection.InjectEntityId;
 import org.axonframework.eventsourcing.commandhandling.AppendCriteriaInterceptor;
 import org.axonframework.eventsourcing.commandhandling.annotation.AppendCriteriaBuilder;
+import org.axonframework.eventsourcing.configuration.EventSourcedEntityModule;
+import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
 import org.axonframework.eventsourcing.eventstore.AppendEventsTransactionRejectedException;
 import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.eventsourcing.eventstore.SourcingCondition;
@@ -31,6 +36,7 @@ import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.messaging.eventstreaming.Tag;
 import org.axonframework.modelling.annotation.InjectEntity;
+import org.axonframework.modelling.annotation.TargetEntityId;
 import org.assertj.core.api.ThrowableAssert;
 import org.junit.jupiter.api.*;
 
@@ -39,13 +45,15 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Integration tests proving what append criteria change for a running application: which concurrent events a command
- * still conflicts with, and which consistency checks a command that loads nothing gets.
+ * still conflicts with, and which consistency checks a command that loads nothing gets, for builders on a
+ * command-handling component as well as on an entity owning its command handlers.
  * <p>
  * Every scenario that shows a benefit is paired with the same scenario without append criteria, so the difference is
  * the feature. Two commands interleave the way concurrent ones on different nodes do: the first loads its entities and
@@ -64,6 +72,12 @@ public abstract class AppendCriteriaIT extends AbstractCommandHandlingStudentIT 
     @AfterEach
     void shutDownExecutor() {
         executor.shutdownNow();
+    }
+
+    @Override
+    protected EventSourcingConfigurer testSuiteConfigurer(EventSourcingConfigurer configurer) {
+        return super.testSuiteConfigurer(configurer)
+                    .registerEntity(EventSourcedEntityModule.autodetected(String.class, StudentSchedule.class));
     }
 
     @Nested
@@ -146,18 +160,59 @@ public abstract class AppendCriteriaIT extends AbstractCommandHandlingStudentIT 
             enrollment.orTimeout(5, TimeUnit.SECONDS).join();
             assertThat(enrollmentsOf(studentId)).isOne();
         }
+    }
 
-        /**
-         * Sends {@code command} from another thread, lets {@code concurrentCommand} commit once {@code command} loaded
-         * its entities, and only then lets {@code command} append, the way two commands interleave on different nodes.
-         */
-        private CompletableFuture<Object> sendWhileAnotherCommandCommits(Object command, Object concurrentCommand) {
-            CompletableFuture<Object> result =
-                    CompletableFuture.supplyAsync(() -> commandGateway.sendAndWait(command), executor);
-            interleaving.awaitLoaded();
-            sendCommand(concurrentCommand);
-            interleaving.release();
-            return result;
+    @Nested
+    class BuilderOnAnEntity {
+
+        @BeforeEach
+        void startWithAStudentThatHasHistory() {
+            StudentSchedule.interleaving.set(interleaving);
+            registerCommandHandlers(handlerPhase -> handlerPhase
+                    .autodetectedCommandHandlingComponent(c -> new ConcurrentWriterHandler()));
+            startApp();
+            // an entity exists once events carry its tag
+            sendCommand(new RenameStudent(studentId, "John"));
+        }
+
+        @AfterEach
+        void forgetInterleaving() {
+            StudentSchedule.interleaving.set(null);
+        }
+
+        @Test
+        void entityCommandWithoutABuilderIsRejectedByAConcurrentEventOfAnyType() {
+            // when a rename commits while the entity's own rename, which no builder matches, is in progress
+            CompletableFuture<Object> rename = sendWhileAnotherCommandCommits(
+                    new RenameOnSchedule(studentId, "Joan"), new RenameStudent(studentId, "Jane")
+            );
+
+            // then the entity's command keeps everything it sourced as its boundary
+            assertRejectedAsConflict(() -> rename.orTimeout(5, TimeUnit.SECONDS).join());
+        }
+
+        @Test
+        void builderOnTheEntityAcceptsAConcurrentEventTheDecisionDoesNotDependOn() {
+            // when an irrelevant rename commits while the entity decides an enrollment
+            CompletableFuture<Object> enrollment = sendWhileAnotherCommandCommits(
+                    new EnrollOnSchedule(studentId, courseId), new RenameStudent(studentId, "Jane")
+            );
+
+            // then the builder next to the entity's handler narrowed the boundary, so the enrollment is stored
+            enrollment.orTimeout(5, TimeUnit.SECONDS).join();
+            assertThat(enrollmentsOf(studentId)).isOne();
+        }
+
+        @Test
+        void builderOnTheEntityStillRejectsAConcurrentEventTheDecisionDependsOn() {
+            // when another enrollment of the same student commits while the entity decides an enrollment
+            CompletableFuture<Object> enrollment = sendWhileAnotherCommandCommits(
+                    new EnrollOnSchedule(studentId, courseId), new RecordEnrollment(studentId, createId("other-course"))
+            );
+
+            // then
+            assertRejectedAsConflict(() -> enrollment.orTimeout(5, TimeUnit.SECONDS).join());
+            assertThat(enrollmentsOf(studentId)).isOne();
         }
     }
 
@@ -214,6 +269,19 @@ public abstract class AppendCriteriaIT extends AbstractCommandHandlingStudentIT 
     }
 
     /**
+     * Sends {@code command} from another thread, lets {@code concurrentCommand} commit once {@code command} loaded its
+     * entities, and only then lets {@code command} append, the way two commands interleave on different nodes.
+     */
+    private CompletableFuture<Object> sendWhileAnotherCommandCommits(Object command, Object concurrentCommand) {
+        CompletableFuture<Object> result =
+                CompletableFuture.supplyAsync(() -> commandGateway.sendAndWait(command), executor);
+        interleaving.awaitLoaded();
+        sendCommand(concurrentCommand);
+        interleaving.release();
+        return result;
+    }
+
+    /**
      * Asserts that the given {@code command} is rejected because a conflicting event was found, rather than for any
      * other reason. Infrastructures reporting conflicts differently can override it.
      *
@@ -254,6 +322,14 @@ public abstract class AppendCriteriaIT extends AbstractCommandHandlingStudentIT 
     }
 
     record RecordEnrollment(String studentId, String courseId) {
+
+    }
+
+    record EnrollOnSchedule(@TargetEntityId String studentId, String courseId) {
+
+    }
+
+    record RenameOnSchedule(@TargetEntityId String studentId, String name) {
 
     }
 
@@ -381,6 +457,41 @@ public abstract class AppendCriteriaIT extends AbstractCommandHandlingStudentIT 
         static EventCriteria appendCriteria(ReserveEnrollment command, EventCriteria sourcingCriteria) {
             return EventCriteria.havingTags(new Tag("Student", command.studentId()))
                                 .andBeingOneOfTypes(STUDENT_ENROLLED);
+        }
+    }
+
+    /**
+     * An entity owning its command handlers, held after loading like the components above, with a builder declared
+     * next to its enrollment handler only. The framework creates it, so it reaches the test's interleaving through a
+     * static field.
+     */
+    @EventSourcedEntity(tagKey = "Student")
+    static class StudentSchedule {
+
+        static final AtomicReference<Interleaving> interleaving = new AtomicReference<>();
+
+        private final String studentId;
+
+        @EntityCreator
+        StudentSchedule(@InjectEntityId String studentId) {
+            this.studentId = studentId;
+        }
+
+        @CommandHandler
+        void handle(EnrollOnSchedule command, EventAppender eventAppender) {
+            interleaving.get().afterLoading();
+            eventAppender.append(new StudentEnrolledEvent(studentId, command.courseId()));
+        }
+
+        @CommandHandler
+        void handle(RenameOnSchedule command, EventAppender eventAppender) {
+            interleaving.get().afterLoading();
+            eventAppender.append(new StudentNameChangedEvent(studentId, command.name()));
+        }
+
+        @AppendCriteriaBuilder
+        static EventCriteria enrollments(EnrollOnSchedule command, EventCriteria sourcingCriteria) {
+            return sourcingCriteria.withEventTypes(STUDENT_ENROLLED);
         }
     }
 }
