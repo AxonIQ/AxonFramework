@@ -36,9 +36,9 @@ import static org.axonframework.common.ReflectionUtils.resolvePrimitiveWrapperTy
  * {@link MessageHandler MessageHandlers}, and other components that require naming. To combine a qualified
  * qualifiedName with a version, consider using the {@link MessageType}.
  *
- * @param name The qualifiedName of this {@code QualifiedName}. Must not be {@code null}, blank, or contain a hash
- *             ({@code #}), since that character is reserved by {@link MessageType} as the separator between a
- *             qualified name and version in its String representation.
+ * @param name the qualifiedName of this {@code QualifiedName}. Must not be {@code null}, blank, or contain a hash
+ *             ({@code #}), since that character is reserved by {@link MessageType} as the separator between a qualified
+ *             name and version in its String representation
  * @author Allard Buijze
  * @author Mitchell Herrijgers
  * @author Steven van Beelen
@@ -52,8 +52,8 @@ public record QualifiedName(String name) {
     private static final String DELIMITER = ".";
 
     /**
-     * Creates a new instance and asserts whether the {@code qualifiedName} is non-null, not blank, and does not
-     * contain {@link VersionedType#VERSION_DELIMITER}.
+     * Creates a new instance and asserts whether the {@code qualifiedName} is non-null, not blank, and does not contain
+     * {@link VersionedType#VERSION_DELIMITER}.
      */
     public QualifiedName {
         requireNonNull(name, "The given name is unsupported because it is null.");
@@ -74,17 +74,19 @@ public record QualifiedName(String name) {
      * Constructor providing combining the given {@code namespace} and {@code localName}, delimited by a dot {@code .}.
      * <p>
      * If the given {@code namespace} is an empty or {@code null} String, the {@link #name()} becomes the
-     * {@code localName}. If the {@code localName} is empty or {@code null}, an {@link IllegalArgumentException} will be
-     * thrown.
+     * {@code localName}, and {@link #namespace()} returns {@code null}. If the {@code localName} is empty or
+     * {@code null}, an exception will be thrown.
      *
-     * @param namespace The first part of the {@link #name()}.
-     * @param localName The last part of the {@link #name()}.
+     * @param namespace the first part of the {@link #name()}, or {@code null} or empty when there is no namespace
+     * @param localName the last part of the {@link #name()}
+     * @throws NullPointerException     if the {@code localName} is {@code null}
+     * @throws IllegalArgumentException if the {@code localName} is empty
      */
-    public QualifiedName(String namespace, String localName) {
+    public QualifiedName(@Nullable String namespace, String localName) {
         this(combineNames(namespace, localName));
     }
 
-    private static String combineNames(String namespace, String localName) {
+    private static String combineNames(@Nullable String namespace, String localName) {
         Assert.assertThat(
                 requireNonNull(
                         localName, "The given local name [" + localName + "] is unsupported because it is null."
@@ -105,7 +107,7 @@ public record QualifiedName(String name) {
      * Note that for nested classes the simple name does <b>not</b> include the enclosing class(es). Classes without a
      * simple name (e.g. anonymous classes) fall back to {@link Class#getName()}.
      *
-     * @param clazz The {@code Class} from which to derive the {@link #name()}.
+     * @param clazz the {@code Class} from which to derive the {@link #name()}
      */
     public QualifiedName(Class<?> clazz) {
         this(deriveNameOf((Class<?>) resolvePrimitiveWrapperTypeIfPrimitive(requireNonNull(
@@ -122,13 +124,25 @@ public record QualifiedName(String name) {
         return combineNames(clazz.getPackageName(), simpleName);
     }
 
+    /**
+     * Returns the namespace of this {@code QualifiedName}, being all text <em>before</em> the last dot in the
+     * {@link #name()}.
+     *
+     * @return the namespace, or {@code null} when the {@link #name()} does not contain a dot
+     */
     @Nullable
     public String namespace() {
         int lastDelimiterIndex = name.lastIndexOf(DELIMITER);
         return lastDelimiterIndex != -1 ? name.substring(0, lastDelimiterIndex) : null;
     }
 
-        public String localName() {
+    /**
+     * Returns the local name of this {@code QualifiedName}, being all text <em>after</em> the last dot in the
+     * {@link #name()}, or the entire {@link #name()} when it does not contain a dot.
+     *
+     * @return the local name
+     */
+    public String localName() {
         return name.substring(name.lastIndexOf(DELIMITER) + 1);
     }
 
@@ -138,8 +152,8 @@ public record QualifiedName(String name) {
     }
 
     /**
-     * Returns the full name of this QualifiedName, consisting of the namespace and localName, separated by a "."
-     * (dot). If no namespace is defined, it returns the localName only.
+     * Returns the full name of this QualifiedName, consisting of the namespace and localName, separated by a "." (dot).
+     * If no namespace is defined, it returns the localName only.
      *
      * @return the full name of this QualifiedName
      * @see #name()

@@ -98,6 +98,16 @@ class MessageTypeTest {
     }
 
     @Test
+    void namespaceLocalNameAndVersionConstructorWithoutNamespaceUsesLocalNameAsName() {
+        MessageType nullNamespace = new MessageType(null, LOCAL_NAME, VERSION);
+        MessageType emptyNamespace = new MessageType("", LOCAL_NAME, VERSION);
+
+        assertEquals(LOCAL_NAME, nullNamespace.name());
+        assertNull(nullNamespace.qualifiedName().namespace());
+        assertEquals(nullNamespace, emptyNamespace);
+    }
+
+    @Test
     void throwsIllegalArgumentExceptionForBlankVersion() {
         assertThrows(IllegalArgumentException.class, () -> new MessageType(QUALIFIED_NAME, "   "));
     }

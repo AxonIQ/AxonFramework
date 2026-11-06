@@ -16,6 +16,8 @@
 
 package org.axonframework.messaging.core;
 
+import org.jspecify.annotations.Nullable;
+
 import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -30,9 +32,9 @@ import static java.util.Objects.requireNonNull;
  * <p>
  * When you do not require a version for typing, consider using the {@code QualifiedName} directly instead.
  *
- * @param qualifiedName The {@code QualifiedName} of this {@code MessageType}.
- * @param version       the version of this {@code MessageType}. Must not be blank, or contain a hash ({@code #}),
- *                      since that character is reserved as the separator in this record's String representation.
+ * @param qualifiedName the {@code QualifiedName} of this {@code MessageType}
+ * @param version       the version of this {@code MessageType}. Must not be blank, or contain a hash ({@code #}), since
+ *                      that character is reserved as the separator in this record's String representation
  * @author Allard Buijze
  * @author Mateusz Nowak
  * @author Steven van Beelen
@@ -47,20 +49,19 @@ public record MessageType(QualifiedName qualifiedName, String version) implement
     public static final String DEFAULT_VERSION = "0.0.1";
 
     /**
-     * The separator between a {@link #qualifiedName()} and {@link #version()} in the String representation produced
-     * by {@link #toString()} and parsed by {@link #fromString(String)}. Also enforced as forbidden in
-     * {@link QualifiedName#QualifiedName(String) QualifiedName's name} and in {@link #version}, since either
-     * containing this separator would make that representation ambiguous to parse back.
+     * The separator between a {@link #qualifiedName()} and {@link #version()} in the String representation produced by
+     * {@link #toString()} and parsed by {@link #fromString(String)}. Also enforced as forbidden in
+     * {@link QualifiedName#QualifiedName(String) QualifiedName's name} and in {@link #version}, since either containing
+     * this separator would make that representation ambiguous to parse back.
      */
     public static final String VERSION_DELIMITER = VersionedType.VERSION_DELIMITER;
 
     /**
      * Pattern identifying a single valid segment of a {@code MessageType}'s String representation - either the
      * {@link #qualifiedName()} or the {@link #version()} - requiring at least one non-whitespace character and no
-     * {@value #VERSION_DELIMITER}. Shared by this record's and {@link QualifiedName}'s constructors, and
-     * combined with itself (separated by {@value #VERSION_DELIMITER}) to build
-     * {@code VALID_STRING_REPRESENTATION_PATTERN}, so a single definition governs what is considered valid
-     * everywhere.
+     * {@value #VERSION_DELIMITER}. Shared by this record's and {@link QualifiedName}'s constructors, and combined with
+     * itself (separated by {@value #VERSION_DELIMITER}) to build {@code VALID_STRING_REPRESENTATION_PATTERN}, so a
+     * single definition governs what is considered valid everywhere.
      */
     private static final Pattern VALID_SEGMENT = Pattern.compile("(?!\\s*$)[^" + VERSION_DELIMITER + "]+");
 
@@ -70,8 +71,8 @@ public record MessageType(QualifiedName qualifiedName, String version) implement
     );
 
     /**
-     * Constructor validating that the given {@code qualifiedName} is non-null, and that {@code version} is
-     * non-null, not blank, and does not contain the {@link VersionedType#VERSION_DELIMITER}.
+     * Constructor validating that the given {@code qualifiedName} is non-null, and that {@code version} is non-null,
+     * not blank, and does not contain the {@link VersionedType#VERSION_DELIMITER}.
      */
     public MessageType {
         requireNonNull(qualifiedName, "The qualifiedName cannot be null.");
@@ -83,7 +84,7 @@ public record MessageType(QualifiedName qualifiedName, String version) implement
     /**
      * A {@code MessageType} constructor setting the {@code version} to {@code null}.
      *
-     * @param name The {@code QualifiedName} of this {@code MessageType}.
+     * @param name the {@code QualifiedName} of this {@code MessageType}
      */
     public MessageType(QualifiedName name) {
         this(name, DEFAULT_VERSION);
@@ -93,8 +94,8 @@ public record MessageType(QualifiedName qualifiedName, String version) implement
      * A {@code MessageType} constructor using the given {@code qualifiedName} invoking the
      * {@link QualifiedName#QualifiedName(String)} constructor. The {@code version} is fixed to {@code null}.
      *
-     * @param qualifiedName The qualifiedName for the {@link QualifiedName#QualifiedName(String) QualifiedName} for the
-     *                      {@code MessageType} under construction.
+     * @param qualifiedName the qualifiedName for the {@link QualifiedName#QualifiedName(String) QualifiedName} for the
+     *                      {@code MessageType} under construction
      */
     public MessageType(String qualifiedName) {
         this(new QualifiedName(qualifiedName), DEFAULT_VERSION);
@@ -105,9 +106,9 @@ public record MessageType(QualifiedName qualifiedName, String version) implement
      * {@link QualifiedName#QualifiedName(String)} constructor to derive the {@code qualifiedName} for this
      * {@code MessageType}.
      *
-     * @param qualifiedName The qualified qualifiedName used to invoke {@link QualifiedName#QualifiedName(String)}
-     *                      constructor for the {@code MessageType} under construction.
-     * @param version       The version for the {@code MessageType} under construction.
+     * @param qualifiedName the qualified qualifiedName used to invoke {@link QualifiedName#QualifiedName(String)}
+     *                      constructor for the {@code MessageType} under construction
+     * @param version       the version for the {@code MessageType} under construction
      */
     public MessageType(String qualifiedName,
                        String version) {
@@ -119,13 +120,14 @@ public record MessageType(QualifiedName qualifiedName, String version) implement
      * {@link QualifiedName#QualifiedName(String, String)} constructor to derive the {@code qualifiedName} for this
      * {@code MessageType}.
      *
-     * @param namespace The namespace used to invoke {@link QualifiedName#QualifiedName(String, String)} constructor for
-     *                  the {@code MessageType} under construction.
-     * @param localName The local qualifiedName used to invoke {@link QualifiedName#QualifiedName(String, String)}
-     *                  constructor for the {@code MessageType} under construction.
-     * @param version   The version for the {@code MessageType} under construction.
+     * @param namespace the namespace used to invoke {@link QualifiedName#QualifiedName(String, String)} constructor for
+     *                  the {@code MessageType} under construction. May be {@code null} or empty, in which case the
+     *                  {@code MessageType} has no namespace
+     * @param localName the local qualifiedName used to invoke {@link QualifiedName#QualifiedName(String, String)}
+     *                  constructor for the {@code MessageType} under construction
+     * @param version   the version for the {@code MessageType} under construction
      */
-    public MessageType(String namespace,
+    public MessageType(@Nullable String namespace,
                        String localName,
                        String version) {
         this(new QualifiedName(namespace, localName), version);
@@ -136,9 +138,9 @@ public record MessageType(QualifiedName qualifiedName, String version) implement
      * {@link QualifiedName#QualifiedName(Class)} constructor  to derive the {@code qualifiedName} for this
      * {@code MessageType}.
      *
-     * @param clazz   The {@code Class} used to invoke {@link QualifiedName#QualifiedName(Class)} constructor for the
-     *                {@code MessageType} under construction.
-     * @param version The version for the {@code MessageType} under construction.
+     * @param clazz   the {@code Class} used to invoke {@link QualifiedName#QualifiedName(Class)} constructor for the
+     *                {@code MessageType} under construction
+     * @param version the version for the {@code MessageType} under construction
      */
     public MessageType(Class<?> clazz,
                        String version) {
@@ -150,8 +152,8 @@ public record MessageType(QualifiedName qualifiedName, String version) implement
      * {@link QualifiedName#QualifiedName(Class)} constructor  to derive the {@code qualifiedName} for this
      * {@code MessageType}. The {@code version} is fixed to {@code null}.
      *
-     * @param clazz The {@code Class} used to invoke {@link QualifiedName#QualifiedName(Class)} constructor for the
-     *              {@code MessageType} under construction.
+     * @param clazz the {@code Class} used to invoke {@link QualifiedName#QualifiedName(Class)} constructor for the
+     *              {@code MessageType} under construction
      */
     public MessageType(Class<?> clazz) {
         this(clazz, DEFAULT_VERSION);
@@ -160,7 +162,7 @@ public record MessageType(QualifiedName qualifiedName, String version) implement
     /**
      * Returns the outcome {@link QualifiedName#name()} of this {@code MessageType's} {@link QualifiedName}.
      *
-     * @return The outcome {@link QualifiedName#name()} of this {@code MessageType's} {@link QualifiedName}.
+     * @return the outcome {@link QualifiedName#name()} of this {@code MessageType's} {@link QualifiedName}
      */
     public String name() {
         return qualifiedName.toString();
@@ -176,9 +178,9 @@ public record MessageType(QualifiedName qualifiedName, String version) implement
      * set to a {@link QualifiedName} of {@code "my.context.BusinessName"} and the {@link #version()} is set to
      * {@code "1.0.5"}.
      *
-     * @param messageTypeString The output of {@link MessageType#toString()}, given to reconstruct it into a
-     *                          {@code MessageType}.
-     * @return A reconstructed {@code MessageType} based on the expected output of {@link MessageType#toString()}.
+     * @param messageTypeString the output of {@link MessageType#toString()}, given to reconstruct it into a
+     *                          {@code MessageType}
+     * @return a reconstructed {@code MessageType} based on the expected output of {@link MessageType#toString()}
      */
     public static MessageType fromString(String messageTypeString) {
         Matcher matcher = VALID_STRING_REPRESENTATION.matcher(Objects.requireNonNull(
@@ -202,7 +204,7 @@ public record MessageType(QualifiedName qualifiedName, String version) implement
      * Thus, if {@code #qualifiedName()} returns {@code "my.context.BusinessName"} and the {@code #version()} returns
      * {@code "1.0.5"}, the result of <b>this</b> operation would be {@code "my.context.BusinessName#1.0.5"}.
      *
-     * @return A combination of the {@link #qualifiedName()} and {@link #version()}, separated by a hash.
+     * @return a combination of the {@link #qualifiedName()} and {@link #version()}, separated by a hash
      */
     @Override
     public String toString() {

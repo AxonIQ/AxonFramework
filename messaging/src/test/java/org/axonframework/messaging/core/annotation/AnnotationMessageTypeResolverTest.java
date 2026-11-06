@@ -28,6 +28,7 @@ import org.junit.jupiter.api.*;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.util.Optional;
+import java.util.function.Function;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
@@ -427,6 +428,70 @@ class AnnotationMessageTypeResolverTest {
 
             assertThat(resultTwo).isPresent();
             assertThat(resultTwo.get().qualifiedName().namespace()).isEqualTo("container");
+        }
+
+        @Test
+        void emptyNamespaceAnnotationValueFallsBackToPackageOfClass() {
+            Optional<MessageType> result = testSubject.resolve(MessageWithEmptyNamespace.class);
+
+            assertThat(result).isPresent();
+            assertThat(result.get().qualifiedName().namespace())
+                    .isEqualTo(MessageWithEmptyNamespace.class.getPackageName());
+            assertThat(result.get().qualifiedName().localName()).isEqualTo("event");
+        }
+
+        @Test
+        void nullNamespaceDefaultResolvesMessageTypeWithoutNamespaceForEmptyAnnotationValue() {
+            AnnotationMessageTypeResolver noNamespaceDefault = resolverWithDefaults(type -> null, type -> "fallback");
+
+            Optional<MessageType> result = noNamespaceDefault.resolve(MessageWithEmptyNamespace.class);
+
+            assertThat(result).isPresent();
+            assertThat(result.get().qualifiedName().namespace()).isNull();
+            assertThat(result.get().name()).isEqualTo("event");
+        }
+
+        @Test
+        void namespaceDefaultDoesNotOverrideAnnotatedNamespace() {
+            AnnotationMessageTypeResolver noNamespaceDefault = resolverWithDefaults(type -> null, type -> "fallback");
+
+            Optional<MessageType> result = noNamespaceDefault.resolve(MessageWithNamespace.class);
+
+            assertThat(result).isPresent();
+            assertThat(result.get().qualifiedName().namespace()).isEqualTo("namespace");
+        }
+
+        @Test
+        void fixedNamespaceAndNameDefaultsApplyForEmptyAnnotationValues() {
+            AnnotationMessageTypeResolver fixedDefaults = resolverWithDefaults(type -> "billing", type -> "fallback");
+
+            Optional<MessageType> result = fixedDefaults.resolve(MessageWithoutNamespaceAndName.class);
+
+            assertThat(result).isPresent();
+            assertThat(result.get().name()).isEqualTo("billing.fallback");
+        }
+
+        private AnnotationMessageTypeResolver resolverWithDefaults(
+                Function<Class<?>, String> namespaceDefault,
+                Function<Class<?>, String> nameDefault
+        ) {
+            AnnotationSpecification base = AnnotationSpecification.DEFAULT;
+            return new AnnotationMessageTypeResolver(null, new AnnotationSpecification(
+                    base.nameAnnotation(), base.nameAttribute(), nameDefault,
+                    base.versionAnnotation(), base.versionAttribute(),
+                    base.namespaceAnnotation(), base.namespaceAttribute(), namespaceDefault
+            ));
+        }
+
+        @Event
+        private record MessageWithoutNamespaceAndName(String id) {
+
+        }
+
+        @Namespace("")
+        @Event(name = "event", namespace = "")
+        private record MessageWithEmptyNamespace(String id) {
+
         }
 
         @Namespace("namespace")
