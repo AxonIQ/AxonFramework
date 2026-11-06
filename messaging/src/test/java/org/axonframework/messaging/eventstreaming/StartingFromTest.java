@@ -17,6 +17,7 @@
 package org.axonframework.messaging.eventstreaming;
 
 import org.axonframework.messaging.eventhandling.processing.streaming.token.GlobalSequenceTrackingToken;
+import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
 import org.junit.jupiter.api.*;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -57,12 +58,25 @@ class StartingFromTest {
     }
 
     @Test
-    void orThrowsIllegalArgumentExceptionWhenPositionIsNull() {
-        // given a StartingFrom without a position
+    void nullPositionIsNormalizedToFirst() {
+        // when a StartingFrom is constructed without a position
         StreamingCondition nullPositionTestSubject = StreamingCondition.startingFrom(null);
 
-        // when combining criteria, then it is rejected as criteria cannot ride on a null position
-        assertThrows(IllegalArgumentException.class, () -> nullPositionTestSubject.or(TEST_CRITERIA));
+        // then the position defaults to TrackingToken.FIRST rather than staying null
+        assertEquals(TrackingToken.FIRST, nullPositionTestSubject.position());
+    }
+
+    @Test
+    void orCombinesCriteriaWhenPositionWasNull() {
+        // given a StartingFrom constructed without a position
+        StreamingCondition nullPositionTestSubject = StreamingCondition.startingFrom(null);
+
+        // when combining criteria
+        StreamingCondition result = nullPositionTestSubject.or(TEST_CRITERIA);
+
+        // then the normalized FIRST position and the given criteria are used
+        assertEquals(TrackingToken.FIRST, result.position());
+        assertEquals(TEST_CRITERIA, result.criteria());
     }
 
     @Test
@@ -79,11 +93,15 @@ class StartingFromTest {
     }
 
     @Test
-    void withCriteriaThrowsIllegalArgumentExceptionWhenPositionIsNull() {
-        // given a StartingFrom without a position
+    void withCriteriaSetsTheGivenCriteriaWhenPositionWasNull() {
+        // given a StartingFrom constructed without a position
         StreamingCondition nullPositionTestSubject = StreamingCondition.startingFrom(null);
 
-        // when replacing criteria, then it is rejected as criteria cannot ride on a null position
-        assertThrows(IllegalArgumentException.class, () -> nullPositionTestSubject.withCriteria(TEST_CRITERIA));
+        // when its criteria is replaced
+        StreamingCondition result = nullPositionTestSubject.withCriteria(TEST_CRITERIA);
+
+        // then the normalized FIRST position and the given criteria are used
+        assertEquals(TrackingToken.FIRST, result.position());
+        assertEquals(TEST_CRITERIA, result.criteria());
     }
 }

@@ -22,26 +22,37 @@ import org.axonframework.messaging.eventhandling.processing.streaming.token.Trac
 /**
  * An implementation of the {@link StreamingCondition} that will start
  * {@link StreamableEventSource#open(StreamingCondition) streaming} from the given {@code position}.
+ * <p>
+ * A {@code null} {@code position} is normalized to {@link TrackingToken#FIRST}, so {@link #position()} itself never
+ * returns {@code null}.
  *
- * @param position The {@link TrackingToken} describing the position to start streaming from.
+ * @param position The {@link TrackingToken} describing the position to start streaming from, or {@code null} to
+ *                  start from {@link TrackingToken#FIRST}.
  * @author Steven van Beelen
  * @since 5.0.0
  */
 record StartingFrom(@Nullable TrackingToken position) implements StreamingCondition {
 
+    StartingFrom {
+        position = position != null ? position : TrackingToken.FIRST;
+    }
+
+    /*
+     * Explicitly overridden so the accessor does not inherit the @Nullable annotation carried by the position
+     * record component below, which is only there to let the compact constructor accept a null input.
+     */
+    @Override
+    public TrackingToken position() {
+        return position;
+    }
+
     @Override
     public StreamingCondition withCriteria(EventCriteria criteria) {
-        if (position == null) {
-            throw new IllegalArgumentException("The position may not be null when adding criteria to it");
-        }
         return new DefaultStreamingCondition(position, criteria);
     }
 
     @Override
     public StreamingCondition or(EventCriteria criteria) {
-        if (position == null) {
-            throw new IllegalArgumentException("The position may not be null when adding criteria to it");
-        }
         return new DefaultStreamingCondition(position, criteria);
     }
 }
