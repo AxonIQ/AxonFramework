@@ -63,6 +63,12 @@ public abstract class AbstractQueryTestSuite {
     /**
      * Creates a {@link MessagingConfigurer} with the test-specific configuration (e.g., AxonServer enabled/disabled).
      * This configurer is not yet built, allowing tests to register additional components like interception.
+     * <p>
+     * Tests {@link MessagingConfigurer#start() start} the resulting configuration and
+     * {@link org.axonframework.common.configuration.AxonConfiguration#shutdown() shut it down} when done. Starting is
+     * what makes the shutdown effective: shutting down a configuration that was only built does not run its shutdown
+     * handlers, so any external connection a lazily created component opened (for example to Axon Server) would stay
+     * open.
      *
      * @return A {@link MessagingConfigurer} instance ready for additional configuration.
      */
