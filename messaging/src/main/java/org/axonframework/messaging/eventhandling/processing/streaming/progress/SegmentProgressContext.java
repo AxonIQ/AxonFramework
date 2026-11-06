@@ -39,8 +39,8 @@ import java.util.concurrent.CompletableFuture;
  * Three tokens describe the progress of the segment. The {@link #lastConsumedToken()} is the furthest position read,
  * including events the segment skipped. The {@link #lastHandledToken()} is the last event handed to the handler. The
  * {@link #lastStoredToken()} is the last position persisted. When the stored token covers the last handled event, every
- * event up to the consumed token was skipped, so a strategy can store the consumed token without waiting for any
- * handler.
+ * event after the last handled one, up to the consumed token, was skipped, so a strategy can store the consumed token
+ * without waiting for any handler.
  * <p>
  * <b>Internal API.</b> This interface is marked {@link Internal}: it is the contract between a streaming processor and a
  * progress strategy, consumed by advanced (and out-of-module) strategies rather than by end users, and its shape may

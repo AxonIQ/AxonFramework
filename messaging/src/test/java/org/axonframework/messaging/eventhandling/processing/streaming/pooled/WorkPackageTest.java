@@ -934,6 +934,22 @@ class WorkPackageTest {
         }
 
         @Test
+        void lastStoredTokenReturnsToTheClaimedTokenWhenTheCommitFails() {
+            // when: two stores in one transaction whose commit fails
+            CompletableFuture<Void> result = UnitOfWorkTestUtils.SIMPLE_FACTORY.create().executeWithResult(ctx -> {
+                ctx.onCommit(c -> CompletableFuture.failedFuture(new IllegalStateException("commit failed")));
+                return testSubject.persistProgress(new GlobalSequenceTrackingToken(5L), ctx)
+                                  .thenCompose(unused -> testSubject.persistProgress(
+                                          new GlobalSequenceTrackingToken(7L), ctx
+                                  ));
+            });
+
+            // then: nothing was committed, so the token from before the first store comes back
+            assertThat(result).failsWithin(TIMEOUT);
+            assertEquals(initialTrackingToken, testSubject.lastStoredToken());
+        }
+
+        @Test
         void lastStoredTokenFollowsPersistedProgress() {
             // when
             persistProgressInUnitOfWork(new GlobalSequenceTrackingToken(5L));

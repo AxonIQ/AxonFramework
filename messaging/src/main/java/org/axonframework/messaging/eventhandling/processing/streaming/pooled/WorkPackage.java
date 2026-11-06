@@ -109,6 +109,8 @@ class WorkPackage implements SegmentProgressContext {
 
     private @Nullable TrackingToken lastDeliveredToken; // For use only by event delivery threads, like Coordinator
     private volatile @Nullable TrackingToken lastStoredToken;
+    private final Context.ResourceKey<Boolean> storedTokenRestoreKey =
+            Context.ResourceKey.withLabel("storedTokenRestore");
     private final AtomicLong nextClaimExtension;
 
     private final Queue<ProcessingEntry> processingQueue = new ConcurrentLinkedQueue<>();
@@ -592,11 +594,26 @@ class WorkPackage implements SegmentProgressContext {
 
     private CompletableFuture<Void> storeToken(TrackingToken token, ProcessingContext processingContext) {
         logger.debug("Work Package [{}]-[{}] will store token [{}].", name, segment.getSegmentId(), token);
+        restoreStoredTokenOnError(processingContext);
         return tokenStore.storeToken(token, name, segment.getSegmentId(), processingContext)
                          .thenRun(() -> {
                              lastStoredToken = token;
                              nextClaimExtension.set(now() + claimExtensionThreshold);
                          });
+    }
+
+    /**
+     * Sets the {@code lastStoredToken} back when the given {@code processingContext} fails, as the store completes
+     * before the transaction commits. Registered on the first store in a context only, so the token from before that
+     * store comes back.
+     */
+    private void restoreStoredTokenOnError(ProcessingContext processingContext) {
+        if (processingContext.containsResource(storedTokenRestoreKey)) {
+            return;
+        }
+        processingContext.putResource(storedTokenRestoreKey, Boolean.TRUE);
+        TrackingToken previous = lastStoredToken;
+        processingContext.onError((ctx, phase, error) -> lastStoredToken = previous);
     }
 
     /**
