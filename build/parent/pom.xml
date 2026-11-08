@@ -50,7 +50,7 @@
         <mongo.driver.version>5.14.0</mongo.driver.version>
         <mysql-connector-java.version>26.10.0</mysql-connector-java.version>
         <postgresql.version>42.7.14</postgresql.version>
-        <ojdbc.version>23.26.3.0.0</ojdbc.version>
+        <ojdbc.version>23.26.4.0.0</ojdbc.version>
         <!-- Jakarta -->
         <jakarta.annotation.version>3.0.0</jakarta.annotation.version>
         <jakarta.el.version>6.0.1</jakarta.el.version>
@@ -68,7 +68,7 @@
         <!-- Micrometer Tracing versions independently of Micrometer core, so it has its own property. -->
         <micrometer-tracing.version>1.7.2</micrometer-tracing.version>
         <!-- Other -->
-        <byte-buddy.version>1.18.16</byte-buddy.version>
+        <byte-buddy.version>1.18.17</byte-buddy.version>
         <commons-io.version>2.22.0</commons-io.version>
         <disruptor.version>4.0.0</disruptor.version>
         <findbugs-jsr305.version>3.0.2</findbugs-jsr305.version>
@@ -98,11 +98,11 @@
         <assertj.version>3.27.7</assertj.version>
         <archunit.version>1.5.1</archunit.version>
         <!-- Validation -->
-        <hibernate-validator.version>9.1.5.Final</hibernate-validator.version>
+        <hibernate-validator.version>9.1.6.Final</hibernate-validator.version>
 
         <!-- Maven plugins -->
         <checkstyle-maven-plugin.version>3.6.0</checkstyle-maven-plugin.version>
-        <checkstyle.version>14.3.0</checkstyle.version>
+        <checkstyle.version>14.4.0</checkstyle.version>
     </properties>
 
     <dependencyManagement>
