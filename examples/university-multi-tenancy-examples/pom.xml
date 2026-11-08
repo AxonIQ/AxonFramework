@@ -51,7 +51,7 @@
              Publisher rather than a Flux precisely so Reactor stays optional, so a demo that uses Flux directly
              opts in here. Kept in step with the version the framework builds against (build/parent), which is
              not inherited here because the flattened parent pom drops its properties. -->
-        <reactor.version>3.8.7</reactor.version>
+        <reactor.version>3.8.8</reactor.version>
 
         <!-- Spring Boot, for the Spring Boot demo. Kept in step with the version the framework builds
              against (build/parent), which is not inherited here because the flattened parent pom drops
