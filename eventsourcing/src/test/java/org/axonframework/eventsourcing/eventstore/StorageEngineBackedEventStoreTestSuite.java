@@ -605,7 +605,7 @@ public abstract class StorageEngineBackedEventStoreTestSuite<E extends EventStor
             awaitLatch(sourcingFinished);
 
             /*
-             * Unblock transaction 2 and verify it commits succesfully:
+             * Unblock transaction 2 and verify it commits successfully:
              */
 
             latch2.countDown();
