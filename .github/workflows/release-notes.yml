@@ -40,7 +40,7 @@ jobs:
         echo "RELEASE_DATE=$(date +'%b %d, %Y')" >> $GITHUB_OUTPUT
 
     - name: Upload Release Notes for the announcement job
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: release-notes
         path: ${{ env.RELEASE_NOTES_FILE }}
@@ -64,7 +64,7 @@ jobs:
       run: openssl s_client -showcerts -connect discuss.axoniq.io:443 </dev/null | sed -n -e '/-.BEGIN/,/-.END/ p' > $CA_FILE
 
     - name: Download Release Notes
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v8
       with:
         name: release-notes
         path: temp_release_notes
