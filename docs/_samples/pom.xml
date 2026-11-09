@@ -42,7 +42,7 @@
              verbatim. This module only guarantees that samples compile against current APIs; it never runs them
              (many are illustrative fragments with an uninitialized fixture field, never meant to execute). -->
         <skipTests>true</skipTests>
-        <build-helper-maven-plugin.version>3.6.2</build-helper-maven-plugin.version>
+        <build-helper-maven-plugin.version>3.7.0</build-helper-maven-plugin.version>
         <micrometer-tracing.version>1.7.2</micrometer-tracing.version>
         <opentelemetry.version>1.67.0</opentelemetry.version>
     </properties>
@@ -145,7 +145,7 @@
         <dependency>
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-core</artifactId>
-            <version>13.12.0</version>
+            <version>13.12.1</version>
         </dependency>
     </dependencies>
 
