@@ -498,6 +498,61 @@ public abstract class AggregateBasedStorageEngineTestSuite<ESE extends EventStor
     }
 
     /**
+     * Regression test for <a href="https://github.com/AxonIQ/AxonFramework/issues/5217">#5217</a>
+     */
+    @Test
+    void sourcingAnEmptyTailAfterThePositionRetainsThePositionInTheConsistencyMarker() {
+        // given...
+        appendEvents(
+                AppendCondition.none(),
+                taggedEventMessage("event-0", TEST_AGGREGATE_TAGS),
+                taggedEventMessage("event-1", TEST_AGGREGATE_TAGS),
+                taggedEventMessage("event-2", TEST_AGGREGATE_TAGS)
+        );
+        // when...
+        SourcingCondition testCondition =
+                SourcingCondition.conditionFor(new AggregateSequenceNumberPosition(3), TEST_AGGREGATE_CRITERIA);
+        MessageStream<EventMessage> result = testSubject.source(testCondition);
+        // then...
+        StepVerifier.create(FluxUtils.of(result))
+                    .assertNext(entry -> assertEquals(
+                            new AggregateBasedConsistencyMarker(TEST_AGGREGATE_ID, 2),
+                            entry.getResource(ConsistencyMarker.RESOURCE_KEY)
+                    ))
+                    .verifyComplete();
+    }
+
+    /**
+     * Regression test for <a href="https://github.com/AxonIQ/AxonFramework/issues/5217">#5217</a>
+     */
+    @Test
+    void appendingAfterSourcingAnEmptyTailAfterThePositionContinuesTheSequence() {
+        // given...
+        appendEvents(
+                AppendCondition.none(),
+                taggedEventMessage("event-0", TEST_AGGREGATE_TAGS),
+                taggedEventMessage("event-1", TEST_AGGREGATE_TAGS),
+                taggedEventMessage("event-2", TEST_AGGREGATE_TAGS)
+        );
+        SourcingCondition sourcingCondition =
+                SourcingCondition.conditionFor(new AggregateSequenceNumberPosition(3), TEST_AGGREGATE_CRITERIA);
+        AtomicReference<ConsistencyMarker> markerFromSource = new AtomicReference<>();
+        StepVerifier.create(FluxUtils.of(testSubject.source(sourcingCondition)))
+                    .assertNext(entry -> markerFromSource.set(entry.getResource(ConsistencyMarker.RESOURCE_KEY)))
+                    .verifyComplete();
+
+        // when...
+        AppendCondition appendCondition =
+                AppendCondition.withCriteria(TEST_AGGREGATE_CRITERIA).withMarker(markerFromSource.get());
+        ConsistencyMarker appendedMarker = appendEvents(appendCondition,
+                                                        taggedEventMessage("event-3", TEST_AGGREGATE_TAGS),
+                                                        taggedEventMessage("event-4", TEST_AGGREGATE_TAGS));
+
+        // then...
+        assertEquals(new AggregateBasedConsistencyMarker(TEST_AGGREGATE_ID, 4), appendedMarker);
+    }
+
+    /**
      * Regression test for <a href="https://github.com/AxonIQ/AxonFramework/issues/4437">#4437</a>
      */
     @Test
