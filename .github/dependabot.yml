@@ -108,3 +108,8 @@ updates:
         - "patch"
         - "minor"
         - "major"
+  ignore:
+    # asciidoctor-kroki 1.x and 2.x require Asciidoctor.js 4 (and 2.x requires Node 22+), but Antora 3.x
+    # bundles Asciidoctor.js 2.2. Stay on the 0.x line until Antora ships on Asciidoctor.js 4.
+    - dependency-name: "asciidoctor-kroki"
+      versions: [">=1.0.0"]
