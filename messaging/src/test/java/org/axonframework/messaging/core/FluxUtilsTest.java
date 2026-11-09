@@ -25,6 +25,7 @@ import org.reactivestreams.Subscription;
 import reactor.core.publisher.BaseSubscriber;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.test.StepVerifier;
 import reactor.util.context.ContextView;
@@ -34,6 +35,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -152,6 +157,138 @@ class FluxUtilsTest {
             // then
             await().atMost(Duration.ofSeconds(2))
                    .untilAsserted(() -> assertThat(received).containsExactly("initial", "one", "two"));
+        }
+    }
+
+    @Nested
+    class SignalDuringDrain {
+
+        @Test
+        void emitsMessageOfferedWhileAnotherThreadIsDrainingTheEmptyStream() throws InterruptedException {
+            // given
+            QueueMessageStream<Message> queue = new QueueMessageStream<>();
+            StallingMessageStream source = new StallingMessageStream(queue);
+            List<Object> received = new CopyOnWriteArrayList<>();
+            BaseSubscriber<MessageStream.Entry<Message>> subscriber = new BaseSubscriber<>() {
+                @Override
+                protected void hookOnSubscribe(Subscription subscription) {
+                    // no initial demand, the test requests from a separate thread
+                }
+
+                @Override
+                protected void hookOnNext(MessageStream.Entry<Message> entry) {
+                    received.add(entry.message().payload());
+                }
+            };
+            FluxUtils.of(source).subscribe(subscriber);
+            source.stallOnNextCompletionCheck();
+
+            // when
+            /*
+             * The requesting thread finds the stream empty and stalls in the completion check, still inside the
+             * drain. The message is offered at that moment, so its signal arrives while the drain is running.
+             */
+            Thread requester = new Thread(() -> subscriber.request(1));
+            requester.start();
+            source.awaitStalled();
+            queue.offer(message("one"), Context.empty());
+            source.release();
+            requester.join(TimeUnit.SECONDS.toMillis(5));
+
+            // then
+            await().atMost(Duration.ofSeconds(2))
+                   .untilAsserted(() -> assertThat(received).containsExactly("one"));
+        }
+    }
+
+    @Nested
+    class ReadingOnSignal {
+
+        @Test
+        void readsEntriesThatArriveLaterOnTheGivenScheduler() {
+            // given
+            Scheduler scheduler = Schedulers.newSingle("flux-reader");
+            QueueMessageStream<Message> source = new QueueMessageStream<>();
+            List<String> receivingThreads = new CopyOnWriteArrayList<>();
+            FluxUtils.of(source, scheduler).subscribe(entry -> receivingThreads.add(Thread.currentThread().getName()));
+
+            try {
+                // when
+                source.offer(message("one"), Context.empty());
+                source.offer(message("two"), Context.empty());
+
+                // then
+                await().atMost(Duration.ofSeconds(2)).untilAsserted(() -> assertThat(receivingThreads).hasSize(2));
+                assertThat(receivingThreads).allMatch(name -> name.startsWith("flux-reader"));
+            } finally {
+                scheduler.dispose();
+            }
+        }
+
+        @Test
+        void failsWhenTheSchedulerRejectsTheRead() {
+            // given
+            Scheduler scheduler = Schedulers.newSingle("flux-reader");
+            QueueMessageStream<Message> source = new QueueMessageStream<>();
+            scheduler.dispose();
+
+            // when / then
+            StepVerifier.create(FluxUtils.of(source, scheduler))
+                        .then(() -> source.offer(message("one"), Context.empty()))
+                        .expectError(RejectedExecutionException.class)
+                        .verify(Duration.ofSeconds(2));
+        }
+    }
+
+    /**
+     * Delegates to the given stream, but can hold the calling thread inside the next {@link #isCompleted()} call until
+     * released, so a test can place an event at an exact point of a consumer's drain loop.
+     */
+    private static class StallingMessageStream extends DelegatingMessageStream<Message, Message> {
+
+        private final AtomicBoolean stallNext = new AtomicBoolean();
+        private final CountDownLatch stalled = new CountDownLatch(1);
+        private final CountDownLatch released = new CountDownLatch(1);
+
+        private StallingMessageStream(MessageStream<Message> delegate) {
+            super(delegate);
+        }
+
+        void stallOnNextCompletionCheck() {
+            stallNext.set(true);
+        }
+
+        void awaitStalled() throws InterruptedException {
+            assertThat(stalled.await(5, TimeUnit.SECONDS)).as("completion check was reached").isTrue();
+        }
+
+        void release() {
+            released.countDown();
+        }
+
+        @Override
+        public boolean isCompleted() {
+            if (stallNext.compareAndSet(true, false)) {
+                stalled.countDown();
+
+                try {
+                    released.await(5, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+
+            return super.isCompleted();
+        }
+
+        @Override
+        public Optional<Entry<Message>> next() {
+            return delegate().next();
+        }
+
+        @Override
+        public Optional<Entry<Message>> peek() {
+            return delegate().peek();
         }
     }
 

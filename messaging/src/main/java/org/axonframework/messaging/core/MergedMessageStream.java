@@ -106,14 +106,20 @@ public class MergedMessageStream<M extends Message> implements MessageStream<M> 
     @Override
     public void setCallback(Runnable callback) {
         callbackRef.set(callback);
-        Runnable delegating = () -> {
-            if (hasNextAvailable() || isCompleted() || error().isPresent()) {
-                invokeCallbackIfNeeded();
-            }
-        };
-        first.setCallback(delegating);
-        second.setCallback(delegating);
-        delegating.run();
+
+        /*
+         * The callbacks of the merged streams only pass on the signal: they run on the thread of whoever signalled,
+         * where reading from the merged streams is not allowed.
+         */
+
+        Runnable forwarding = this::invokeCallbackIfNeeded;
+
+        first.setCallback(forwarding);
+        second.setCallback(forwarding);
+
+        if (hasNextAvailable() || isCompleted() || error().isPresent()) {
+            invokeCallbackIfNeeded();
+        }
     }
 
     private void invokeCallbackIfNeeded() {

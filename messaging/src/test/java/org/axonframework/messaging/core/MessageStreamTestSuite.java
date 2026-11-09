@@ -41,6 +41,7 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.Function;
 import java.util.stream.Stream;
@@ -361,28 +362,72 @@ public abstract class MessageStreamTestSuite {
 
     /**
      * Holds back the consumer's first callback while all remaining entries arrive. The consumer drained the stream
-     * before that, so the stream must call it back again for it to see them.
+     * before that, so the stream must call it back again for it to see them. The callback only records that it was
+     * called, and the stream is read on the test thread.
      */
     @ParameterizedTest(allowZeroInvocations = true, name = "{0}")
     @MethodSource("producedCases")
     void signalsArrivingDuringACallbackAreNotLost(ProducedCase c) throws Exception {
         Producer producer = new Producer();
         MessageStream<? extends Message> stream = c.streamFactory().apply(producer);
+        Semaphore signals = new Semaphore(0);
         List<Message> received = new ArrayList<>();
-        CountDownLatch completed = new CountDownLatch(1);
+        AtomicReference<Throwable> consumerFailure = new AtomicReference<>();
         CountDownLatch firstCallback = new CountDownLatch(1);
+        CountDownLatch drainedAfterFirstSignal = new CountDownLatch(1);
         AtomicBoolean holdFirstCallback = new AtomicBoolean(true);
 
-        stream.setCallback(() -> {
-            synchronized (received) {
-                drain(stream, received);
-            }
+        /*
+         * The consumer reads on a thread of its own, as the callback may not read. It reads what the first signal
+         * announced, and releases the first callback only then, so the entries that arrive while that callback is held
+         * are announced by signals the consumer has not seen yet.
+         */
 
-            if (stream.isCompleted()) {
-                completed.countDown();
+        Thread consumer = new Thread(() -> {
+            try {
+                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+                boolean first = true;
+
+                while (true) {
+                    if (!signals.tryAcquire(Math.max(0, deadline - System.nanoTime()), TimeUnit.NANOSECONDS)) {
+                        fail("Stream did not complete, received " + received + ": " + stream);
+                    }
+
+                    drain(stream, received);
+
+                    if (first) {
+                        first = false;
+                        drainedAfterFirstSignal.countDown();
+                    }
+
+                    if (stream.isCompleted()) {
+                        return;
+                    }
+                }
             }
-            else if (holdFirstCallback.compareAndSet(true, false)) {
+            catch (Throwable t) {
+                consumerFailure.set(t);
+            }
+            finally {
+                drainedAfterFirstSignal.countDown();
+            }
+        });
+
+        consumer.start();
+
+        stream.setCallback(() -> {
+            signals.release();
+
+            if (holdFirstCallback.compareAndSet(true, false)) {
                 firstCallback.countDown();
+
+                try {
+                    drainedAfterFirstSignal.await(10, TimeUnit.SECONDS);
+                }
+                catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+
                 producer.deliverRemainingAndWait();  // every remaining signal arrives while this callback runs
             }
         });
@@ -393,11 +438,11 @@ public abstract class MessageStreamTestSuite {
             producer.deliverRemainingAndWait();  // the first entry caused no callback, so there was nothing to hold
         }
 
-        assertThat(completed.await(10, TimeUnit.SECONDS)).describedAs("completed: " + stream).isTrue();
+        consumer.join(TimeUnit.SECONDS.toMillis(15));
 
-        synchronized (received) {
-            assertThat(received).describedAs("received").isEqualTo(range(0, c.expectedSize));
-        }
+        assertThat(consumerFailure.get()).describedAs("consumer failure").isNull();
+        assertThat(consumer.isAlive()).describedAs("consumer still running: " + stream).isFalse();
+        assertThat(received).describedAs("received").isEqualTo(range(0, c.expectedSize));
     }
 
     /**

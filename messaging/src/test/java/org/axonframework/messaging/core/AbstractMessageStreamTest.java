@@ -16,6 +16,11 @@
 
 package org.axonframework.messaging.core;
 
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.core.LogEvent;
+import org.apache.logging.log4j.core.Logger;
+import org.apache.logging.log4j.core.test.appender.ListAppender;
 import org.assertj.core.api.InstanceOfAssertFactories;
 import org.axonframework.messaging.core.AbstractMessageStream.FetchResult;
 import org.axonframework.messaging.core.MessageStream.Entry;
@@ -679,6 +684,271 @@ class AbstractMessageStreamTest {
             // then
             assertThat(result).isInstanceOf(FetchResult.Error.class);
             assertThat(((FetchResult.Error<?>) result).error()).isSameAs(failure);
+        }
+    }
+
+    @Nested
+    class WhenCallbackReadsFromTheStreamWhileHandlingASignal {
+
+        ControllableStream stream = new ControllableStream();
+
+        @Test
+        void hasNextAvailableIsRejected() {
+            assertThat(readFromSignalCallback(() -> stream.hasNextAvailable())).isInstanceOf(IllegalStateException.class);
+        }
+
+        @Test
+        void peekIsRejected() {
+            assertThat(readFromSignalCallback(() -> stream.peek())).isInstanceOf(IllegalStateException.class);
+        }
+
+        @Test
+        void nextIsRejected() {
+            assertThat(readFromSignalCallback(() -> stream.next())).isInstanceOf(IllegalStateException.class);
+        }
+
+        @Test
+        void completesStreamExceptionallyWhenTheCallbackDoesNotHandleTheRejection() {
+            // given
+            stream.next(); // awaitingData=true
+            stream.setCallback(stream::next);
+            stream.enqueue(FetchResult.of(entryOf("msg")));
+
+            // when
+            stream.triggerSignalProgress();
+
+            // then
+            assertThat(stream.isCompleted()).isTrue();
+            assertThat(stream.error()).get().isInstanceOf(IllegalStateException.class);
+        }
+
+        @Test
+        void readingIsAllowedAfterTheCallbackReturned() {
+            // given
+            stream.next(); // awaitingData=true
+            stream.setCallback(() -> { });
+            stream.enqueue(FetchResult.of(entryOf("msg")));
+
+            // when
+            stream.triggerSignalProgress();
+
+            // then
+            assertThat(stream.next()).isPresent();
+            assertThat(stream.error()).isEmpty();
+        }
+
+        @Test
+        void readingIsAllowedFromAnotherThreadWhileTheCallbackRuns() throws InterruptedException {
+            // given
+            CountDownLatch inCallback = new CountDownLatch(1);
+            CountDownLatch release = new CountDownLatch(1);
+
+            stream.next(); // awaitingData=true
+            stream.setCallback(() -> {
+                inCallback.countDown();
+                await().atMost(Duration.ofSeconds(5)).until(() -> release.getCount() == 0);
+            });
+            stream.enqueue(FetchResult.of(entryOf("msg")));
+
+            Thread signaler = new Thread(stream::triggerSignalProgress);
+
+            // when
+            signaler.start();
+            assertThat(inCallback.await(5, TimeUnit.SECONDS)).isTrue();
+
+            // then
+            assertThat(stream.next()).isPresent();
+
+            release.countDown();
+            signaler.join(TimeUnit.SECONDS.toMillis(5));
+            assertThat(stream.error()).isEmpty();
+        }
+
+        @Test
+        void readingIsAllowedInACallbackThatIsInvokedWhileRegistering() {
+            // given
+            stream.enqueue(FetchResult.of(entryOf("msg")));
+            AtomicReference<Optional<Entry<Message>>> read = new AtomicReference<>();
+
+            // when
+            stream.setCallback(() -> read.set(stream.next()));
+
+            // then
+            assertThat(read.get()).isPresent();
+            assertThat(stream.error()).isEmpty();
+        }
+
+        @Test
+        void readingADifferentStreamIsRejected() {
+            // given
+            ControllableStream other = new ControllableStream();
+            other.enqueue(FetchResult.of(entryOf("other")));
+            AtomicReference<Throwable> failure = new AtomicReference<>();
+
+            stream.next(); // awaitingData=true
+            stream.setCallback(() -> {
+                try {
+                    other.next();
+                }
+                catch (IllegalStateException e) {
+                    failure.set(e);
+                }
+            });
+            stream.enqueue(FetchResult.of(entryOf("msg")));
+
+            // when
+            stream.triggerSignalProgress();
+
+            // then the thread is shared with every stream, so reading any of them there is rejected
+            assertThat(failure.get()).isInstanceOf(IllegalStateException.class);
+            assertThat(other.next()).isPresent();
+        }
+
+        @Test
+        void readingIsAllowedAfterACallbackThatThrew() {
+            // given
+            ControllableStream other = new ControllableStream();
+            other.enqueue(FetchResult.of(entryOf("other")));
+
+            stream.next(); // awaitingData=true
+            stream.setCallback(() -> {
+                throw new RuntimeException("callback boom");
+            });
+            stream.enqueue(FetchResult.of(entryOf("msg")));
+
+            // when
+            stream.triggerSignalProgress();
+
+            // then the thread is not left marked as handling a signal
+            assertThat(other.next()).isPresent();
+        }
+
+        @Test
+        void readingIsRejectedUntilTheOutermostSignalReturned() {
+            // given a callback that signals another stream, which returns before the callback reads
+            ControllableStream other = new ControllableStream();
+            other.next(); // awaitingData=true
+            other.setCallback(() -> { });
+            other.enqueue(FetchResult.of(entryOf("other")));
+            AtomicReference<Throwable> failure = new AtomicReference<>();
+
+            stream.next(); // awaitingData=true
+            stream.setCallback(() -> {
+                other.triggerSignalProgress();
+
+                try {
+                    stream.next();
+                }
+                catch (IllegalStateException e) {
+                    failure.set(e);
+                }
+            });
+            stream.enqueue(FetchResult.of(entryOf("msg")));
+
+            // when
+            stream.triggerSignalProgress();
+
+            // then the nested signal did not end the first one's restriction, but the first one's end did
+            assertThat(failure.get()).isInstanceOf(IllegalStateException.class);
+            assertThat(stream.next()).isPresent();
+        }
+
+        /**
+         * Signals the stream, with a callback that performs the given read, and returns the failure of that read.
+         */
+        private Throwable readFromSignalCallback(Runnable read) {
+            AtomicReference<Throwable> failure = new AtomicReference<>();
+
+            stream.next(); // awaitingData=true
+            stream.setCallback(() -> {
+                try {
+                    read.run();
+                }
+                catch (IllegalStateException e) {
+                    failure.set(e);
+                }
+            });
+            stream.enqueue(FetchResult.of(entryOf("msg")));
+            stream.triggerSignalProgress();
+
+            return failure.get();
+        }
+    }
+
+    @Nested
+    class WhenACallbackTakesLongToHandleASignal {
+
+        private ListAppender appender;
+        private Logger streamLogger;
+        private boolean previousAdditive;
+        private Level previousLevel;
+
+        @BeforeEach
+        void attachAppender() {
+            appender = new ListAppender("SlowCallbackTestAppender");
+            appender.start();
+
+            streamLogger = (Logger) LogManager.getLogger(AbstractMessageStream.class);
+            previousAdditive = streamLogger.isAdditive();
+            previousLevel = streamLogger.getLevel();
+            streamLogger.setAdditive(false);
+            streamLogger.setLevel(Level.DEBUG);
+            streamLogger.addAppender(appender);
+        }
+
+        @AfterEach
+        void detachAppender() {
+            streamLogger.removeAppender(appender);
+            streamLogger.setAdditive(previousAdditive);
+            streamLogger.setLevel(previousLevel);
+            appender.stop();
+        }
+
+        @Test
+        void logsTheCallbackAndTheStreamAtDebugLevel() {
+            // given
+            ControllableStream stream = new ControllableStream();
+
+            stream.next(); // awaitingData=true
+            stream.setCallback(() -> {
+                try {
+                    Thread.sleep(150);
+                }
+                catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            });
+            stream.enqueue(FetchResult.of(entryOf("msg")));
+
+            // when
+            stream.triggerSignalProgress();
+
+            // then
+            assertThat(appender.getEvents()).hasSize(1);
+
+            LogEvent logged = appender.getEvents().getFirst();
+
+            assertThat(logged.getLevel()).isEqualTo(Level.DEBUG);
+            assertThat(logged.getMessage().getFormattedMessage())
+                    .contains("ran for")
+                    .contains(ControllableStream.class.getName())
+                    .contains(WhenACallbackTakesLongToHandleASignal.class.getName());
+        }
+
+        @Test
+        void logsNothingForACallbackThatIsFast() {
+            // given
+            ControllableStream stream = new ControllableStream();
+
+            stream.next(); // awaitingData=true
+            stream.setCallback(() -> { });
+            stream.enqueue(FetchResult.of(entryOf("msg")));
+
+            // when
+            stream.triggerSignalProgress();
+
+            // then
+            assertThat(appender.getEvents()).isEmpty();
         }
     }
 

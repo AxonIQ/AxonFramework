@@ -370,6 +370,16 @@ public interface MessageStream<M extends Message> {
      * <p>
      * Any previously registered callback is replaced with the given {@code callback}.
      * <p>
+     * The callback only has to signal that the stream should be read; it does not have to read it, and it should not.
+     * When a stream reports progress, the callback runs on the thread of whoever reported it, which is typically
+     * shared with other streams, such as the thread that notifies all streams of a data source at once. Doing slow
+     * work there, which includes reading from this stream as that may involve I/O, delays everything else on that
+     * thread. The callback should therefore take no more than microseconds, and hand the reading off to a thread of
+     * its own. Streams based on {@link AbstractMessageStream} enforce this by rejecting a call to {@link #next()},
+     * {@link #peek()} or {@link #hasNextAvailable()}, on any such stream, made on a thread that is handling a signal,
+     * with an {@link IllegalStateException}.
+     * No further callback is made until the stream has been read, which is why the reading must not be forgotten.
+     * <p>
      * The callback is called on an arbitrary thread, and it should keep work performed on this thread to a minimum
      * as this may interfere with other callbacks handled by the same thread. Any exception thrown by the callback
      * will result in the stream completing with this exception as the error, unless the callback was called to

@@ -21,7 +21,11 @@ import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
 
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -42,17 +46,55 @@ public final class FluxUtils {
      * multiple invocations of this method on the same {@code source}, or otherwise any components consuming entries
      * from the given {@code source} will cause entries to be consumed by only one of the fluxes or competing
      * consumers.
+     * <p>
+     * Entries are read from the {@code source} on the thread that requests them, or on a thread of
+     * {@link Schedulers#boundedElastic()} when the {@code source} reports later that entries became available.
      *
      * @param source The MessageStream providing the elements.
      * @param <M>    The type of Message returned by the source.
      * @return A Flux with the elements provided by the source.
      */
     public static <M extends Message> Flux<MessageStream.Entry<M>> of(MessageStream<? extends M> source) {
+        return of(source, Schedulers.boundedElastic());
+    }
+
+    /**
+     * Creates a Flux containing the {@link MessageStream.Entry entries} provided by the given {@code source}, as
+     * {@link #of(MessageStream)} does, but reading entries that the {@code source} reports to be available later on a
+     * thread of the given {@code scheduler}.
+     * <p>
+     * The thread on which the {@code source} reports this is usually shared with other streams, and is only used to
+     * schedule the read. The given {@code scheduler} must therefore not run tasks on the scheduling thread, as
+     * {@link Schedulers#immediate()} does. Downstream operators and the subscriber receive the entries on the thread
+     * that read them.
+     *
+     * @param source    The MessageStream providing the elements.
+     * @param scheduler The {@link Scheduler} on which to read entries that become available after the subscription,
+     *                  for example a single thread scheduler for a source that must be read from one specific thread.
+     * @param <M>       The type of Message returned by the source.
+     * @return A Flux with the elements provided by the source.
+     */
+    public static <M extends Message> Flux<MessageStream.Entry<M>> of(MessageStream<? extends M> source,
+                                                                      Scheduler scheduler) {
         return Flux.create(emitter -> {
             FluxStreamAdapter<M> fluxTask = new FluxStreamAdapter<>(source, emitter);
+            AtomicBoolean scheduled = new AtomicBoolean();
+
             emitter.onRequest(i -> fluxTask.process());
             emitter.onDispose(source::close);
-            source.setCallback(fluxTask::process);
+            source.setCallback(() -> {
+                if (scheduled.compareAndSet(false, true)) {  // signals that arrive before the read starts share one read
+                    try {
+                        scheduler.schedule(() -> {
+                            scheduled.set(false);
+                            fluxTask.process();
+                        });
+                    }
+                    catch (RejectedExecutionException e) {
+                        emitter.error(e);
+                    }
+                }
+            });
         });
     }
 
