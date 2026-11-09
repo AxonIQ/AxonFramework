@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
@@ -158,5 +159,70 @@ class QueueMessageStreamTest extends MessageStreamTest<EventMessage> {
         assertTrue(testSubject.isCompleted());  // completed as next element was attempted to be accessed
 
         assertTrue(testSubject.isCompleted());
+    }
+
+    @Nested
+    class WhenSealedWhileTheConsumerIsWaiting {
+
+        /*
+         * Sealing is the producer's only signal that the stream ended: it fires the callback once and never
+         * again. The callback may not read from the stream, so the consumer observes the end by reading once
+         * the callback returned.
+         */
+
+        @Test
+        void thenAConsumerThatReadsObservesTheEnd() {
+            // given: a consumer that is woken by the seal
+            QueueMessageStream<EventMessage> testSubject = new QueueMessageStream<>();
+            AtomicInteger signals = new AtomicInteger();
+
+            testSubject.setCallback(signals::incrementAndGet);
+
+            // when: the producer ends the stream, which is the last signal the consumer receives
+            testSubject.seal();
+
+            // then
+            assertThat(signals).hasValue(1);
+            assertFalse(testSubject.hasNextAvailable());
+            assertTrue(testSubject.isCompleted());
+        }
+
+        @Test
+        void thenAConsumerThatDrainsFirstObservesTheEnd() {
+            // given: the same consumer, with entries left to hand out before the end
+            QueueMessageStream<EventMessage> testSubject = new QueueMessageStream<>();
+            EventMessage message = createRandomMessage();
+            AtomicInteger signals = new AtomicInteger();
+
+            testSubject.offer(message, Context.empty());
+            testSubject.setCallback(signals::incrementAndGet);
+
+            while (testSubject.hasNextAvailable()) {
+                testSubject.next();
+            }
+
+            // when
+            testSubject.seal();
+
+            // then
+            assertThat(signals).hasValue(2);
+            assertFalse(testSubject.hasNextAvailable());
+            assertTrue(testSubject.isCompleted());
+        }
+
+        @Test
+        void thenASealedExceptionallyStreamReportsItsErrorOnceRead() {
+            // given
+            QueueMessageStream<EventMessage> testSubject = new QueueMessageStream<>();
+            RuntimeException failure = new RuntimeException("producer failed");
+
+            // when
+            testSubject.sealExceptionally(failure);
+
+            // then
+            assertFalse(testSubject.hasNextAvailable());
+            assertTrue(testSubject.isCompleted());
+            assertThat(testSubject.error()).contains(failure);
+        }
     }
 }
