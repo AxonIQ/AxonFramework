@@ -170,19 +170,15 @@ Axon Framework 4 persisted and transported metadata values it could not represen
 Natively represented values were text, numbers, and booleans.
 Everything else, such as nested maps, lists, `UUID`, `Instant`, enums, and custom objects, was serialized.
 
-Axon Framework 5 deliberately does not support these serialized metadata values.
-Converting them requires knowing the serializer that wrote them and the class of every stored value, which does not fit the `String`-only metadata model.
+Axon Framework 5 deliberately does not deserialize these metadata values back into objects.
+That requires knowing the serializer that wrote them and the class of every stored value, which does not fit the `String`-only metadata model.
+Instead, where the stored form is text, such as JSON or XML, the value is made available as that text.
+Where it cannot be rendered as text, for example with a binary serializer, the value is not available.
 This applies to any message whose metadata was serialized, regardless of how it is stored or transported.
-
-[WARNING]
-====
-A metadata value that was serialized by Axon Framework 4 is not available on the Axon Framework 5 message.
-The key is missing, so a handler reading it, for example through `@MetadataValue("key")`, receives nothing.
-====
 
 To avoid losing metadata, make sure values are text, numbers, or booleans before migrating.
 In practice, put such metadata values on your Axon Framework 4 messages as `String`s.
-Metadata that is already stored as serialized bytes cannot be reached from Axon Framework 5 at this moment in time.
+Metadata that is already stored as serialized bytes can only be read as text from Axon Framework 5 at this moment in time.
 For what happens per event store, see xref:migration:paths/event-store.adoc#af4-metadata[Axon Framework 4 metadata] in the event store migration path.
 
 If this decision leaves you stuck, please open an issue on the https://github.com/AxonFramework/AxonFramework/issues[Axon Framework repository].
