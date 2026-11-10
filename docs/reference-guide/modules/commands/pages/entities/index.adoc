@@ -40,6 +40,9 @@ This is the recommended approach for Vertical Slice Architecture.
 |xref:commands:entities/entity-hierarchies.adoc[Entity hierarchies]
 |How to structure a parent entity that owns child entities, including command and event routing, single vs. collection children, and custom routing strategies.
 
+|xref:commands:entities/entity-inheritance.adoc[Entity inheritance]
+|How the event sourcing handlers declared on an entity class and its supertypes run: overrides, separate handlers, immutable chaining, and changing the concrete type.
+
 |xref:commands:entities/entity-polymorphism.adoc[Polymorphic entities]
 |How to model multiple concrete entity types sharing a common abstract parent, with type selection at creation time.
 

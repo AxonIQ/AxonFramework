@@ -120,12 +120,27 @@ public class PolymorphicEntityMetamodel<E> implements EntityMetamodel<E>, Descri
     }
 
     /**
-     * Helper that “captures” the ? extends E for this particular entity instance.
+     * Helper that "captures" the ? extends E for this particular entity instance.
      */
-    @SuppressWarnings("unchecked")
     private <T extends E> EntityMetamodel<T> metamodelFor(T entity) {
-        // we know at runtime the metamodel was stored under entity.getClass()
+        EntityMetamodel<T> concreteMetamodel = concreteMetamodelOrNull(entity);
+        if (concreteMetamodel == null) {
+            throw noConcreteTypeFor(entity);
+        }
+        return concreteMetamodel;
+    }
+
+    @SuppressWarnings("unchecked")
+    private <T extends E> @Nullable EntityMetamodel<T> concreteMetamodelOrNull(T entity) {
         return (EntityMetamodel<T>) concreteMetamodels.get(entity.getClass());
+    }
+
+    private IllegalStateException noConcreteTypeFor(E entity) {
+        return new IllegalStateException(
+                "Cannot use an instance of [" + entity.getClass().getName() + "] as polymorphic entity ["
+                        + entityType().getName() + "]: the class is not registered as a concrete type. List it in"
+                        + " @EventSourcedEntity(concreteTypes = ...) or make the entity type sealed."
+        );
     }
 
     @Override
@@ -189,7 +204,10 @@ public class PolymorphicEntityMetamodel<E> implements EntityMetamodel<E>, Descri
         if (isCreationalCommand(message) && !isInstanceCommand(message)) {
             return MessageStream.failed(new EntityAlreadyExistsForCreationalCommandHandlerException(message, entity));
         }
-        EntityMetamodel<E> concreteMetamodel = metamodelFor(entity);
+        EntityMetamodel<E> concreteMetamodel = concreteMetamodelOrNull(entity);
+        if (concreteMetamodel == null) {
+            return MessageStream.failed(noConcreteTypeFor(entity));
+        }
         if (concreteMetamodel.supportedInstanceCommands().contains(message.type().qualifiedName())) {
             return concreteMetamodel.handleInstance(message, entity, context);
         }
