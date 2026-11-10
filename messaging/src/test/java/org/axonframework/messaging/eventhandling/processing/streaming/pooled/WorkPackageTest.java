@@ -49,9 +49,11 @@ import java.util.Collections;
 import java.util.List;
 import java.util.OptionalLong;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiPredicate;
 import java.util.function.Predicate;
@@ -930,23 +932,33 @@ class WorkPackageTest {
     class ClaimExtensionWhileHandlingEvents {
 
         @Test
-        void batchesExtendTheClaimWhenTheProgressStrategyDefersStoringTheToken() throws InterruptedException {
-            // given - a strategy that never stores a token itself, as one deferring progress to checkpoints does
+        void batchExtendsTheClaimWhenTheProgressStrategyDefersStoringTheToken() {
+            // given - a strategy that never stores a token itself, as one deferring progress to checkpoints does, and
+            //         an event handler that holds on to its batch until it is released
+            int extremelyShortClaimExtensionThreshold = 1;
+            CountDownLatch batchReleased = new CountDownLatch(1);
+            batchProcessorPredicate = (events, token) -> {
+                try {
+                    return batchReleased.await(5, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return false;
+                }
+            };
             WorkPackage deferringTestSubject =
-                    testSubjectBuilder.claimExtensionThreshold(50)
+                    testSubjectBuilder.claimExtensionThreshold(extremelyShortClaimExtensionThreshold)
                                       .progressStrategyFactory(context -> new DeferringProgressStrategy())
                                       .build();
+            long thresholdPassed = System.currentTimeMillis() + extremelyShortClaimExtensionThreshold;
 
-            // when - events keep arriving for four times the threshold, so no worker cycle is idle
-            for (long position = 1; position <= 20; position++) {
-                deferringTestSubject.scheduleEvent(
-                        new SimpleEntry<>(EventTestUtils.asEventMessage("event-" + position),
-                                          globalTrackingTokenContext(position))
-                );
-                Thread.sleep(10);
-            }
+            // when - the batch is released once the threshold has passed while it was being handled
+            deferringTestSubject.scheduleEvent(
+                    new SimpleEntry<>(EventTestUtils.asEventMessage("some-event"), globalTrackingTokenContext(1L))
+            );
+            await().atMost(TIMEOUT).until(() -> System.currentTimeMillis() > thresholdPassed);
+            batchReleased.countDown();
 
-            // then - the batches extend the claim, as no stored token refreshes it
+            // then - the batch extends the claim, as no stored token refreshes it
             await().atMost(TIMEOUT).untilAsserted(
                     () -> verify(tokenStore, atLeastOnce()).extendClaim(eq(PROCESSOR_NAME),
                                                                         eq(segment.getSegmentId()),
