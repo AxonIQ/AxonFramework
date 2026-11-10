@@ -439,7 +439,8 @@ class WorkPackage implements SegmentProgressContext {
         });
         unitOfWork.onInvocation(ctx -> batchProcessor.process(eventBatch, ctx).asCompletableFuture());
         // One transaction handles the batch AND persists this cycle's progress (if any).
-        unitOfWork.onPrepareCommit(progressStrategy::onBatchCommit);
+        unitOfWork.onPrepareCommit(ctx -> progressStrategy.onBatchCommit(ctx)
+                                                          .thenCompose(unused -> extendClaimIfThresholdIsMet(ctx)));
         unitOfWork.runOnAfterCommit(ctx -> {
             segmentStatusUpdater.accept(status -> status.advancedTo(lastConsumedToken));
             if (batchProcessedCallback != null) {

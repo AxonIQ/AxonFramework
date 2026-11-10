@@ -926,6 +926,36 @@ class WorkPackageTest {
         }
     }
 
+    @Nested
+    class ClaimExtensionWhileHandlingEvents {
+
+        @Test
+        void batchesExtendTheClaimWhenTheProgressStrategyDefersStoringTheToken() throws InterruptedException {
+            // given - a strategy that never stores a token itself, as one deferring progress to checkpoints does
+            WorkPackage deferringTestSubject =
+                    testSubjectBuilder.claimExtensionThreshold(50)
+                                      .progressStrategyFactory(context -> new DeferringProgressStrategy())
+                                      .build();
+
+            // when - events keep arriving for four times the threshold, so no worker cycle is idle
+            for (long position = 1; position <= 20; position++) {
+                deferringTestSubject.scheduleEvent(
+                        new SimpleEntry<>(EventTestUtils.asEventMessage("event-" + position),
+                                          globalTrackingTokenContext(position))
+                );
+                Thread.sleep(10);
+            }
+
+            // then - the batches extend the claim, as no stored token refreshes it
+            await().atMost(TIMEOUT).untilAsserted(
+                    () -> verify(tokenStore, atLeastOnce()).extendClaim(eq(PROCESSOR_NAME),
+                                                                        eq(segment.getSegmentId()),
+                                                                        any())
+            );
+            verify(tokenStore, never()).storeToken(any(), anyString(), anyInt(), any());
+        }
+    }
+
     private static Context globalTrackingTokenContext(long globalIndex) {
         return trackingTokenContext(new GlobalSequenceTrackingToken(globalIndex));
     }
@@ -971,5 +1001,22 @@ class WorkPackageTest {
 
     record ContextMessage(EventMessage message, Context context) {
 
+    }
+
+    /**
+     * A {@link SegmentProgressStrategy} that never stores a token on its own, standing in for one that defers progress
+     * to explicit checkpoints.
+     */
+    private static class DeferringProgressStrategy implements SegmentProgressStrategy {
+
+        @Override
+        public CompletableFuture<Void> onBatchCommit(ProcessingContext context) {
+            return FutureUtils.emptyCompletedFuture();
+        }
+
+        @Override
+        public boolean hasPendingWork() {
+            return false;
+        }
     }
 }
