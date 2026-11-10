@@ -1006,7 +1006,7 @@ class Coordinator {
                                 generation);
                         scheduleCoordinationTask(500);
                     } else {
-                        long delay = Math.min(claimExtensionThreshold, tokenClaimInterval);
+                        long delay = Math.min(500, Math.min(claimExtensionThreshold, tokenClaimInterval));
                         logger.trace(
                                 "Processor [{}] (Coordination Task [{}]). Space available, no events pending. "
                                         + "Scheduling delayed coordination task (itself) with delay of {}ms.",
