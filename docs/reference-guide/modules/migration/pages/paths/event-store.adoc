@@ -255,12 +255,12 @@ The following table shows what each kind of stored value turns into:
 | `String.valueOf(value)`.
 
 | Nested map, list, or other object (`UUID`, `Instant`, enum, custom object)
-| Not converted, the key is missing from the message and a message is logged.
-| Not readable: the conversion of the metadata fails, so the **whole event** cannot be read.
+| Rendered as a `String` by the configured event converter, for example as JSON with a `JacksonConverter`. When the converter cannot render it, the text the Axon Framework 4 serializer wrote is used, such as XML. When it is not text, for example with a binary serializer, the key remains with a `null` value and a warning is logged.
+| Rendered as a JSON `String`, for example `{"key":"v"}` for a map or `[1,2]` for a list.
 | `String.valueOf(value)`, for example `{a=b}` for a map or the `toString()` of a custom object, provided its class is allowed.
 
 | `null`
-| Not converted, the key is missing from the message.
+| Remains `null`.
 | Remains `null`.
 | Remains `null`.
 
@@ -271,7 +271,8 @@ The following table shows what each kind of stored value turns into:
 |===
 
 Note that Axon Server only supports text, number, and boolean values natively.
-Other values are stored as serialized bytes, which Axon Framework 5 deliberately does not convert.
+Other values are stored as serialized bytes, which Axon Framework 5 deliberately does not deserialize into objects.
+Axon Framework 5 renders these bytes as text through the configured event converter instead.
 For JPA, Axon Framework 4 serialized the whole metadata map into the `metaData` column using the event serializer.
 Hence, the Axon Framework 5 event converter needs to match the serializer that wrote the rows.
 
