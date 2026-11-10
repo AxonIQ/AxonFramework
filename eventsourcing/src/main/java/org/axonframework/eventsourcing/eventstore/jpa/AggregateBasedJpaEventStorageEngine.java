@@ -23,6 +23,7 @@ import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.common.jdbc.PersistenceExceptionResolver;
 import org.axonframework.common.tx.TransactionalExecutor;
+import org.axonframework.conversion.ConversionException;
 import org.axonframework.conversion.Converter;
 import org.axonframework.eventsourcing.eventstore.AggregateBasedConsistencyMarker;
 import org.axonframework.eventsourcing.eventstore.EventTypeResolver;
@@ -61,9 +62,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -100,6 +103,8 @@ public class AggregateBasedJpaEventStorageEngine implements EventStorageEngine {
     private static final Logger logger = LoggerFactory.getLogger(AggregateBasedJpaEventStorageEngine.class);
 
     private static final TypeReference<Map<String, String>> METADATA_MAP_TYPE_REF = new TypeReference<>() {
+    };
+    private static final TypeReference<Map<String, Object>> LENIENT_METADATA_MAP_TYPE_REF = new TypeReference<>() {
     };
 
     private static final String FIRST_TOKEN_QUERY = "SELECT COALESCE(MIN(e.globalIndex) - 1, -1) FROM AggregateEventEntry e";
@@ -482,9 +487,53 @@ public class AggregateBasedJpaEventStorageEngine implements EventStorageEngine {
         return new GenericEventMessage(event.identifier(),
                                        eventTypeResolver.resolve(event.type(), event.version()),
                                        event.payload(),
-                                       converter.convert(event.metadata(), METADATA_MAP_TYPE_REF.getType()),
+                                       convertMetadata(event),
                                        event.timestamp()
         ).withConverter(converter);
+    }
+
+    /**
+     * Converts the stored metadata of the given {@code event} to a {@code Map<String, String>}.
+     * <p>
+     * Axon Framework 4 allowed any object as a metadata value, so a stored row may contain values, such as nested maps
+     * or lists, that cannot be read as a {@code String}. When the strict conversion fails, the metadata is read
+     * leniently instead: {@code String} values are kept as is, {@code null} values remain {@code null}, and any other
+     * value is rendered as {@code String} through the {@link #converter}, resulting in JSON for a JSON-based
+     * converter. This ensures a single complex metadata value does not make the entire event unreadable.
+     */
+    private Map<String, @Nullable String> convertMetadata(AggregateEventEntry event) {
+        try {
+            return converter.convert(event.metadata(), METADATA_MAP_TYPE_REF.getType());
+        } catch (ConversionException strictFailure) {
+            Map<String, Object> lenient;
+            try {
+                lenient = converter.convert(event.metadata(), LENIENT_METADATA_MAP_TYPE_REF.getType());
+            } catch (ConversionException lenientFailure) {
+                strictFailure.addSuppressed(lenientFailure);
+                throw strictFailure;
+            }
+            if (lenient == null) {
+                return Collections.emptyMap();
+            }
+            logger.debug("Event [{}] has metadata values that are not Strings. Rendering these as Strings.",
+                         event.identifier());
+            Map<String, @Nullable String> result = new HashMap<>();
+            lenient.forEach((key, value) -> result.put(key, renderMetadataValue(value)));
+            return result;
+        }
+    }
+
+    @Nullable
+    private String renderMetadataValue(@Nullable Object value) {
+        if (value == null || value instanceof String) {
+            return (String) value;
+        }
+        try {
+            byte[] rendered = converter.convert(value, byte[].class);
+            return rendered == null ? null : new String(rendered, StandardCharsets.UTF_8);
+        } catch (ConversionException e) {
+            return String.valueOf(value);
+        }
     }
 
     private static Context buildTrackedContext(TokenAndEvent tokenAndEvent) {
