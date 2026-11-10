@@ -160,6 +160,7 @@ include::example$migration/paths/messages/OrderCreatedEvent.java[tag=event-tag-a
 This tagging is crucial for maintaining the link between the event and its entity, enabling correct event sourcing and consistency boundary protection in AF5.
 For more details on migrating to event tagging, see xref:migration:paths/aggregates/event-tagging.adoc[Event tagging migration guide].
 
+[#metadata_values]
 == Metadata values
 
 In Axon Framework 4, message metadata was a `Map<String, ?>`, so a metadata value could be any object.
@@ -182,6 +183,7 @@ The key is missing, so a handler reading it, for example through `@MetadataValue
 To avoid losing metadata, make sure values are text, numbers, or booleans before migrating.
 In practice, put such metadata values on your Axon Framework 4 messages as `String`s.
 Metadata that is already stored as serialized bytes cannot be reached from Axon Framework 5 at this moment in time.
+For what happens per event store, see xref:migration:paths/event-store.adoc#af4-metadata[Axon Framework 4 metadata] in the event store migration path.
 
 If this decision leaves you stuck, please open an issue on the https://github.com/AxonFramework/AxonFramework/issues[Axon Framework repository].
 Providing a custom conversion function to make the switch inline is doable, but we aim to collect metrics on this before putting effort into it.

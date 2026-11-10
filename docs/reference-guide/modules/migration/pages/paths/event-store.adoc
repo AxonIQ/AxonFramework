@@ -230,6 +230,60 @@ This substitution happens only at read time.
 Stored events are never modified; the missing version is resolved in memory when the event is read from the store.
 ====
 
+[#af4-metadata]
+== Axon Framework 4 metadata
+
+Axon Framework 4 metadata values could be any object, while Axon Framework 5 metadata is a `Map<String, String>`.
+Events that Axon Framework 4 stored with non-`String` metadata values therefore behave differently per event store.
+Make sure you know what happens to such values before migrating.
+See the xref:migration:paths/messages.adoc#metadata_values[message migration path] for the reasoning behind the `String`-only metadata.
+
+The following table shows what each kind of stored value turns into:
+
+[cols="2,2,2,2",options="header"]
+|===
+| Stored by Axon Framework 4 | Axon Server | JPA with a `JacksonConverter` | JPA with the legacy `XStreamConverter`
+
+| Text
+| The text as is.
+| The text as is.
+| The text as is.
+
+| Number or boolean
+| Converted to a `String`, for example `"3"` or `"true"`.
+| Converted to a `String`, for example `"3"` or `"true"`.
+| `String.valueOf(value)`.
+
+| Nested map, list, or other object (`UUID`, `Instant`, enum, custom object)
+| Not converted, the key is missing from the message and a message is logged.
+| Not readable: the conversion of the metadata fails, so the **whole event** cannot be read.
+| `String.valueOf(value)`, for example `{a=b}` for a map or the `toString()` of a custom object, provided its class is allowed.
+
+| `null`
+| Not converted, the key is missing from the message.
+| Remains `null`.
+| Remains `null`.
+
+| Event serialized with XStream (XML)
+| Not applicable.
+| Not readable by a Jackson-based converter.
+| Readable.
+|===
+
+Note that Axon Server only supports text, number, and boolean values natively.
+Other values are stored as serialized bytes, which Axon Framework 5 deliberately does not convert.
+For JPA, Axon Framework 4 serialized the whole metadata map into the `metaData` column using the event serializer.
+Hence, the Axon Framework 5 event converter needs to match the serializer that wrote the rows.
+
+Before migrating, take these steps:
+
+. Find the handlers that rely on non-`String` metadata, for example through `@MetadataValue`, and the interceptors or dispatchers that set such metadata.
+. On Axon Framework 4, write those metadata values as `String`s for events that are still to be stored.
+. For events that are already stored, check the above table for your event store and decide whether the outcome is acceptable.
+
+If you are stuck on stored events with non-`String` metadata, please open an issue on the https://github.com/AxonFramework/AxonFramework/issues[Axon Framework repository].
+Providing a custom conversion function to read such metadata leniently can be built, but we want to gather user feedback to ensure we are not building functionality that is not going to be used.
+
 [#jpa-migration]
 == JPA event storage migration
 
