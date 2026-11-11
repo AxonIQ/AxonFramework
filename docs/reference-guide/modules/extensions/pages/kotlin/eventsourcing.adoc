@@ -1,0 +1,50 @@
+:navtitle: Event Sourcing
+= Event sourcing
+
+This section describes the helpers for declaring and evolving event-sourced entities.
+They live in the `org.axonframework.extension.kotlin.eventsourcing` package.
+
+[[entity-module]]
+== `EventSourcedEntityModuleExt`
+
+`EventSourcedEntityModuleExt` mirrors the static factory methods of `EventSourcedEntityModule`, replacing the `Class` parameters with type arguments or `KClass` instances.
+
+[cols="2,3",options="header"]
+|===
+|Function |Equivalent `EventSourcedEntityModule` method
+
+|`autodetected<ID, E>()`
+|`autodetected(Class, Class)`
+
+|`declarative<ID, E>()`
+|`declarative(Class, Class)`
+|===
+
+Both functions also have an overload taking the `KClass` of the identifier and entity instead of type arguments.
+
+[source,kotlin]
+----
+include::example$extensions/kotlin/eventsourcing/EntityModuleExamples.kt[tag=entity-module,indent=0]
+----
+
+[[evolveif]]
+== `evolveIf`
+
+`evolveIf` conditionally applies an evolver to any value.
+It returns the result of the evolver when the condition is `true`, and the unchanged receiver otherwise.
+
+Use it when an event always changes the state of an immutable entity, but only changes some parts of it under a condition.
+Event-sourced entities that are Kotlin data classes evolve by copying: every event handler returns a new instance.
+When part of that copy depends on a condition, you would otherwise need a temporary `var`, or an `if`/`else` that repeats the unconditional part of the copy in both branches.
+`evolveIf` lets you write the unconditional change first, and chain every conditional change after it.
+The evolver receives the value built so far, so conditional changes build on the unconditional ones and on each other.
+
+The function is not tied to entities or events.
+It is a plain `inline` extension on any type, so you can use it wherever a value is built up step by step.
+
+In the example below, a player joining always adds the player to the game, and starts the game only once enough players have joined:
+
+[source,kotlin]
+----
+include::example$extensions/kotlin/eventsourcing/EvolveIfExamples.kt[tag=evolve-if,indent=0]
+----
