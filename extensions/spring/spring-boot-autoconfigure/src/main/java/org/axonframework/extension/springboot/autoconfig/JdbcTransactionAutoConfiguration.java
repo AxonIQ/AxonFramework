@@ -19,10 +19,12 @@ package org.axonframework.extension.springboot.autoconfig;
 import org.axonframework.common.jdbc.ConnectionProvider;
 import org.axonframework.common.jpa.EntityManagerProvider;
 import org.axonframework.extension.spring.messaging.unitofwork.SpringTransactionManager;
+import org.axonframework.extension.springboot.TransactionProperties;
 import org.axonframework.messaging.core.unitofwork.transaction.TransactionManager;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.lang.Nullable;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -44,6 +46,7 @@ import javax.sql.DataSource;
         }
 )
 @ConditionalOnBean({DataSource.class, PlatformTransactionManager.class})
+@EnableConfigurationProperties(TransactionProperties.class)
 public class JdbcTransactionAutoConfiguration {
 
     /**
@@ -54,6 +57,7 @@ public class JdbcTransactionAutoConfiguration {
      *                              {@link SpringTransactionManager}.
      * @param entityManagerProvider An optional entity manager provider.
      * @param connectionProvider    An optional connection provider.
+     * @param properties            The properties of the transactions that are started for units of work.
      * @return The {@link TransactionManager} to be used by Axon Framework.
      */
     @Bean
@@ -61,8 +65,14 @@ public class JdbcTransactionAutoConfiguration {
     public TransactionManager axonTransactionManager(
             PlatformTransactionManager transactionManager,
             @Nullable EntityManagerProvider entityManagerProvider,
-            @Nullable ConnectionProvider connectionProvider
+            @Nullable ConnectionProvider connectionProvider,
+            TransactionProperties properties
     ) {
-        return new SpringTransactionManager(transactionManager, entityManagerProvider, connectionProvider);
+        SpringTransactionManager axonTransactionManager =
+                new SpringTransactionManager(transactionManager, entityManagerProvider, connectionProvider);
+
+        axonTransactionManager.setAllowJoiningActiveTransaction(properties.isAllowJoiningActiveTransaction());
+
+        return axonTransactionManager;
     }
 }

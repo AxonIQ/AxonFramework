@@ -35,6 +35,7 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -148,6 +149,55 @@ class EntityManagerTransactionManagerTest {
             testSubject.startTransaction().rollback();
 
             // then
+            verify(entityTransaction, never()).rollback();
+        }
+    }
+
+    @Nested
+    class AttachToProcessingLifecycleWhenTransactionIsAlreadyActive {
+
+        @Test
+        void rejectsTheProcessingLifecycleAndLeavesTheActiveTransactionUntouched(
+                @Captor ArgumentCaptor<Consumer<ProcessingContext>> captor) {
+            // given
+            when(entityTransaction.isActive()).thenReturn(true);
+            ProcessingLifecycle processingLifecycle = mock(ProcessingLifecycle.class);
+            StubProcessingContext processingContext = new StubProcessingContext();
+
+            testSubject.attachToProcessingLifecycle(processingLifecycle);
+            verify(processingLifecycle).runOnPreInvocation(captor.capture());
+
+            // when / then
+            assertThatThrownBy(() -> captor.getValue().accept(processingContext))
+                    .isInstanceOf(IllegalStateException.class);
+
+            verify(entityTransaction, never()).begin();
+            verify(entityTransaction, never()).commit();
+            verify(entityTransaction, never()).rollback();
+            verify(entityTransaction, never()).setRollbackOnly();
+        }
+
+        @Test
+        void acceptsTheProcessingLifecycleWhenJoiningIsAllowedAndLeavesTheCommitToTheActiveTransaction(
+                @Captor ArgumentCaptor<Consumer<ProcessingContext>> captor) {
+            // given
+            when(entityTransaction.isActive()).thenReturn(true);
+            testSubject.setAllowJoiningActiveTransaction(true);
+
+            ProcessingLifecycle processingLifecycle = mock(ProcessingLifecycle.class);
+            StubProcessingContext processingContext = new StubProcessingContext();
+
+            testSubject.attachToProcessingLifecycle(processingLifecycle);
+            verify(processingLifecycle).runOnPreInvocation(captor.capture());
+
+            // when
+            captor.getValue().accept(processingContext);
+            processingContext.moveToPhase(ProcessingLifecycle.DefaultPhases.COMMIT);
+
+            // then
+            assertThat(processingContext.getResource(JpaTransactionalExecutorProvider.SUPPLIER_KEY)).isNotNull();
+            verify(entityTransaction, never()).begin();
+            verify(entityTransaction, never()).commit();
             verify(entityTransaction, never()).rollback();
         }
     }
