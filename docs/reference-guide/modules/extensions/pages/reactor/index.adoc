@@ -1,0 +1,63 @@
+:navtitle: Reactor Extension
+= Reactor
+
+Overlooking Axon Framework's architecture, you can notice that in general systems using the framework are "Message Driven", "Responsive", "Resilient" and "Elastic".
+According to the link:https://www.reactivemanifesto.org/[Reactive Manifesto,window=_blank,role=external], the same holds for Reactive Systems in general.
+
+Although we can state that Axon Framework is a type of reactive system, we can't say that it is fully reactive.
+
+NOTE: Reactive programming is an approach to writing software that embraces asynchronous I/O.
+Asynchronous I/O is a small idea that portends big changes for software.
+The idea is simple: alleviate inefficient resource utilization by reclaiming resources that would otherwise be idle, as they waited for I/O activity.
+Asynchronous I/O inverts the normal design I/O processing: the clients are notified of new data instead of asking for it, which frees the client to do other work while waiting for these notifications.
+
+By their nature, a reactive API and Axon are a great fit, as most of the framework's operations are async and non-blocking.
+Providing a dedicated extension for this was thus a logical step to take.
+To that end, we chose to use link:https://projectreactor.io/[Project Reactor,window=_blank,role=external] to build this extension.
+Reactor builds on top of the link:https://www.reactive-streams.org/[Reactive Streams specification,window=_blank,role=external] and is the de-facto standard for Java enterprise and Spring applications.
+As such, we feel it to be a great fit to provide an extension in, making Axon more reactive.
+
+NOTE: Not all Axon components offer a reactive API, yet.
+The extension currently provides reactive gateways for commands, queries, and events, and a reactive variant of the dispatch interceptor.
+See xref:extensions:reactor/dispatching.adoc[Dispatching] and xref:extensions:reactor/intercepting.adoc[Intercepting] for the details.
+
+To use the Reactor Extension, add the `axon-reactor` artifact with group id `org.axonframework.extensions.reactor` to your project.
+The artifact is versioned together with Axon Framework:
+
+[tabs]
+====
+Maven::
++
+--
+[source,xml]
+----
+<dependency>
+    <groupId>org.axonframework.extensions.reactor</groupId>
+    <artifactId>axon-reactor</artifactId>
+    <version>${axon.version}</version>
+</dependency>
+----
+--
+
+Gradle::
++
+--
+[source,kotlin]
+----
+implementation("org.axonframework.extensions.reactor:axon-reactor:$axonVersion")
+----
+--
+====
+
+The reactive gateways are registered automatically when the artifact is on the classpath.
+In Spring Boot applications, no further configuration is required.
+
+== Subsections
+
+[cols="<,<"]
+|===
+|Sub-Section |Purpose
+
+|xref:extensions:reactor/dispatching.adoc[Dispatching] |How to send commands and queries, and publish events, through the Reactor gateways
+|xref:extensions:reactor/intercepting.adoc[Intercepting] |How to intercept messages dispatched through the Reactor gateways, with access to the Reactor context
+|===
