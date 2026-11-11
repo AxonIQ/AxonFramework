@@ -1,0 +1,70 @@
+:navtitle: Kotlin Extension
+= Kotlin
+
+link:https://kotlinlang.org/[Kotlin,window=_blank,role=external] is a programming language which interoperates fully with Java and the JVM.
+As Axon Framework is written in Java, it can be used from Kotlin as is.
+Some of its APIs, however, feel awkward in Kotlin: they require explicit `Class` parameters, backticks around `when`, or Java-style nullability annotations.
+
+The Kotlin Extension removes that awkwardness.
+It provides link:https://kotlinlang.org/docs/inline-functions.html[inline and reified,window=_blank,role=external] extension functions on Axon Framework's API, plus Kotlin-aware property access and nullability handling.
+
+The extension consists of two modules:
+
+[cols="2,3",options="header"]
+|===
+|Artifact |Purpose
+
+|`axon-kotlin`
+|Extension functions for messaging and event sourcing, and Kotlin support for property access and nullability.
+
+|`axon-kotlin-test`
+|Extension functions for the xref:testing:index.adoc[test fixture].
+|===
+
+Both artifacts use the group id `org.axonframework.extensions.kotlin` and are versioned together with Axon Framework.
+Both are also part of the xref:ROOT:modules.adoc#axon-framework-bom[Axon Framework Bill of Materials], so you can omit the version when you import the BOM.
+Add them to your project as follows:
+
+[tabs]
+====
+Maven::
++
+--
+[source,xml]
+----
+<dependency>
+    <groupId>org.axonframework.extensions.kotlin</groupId>
+    <artifactId>axon-kotlin</artifactId>
+    <version>${axon.version}</version>
+</dependency>
+<dependency>
+    <groupId>org.axonframework.extensions.kotlin</groupId>
+    <artifactId>axon-kotlin-test</artifactId>
+    <version>${axon.version}</version>
+    <scope>test</scope>
+</dependency>
+----
+--
+
+Gradle::
++
+--
+[source,kotlin]
+----
+implementation("org.axonframework.extensions.kotlin:axon-kotlin:$axonVersion")
+testImplementation("org.axonframework.extensions.kotlin:axon-kotlin-test:$axonVersion")
+----
+--
+====
+
+== Subsections
+
+[cols="<,<"]
+|===
+|Sub-Section |Purpose
+
+|xref:extensions:kotlin/messaging.adoc[Messaging] |Sending commands and queries with reified types, emitting query updates, and working with metadata
+|xref:extensions:kotlin/eventsourcing.adoc[Event sourcing] |Declaring event-sourced entities and evolving state conditionally
+|xref:extensions:kotlin/testing.adoc[Testing] |Kotlin-friendly test fixture methods
+|xref:extensions:kotlin/reflection.adoc[Property access and nullability] |Kotlin value classes and nullable types in handlers and entities
+|===
