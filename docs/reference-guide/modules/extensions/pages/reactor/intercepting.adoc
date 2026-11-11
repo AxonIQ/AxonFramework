@@ -1,0 +1,67 @@
+:navtitle: Intercepting
+= Intercepting
+
+Axon provides a notion of interceptors.
+The Reactor gateways allow for similar interceptor logic, namely the `ReactorMessageDispatchInterceptor`.
+It allows us to centrally define rules and filters that will be applied to the messages sent through the Reactor gateways.
+
+NOTE: Interceptors will be applied in the order they have been registered.
+
+== Reactor dispatch interceptors
+
+The `ReactorMessageDispatchInterceptor` should be used to centrally apply rules and validations for outgoing messages.
+It is the Reactor counterpart of the `MessageDispatchInterceptor`, with one important difference: it runs inside the Reactor subscription.
+The Reactor `Context` is thus available to the interceptor, which enables integration with reactive context holders such as Spring Security's `ReactiveSecurityContextHolder`.
+
+The interface is described as follows:
+
+[source,java]
+----
+@FunctionalInterface
+public interface ReactorMessageDispatchInterceptor<M extends Message> {
+
+    Mono<?> interceptOnDispatch(M message,
+                                @Nullable ProcessingContext context,
+                                ReactorMessageDispatchInterceptorChain<M> chain);
+}
+----
+
+An interceptor receives the `message` that is being dispatched, the active `ProcessingContext` (if any), and the remaining `chain`.
+It continues the chain by calling `chain.proceed(message, context)`, optionally with an enriched message.
+Not calling `proceed` discards the message.
+Here are a couple of examples how a dispatch interceptor could be used:
+
+[source,java]
+.Dispatch interceptor that adds a key-value pair to the message's `Metadata`.
+----
+include::example$extensions/reactor/intercepting/InterceptorExamples.java[tag=metadata-interceptor,indent=0]
+----
+
+[source,java]
+.Dispatch interceptor that discards the message, based on a security flag in the Reactor Context.
+----
+include::example$extensions/reactor/intercepting/InterceptorExamples.java[tag=security-interceptor,indent=0]
+----
+
+An interceptor can be typed on `CommandMessage`, `EventMessage`, or `QueryMessage` to only apply to that type of message.
+An interceptor typed on `Message` applies to all of them.
+For an example that integrates with Spring Security, see xref:messaging-concepts:message-intercepting.adoc[Message interception].
+
+== Registering interceptors
+
+In a Spring Boot application, declare the interceptors as beans.
+They are discovered and registered automatically, on the gateway matching their message type:
+
+[source,java]
+----
+include::example$extensions/reactor/intercepting/SpringInterceptorConfiguration.java[tag=spring-interceptor-bean,indent=0]
+----
+
+In a plain Java application, register the interceptor by decorating the `ReactorDispatchInterceptorRegistry` component:
+
+[source,java]
+----
+include::example$extensions/reactor/intercepting/PlainJavaInterceptorRegistration.java[tag=plain-java-interceptor,indent=0]
+----
+
+The registry also offers `registerEventInterceptor`, `registerQueryInterceptor`, and `registerInterceptor` for interceptors on events, queries, and all messages, respectively.
