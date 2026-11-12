@@ -59,6 +59,7 @@ import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.axonframework.common.FutureUtils.joinAndUnwrap;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -381,7 +382,7 @@ class JdbcTokenStoreTest {
         transactionManager.executeInTransaction(
                 () -> joinAndUnwrap(tokenStore.storeToken(newToken, "test", 0, createProcessingContext())));
         TrackingToken updatedToken = transactionManager.fetchInTransaction(
-                () -> joinAndUnwrap(tokenStore.fetchToken("test", 0, null)));
+                () -> joinAndUnwrap(tokenStore.fetchToken("test", 0, createProcessingContext())));
         assertEquals(newToken, updatedToken);
     }
 
@@ -394,11 +395,11 @@ class JdbcTokenStoreTest {
                                                                        createProcessingContext())));
 
         TrackingToken token = transactionManager.fetchInTransaction(
-                () -> joinAndUnwrap(tokenStore.fetchToken("concurrent", 0, null)));
+                () -> joinAndUnwrap(tokenStore.fetchToken("concurrent", 0, createProcessingContext())));
         assertNull(token);
         assertThrows(UnableToClaimTokenException.class,
                      () -> transactionManager.executeInTransaction(
-                             () -> joinAndUnwrap(concurrentTokenStore.fetchToken("concurrent", 0, null))));
+                             () -> joinAndUnwrap(concurrentTokenStore.fetchToken("concurrent", 0, createProcessingContext()))));
     }
 
     @Test
@@ -427,10 +428,10 @@ class JdbcTokenStoreTest {
                                                                        createProcessingContext())));
 
         transactionManager.executeInTransaction(
-                () -> joinAndUnwrap(tokenStore.fetchToken("concurrent", 0, null)));
+                () -> joinAndUnwrap(tokenStore.fetchToken("concurrent", 0, createProcessingContext())));
         ClockUtils.set(Clock.offset(ClockUtils.get(), Duration.ofHours(1)));
         TrackingToken token = transactionManager.fetchInTransaction(
-                () -> joinAndUnwrap(concurrentTokenStore.fetchToken("concurrent", 0, null)));
+                () -> joinAndUnwrap(concurrentTokenStore.fetchToken("concurrent", 0, createProcessingContext())));
         assertNull(token);
     }
 
@@ -457,7 +458,7 @@ class JdbcTokenStoreTest {
                                                           createProcessingContext()))));
 
         transactionManager.executeInTransaction(
-                () -> tokenStore.releaseClaim("stealing", 0, null));
+                () -> tokenStore.releaseClaim("stealing", 0, createProcessingContext()));
 
         // claim should still be on stealingTokenStore:
         transactionManager.executeInTransaction(
@@ -503,14 +504,14 @@ class JdbcTokenStoreTest {
 
         // These claim the tokens, despite the method name
         transactionManager.executeInTransaction(
-                () -> joinAndUnwrap(tokenStore.fetchToken("test1", 0, null)));
+                () -> joinAndUnwrap(tokenStore.fetchToken("test1", 0, createProcessingContext())));
         transactionManager.executeInTransaction(
-                () -> joinAndUnwrap(tokenStore.fetchToken("test1", 1, null)));
+                () -> joinAndUnwrap(tokenStore.fetchToken("test1", 1, createProcessingContext())));
         transactionManager.executeInTransaction(
-                () -> joinAndUnwrap(tokenStore.deleteToken("test1", 1, null)));
+                () -> joinAndUnwrap(tokenStore.deleteToken("test1", 1, createProcessingContext())));
 
         List<Segment> segments = transactionManager.fetchInTransaction(
-                () -> joinAndUnwrap(tokenStore.fetchSegments("test1", null)));
+                () -> joinAndUnwrap(tokenStore.fetchSegments("test1", createProcessingContext())));
 
         assertThat(segments).containsExactlyInAnyOrder(createdSegments.get(0));
     }
@@ -519,14 +520,14 @@ class JdbcTokenStoreTest {
     void fetchUnclaimedTokenFails() {
         assertThrows(UnableToClaimTokenException.class,
                      () -> transactionManager.executeInTransaction(
-                             () -> joinAndUnwrap(tokenStore.fetchToken("test1", 1, null))));
+                             () -> joinAndUnwrap(tokenStore.fetchToken("test1", 1, createProcessingContext()))));
     }
 
     @Test
     void fetchTokenFailsWhenClaimedByOtherNode() {
         assertThrows(UnableToClaimTokenException.class,
                      () -> transactionManager.executeInTransaction(
-                             () -> joinAndUnwrap(concurrentTokenStore.fetchToken("test1", 1, null))));
+                             () -> joinAndUnwrap(concurrentTokenStore.fetchToken("test1", 1, createProcessingContext()))));
     }
 
     @Test
@@ -578,13 +579,13 @@ class JdbcTokenStoreTest {
         );
 
         transactionManager.executeInTransaction( () ->  {
-            joinAndUnwrap(tokenStore.fetchToken("multi", 0, null));
+            joinAndUnwrap(tokenStore.fetchToken("multi", 0, createProcessingContext()));
             joinAndUnwrap(tokenStore.storeToken(new GlobalSequenceTrackingToken(1), "multi", 0, context));
         });
 
         {
             Transaction transaction = transactionManager.startTransaction();
-            TrackingToken actual = joinAndUnwrap(tokenStore.fetchToken("multi", 0, null));
+            TrackingToken actual = joinAndUnwrap(tokenStore.fetchToken("multi", 0, createProcessingContext()));
             assertEquals(new GlobalSequenceTrackingToken(1), actual);
             joinAndUnwrap(tokenStore.storeToken(new GlobalSequenceTrackingToken(2),
                                                 "multi",
@@ -594,7 +595,7 @@ class JdbcTokenStoreTest {
         }
 
         transactionManager.executeInTransaction( () ->  {
-            TrackingToken actual = joinAndUnwrap(tokenStore.fetchToken("multi", 0, null));
+            TrackingToken actual = joinAndUnwrap(tokenStore.fetchToken("multi", 0, createProcessingContext()));
             assertEquals(new GlobalSequenceTrackingToken(1), actual);
         });
     }
@@ -635,6 +636,12 @@ class JdbcTokenStoreTest {
             assertThat(identifiers).hasSize(processCount);
             assertThat(Set.copyOf(identifiers)).hasSize(1);
         }
+    }
+
+    @Test
+    void shouldRejectANullProcessingContext() {
+        assertThatThrownBy(() -> tokenStore.fetchSegments("test", null))
+                .isInstanceOf(NullPointerException.class);
     }
 
     private ProcessingContext createProcessingContext() {

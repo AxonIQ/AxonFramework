@@ -217,8 +217,8 @@ class PooledStreamingEventProcessorTest {
                 tokenStore.storeToken(new GlobalSequenceTrackingToken(2L), "test", 1, ctx)
         );
 
-        when(tokenStore.fetchAvailableSegments(eq(testSubject.name()), any()))
-                .thenReturn(completedFuture(Collections.singletonList(createdSegments.get(2))));
+        doReturn(completedFuture(Collections.singletonList(createdSegments.get(2))))
+                .when(tokenStore).fetchAvailableSegments(eq(testSubject.name()), any());
 
         startEventProcessor();
 
@@ -483,7 +483,9 @@ class PooledStreamingEventProcessorTest {
             assertWithin(1, TimeUnit.SECONDS, () -> assertEquals(8, testSubject.processingStatus().size()));
             assertWithin(2, TimeUnit.SECONDS, () -> {
                 long nonNullTokens = IntStream.range(0, 8)
-                                              .mapToObj(i -> tokenStore.fetchToken(PROCESSOR_NAME, i, null))
+                                              .mapToObj(i -> joinAndUnwrap(tokenStore.fetchToken(PROCESSOR_NAME,
+                                                                                                 i,
+                                                                                                 new StubProcessingContext())))
                                               .filter(Objects::nonNull)
                                               .count();
                 assertEquals(8, nonNullTokens);
@@ -821,7 +823,7 @@ class PooledStreamingEventProcessorTest {
                 long nonNullTokens = IntStream.range(0, 8)
                                               .mapToObj(i -> joinAndUnwrap(tokenStore.fetchToken(PROCESSOR_NAME,
                                                                                                  i,
-                                                                                                 null)))
+                                                                                                 new StubProcessingContext())))
                                               .filter(Objects::nonNull)
                                               .count();
                 assertEquals(8, nonNullTokens);
@@ -857,7 +859,7 @@ class PooledStreamingEventProcessorTest {
                 long lowestToken = IntStream.range(0, 8)
                                             .mapToObj(i -> joinAndUnwrap(tokenStore.fetchToken(testSubject.name(),
                                                                                                i,
-                                                                                               null)))
+                                                                                               new StubProcessingContext())))
                                             .mapToLong(token -> token == null ? 0 : token.position().orElse(0))
                                             .min()
                                             .orElse(-1);
@@ -885,8 +887,7 @@ class PooledStreamingEventProcessorTest {
             void returnsIdentifierResolvedDuringStart() {
                 // given
                 String expectedIdentifier = "some-identifier";
-                when(tokenStore.retrieveStorageIdentifier(any()))
-                        .thenReturn(completedFuture(expectedIdentifier));
+                doReturn(completedFuture(expectedIdentifier)).when(tokenStore).retrieveStorageIdentifier(any());
 
                 // when
                 startEventProcessor();
@@ -908,8 +909,7 @@ class PooledStreamingEventProcessorTest {
             void propagatesExceptionWhenLazyResolutionFails() {
                 // given
                 var failure = new UnableToRetrieveIdentifierException("Storage unavailable", new RuntimeException());
-                when(tokenStore.retrieveStorageIdentifier(any()))
-                        .thenReturn(CompletableFuture.failedFuture(failure));
+                doReturn(CompletableFuture.failedFuture(failure)).when(tokenStore).retrieveStorageIdentifier(any());
 
                 // when / then
                 assertThrows(UnableToRetrieveIdentifierException.class, () -> testSubject.getTokenStoreIdentifier());
@@ -919,8 +919,7 @@ class PooledStreamingEventProcessorTest {
             void startCompletesExceptionallyAndSkipsCoordinatorWhenRetrievalFails() {
                 // given
                 var failure = new UnableToRetrieveIdentifierException("Storage unavailable", new RuntimeException());
-                when(tokenStore.retrieveStorageIdentifier(any()))
-                        .thenReturn(CompletableFuture.failedFuture(failure));
+                doReturn(CompletableFuture.failedFuture(failure)).when(tokenStore).retrieveStorageIdentifier(any());
 
                 // when
                 var startFuture = testSubject.start();
@@ -1375,7 +1374,7 @@ class PooledStreamingEventProcessorTest {
             await().pollDelay(Duration.ofMillis(50))
                    .atMost(Duration.ofSeconds(1))
                    .untilAsserted(() -> {
-                       List<Segment> segments = joinAndUnwrap(tokenStore.fetchSegments(PROCESSOR_NAME, null));
+                       List<Segment> segments = joinAndUnwrap(tokenStore.fetchSegments(PROCESSOR_NAME, new StubProcessingContext()));
                        assertThat(segments).isNotNull();
                        int segmentCount = segments.size();
                        assertThat(segmentCount).isEqualTo(8);
@@ -2187,7 +2186,7 @@ class PooledStreamingEventProcessorTest {
             // wait until the segment we want to split is in use, and verify all segments are correct in the token store:
             await().untilAsserted(() -> {
                 assertNotNull(testSubject.processingStatus().get(testSegmentId));
-                assertThat(tokenStore.fetchSegments(PROCESSOR_NAME, null).join())
+                assertThat(tokenStore.fetchSegments(PROCESSOR_NAME, new StubProcessingContext()).join())
                         .containsExactlyInAnyOrder(
                                 new Segment(0, 3),
                                 new Segment(1, 3),
@@ -2205,7 +2204,7 @@ class PooledStreamingEventProcessorTest {
             await().untilAsserted(() -> {
                 assertNotNull(testSubject.processingStatus().get(testSegmentId));
                 assertNotNull(testSubject.processingStatus().get(splitSegmentId));
-                assertThat(tokenStore.fetchSegments(PROCESSOR_NAME, null).join())
+                assertThat(tokenStore.fetchSegments(PROCESSOR_NAME, new StubProcessingContext()).join())
                         .containsExactlyInAnyOrder(
                                 new Segment(0, 3),
                                 new Segment(1, 3),
@@ -2223,7 +2222,7 @@ class PooledStreamingEventProcessorTest {
             // wait until the merged segments is in use, and verify all segments are correct in the token store:
             await().untilAsserted(() -> {
                 assertNotNull(testSubject.processingStatus().get(1));
-                assertThat(tokenStore.fetchSegments(PROCESSOR_NAME, null).join())
+                assertThat(tokenStore.fetchSegments(PROCESSOR_NAME, new StubProcessingContext()).join())
                         .containsExactlyInAnyOrder(
                                 new Segment(0, 3),
                                 new Segment(1, 1),
@@ -2320,9 +2319,9 @@ class PooledStreamingEventProcessorTest {
             );
             assertWithin(2, TimeUnit.SECONDS, () -> {
                 long nonNullTokens = IntStream.range(0, 8)
-                                              .mapToObj(i -> tokenStore.fetchToken(PROCESSOR_NAME,
-                                                                                   i,
-                                                                                   null))
+                                              .mapToObj(i -> joinAndUnwrap(tokenStore.fetchToken(PROCESSOR_NAME,
+                                                                                                 i,
+                                                                                                 new StubProcessingContext())))
                                               .filter(Objects::nonNull)
                                               .count();
                 assertEquals(8, nonNullTokens);
@@ -2361,17 +2360,17 @@ class PooledStreamingEventProcessorTest {
             joinAndUnwrap(tokenStore.initializeTokenSegments(PROCESSOR_NAME,
                                                              expectedSegmentCount,
                                                              initialToken,
-                                                             null));
+                                                             new StubProcessingContext()));
 
             // when - resetting without a reset context, so there is nothing to convert
             joinAndUnwrap(testSubject.resetTokens());
 
             // then - every segment gets the same token, carrying the single empty reset context
-            List<Segment> segments = joinAndUnwrap(tokenStore.fetchSegments(PROCESSOR_NAME, null));
+            List<Segment> segments = joinAndUnwrap(tokenStore.fetchSegments(PROCESSOR_NAME, new StubProcessingContext()));
             assertThat(segments).hasSize(expectedSegmentCount);
             for (Segment segment : segments) {
                 TrackingToken token = joinAndUnwrap(
-                        tokenStore.fetchToken(PROCESSOR_NAME, segment.getSegmentId(), null)
+                        tokenStore.fetchToken(PROCESSOR_NAME, segment.getSegmentId(), new StubProcessingContext())
                 );
                 assertThat(token).isEqualTo(expectedToken);
                 assertThat(ReplayToken.isReplay(token)).isTrue();
@@ -2399,7 +2398,7 @@ class PooledStreamingEventProcessorTest {
             // when - Start and stop the processor to initialize the tracking tokens
             startEventProcessor();
             assertWithin(2, TimeUnit.SECONDS, () -> {
-                List<Segment> segments = joinAndUnwrap(tokenStore.fetchSegments(PROCESSOR_NAME, null));
+                List<Segment> segments = joinAndUnwrap(tokenStore.fetchSegments(PROCESSOR_NAME, new StubProcessingContext()));
                 assertThat(segments).isNotNull();
                 assertEquals(expectedSegmentCount, segments.size());
             });
@@ -2412,13 +2411,13 @@ class PooledStreamingEventProcessorTest {
             assertTrue(resetHandlerInvoked.get());
 
             // then - The token stays the same, as the original and token after reset are identical.
-            List<Segment> segments = joinAndUnwrap(tokenStore.fetchSegments(PROCESSOR_NAME, null));
+            List<Segment> segments = joinAndUnwrap(tokenStore.fetchSegments(PROCESSOR_NAME, new StubProcessingContext()));
             assertThat(segments).isNotNull();
             TrackingToken token0 = joinAndUnwrap(
-                    tokenStore.fetchToken(PROCESSOR_NAME, segments.get(0).getSegmentId(), null)
+                    tokenStore.fetchToken(PROCESSOR_NAME, segments.get(0).getSegmentId(), new StubProcessingContext())
             );
             TrackingToken token1 = joinAndUnwrap(
-                    tokenStore.fetchToken(PROCESSOR_NAME, segments.get(1).getSegmentId(), null)
+                    tokenStore.fetchToken(PROCESSOR_NAME, segments.get(1).getSegmentId(), new StubProcessingContext())
             );
             assertEquals(expectedToken, token0);
             assertEquals(expectedToken, token1);
@@ -2452,7 +2451,7 @@ class PooledStreamingEventProcessorTest {
             joinAndUnwrap(testSubject.start());
             await().atMost(Duration.ofSeconds(2L)).untilAsserted(
                     () -> {
-                        List<Segment> segments = joinAndUnwrap(tokenStore.fetchSegments(PROCESSOR_NAME, null));
+                        List<Segment> segments = joinAndUnwrap(tokenStore.fetchSegments(PROCESSOR_NAME, new StubProcessingContext()));
                         assertThat(segments).isNotNull();
                         assertEquals(expectedSegmentCount, segments.size());
                     }
@@ -2466,13 +2465,13 @@ class PooledStreamingEventProcessorTest {
             assertTrue(resetHandlerInvoked.get());
 
             // then - The token stays the same, as the original and token after reset are identical.
-            List<Segment> segments = joinAndUnwrap(tokenStore.fetchSegments(PROCESSOR_NAME, null));
+            List<Segment> segments = joinAndUnwrap(tokenStore.fetchSegments(PROCESSOR_NAME, new StubProcessingContext()));
             assertThat(segments).isNotNull();
             TrackingToken token0 = joinAndUnwrap(
-                    tokenStore.fetchToken(PROCESSOR_NAME, segments.get(0).getSegmentId(), null)
+                    tokenStore.fetchToken(PROCESSOR_NAME, segments.get(0).getSegmentId(), new StubProcessingContext())
             );
             TrackingToken token1 = joinAndUnwrap(
-                    tokenStore.fetchToken(PROCESSOR_NAME, segments.get(1).getSegmentId(), null)
+                    tokenStore.fetchToken(PROCESSOR_NAME, segments.get(1).getSegmentId(), new StubProcessingContext())
             );
             assertEquals(expectedToken, token0);
             assertEquals(expectedToken, token1);
@@ -2535,7 +2534,7 @@ class PooledStreamingEventProcessorTest {
             // when - Start and stop the processor to initialize the tracking tokens
             startEventProcessor();
             assertWithin(2, TimeUnit.SECONDS, () -> {
-                List<Segment> segments = joinAndUnwrap(tokenStore.fetchSegments(PROCESSOR_NAME, null));
+                List<Segment> segments = joinAndUnwrap(tokenStore.fetchSegments(PROCESSOR_NAME, new StubProcessingContext()));
                 assertThat(segments).isNotNull();
                 assertEquals(expectedSegmentCount, segments.size());
             });
@@ -2548,13 +2547,13 @@ class PooledStreamingEventProcessorTest {
             assertTrue(resetHandlerInvoked.get());
 
             // then - Verify tokens are wrapped in ReplayToken
-            List<Segment> segments = joinAndUnwrap(tokenStore.fetchSegments(PROCESSOR_NAME, null));
+            List<Segment> segments = joinAndUnwrap(tokenStore.fetchSegments(PROCESSOR_NAME, new StubProcessingContext()));
             assertThat(segments).isNotNull();
             TrackingToken token0 = joinAndUnwrap(
-                    tokenStore.fetchToken(PROCESSOR_NAME, segments.get(0).getSegmentId(), null)
+                    tokenStore.fetchToken(PROCESSOR_NAME, segments.get(0).getSegmentId(), new StubProcessingContext())
             );
             TrackingToken token1 = joinAndUnwrap(
-                    tokenStore.fetchToken(PROCESSOR_NAME, segments.get(1).getSegmentId(), null)
+                    tokenStore.fetchToken(PROCESSOR_NAME, segments.get(1).getSegmentId(), new StubProcessingContext())
             );
             assertTrue(ReplayToken.isReplay(token0));
             assertTrue(ReplayToken.isReplay(token1));
@@ -2583,7 +2582,7 @@ class PooledStreamingEventProcessorTest {
             // when - Start and stop the processor to initialize the tracking tokens
             startEventProcessor();
             assertWithin(2, TimeUnit.SECONDS, () -> {
-                List<Segment> segments = joinAndUnwrap(tokenStore.fetchSegments(PROCESSOR_NAME, null));
+                List<Segment> segments = joinAndUnwrap(tokenStore.fetchSegments(PROCESSOR_NAME, new StubProcessingContext()));
                 assertThat(segments).isNotNull();
                 assertEquals(expectedSegmentCount, segments.size());
             });
@@ -2596,13 +2595,13 @@ class PooledStreamingEventProcessorTest {
             assertEquals(expectedContext, capturedResetPayload.get());
 
             // then - Verify tokens are wrapped in ReplayToken with context
-            List<Segment> segments = joinAndUnwrap(tokenStore.fetchSegments(PROCESSOR_NAME, null));
+            List<Segment> segments = joinAndUnwrap(tokenStore.fetchSegments(PROCESSOR_NAME, new StubProcessingContext()));
             assertThat(segments).isNotNull();
             TrackingToken token0 = joinAndUnwrap(
-                    tokenStore.fetchToken(PROCESSOR_NAME, segments.get(0).getSegmentId(), null)
+                    tokenStore.fetchToken(PROCESSOR_NAME, segments.get(0).getSegmentId(), new StubProcessingContext())
             );
             TrackingToken token1 = joinAndUnwrap(
-                    tokenStore.fetchToken(PROCESSOR_NAME, segments.get(1).getSegmentId(), null)
+                    tokenStore.fetchToken(PROCESSOR_NAME, segments.get(1).getSegmentId(), new StubProcessingContext())
             );
             assertThat(token0).isNotNull();
             assertTrue(ReplayToken.isReplay(token0));
@@ -2641,7 +2640,7 @@ class PooledStreamingEventProcessorTest {
             await().atMost(Duration.ofSeconds(1))
                    .pollDelay(Duration.ofMillis(250))
                    .untilAsserted(() -> {
-                       List<Segment> segments = joinAndUnwrap(tokenStore.fetchSegments(PROCESSOR_NAME, null));
+                       List<Segment> segments = joinAndUnwrap(tokenStore.fetchSegments(PROCESSOR_NAME, new StubProcessingContext()));
                        assertThat(segments).isNotNull();
                        assertThat(segments).hasSize(2);
                    });
