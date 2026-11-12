@@ -147,8 +147,7 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
     public AnnotationBasedEntityEvolvingComponent(Class<E> entityType,
                                                   AnnotatedHandlerInspector<E> inspector,
                                                   EventConverter converter,
-                                                  MessageTypeResolver messageTypeResolver
-    ) {
+                                                  MessageTypeResolver messageTypeResolver) {
         this(entityType, inspector, converter, messageTypeResolver, Set.of());
     }
 
@@ -157,8 +156,9 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
      * among the given {@code knownResultTypes}.
      * <p>
      * An empty {@code knownResultTypes} set keeps the previous behavior: any result assignable to {@code entityType} is
-     * accepted. That remains necessary for declarative setups and for polymorphic concrete evolvers, which accept
-     * sibling types of the hierarchy.
+     * accepted. That remains necessary for declarative setups. The annotated metamodel passes the entity type plus
+     * every registered concrete type, including types discovered from a sealed hierarchy, so a handler may return a
+     * sibling type.
      *
      * @param entityType          the type of entity this instance will handle state changes for
      * @param inspector           the inspector to use to find the annotated handlers on the entity
@@ -171,8 +171,7 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
                                                   AnnotatedHandlerInspector<E> inspector,
                                                   EventConverter converter,
                                                   MessageTypeResolver messageTypeResolver,
-                                                  Set<Class<?>> knownResultTypes
-    ) {
+                                                  Set<Class<?>> knownResultTypes) {
         this.entityType = requireNonNull(entityType, "The entity type must not be null.");
         this.inspector = requireNonNull(inspector, "The Annotated Handler Inspector must not be null.");
         this.converter = requireNonNull(converter, "The Converter must not be null.");

@@ -2123,5 +2123,29 @@ class AnnotationBasedEntityEvolvingComponentTest {
                     .hasMessageContaining("concreteTypes")
                     .hasMessageContaining("sealed");
         }
+
+        @Test
+        void evolvesIntoSubclassWhenItIsAKnownResultType() {
+            // given
+            var evolver = new AnnotationBasedEntityEvolvingComponent<>(
+                    Wallet.class,
+                    inspectType(
+                            Wallet.class,
+                            messageTypeResolver,
+                            ClasspathParameterResolverFactory.forClass(Wallet.class),
+                            ClasspathHandlerDefinition.forClass(Wallet.class)
+                    ),
+                    converter,
+                    messageTypeResolver,
+                    Set.of(Wallet.class, UnknownWallet.class)
+            );
+            var event = asEventMessage("opened");
+
+            // when
+            Wallet evolved = evolver.evolve(new Wallet(), event, StubProcessingContext.forMessage(event));
+
+            // then
+            assertThat(evolved).isInstanceOf(UnknownWallet.class);
+        }
     }
 }
