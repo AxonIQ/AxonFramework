@@ -955,8 +955,10 @@ class PooledStreamingEventProcessorTest {
             await().atMost(testTokenClaimInterval + 200, TimeUnit.MILLISECONDS)
                    .untilAsserted(() -> assertNull(testSubject.processingStatus().get(testSegmentId)));
 
-            // Assert that within twice the tokenClaimInterval, the WorkPackage is in progress again.
-            await().atMost((testTokenClaimInterval * 2) + 200, TimeUnit.MILLISECONDS)
+            // Assert that once the release of twice the tokenClaimInterval ends, the WorkPackage is in progress again.
+            // Claims are retried once per tokenClaimInterval, so the first retry after the release comes within a
+            // third interval, depending on the phase of the coordination runs.
+            await().atMost((testTokenClaimInterval * 3) + 200, TimeUnit.MILLISECONDS)
                    .untilAsserted(() -> assertNotNull(testSubject.processingStatus().get(testSegmentId)));
         }
     }
@@ -2058,8 +2060,10 @@ class PooledStreamingEventProcessorTest {
             await().atMost(testTokenClaimInterval + 200, TimeUnit.MILLISECONDS)
                    .untilAsserted(() -> assertNull(testSubject.processingStatus().get(testSegmentId)));
 
-            // then - Assert that within twice the tokenClaimInterval, the WorkPackage is in progress again.
-            await().atMost((testTokenClaimInterval * 2) + 200, TimeUnit.MILLISECONDS)
+            // then - Assert that once the release of twice the tokenClaimInterval ends, the WorkPackage is in progress
+            //        again. Claims are retried once per tokenClaimInterval, so the first retry after the release comes
+            //        within a third interval, depending on the phase of the coordination runs.
+            await().atMost((testTokenClaimInterval * 3) + 200, TimeUnit.MILLISECONDS)
                    .untilAsserted(() -> assertNotNull(testSubject.processingStatus().get(testSegmentId)));
         }
 
