@@ -955,8 +955,10 @@ class PooledStreamingEventProcessorTest {
             await().atMost(testTokenClaimInterval + 200, TimeUnit.MILLISECONDS)
                    .untilAsserted(() -> assertNull(testSubject.processingStatus().get(testSegmentId)));
 
-            // Assert that within twice the tokenClaimInterval, the WorkPackage is in progress again.
-            await().atMost((testTokenClaimInterval * 2) + 200, TimeUnit.MILLISECONDS)
+            // Assert that once the release of twice the tokenClaimInterval ends, the WorkPackage is in progress again.
+            // Claims are retried once per tokenClaimInterval, so the first retry after the release comes within a
+            // third interval, depending on the phase of the coordination runs.
+            await().atMost((testTokenClaimInterval * 3) + 200, TimeUnit.MILLISECONDS)
                    .untilAsserted(() -> assertNotNull(testSubject.processingStatus().get(testSegmentId)));
         }
     }
@@ -1083,6 +1085,34 @@ class PooledStreamingEventProcessorTest {
             } finally {
                 handleLatch.countDown();
             }
+        }
+
+        @Test
+        void idleSegmentRenewsClaimWithinTwiceTheThresholdDespiteSlowTokenStore() {
+            // given - a token store taking a quarter of the threshold to extend a claim, as a remote database under load
+            long claimExtensionThreshold = 1000;
+            List<Long> extensionTimes = new CopyOnWriteArrayList<>();
+            doAnswer(invocation -> {
+                extensionTimes.add(System.nanoTime());
+                CompletableFuture<?> extended = (CompletableFuture<?>) invocation.callRealMethod();
+                return extended.thenRunAsync(() -> {
+                }, CompletableFuture.delayedExecutor(250, TimeUnit.MILLISECONDS));
+            }).when(tokenStore).extendClaim(eq(PROCESSOR_NAME), eq(0), any());
+            withTestSubject(List.of(), c -> c.initialSegmentCount(1).claimExtensionThreshold(claimExtensionThreshold));
+
+            // when - the processor runs without any event to handle
+            startEventProcessor();
+            await().atMost(Duration.ofSeconds(20)).until(() -> extensionTimes.size() >= 5);
+
+            // then - each renewal follows the previous one before a claim timeout of twice the threshold, the default
+            //        ratio, lapses
+            List<Long> renewalGapsMillis = IntStream.range(1, extensionTimes.size())
+                                                    .mapToObj(i -> extensionTimes.get(i) - extensionTimes.get(i - 1))
+                                                    .map(TimeUnit.NANOSECONDS::toMillis)
+                                                    .toList();
+            assertThat(renewalGapsMillis).allSatisfy(
+                    gap -> assertThat(gap).isLessThan(claimExtensionThreshold * 2)
+            );
         }
 
         @Test
@@ -2030,8 +2060,10 @@ class PooledStreamingEventProcessorTest {
             await().atMost(testTokenClaimInterval + 200, TimeUnit.MILLISECONDS)
                    .untilAsserted(() -> assertNull(testSubject.processingStatus().get(testSegmentId)));
 
-            // then - Assert that within twice the tokenClaimInterval, the WorkPackage is in progress again.
-            await().atMost((testTokenClaimInterval * 2) + 200, TimeUnit.MILLISECONDS)
+            // then - Assert that once the release of twice the tokenClaimInterval ends, the WorkPackage is in progress
+            //        again. Claims are retried once per tokenClaimInterval, so the first retry after the release comes
+            //        within a third interval, depending on the phase of the coordination runs.
+            await().atMost((testTokenClaimInterval * 3) + 200, TimeUnit.MILLISECONDS)
                    .untilAsserted(() -> assertNotNull(testSubject.processingStatus().get(testSegmentId)));
         }
 

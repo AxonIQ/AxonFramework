@@ -49,9 +49,11 @@ import java.util.Collections;
 import java.util.List;
 import java.util.OptionalLong;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiPredicate;
 import java.util.function.Predicate;
@@ -926,6 +928,46 @@ class WorkPackageTest {
         }
     }
 
+    @Nested
+    class ClaimExtensionWhileHandlingEvents {
+
+        @Test
+        void batchExtendsTheClaimWhenTheProgressStrategyDefersStoringTheToken() {
+            // given - a strategy that never stores a token itself, as one deferring progress to checkpoints does, and
+            //         an event handler that holds on to its batch until it is released
+            int extremelyShortClaimExtensionThreshold = 1;
+            CountDownLatch batchReleased = new CountDownLatch(1);
+            batchProcessorPredicate = (events, token) -> {
+                try {
+                    return batchReleased.await(5, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return false;
+                }
+            };
+            WorkPackage deferringTestSubject =
+                    testSubjectBuilder.claimExtensionThreshold(extremelyShortClaimExtensionThreshold)
+                                      .progressStrategyFactory(context -> new DeferringProgressStrategy())
+                                      .build();
+            long thresholdPassed = System.currentTimeMillis() + extremelyShortClaimExtensionThreshold;
+
+            // when - the batch is released once the threshold has passed while it was being handled
+            deferringTestSubject.scheduleEvent(
+                    new SimpleEntry<>(EventTestUtils.asEventMessage("some-event"), globalTrackingTokenContext(1L))
+            );
+            await().atMost(TIMEOUT).until(() -> System.currentTimeMillis() > thresholdPassed);
+            batchReleased.countDown();
+
+            // then - the batch extends the claim, as no stored token refreshes it
+            await().atMost(TIMEOUT).untilAsserted(
+                    () -> verify(tokenStore, atLeastOnce()).extendClaim(eq(PROCESSOR_NAME),
+                                                                        eq(segment.getSegmentId()),
+                                                                        any())
+            );
+            verify(tokenStore, never()).storeToken(any(), anyString(), anyInt(), any());
+        }
+    }
+
     private static Context globalTrackingTokenContext(long globalIndex) {
         return trackingTokenContext(new GlobalSequenceTrackingToken(globalIndex));
     }
@@ -971,5 +1013,22 @@ class WorkPackageTest {
 
     record ContextMessage(EventMessage message, Context context) {
 
+    }
+
+    /**
+     * A {@link SegmentProgressStrategy} that never stores a token on its own, standing in for one that defers progress
+     * to explicit checkpoints.
+     */
+    private static class DeferringProgressStrategy implements SegmentProgressStrategy {
+
+        @Override
+        public CompletableFuture<Void> onBatchCommit(ProcessingContext context) {
+            return FutureUtils.emptyCompletedFuture();
+        }
+
+        @Override
+        public boolean hasPendingWork() {
+            return false;
+        }
     }
 }
