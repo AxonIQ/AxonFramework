@@ -97,64 +97,6 @@ include::example$configuration/spring/GiftCardHandler.java[tag=message-handling-
 Handler discovery happens through `MessageHandlerConfigurer` and `MessageHandlerLookup`, which scan the bean factory for beans implementing `CommandHandlingComponent`, `EventHandlingComponent`, or `QueryHandlingComponent`, as well as beans with annotated handler methods.
 Discovered handlers are wrapped into a `CommandHandlingModule` and `QueryHandlingModule`, and discovered `@EventSourced` entities into an `EventSourcedEntityModule`, each registered on the `ComponentRegistry` the same way a manually built xref:module.adoc[Module] would be.
 
-[#transactions]
-== Transactions
-
-When the application context contains a Spring `PlatformTransactionManager` together with a `DataSource` or an `EntityManagerFactory`, the Spring Boot Starter registers a `SpringTransactionManager`.
-This lets Axon use the Spring transaction manager for the units of work it runs.
-
-=== Who owns the transaction
-
-Every unit of work (the xref:messaging-concepts:processing-context.adoc[processing context] of a command, event, or query) starts a Spring transaction in its pre-invocation phase, commits it in its commit phase, and rolls it back when anything in the unit of work fails.
-Axon only commits and rolls back the transaction it started itself.
-A unit of work runs its phases on the thread that started it, as Spring ties a transaction to a thread.
-
-=== Sharing the connection
-
-Components that need a database connection or an entity manager, such as the token store of an event processor, use the one that belongs to the transaction of the unit of work.
-For this to work, the application and Axon have to use the same `DataSource` (or `EntityManagerFactory`), which is the one the Spring transaction manager manages.
-
-=== Your own code in a unit of work
-
-Spring components that a handler calls, including methods annotated with `@Transactional`, take part in the transaction of the unit of work.
-That includes checks that must be consistent with the work of the unit of work, such as inserting into a table with a unique constraint: when the insert fails, the unit of work fails and is rolled back as a whole, including the events it appended when the event store writes to the same database, as the JPA event store does.
-
-=== Start units of work outside of transactions
-
-Axon recommends not starting a transaction before the framework does.
-A unit of work has to own its transaction, so it has to start on a thread that has no active transaction.
-When a unit of work starts on a thread with an active transaction, and it would take part in that transaction, it fails with an `IllegalTransactionStateException` and the active transaction is left untouched.
-
-The reason is that a unit of work that takes part in an active transaction does not own the commit.
-Its commit phase does not commit anything, so everything that runs after the commit runs before the data is committed: event stores that finalize or publish appended events after the commit act too early, which can leave events invisible to streams, or skipped by them.
-Subscription query updates, the callbacks of event processors, and monitoring then report work that is not committed yet.
-The unit of work also reports success while the active transaction can still roll its work back.
-
-The usual way to end up here is a command that is handled on the thread that sends it, for example by the `SimpleCommandBus`, from a method that is annotated with `@Transactional`.
-Send the command from a method that is not transactional instead, and keep other database work in separate transactional methods.
-
-When that is not possible, register a `TransactionManager` bean that starts a new transaction for each unit of work, with the `PROPAGATION_REQUIRES_NEW` propagation:
-
-[source,java]
-----
-new SpringTransactionManager(
-        transactionManager,
-        entityManagerProvider,
-        connectionProvider,
-        new DefaultTransactionDefinition(TransactionDefinition.PROPAGATION_REQUIRES_NEW)
-);
-----
-
-The unit of work then runs in a new transaction while the active one is suspended.
-It needs a second connection while the active transaction holds its own, so size the connection pool for it, and it commits independently of the active transaction.
-
-[WARNING]
-====
-Setting `axon.transaction.allow-joining-active-transaction` to `true` makes a unit of work take part in an active transaction.
-This is not a supported configuration.
-It has the problems described above: the unit of work reports success while the work can still be rolled back, and everything that runs after its commit does so before the commit has happened.
-====
-
 [#axon-properties]
 == Axon properties
 
@@ -181,9 +123,6 @@ Besides beans, decorators, and enhancers, several parts of the auto-configuratio
 
 |`axon.timeout.*`
 |Enables and tunes timeouts for transactions and message handlers (commands, events, queries, and deadlines).
-
-|`axon.transaction.allow-joining-active-transaction`
-|Whether a unit of work that starts while a transaction is already active may take part in that transaction. Defaults to `false`: such a unit of work fails. Setting it to `true` is not a supported configuration and causes several problems, described in xref:#transactions[Transactions].
 
 |`axon.tracing.*`
 |Enables and tunes OpenTelemetry-based tracing for Axon's infrastructure components. See xref:monitoring:tracing.adoc[Tracing] for the full property reference.
