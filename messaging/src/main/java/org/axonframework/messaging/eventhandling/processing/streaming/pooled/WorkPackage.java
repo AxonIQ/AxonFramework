@@ -444,8 +444,10 @@ class WorkPackage implements SegmentProgressContext {
             progressStrategy.contributeBatchResources(ctx);
         });
         unitOfWork.onInvocation(ctx -> batchProcessor.process(eventBatch, ctx).asCompletableFuture());
-        // One transaction handles the batch AND persists this cycle's progress (if any).
-        unitOfWork.onPrepareCommit(progressStrategy::onBatchCommit);
+        // One transaction handles the batch, persists this cycle's progress (if any) AND extends the claim when the
+        // threshold is met and that progress did not refresh it.
+        unitOfWork.onPrepareCommit(ctx -> progressStrategy.onBatchCommit(ctx)
+                                                          .thenCompose(unused -> extendClaimIfThresholdIsMet(ctx)));
         unitOfWork.runOnAfterCommit(ctx -> {
             segmentStatusUpdater.accept(status -> status.advancedTo(lastConsumedToken));
             if (batchProcessedCallback != null) {
