@@ -16,6 +16,8 @@
 
 package org.axonframework.extension.spring.messaging.unitofwork;
 
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.EntityManagerFactory;
 import org.axonframework.common.jdbc.ConnectionProvider;
 import org.axonframework.common.jpa.EntityManagerProvider;
 import org.axonframework.messaging.core.unitofwork.transaction.jdbc.JdbcTransactionalExecutorProvider;
@@ -35,6 +37,7 @@ import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.DefaultTransactionDefinition;
 
+import java.sql.Connection;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -113,8 +116,17 @@ class SpringTransactionManagerTest {
     }
 
     @Test
-    void shouldAttachToProcessingLifecycle(@Captor ArgumentCaptor<Consumer<ProcessingContext>> captor) {
-        SpringTransactionManager txManager = new SpringTransactionManager(transactionManager, mock(EntityManagerProvider.class), mock(ConnectionProvider.class));
+    void shouldAttachToProcessingLifecycle(@Captor ArgumentCaptor<Consumer<ProcessingContext>> captor) throws Exception {
+        ConnectionProvider connectionProvider = mock(ConnectionProvider.class);
+
+        EntityManagerProvider entityManagerProvider = mock(EntityManagerProvider.class);
+        EntityManager entityManager = mock(EntityManager.class);
+
+        when(connectionProvider.getConnection()).thenReturn(mock(Connection.class));
+        when(entityManagerProvider.getEntityManager()).thenReturn(entityManager);
+        when(entityManager.getEntityManagerFactory()).thenReturn(mock(EntityManagerFactory.class));
+
+        SpringTransactionManager txManager = new SpringTransactionManager(transactionManager, entityManagerProvider, connectionProvider);
         ProcessingLifecycle processingLifecycle = mock(ProcessingLifecycle.class);
         StubProcessingContext processingContext = new StubProcessingContext();
 

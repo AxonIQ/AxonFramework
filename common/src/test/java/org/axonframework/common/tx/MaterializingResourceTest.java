@@ -199,4 +199,22 @@ class MaterializingResourceTest {
             assertThat(maxObservedConcurrentUsers).hasValue(1);
         }
     }
+
+    @Nested
+    class AlreadyMaterialized {
+
+        @Test
+        void shouldBeActiveFromTheStartAndUseTheGivenResource() throws Exception {
+            MaterializingResource<String> testSubject = MaterializingResource.materialized("given");
+
+            assertThat(hasActiveResource(testSubject)).isTrue();
+            assertThat(testSubject.apply(r -> r).get()).isEqualTo("given");
+        }
+
+        @Test
+        void shouldRejectANullResource() {
+            assertThatThrownBy(() -> MaterializingResource.materialized(null))
+                    .isInstanceOf(NullPointerException.class);
+        }
+    }
 }

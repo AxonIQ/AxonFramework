@@ -58,6 +58,20 @@ public class EntityManagerExecutor implements TransactionalExecutor<EntityManage
         this.delegate = new MaterializingResource<>(provider::getEntityManager);
     }
 
+    /**
+     * Creates a new instance for an entity manager that is already held, for example the entity manager of a
+     * transaction that was looked up on the thread it is bound to.
+     * <p>
+     * This executor is active from the start: callers that prefer an independent resource when this executor is not
+     * active yet, see {@link MaterializationAware}, use this entity manager instead.
+     *
+     * @param entityManager The entity manager to use, cannot be {@code null}.
+     * @throws NullPointerException If {@code entityManager} is {@code null}.
+     */
+    public EntityManagerExecutor(EntityManager entityManager) {
+        this.delegate = MaterializingResource.materialized(Objects.requireNonNull(entityManager, "The entity manager cannot be null."));
+    }
+
     @Override
     public <R> R withMaterializationShielded(Function<Boolean, R> decision) {
         return delegate.withMaterializationShielded(decision);

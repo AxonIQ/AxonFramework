@@ -189,6 +189,7 @@ Streaming processors claim tokens, advance tokens, and process events in batches
 
 Size the pool so event handling does not block on connection acquisition.
 Leave enough headroom for command handling, token updates, and any other database users in the same application.
+With Spring, a unit of work uses a single connection from the pool, see xref:configuration:spring.adoc#connection-pool[Connections and the connection pool].
 
 ifdef::advanced-framework[]
 include::connector:partial$postgresql-operations.adoc[]

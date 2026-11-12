@@ -58,6 +58,25 @@ public class MaterializingResource<T> {
     }
 
     /**
+     * Creates a holder whose resource is already materialized, so it is active from the start and
+     * {@link #withMaterializationShielded(Function)} always reports so.
+     *
+     * @param resource the resource, cannot be {@code null}
+     * @param <T>      the type of the resource
+     * @return a holder that uses {@code resource}, never {@code null}
+     * @throws NullPointerException if {@code resource} is {@code null}
+     */
+    public static <T> MaterializingResource<T> materialized(T resource) {
+        Objects.requireNonNull(resource, "The resource cannot be null.");
+
+        MaterializingResource<T> result = new MaterializingResource<>(() -> resource);
+
+        result.resource = resource;
+
+        return result;
+    }
+
+    /**
      * Runs {@code decision}, passing whether this holder already has a resource materialized, while
      * preventing a concurrent {@link #apply} call from materializing it for the duration - so a caller can
      * fall back to an independent executor without racing a concurrent materialization.
