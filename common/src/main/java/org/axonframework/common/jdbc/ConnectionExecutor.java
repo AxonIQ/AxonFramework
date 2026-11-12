@@ -58,6 +58,20 @@ public class ConnectionExecutor implements TransactionalExecutor<Connection>, Ma
         this.delegate = new MaterializingResource<>(provider::getConnection);
     }
 
+    /**
+     * Creates a new instance for a connection that is already held, for example the connection of a transaction that
+     * was looked up on the thread it is bound to.
+     * <p>
+     * This executor is active from the start: callers that prefer an independent connection when this executor is
+     * not active yet, see {@link MaterializationAware}, use this connection instead.
+     *
+     * @param connection The connection to use, cannot be {@code null}.
+     * @throws NullPointerException If {@code connection} is {@code null}.
+     */
+    public ConnectionExecutor(Connection connection) {
+        this.delegate = MaterializingResource.materialized(Objects.requireNonNull(connection, "The connection cannot be null."));
+    }
+
     @Override
     public <R> R withMaterializationShielded(Function<Boolean, R> decision) {
         return delegate.withMaterializationShielded(decision);

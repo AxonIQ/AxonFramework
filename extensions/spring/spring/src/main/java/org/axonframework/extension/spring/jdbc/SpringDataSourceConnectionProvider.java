@@ -18,6 +18,7 @@ package org.axonframework.extension.spring.jdbc;
 
 import org.axonframework.common.jdbc.ConnectionProvider;
 import org.axonframework.common.jdbc.ConnectionWrapperFactory;
+import org.axonframework.common.jdbc.PhysicalConnectionAware;
 import org.springframework.jdbc.datasource.DataSourceUtils;
 
 import java.sql.Connection;
@@ -49,6 +50,13 @@ public class SpringDataSourceConnectionProvider implements ConnectionProvider {
     @Override
     public Connection getConnection() throws SQLException {
         final Connection connection = DataSourceUtils.doGetConnection(dataSource);
+
+        if (connection instanceof PhysicalConnectionAware physicalConnectionAware) {
+            return ConnectionWrapperFactory.wrap(
+                    connection, PhysicalConnectionAware.class, physicalConnectionAware, closeHandler
+            );
+        }
+
         return ConnectionWrapperFactory.wrap(connection, closeHandler);
     }
 

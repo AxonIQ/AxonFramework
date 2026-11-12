@@ -146,7 +146,8 @@ new SpringTransactionManager(
 ----
 
 The unit of work then runs in a new transaction while the active one is suspended.
-It needs a second connection while the active transaction holds its own, so size the connection pool for it, and it commits independently of the active transaction.
+It needs a second connection while the active transaction holds its own, which can block forever on a small pool (see <<connection-pool,Connections and the connection pool>>), so size the connection pool for it.
+It also commits independently of the active transaction.
 
 [WARNING]
 ====
@@ -154,6 +155,80 @@ Setting `axon.transaction.allow-joining-active-transaction` to `true` makes a un
 This is not a supported configuration.
 It has the problems described above: the unit of work reports success while the work can still be rolled back, and everything that runs after its commit does so before the commit has happened.
 ====
+
+[#connection-pool]
+=== Connections and the connection pool
+
+A unit of work uses one connection from the connection pool: the connection of its transaction.
+Components that read on behalf of the unit of work, such as the event store when it sources an entity or loads a snapshot, use that same connection instead of taking another one from the pool.
+They also do so when they continue on another thread, as the connection is only used by one thread at a time.
+With a `JpaTransactionManager`, the same holds for the entity manager: the JPA event store, the JPA token store, and other JPA components use the entity manager of the unit of work.
+
+A unit of work that holds a connection and waits for a second one from the pool can block forever.
+Once enough units of work do the same, every connection is held by a unit of work that is waiting for another one.
+With one connection per unit of work this cannot happen, so even a small pool is safe: the pool size only limits how many units of work run at the same time, and the others wait for a free connection.
+This does not cover connections that your own code takes from the pool outside of the transaction of the unit of work.
+
+There is nothing to configure for this.
+The connection is looked up when the unit of work starts, on the thread that started it, because that is where Spring binds it.
+A unit of work that never uses the database still takes a connection at that point, as Spring's `DataSourceTransactionManager` does when it begins a transaction on a plain `DataSource`.
+
+[#lazy-connections]
+==== Lazy connections
+
+To avoid holding a physical connection for a unit of work that does not use the database, or only late in its work, use Spring's `LazyConnectionDataSourceProxy` as the `DataSource`.
+It only takes a physical connection from the pool when the first statement runs, and Axon works with it as is.
+
+The proxy cannot tell Axon whether it holds a physical connection yet, so the reads of a unit of work use its connection, one read after the other.
+ifdef::advanced-framework[]
+For reads in parallel, see <<parallel-reads,Reading in parallel>>.
+endif::[]
+
+ifdef::advanced-framework[]
+[#parallel-reads]
+==== Reading in parallel
+
+The reads of a unit of work, such as loading several entities in one command handler, run one after the other, as its connection can only be used by one thread at a time.
+Until the unit of work holds a physical connection, those reads could use other connections instead, and run in parallel, if the pool has connections to spare.
+
+The `TrackingLazyConnectionDataSource` makes that possible.
+It is a lazy data source like Spring's, and its connections also tell Axon whether a physical connection has been taken from the pool for them yet.
+Until then, reads use other connections and can run in parallel.
+
+A connection becomes physical when something runs a statement on it: your own code, for example through `JdbcTemplate`, JPA, or a `@Transactional` method, or Axon when it writes within the transaction, such as when it appends the events at the end of the unit of work.
+The reads of Axon itself, such as sourcing an entity, do not run on the connection of the unit of work.
+A command handler that runs no SQL of its own therefore holds a physical connection only from appending its events until the commit.
+Once a connection is physical, it stays so until the transaction ends, as a transaction cannot move to another connection, and reads use it instead of asking the pool for another one.
+A unit of work therefore never waits for the pool while it holds a connection.
+
+Define it as the `DataSource`, wrapping the pool:
+
+[source,java]
+----
+@Configuration
+class DataSourceConfiguration {
+
+    // Recommended: keeps the plain pool from being injected where the tracking data source should be used
+    @Bean(autowireCandidate = false)
+    HikariDataSource pool() {
+        // create and configure the pool
+    }
+
+    @Bean
+    DataSource dataSource() {
+        return new TrackingLazyConnectionDataSource(pool());
+    }
+}
+----
+
+Defining your own `DataSource` bean replaces the one that Spring Boot auto-configures, so the pool is created in the configuration class as well.
+With the pool not available for autowiring, the `TrackingLazyConnectionDataSource` is the only `DataSource` that is injected.
+Spring Boot's auto-configuration then uses it for the transaction manager and for the connection that Axon uses, and Hibernate uses it as well when you use JPA.
+When you configure these yourself, use it for all of them, so that they share the transaction of the unit of work.
+
+Only components that prefer an independent connection read in parallel, which today is the PostgreSQL event storage engine.
+The JPA components always use the entity manager of the unit of work.
+endif::[]
 
 [#axon-properties]
 == Axon properties
