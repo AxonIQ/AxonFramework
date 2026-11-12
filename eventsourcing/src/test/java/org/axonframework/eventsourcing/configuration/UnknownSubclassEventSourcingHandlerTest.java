@@ -22,94 +22,222 @@ import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
 import org.axonframework.eventsourcing.annotation.EventTag;
 import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
 import org.axonframework.eventsourcing.eventstore.EventStore;
-import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
-import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.modelling.StateEvolvingException;
 import org.axonframework.modelling.StateManager;
-import org.junit.jupiter.api.AfterEach;
+import org.axonframework.modelling.repository.ManagedEntity;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import java.util.List;
+import java.util.Arrays;
+import java.util.concurrent.TimeUnit;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.axonframework.messaging.eventhandling.EventTestUtils.asEventMessage;
 
 /**
- * Tests that an event sourcing handler returning a subclass the entity model does not know fails clearly instead of
- * silently dropping every later event.
+ * Tests that an event sourcing handler returning a subclass the entity model does not know fails clearly, and that
+ * returning a registered concrete type or a sealed subtype still evolves later events.
  *
  * @author Rohit Wadhwa
  */
 class UnknownSubclassEventSourcingHandlerTest {
 
-    private AxonConfiguration configuration;
+    private static final String ID = "w1";
 
-    @AfterEach
-    void tearDown() {
-        if (configuration != null) {
+    private static <E> E publishThenLoad(EventSourcedEntityModule<String, E> module,
+                                         Class<E> entityType,
+                                         Object... payloads) {
+        AxonConfiguration configuration = EventSourcingConfigurer.create()
+                                                                 .registerEntity(module)
+                                                                 .start();
+        try {
+            var unitOfWorkFactory = configuration.getComponent(UnitOfWorkFactory.class);
+            var eventStore = configuration.getComponent(EventStore.class);
+            unitOfWorkFactory.create().executeWithResult(context -> {
+                var events = Arrays.stream(payloads).map(payload -> asEventMessage(payload)).toList();
+                return eventStore.publish(context, events);
+            }).orTimeout(10, TimeUnit.SECONDS).join();
+            return unitOfWorkFactory.create().executeWithResult(
+                    context -> configuration.getComponent(StateManager.class)
+                                            .repository(entityType, String.class)
+                                            .load(ID, context)
+                                            .thenApply(ManagedEntity::entity)
+            ).orTimeout(10, TimeUnit.SECONDS).join();
+        } finally {
             configuration.shutdown();
         }
     }
 
-    @Test
-    void loadingFailsWhenHandlerReturnsSubclassNotListedAsConcreteType() {
-        // given
-        configuration = EventSourcingConfigurer.create()
-                                               .registerEntity(EventSourcedEntityModule.autodetected(
-                                                       String.class,
-                                                       Wallet.class
-                                               ))
-                                               .start();
-        EventStore eventStore = configuration.getComponent(EventStore.class);
-        eventStore.publish(
-                null,
-                List.of(
-                        new GenericEventMessage(new MessageType(Opened.class), new Opened("w1")),
-                        new GenericEventMessage(new MessageType(Deposited.class), new Deposited("w1", 10))
-                )
-        ).join();
+    @Nested
+    class UnlistedSubclass {
 
-        // when / then
-        var repository = configuration.getComponent(StateManager.class).repository(Wallet.class, String.class);
-        var unitOfWork = configuration.getComponent(UnitOfWorkFactory.class).create();
-        assertThatThrownBy(() -> unitOfWork.executeWithResult(context -> repository.load("w1", context)).join())
-                .hasRootCauseInstanceOf(StateEvolvingException.class)
-                .rootCause()
-                .hasMessageContaining("UnknownWallet")
-                .hasMessageContaining(Wallet.class.getName())
-                .hasMessageContaining("concreteTypes")
-                .hasMessageContaining("sealed");
-    }
+        @Test
+        void loadingFailsWhenHandlerReturnsSubclassNotListedAsConcreteType() {
+            // given
+            var module = EventSourcedEntityModule.autodetected(String.class, Wallet.class);
 
-    record Opened(@EventTag(key = "walletId") String walletId) {
-
-    }
-
-    record Deposited(@EventTag(key = "walletId") String walletId, int amount) {
-
-    }
-
-    @EventSourcedEntity(tagKey = "walletId")
-    static class Wallet {
-
-        int balance;
-
-        @EntityCreator
-        public Wallet() {
+            // when / then
+            assertThatThrownBy(() -> publishThenLoad(
+                    module,
+                    Wallet.class,
+                    new Opened(ID),
+                    new Deposited(ID, 10)
+            ))
+                    .hasRootCauseInstanceOf(StateEvolvingException.class)
+                    .rootCause()
+                    .hasMessageContaining("UnknownWallet")
+                    .hasMessageContaining(Wallet.class.getName())
+                    .hasMessageContaining("concreteTypes")
+                    .hasMessageContaining("sealed");
         }
 
-        @EventSourcingHandler
-        Wallet on(Opened event) {
-            return new UnknownWallet();
+        record Opened(@EventTag(key = "walletId") String walletId) {
+
         }
 
-        @EventSourcingHandler
-        void on(Deposited event) {
-            balance += event.amount();
+        record Deposited(@EventTag(key = "walletId") String walletId, int amount) {
+
+        }
+
+        @EventSourcedEntity(tagKey = "walletId")
+        static class Wallet {
+
+            int balance;
+
+            @EntityCreator
+            public Wallet() {
+            }
+
+            @EventSourcingHandler
+            Wallet on(Opened event) {
+                return new UnknownWallet();
+            }
+
+            @EventSourcingHandler
+            void on(Deposited event) {
+                balance += event.amount();
+            }
+        }
+
+        static class UnknownWallet extends Wallet {
+
         }
     }
 
-    static class UnknownWallet extends Wallet {
+    @Nested
+    class ListedConcreteTypes {
 
+        @Test
+        void loadingEvolvesIntoRegisteredConcreteTypeAndAppliesLaterEvents() {
+            // given
+            var module = EventSourcedEntityModule.autodetected(String.class, Wallet.class);
+
+            // when
+            Wallet wallet = publishThenLoad(
+                    module,
+                    Wallet.class,
+                    new Opened(ID),
+                    new Deposited(ID, 10)
+            );
+
+            // then
+            assertThat(wallet).isInstanceOf(OpenWallet.class);
+            assertThat(wallet.balance).isEqualTo(10);
+        }
+
+        record Opened(@EventTag(key = "listedWalletId") String walletId) {
+
+        }
+
+        record Deposited(@EventTag(key = "listedWalletId") String walletId, int amount) {
+
+        }
+
+        @EventSourcedEntity(tagKey = "listedWalletId", concreteTypes = {DraftWallet.class, OpenWallet.class})
+        abstract static class Wallet {
+
+            int balance;
+
+            @EntityCreator
+            static Wallet create() {
+                return new DraftWallet();
+            }
+
+            @EventSourcingHandler
+            Wallet on(Opened event) {
+                return new OpenWallet();
+            }
+
+            @EventSourcingHandler
+            void on(Deposited event) {
+                balance += event.amount();
+            }
+        }
+
+        static class DraftWallet extends Wallet {
+
+        }
+
+        static class OpenWallet extends Wallet {
+
+        }
+    }
+
+    @Nested
+    class SealedHierarchy {
+
+        @Test
+        void loadingEvolvesIntoPermittedSubtypeAndAppliesLaterEvents() {
+            // given
+            var module = EventSourcedEntityModule.autodetected(String.class, Card.class);
+
+            // when
+            Card card = publishThenLoad(
+                    module,
+                    Card.class,
+                    new Opened(ID),
+                    new Deposited(ID, 10)
+            );
+
+            // then
+            assertThat(card).isInstanceOf(OpenCard.class);
+            assertThat(((OpenCard) card).balance()).isEqualTo(10);
+        }
+
+        record Opened(@EventTag(key = "cardId") String cardId) {
+
+        }
+
+        record Deposited(@EventTag(key = "cardId") String cardId, int amount) {
+
+        }
+
+        @EventSourcedEntity(tagKey = "cardId")
+        sealed interface Card permits InitialCard, OpenCard {
+
+        }
+
+        record InitialCard() implements Card {
+
+            @EntityCreator
+            static Card create() {
+                return new InitialCard();
+            }
+
+            @EventSourcingHandler
+            OpenCard on(Opened event) {
+                return new OpenCard(0);
+            }
+        }
+
+        record OpenCard(int balance) implements Card {
+
+            @EventSourcingHandler
+            OpenCard on(Deposited event) {
+                return new OpenCard(balance + event.amount());
+            }
+        }
     }
 }
