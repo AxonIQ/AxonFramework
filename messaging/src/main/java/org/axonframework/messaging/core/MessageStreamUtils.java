@@ -20,6 +20,7 @@ import org.axonframework.common.annotation.Internal;
 import org.jspecify.annotations.Nullable;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
@@ -60,8 +61,8 @@ public abstract class MessageStreamUtils {
      * <p>
      * <em>Multi-threading</em><br/>
      * The accumulator function is invoked either on the thread calling this method, when entries are immediately
-     * available for reading, or on the thread on which entries are reported to be available for reading from the given
-     * {@code source}. The accumulator function does not need to be thread-safe.
+     * available for reading, or on a virtual thread, when entries are reported to be available for reading from the
+     * given {@code source} later. The accumulator function does not need to be thread-safe.
      *
      * @param source      The {@link MessageStream} to consume messages from.
      * @param identity    The initial value to use for the accumulation.
@@ -74,8 +75,64 @@ public abstract class MessageStreamUtils {
     public static <M extends Message, R> CompletableFuture<@Nullable R> reduce(MessageStream<M> source,
                                                                                @Nullable R identity,
                                                                                BiFunction<@Nullable R, ? super MessageStream.Entry<M>, @Nullable R> accumulator) {
-        var reducer = new Reducer<>(source, identity, accumulator);
-        source.setCallback(reducer::process);
+        return reduce(source, identity, accumulator, Thread::startVirtualThread);
+    }
+
+    /**
+     * Returns a {@code CompletableFuture} that completes with the given reduction of messages read from the
+     * {@code source}, as {@link #reduce(MessageStream, Object, BiFunction)} does, but reading entries that are
+     * reported to be available later on a thread of the given {@code executor}.
+     * <p>
+     * <em>Multi-threading</em><br/>
+     * The accumulator function is invoked either on the thread calling this method, when entries are immediately
+     * available for reading, or on a thread of the given {@code executor}, when entries are reported to be available
+     * for reading from the given {@code source} later. The thread that reports this is usually shared with other
+     * streams, and may only be used to submit the work to the {@code executor}. The given {@code executor} must
+     * therefore not run tasks on the submitting thread. The accumulator function does not need to be thread-safe.
+     *
+     * @param source      The {@link MessageStream} to consume messages from.
+     * @param identity    The initial value to use for the accumulation.
+     * @param accumulator The function to combine the current reduction result with the next
+     *                    {@link MessageStream.Entry entry} from the {@link MessageStream}.
+     * @param executor    The {@link Executor} on which to read entries that become available after this method
+     *                    returned, for example a single thread executor for a source that must be read from one
+     *                    specific thread.
+     * @param <M>         The type of {@link Message} to consume from the {@link MessageStream}.
+     * @param <R>         The type of result expected from the reduction operation.
+     * @return A {@code CompletableFuture} that completes with the result of the reduction operation.
+     */
+    public static <M extends Message, R> CompletableFuture<@Nullable R> reduce(MessageStream<M> source,
+                                                                               @Nullable R identity,
+                                                                               BiFunction<@Nullable R, ? super MessageStream.Entry<M>, @Nullable R> accumulator,
+                                                                               Executor executor) {
+        Reducer<M, R> reducer = new Reducer<>(source, identity, accumulator);
+        AtomicBoolean scheduled = new AtomicBoolean();
+
+        /*
+         * Read what is available right now on the calling thread, before registering the callback: registering it
+         * while entries are available invokes it, which would hand that same read off to the executor.
+         */
+
+        reducer.process();
+
+        if (reducer.result().isDone()) {
+            return reducer.result();
+        }
+
+        source.setCallback(() -> {
+            if (scheduled.compareAndSet(false, true)) {  // signals that arrive before the read starts share one read
+                try {
+                    executor.execute(() -> {
+                        scheduled.set(false);
+                        reducer.process();
+                    });
+                }
+                catch (RuntimeException e) {
+                    reducer.fail(e);
+                }
+            }
+        });
+
         return reducer.result();
     }
 
@@ -97,6 +154,11 @@ public abstract class MessageStreamUtils {
 
         public CompletableFuture<@Nullable R> result() {
             return result;
+        }
+
+        public void fail(Throwable error) {
+            result.completeExceptionally(error);
+            source.close();
         }
 
         public void process() {

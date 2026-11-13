@@ -25,7 +25,7 @@ import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadLocalRandom;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
@@ -165,27 +165,24 @@ class QueueMessageStreamTest extends MessageStreamTest<EventMessage> {
 
         /*
          * Sealing is the producer's only signal that the stream ended: it fires the callback once and never
-         * again. A consumer whose idle path does not read from the stream therefore has that one invocation
-         * to observe the end, and short-circuit evaluation is enough to skip a read.
+         * again. The callback may not read from the stream, so the consumer observes the end by reading once
+         * the callback returned.
          */
 
         @Test
         void thenAConsumerThatOnlyChecksTheStatusObservesTheEnd() {
-            // given: a consumer woken by the seal, whose guard short-circuits before it reads
+            // given: a consumer that is woken by the seal
             QueueMessageStream<EventMessage> testSubject = new QueueMessageStream<>();
-            AtomicBoolean observedEnd = new AtomicBoolean();
+            AtomicInteger signals = new AtomicInteger();
 
-            testSubject.setCallback(() -> {
-                if (testSubject.isCompleted() && !testSubject.hasNextAvailable()) {
-                    observedEnd.set(true);
-                }
-            });
+            testSubject.setCallback(signals::incrementAndGet);
 
             // when: the producer ends the stream, which is the last signal the consumer receives
             testSubject.seal();
 
             // then
-            assertTrue(observedEnd.get());
+            assertThat(signals).hasValue(1);
+            assertTrue(testSubject.isCompleted() && !testSubject.hasNextAvailable());
         }
 
         @Test
@@ -193,23 +190,21 @@ class QueueMessageStreamTest extends MessageStreamTest<EventMessage> {
             // given: the same consumer, with entries left to hand out before the end
             QueueMessageStream<EventMessage> testSubject = new QueueMessageStream<>();
             EventMessage message = createRandomMessage();
-            AtomicBoolean observedEnd = new AtomicBoolean();
+            AtomicInteger signals = new AtomicInteger();
 
             testSubject.offer(message, Context.empty());
-            testSubject.setCallback(() -> {
-                while (testSubject.hasNextAvailable()) {
-                    testSubject.next();
-                }
-                if (testSubject.isCompleted()) {
-                    observedEnd.set(true);
-                }
-            });
+            testSubject.setCallback(signals::incrementAndGet);
+
+            while (testSubject.hasNextAvailable()) {
+                testSubject.next();
+            }
 
             // when
             testSubject.seal();
 
             // then
-            assertTrue(observedEnd.get());
+            assertThat(signals).hasValue(2);
+            assertTrue(testSubject.isCompleted());
         }
 
         @Test

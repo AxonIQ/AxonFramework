@@ -23,6 +23,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -60,6 +61,17 @@ import static org.axonframework.messaging.core.MessageStreamUtils.NO_OP_CALLBACK
  * Invocation of the callback does not guarantee that entries are available; consumers must
  * always re-check the stream using {@link #next()}, {@link #peek()}, {@link #isCompleted()},
  * and {@link #error()}.
+ * <p>
+ * When the callback is invoked because of a progress signal, it runs on the thread that signaled, which is usually a
+ * thread shared with other streams, such as the one notifying all streams of a data source at once. The callback must
+ * therefore only signal or hand off, and finish in microseconds. While a thread handles a progress signal, calling
+ * {@link #next()}, {@link #peek()} or {@link #hasNextAvailable()} on any stream based on this class throws an
+ * {@link IllegalStateException}, as reading can involve I/O that would delay every other stream using that thread.
+ * When the callback of this stream does so, the exception completes this stream exceptionally with it as the error.
+ * Consumers read after the callback returned, on a thread of their own. A callback invoked from
+ * {@link #setCallback(Runnable)} itself runs on the thread that registered it, and is not subject to this
+ * restriction. When debug logging is enabled for this class, a callback that takes more than 100 ms to handle a
+ * signal is logged.
  * <p>
  * {@link #fetchNext()} should not block. If no data is currently available, implementations should
  * return {@link FetchResult.NotReady} and rely on {@link #signalProgress()} to indicate future
@@ -394,6 +406,19 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
     private boolean callbackPending;
 
     /**
+     * Marks the threads that are currently running a callback because of a call to {@link #signalProgress()}, of any
+     * stream. These threads are shared with other streams, so a slow call on one of them delays all of them. Reading
+     * from a stream on a marked thread is therefore rejected, whichever stream's callback is running. The mark is
+     * removed again by the outermost call to {@link #signalProgress()}, as a callback may signal other streams.
+     */
+    private static final ThreadLocal<Boolean> HANDLING_SIGNAL = new ThreadLocal<>();
+
+    /**
+     * The time a callback may take to handle a progress signal before it is logged, when debug logging is enabled.
+     */
+    private static final long SLOW_CALLBACK_NANOS = 100_000_000L;
+
+    /**
      * The thread making the {@link #fetchNext()} call that is in progress, or {@code null} if no fetch is in progress.
      * That call runs without this stream's lock held. While it is in progress, no other fetch is started, and
      * {@link #terminalState()}, {@link #onCompleted()}, {@link #describeFlags()} and {@link #describeDelegates()} are
@@ -598,7 +623,60 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
             this.callbackPending = false;
         }
 
-        invokeCallbackSafely();
+        boolean outermost = HANDLING_SIGNAL.get() == null;  // false when signaled from within another callback
+        boolean timed = logger.isDebugEnabled();
+        long start = timed ? System.nanoTime() : 0L;
+
+        HANDLING_SIGNAL.set(Boolean.TRUE);
+
+        try {
+            invokeCallbackSafely();
+        }
+        finally {
+            if (outermost) {
+                HANDLING_SIGNAL.remove();
+            }
+
+            if (timed) {
+                reportSlowCallback(System.nanoTime() - start);
+            }
+        }
+    }
+
+    /**
+     * Logs that handling a progress signal took long, if it did. Only invoked when debug logging is enabled. The time
+     * includes that of the callbacks of other streams that the callback signaled.
+     */
+    private void reportSlowCallback(long nanos) {
+        if (nanos >= SLOW_CALLBACK_NANOS) {
+            Runnable slow;
+
+            synchronized (this) {
+                slow = callback;
+            }
+
+            logger.debug(
+                    "Callback [{}] of stream [{}] ran for {} ms on thread [{}]. Callbacks run on a thread shared with "
+                            + "other streams, so they must only signal and hand the work off.",
+                    slow.getClass().getName(), getClass().getName(), TimeUnit.NANOSECONDS.toMillis(nanos),
+                    Thread.currentThread().getName()
+            );
+        }
+    }
+
+    /**
+     * Rejects a read from a thread that is handling a progress signal.
+     *
+     * @throws IllegalStateException if the current thread is handling a progress signal of any stream
+     */
+    private void rejectReadWhileHandlingSignal() {
+        if (HANDLING_SIGNAL.get() != null) {
+            throw new IllegalStateException(
+                    "Stream [" + this + "] was read on a thread that is handling a progress signal. That thread is "
+                            + "shared with other streams, so a callback may only signal, and must hand any reading "
+                            + "off to another thread."
+            );
+        }
     }
 
     @Override
@@ -713,6 +791,8 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
 
     @Override
     public final boolean hasNextAvailable() {
+        rejectReadWhileHandlingSignal();
+
         boolean available = read(true).isPresent();
 
         flushPendingCallback();
@@ -722,6 +802,8 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
 
     @Override
     public final Optional<Entry<M>> peek() {
+        rejectReadWhileHandlingSignal();
+
         Optional<Entry<M>> peeked = read(true);
 
         flushPendingCallback();
@@ -731,6 +813,8 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
 
     @Override
     public final Optional<Entry<M>> next() {
+        rejectReadWhileHandlingSignal();
+
         Optional<Entry<M>> nextEntry = read(false);
 
         flushPendingCallback();
