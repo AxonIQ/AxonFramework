@@ -16,7 +16,6 @@
 
 package org.axonframework.messaging.eventhandling.processing.streaming.segmenting;
 
-import org.axonframework.common.FutureUtils;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.messaging.eventhandling.DelegatingEventHandlingComponent;
 import org.axonframework.messaging.eventhandling.EventHandlingComponent;
@@ -79,14 +78,14 @@ public class SequencingEventHandlingComponent extends DelegatingEventHandlingCom
                 context.computeResourceIfAbsent(sequencedInvocationsKey, ConcurrentHashMap::new);
 
         Object sequenceIdentifier = sequenceIdentifierFor(event, context);
-        CompletableFuture<Message> invocation = new CompletableFuture<>();
-        CompletableFuture<?> previousInvocation = invocationsBySequenceIdentifier.put(sequenceIdentifier, invocation);
-        // The handler may block, so it must not run while the map holds a lock on this sequence.
+        var previous = new CompletableFuture<CompletableFuture<?>>();
         //noinspection unchecked
-        var handling = (CompletableFuture<Message>) chainedSequenceInvocations(
-                sequenceIdentifier, previousInvocation, event, context
+        var invocation = previous.thenCompose(
+                previousInvocation -> (CompletableFuture<Message>) chainedSequenceInvocations(
+                        sequenceIdentifier, previousInvocation, event, context
+                )
         );
-        handling.whenComplete(FutureUtils.alsoComplete(invocation));
+        previous.complete(invocationsBySequenceIdentifier.put(sequenceIdentifier, invocation));
         return MessageStream.fromFuture(invocation).ignoreEntries();
     }
 
@@ -99,7 +98,7 @@ public class SequencingEventHandlingComponent extends DelegatingEventHandlingCom
         if (previousInvocation == null) {
             logger.debug("Event [{}] | No previous invocation for sequence identifier [{}]. Handling immediately.",
                          event, sequenceIdentifier);
-            return FutureUtils.runFailing(() -> delegate.handle(event, context).asCompletableFuture());
+            return delegate.handle(event, context).asCompletableFuture();
         } else {
             logger.debug(
                     "Event [{}] | Previous invocation found for sequence identifier [{}]. Chaining the current event handling.",

@@ -274,7 +274,9 @@ class EventSourcingRepositoryTest {
         });
 
         // when
-        ManagedEntity<String, String> first = testSubject.load("slow", processingContext).join();
+        ManagedEntity<String, String> first = testSubject.load("slow", processingContext)
+                                                         .orTimeout(2, TimeUnit.SECONDS)
+                                                         .join();
 
         // then - the second load returned while the first was still sourcing, and both share one managed entity
         ManagedEntity<String, String> second = secondLoad.resultNow().orTimeout(2, TimeUnit.SECONDS).join();

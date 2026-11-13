@@ -167,7 +167,9 @@ class SimpleRepositoryTest {
 
         aUnitOfWork().executeWithResult(ctx -> {
             // when
-            ManagedEntity<String, Integer> first = repository.get().load("42", ctx).join();
+            ManagedEntity<String, Integer> first = repository.get().load("42", ctx)
+                                                             .orTimeout(2, TimeUnit.SECONDS)
+                                                             .join();
 
             // then - the second load returned while the first was still loading, and both share one managed entity
             ManagedEntity<String, Integer> second = secondLoad.resultNow().orTimeout(2, TimeUnit.SECONDS).join();
