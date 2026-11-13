@@ -2,12 +2,15 @@
 :navtitle: Event Store Internals
 
 This chapter covers the specifics of working with an Event Store in Axon Framework.
-Most users do not need to interact with these components directly, but understanding them provides valuable insight into how Axon manages event storage and consistency.
-Furthermore, if you do need to customize these parts, it's good to know that they're there.
+Most of these components work without user interaction.
+The exception is <<command_append_criteria,append criteria per command>>, which are declared next to command handlers.
 
-It explains Dynamic Consistency Boundaries (DCB), a flexible approach to organizing events beyond traditional aggregate-based storage.
-You will learn about event tags and the `TagResolver` for attaching metadata to events, as well as `EventCriteria` and the `CriteriaResolver` for querying events based on those tags.
-Finally, the chapter covers consistency markers, which ensure write conflict detection when working with tag-based event groupings.
+The page covers:
+
+* Dynamic Consistency Boundaries (DCB), a flexible approach to organizing events beyond traditional aggregate-based storage.
+* Event tags and the `TagResolver` for attaching metadata to events, and `EventCriteria` and the `CriteriaResolver` for querying events based on those tags.
+* Append criteria per command, which check a different consistency boundary for a command than the one it sourced, including for entity command handlers.
+* Append, source, and stream conditions, and the consistency markers that detect conflicting writes.
 
 [#dynamic_consistency_boundaries_dcb]
 == Dynamic Consistency Boundary
@@ -108,6 +111,125 @@ For more complex scenarios or when taking a declarative configuration approach, 
 include::example$events/eventstoreinternals/criteria/CustomCriteriaResolver.java[tag=custom-criteria-resolver,indent=0]
 ----
 
+[#command_append_criteria]
+== Append criteria per command
+
+Sourcing criteria select the events that rebuild state.
+Append criteria select the concurrent events that conflict with a command's decision.
+By default, the append criteria of a command are its complete sourcing criteria: the OR-union of everything it sourced.
+
+A command can narrow or replace that boundary when possible and/or necessary.
+A narrower boundary avoids conflicts, and retries, on concurrent events the decision does not depend on.
+
+=== Declaring append criteria
+
+Declare an `@AppendCriteriaBuilder` on the command-handling class, for the commands whose boundary differs:
+
+[source,java]
+----
+include::example$events/eventstoreinternals/appendcriteria/annotation/CreditCommandHandler.java[tag=annotated-append-criteria,indent=0]
+----
+
+The builder receives the command and the accumulated sourcing criteria, and returns the complete append criteria for that command.
+When the command loads several entities, the supplied criteria are the union of all of them.
+`withEventTypes` keeps the tags of every OR branch and replaces its event types, so a builder narrows the boundary without repeating the sourcing tags.
+Event types are `QualifiedName` or `String` names, and `new QualifiedName(SomeEvent.class)` gives the default name of an event class.
+For events named with `@Event`, or with a custom `MessageTypeResolver`, use `withEventTypes(MessageTypeResolver, Class<?>...)`.
+
+An event-sourced entity that handles commands declares append criteria the same way, next to its `@EventCriteriaBuilder`:
+
+[source,java]
+----
+include::example$events/eventstoreinternals/appendcriteria/entity/Account.java[tag=entity-owned-append-criteria,indent=0]
+----
+
+`@EventCriteriaBuilder` selects the events the entity reads, and `@AppendCriteriaBuilder` selects the events a command handled by the entity conflicts with.
+Above, a withdrawal reads deposits, but a concurrent deposit cannot overdraw the account, so deposits are not part of the boundary.
+Builders on an entity apply to the commands that entity handles, including commands creating it, not to every use of the entity.
+
+`@AppendCriteriaBuilder` is a `@CommandHandlerInterceptor`, so it is found and matched like any command handler interceptor.
+It does not run before the handler, though: it runs when the events are appended, once everything was sourced.
+
+Builder rules:
+
+* A builder applies to the commands handled on its class whose payload is assignable to its first parameter.
+A first parameter of type `CommandMessage` applies to every command.
+The payload is converted to the handler's type first, so a builder also matches serialized commands and commands named with `@Command(name = ...)`.
+* Commands without a matching builder keep their sourcing criteria.
+* At most one builder applies to a command.
+When two builders, or a builder and an `AppendCriteriaInterceptor`, match the same command, the command fails.
+* A nested entity declares builders for its own handlers, as `Card` does above.
+Builders of the parent entity also see the commands forwarded to its children, so keep them to the parent's own command types.
+* A builder is `static` and returns `EventCriteria`, or startup fails with an `AxonConfigurationException`.
+* An `EventCriteria` parameter receives the sourcing criteria.
+Other parameters are resolved when the events are appended, so they must resolve without waiting.
+As for an `@EventCriteriaBuilder`, only an allow-list is accepted, checked at startup: `CommandMessage` or `Message`, `Metadata`, a `@MetadataValue`, `ProcessingContext`, and a configured component, unannotated or through `@InjectComponent`.
+Injecting an entity, for example, fails at startup.
+
+=== Declarative configuration
+
+Without annotations, register an `AppendCriteriaInterceptor` on the command-handling module:
+
+[source,java]
+----
+include::example$events/eventstoreinternals/appendcriteria/declarative/CreditCommandConfiguration.java[tag=declarative-append-criteria,indent=0]
+----
+
+`forCommand` registers criteria per command name, the way `SimpleCommandHandlingComponent` subscribes handlers.
+Commands are matched by name, so the payload is not converted, and commands without registered criteria keep their sourcing criteria, here `credits.TopUpCredits`.
+Registering the same name twice fails right away.
+Pass an `AppendCriteriaResolver` instead of a function when the criteria depend on the command or the context.
+
+To decide for every command of every component in the module, pass one `AppendCriteriaResolver` to the `AppendCriteriaInterceptor` constructor.
+That resolver receives the command as dispatched, so read a serialized payload with `payloadAs`.
+Criteria registered with `forCommand` take precedence over it for their command.
+A command whose criteria more than one resolver decides, for example a builder and an interceptor, fails.
+
+For a declaratively built entity, register the interceptor on the metamodel builder through `EntityCommandHandlerInterceptor.of`:
+
+[source,java]
+----
+include::example$events/eventstoreinternals/appendcriteria/entity/DeclarativeEntityAppendCriteria.java[tag=declarative-entity-append-criteria,indent=0]
+----
+
+The interceptor covers the creational and instance commands of the entity, and the commands forwarded to its child entities.
+On a polymorphic entity, register it once on the polymorphic metamodel, which also covers the commands of its concrete types.
+
+=== Commands without sourcing
+
+A command that sources nothing and declares no append criteria appends unconditionally.
+A builder for such a command can return criteria built from the command or its metadata.
+The event store checks them against the complete history, which reserves a unique key without loading anything:
+
+[source,java]
+----
+include::example$events/eventstoreinternals/appendcriteria/annotation/UsernameCommandHandler.java[tag=metadata-append-criteria,indent=0]
+----
+
+* The append fails if a matching event already exists or is appended concurrently.
+* Tag the appended events with the values the criteria use, as the example does with `tenantId`.
+* Returning the supplied criteria keeps the command unconditional.
+* Setting event types with `withEventTypes` on the supplied criteria defines a boundary where there was none, so every event of those types in the history is checked.
+A `CommandMessage` builder that does this applies it to every command that sources nothing.
+* A command that sourced something checks its append criteria only after the position it read, whatever the criteria select.
+To check a key from the beginning of the history, use a command that sources nothing.
+
+=== Choosing a narrower boundary
+
+A narrower boundary can change how stored events explain a decision: a rejection may describe the state before a concurrent event that the boundary excluded.
+Keep the default boundary when that order matters more than avoiding retries, for example for audit records.
+
+A builder is a static method, so its result can be tested without running a command.
+Assert with `criteria.matches(eventType, tags)` that it selects the events the decision depends on, as an event type name that matches nothing silently selects nothing.
+
+=== Aggregate-based storage
+
+Aggregate-based storage detects conflicts only through the sequence numbers of the aggregates it appends to.
+It does not check append criteria, so an append criteria builder has no effect there.
+A command that sourced an aggregate still conflicts with any concurrent event of that aggregate, whatever its builder returns.
+A command that sourced nothing only conflicts when it creates an aggregate that already exists.
+Reserving a unique key, as in the `UsernameCommandHandler` example, requires a criteria-aware event store.
+
 [#conditions]
 == Append, source, and stream conditions
 
@@ -117,7 +239,8 @@ Axon provides three condition types, each tailored for a different operation:
 **AppendCondition**::
 Used when appending events to the event store.
 It combines an `EventCriteria` with a `ConsistencyMarker` to enforce write conflict detection.
-The <<consistency_marker,consistency marker>> tracks the position until which the criteria should be validated—if events matching the criteria were appended after this position, the append operation fails.
+The <<consistency_marker,consistency marker>> tracks the position until which the criteria should be validated.
+If events matching the criteria were appended after this position, the append operation fails.
 This ensures that concurrent writes to the same logical boundary are detected.
 +
 For events that don't participate in any consistency boundary (such as standalone events), use `AppendCondition.none()`.
