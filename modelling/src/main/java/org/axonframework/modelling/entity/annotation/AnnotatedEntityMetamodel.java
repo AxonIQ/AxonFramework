@@ -60,6 +60,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -121,6 +122,7 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
     private final List<AnnotatedEntityMetamodel<?>> childMetamodels = new LinkedList<>();
     private final List<QualifiedName> commandsToSkip;
     private final @Nullable Class<?> polymorphicSuperType;
+    private final Set<Class<?>> knownResultTypes;
 
     /**
      * Instantiate an annotated {@link EntityMetamodel} of a concrete entity type.
@@ -265,8 +267,39 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
             List<QualifiedName> commandsToSkip,
             @Nullable Class<?> polymorphicSuperType
     ) {
+        this(entityType,
+             concreteTypes,
+             parameterResolverFactory,
+             handlerDefinition,
+             messageTypeResolver,
+             messageConverter,
+             eventConverter,
+             commandsToSkip,
+             polymorphicSuperType,
+             Set.of());
+    }
+
+    /**
+     * Instantiate an annotated {@link EntityMetamodel} of an entity type, telling the evolver which runtime types a
+     * handler may return.
+     *
+     * @param knownResultTypes the entity type and registered concrete types that a handler may return; empty to default
+     *                         to this metamodel's entity type
+     */
+    private AnnotatedEntityMetamodel(
+            Class<E> entityType,
+            Set<Class<? extends E>> concreteTypes,
+            ParameterResolverFactory parameterResolverFactory,
+            HandlerDefinition handlerDefinition, MessageTypeResolver messageTypeResolver,
+            MessageConverter messageConverter,
+            EventConverter eventConverter,
+            List<QualifiedName> commandsToSkip,
+            @Nullable Class<?> polymorphicSuperType,
+            Set<Class<?>> knownResultTypes
+    ) {
         this.commandsToSkip = requireNonNull(commandsToSkip, "The commandsToSkip may not be null.");
         this.polymorphicSuperType = polymorphicSuperType;
+        this.knownResultTypes = Set.copyOf(requireNonNull(knownResultTypes, "The knownResultTypes may not be null."));
         this.entityType = requireNonNull(entityType, "The entityType may not be null.");
         this.parameterResolverFactory = requireNonNull(parameterResolverFactory,
                                                        "The parameterResolverFactory may not be null.");
@@ -292,8 +325,9 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
         // because concrete metamodels are only reached through the PolymorphicEntityMetamodel of the super type.
         //noinspection unchecked
         Class<E> evolvedType = polymorphicSuperType != null ? (Class<E>) polymorphicSuperType : entityType;
+        Set<Class<?>> evolverResultTypes = knownResultTypes.isEmpty() ? Set.of(entityType) : knownResultTypes;
         builder.entityEvolver(new AnnotationBasedEntityEvolvingComponent<>(
-                evolvedType, inspected, eventConverter, messageTypeResolver
+                evolvedType, inspected, eventConverter, messageTypeResolver, evolverResultTypes
         ));
         initializeDetectedHandlers(builder, inspected);
         registerCommandInterceptors(builder, inspected);
@@ -322,10 +356,12 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
         // initializeDetectedHandlers and the commandsToSkip javadoc for why.
         List<QualifiedName> registeredCreationalCommands = initializeDetectedHandlers(builder, inspected);
         registerCommandInterceptors(builder, inspected);
+        Set<Class<?>> hierarchyTypes = new HashSet<>(concreteTypes);
+        hierarchyTypes.add(entityType);
         concreteTypes.forEach(concreteType -> {
             AnnotatedEntityMetamodel<? extends E> createdConcreteEntityModel = new AnnotatedEntityMetamodel<>(
                     concreteType, Set.of(), parameterResolverFactory, handlerDefinition, messageTypeResolver,
-                    messageConverter, eventConverter, registeredCreationalCommands, entityType
+                    messageConverter, eventConverter, registeredCreationalCommands, entityType, hierarchyTypes
             );
             concreteMetamodels.add(createdConcreteEntityModel);
             builder.addConcreteType(createdConcreteEntityModel);

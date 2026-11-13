@@ -51,6 +51,7 @@ import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.axonframework.messaging.core.annotation.AnnotatedHandlerInspector.inspectType;
 import static org.axonframework.messaging.eventhandling.EventTestUtils.asEventMessage;
@@ -2069,5 +2070,82 @@ class AnnotationBasedEntityEvolvingComponentTest {
         );
         var event = payload instanceof EventMessage message ? message : asEventMessage(payload);
         return evolver.evolve(entity, event, StubProcessingContext.forMessage(event));
+    }
+
+    @Nested
+    class UnknownReturnedSubclass {
+
+        private static class Wallet {
+
+            @EventHandler
+            Wallet onOpened(String opened) {
+                return new UnknownWallet();
+            }
+
+            @EventHandler
+            void onDeposited(Integer amount) {
+                // later events must not be reached after onOpened returns an unknown subclass
+            }
+        }
+
+        private static class UnknownWallet extends Wallet {
+
+        }
+
+        private static final EntityEvolver<Wallet> WALLET_EVOLVER = new AnnotationBasedEntityEvolvingComponent<>(
+                Wallet.class,
+                inspectType(
+                        Wallet.class,
+                        messageTypeResolver,
+                        ClasspathParameterResolverFactory.forClass(Wallet.class),
+                        ClasspathHandlerDefinition.forClass(Wallet.class)
+                ),
+                converter,
+                messageTypeResolver,
+                Set.of(Wallet.class)
+        );
+
+        @Test
+        void failsWhenHandlerReturnsSubclassNotIndexedByTheEvolver() {
+            // given
+            var event = asEventMessage("opened");
+
+            // when / then
+            assertThatThrownBy(() -> WALLET_EVOLVER.evolve(
+                    new Wallet(),
+                    event,
+                    StubProcessingContext.forMessage(event)
+            ))
+                    .isInstanceOf(StateEvolvingException.class)
+                    .hasMessageContaining("UnknownWallet")
+                    .hasMessageContaining(Wallet.class.getName())
+                    .hasMessageContaining("onOpened")
+                    .hasMessageContaining("concreteTypes")
+                    .hasMessageContaining("sealed");
+        }
+
+        @Test
+        void evolvesIntoSubclassWhenItIsAKnownResultType() {
+            // given
+            var evolver = new AnnotationBasedEntityEvolvingComponent<>(
+                    Wallet.class,
+                    inspectType(
+                            Wallet.class,
+                            messageTypeResolver,
+                            ClasspathParameterResolverFactory.forClass(Wallet.class),
+                            ClasspathHandlerDefinition.forClass(Wallet.class)
+                    ),
+                    converter,
+                    messageTypeResolver,
+                    Set.of(Wallet.class, UnknownWallet.class)
+            );
+            var event = asEventMessage("opened");
+
+            // when
+            Wallet evolved = evolver.evolve(new Wallet(), event, StubProcessingContext.forMessage(event));
+
+            // then
+            assertThat(evolved).isInstanceOf(UnknownWallet.class);
+        }
     }
 }
