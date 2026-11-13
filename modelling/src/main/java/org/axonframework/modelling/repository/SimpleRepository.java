@@ -106,17 +106,21 @@ public class SimpleRepository<ID, E> implements Repository.LifecycleManagement<I
     @Override
     public CompletableFuture<ManagedEntity<ID, E>> load(ID id, ProcessingContext context) {
         var managedEntities = context.computeResourceIfAbsent(managedEntitiesKey, ConcurrentHashMap::new);
-
-        return managedEntities.computeIfAbsent(
-                id,
-                identifier -> loader
-                        .load(identifier, context)
-                        .thenApply((entity) -> {
-                            SimpleEntity<ID, E> managedEntity = new SimpleEntity<>(id, entity);
-                            attachEntitySaveToContext(id, managedEntity, context);
-                            return managedEntity;
-                        })
+        var start = new CompletableFuture<Void>();
+        CompletableFuture<ManagedEntity<ID, E>> loading = start.thenCompose(
+                ignored -> loader.load(id, context)
+                                 .thenApply((entity) -> {
+                                     SimpleEntity<ID, E> managedEntity = new SimpleEntity<>(id, entity);
+                                     attachEntitySaveToContext(id, managedEntity, context);
+                                     return managedEntity;
+                                 })
         );
+        var existing = managedEntities.putIfAbsent(id, loading);
+        if (existing != null) {
+            return existing;
+        }
+        start.complete(null);
+        return loading;
     }
 
     private void attachEntitySaveToContext(ID id, ManagedEntity<ID, E> managedEntity, ProcessingContext context) {
