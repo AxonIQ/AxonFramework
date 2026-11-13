@@ -49,7 +49,8 @@ In the Java file, regions are delimited with tag comments:
   include.
 - **Test samples**: examples of the `testing` module are compiled as test sources, so they may
   use JUnit, AssertJ, and the `axon-test` fixtures.
-- **ASCII only, LF line endings**, 4-space indentation, no license headers in sample files.
+- **ASCII only, LF line endings**, 4-space indentation, license headers in sample files (placed above the
+  `package` statement, outside the tagged regions).
 
 ## Verifying
 
@@ -68,6 +69,14 @@ python3 docs/_samples/bin/compare-snippets.py docs/reference-guide/modules/comma
 Every difference the script reports must be intentional (for example a dropped import of a
 sample-local type). If compilation reveals that a documented snippet was wrong, fix the sample
 so it keeps its teaching intent and record the finding in the commit message.
+
+## Kotlin samples
+
+Kotlin samples of the extensions documentation live in
+`docs/reference-guide/modules/extensions/examples` and are compiled by the separate
+`docs/_samples-kotlin` module (`./mvnw -pl docs/_samples-kotlin test-compile`). The same include and
+tag conventions apply, with the package `extensions.kotlin.<pagename>` (a `kotlin.` package is
+reserved by the Kotlin compiler).
 
 ## Saga and workflow comparison examples
 

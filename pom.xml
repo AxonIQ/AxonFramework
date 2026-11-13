@@ -40,6 +40,7 @@
         <module>integrationtests</module>
 
         <module>docs/_samples</module>
+        <module>docs/_samples-kotlin</module>
 
     </modules>
     <packaging>pom</packaging>
@@ -175,6 +176,7 @@
                          (first module wins), so this must be excluded here rather than on that module's own pom. -->
                     <excludeArtifacts>
                         <excludeArtifact>axon-docs-samples</excludeArtifact>
+                        <excludeArtifact>axon-docs-samples-kotlin</excludeArtifact>
                     </excludeArtifacts>
                 </configuration>
             </plugin>
@@ -270,7 +272,7 @@
                         <configuration>
                             <doclint>none</doclint>
                             <legacyMode>true</legacyMode>
-                            <skippedModules>axon-todo,axon-integrationtests,axon-docs-samples</skippedModules>
+                            <skippedModules>axon-todo,axon-integrationtests,axon-docs-samples,axon-docs-samples-kotlin</skippedModules>
                             <!-- These parameters are in preparation for resolution of this issue: -->
                             <!-- https://bugs.openjdk.java.net/browse/JDK-8068562 -->
                             <tags>
