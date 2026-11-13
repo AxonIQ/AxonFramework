@@ -1,0 +1,135 @@
+:navtitle: Dispatching
+= Dispatching
+
+The "Reactive Gateways" offer a reactive API wrapper around the command, query and event gateways.
+Most of the operations are similar to those from the non-reactive gateways, simply replacing the `CompletableFuture` with either a `Mono` or `Flux`.
+
+WARNING: Reactor doesn't allow `null` values in streams.
+Any `null` value returned from the handler will be mapped to link:https://projectreactor.io/docs/core/release/api/reactor/core/publisher/Mono.html#empty[`Mono#empty()`,window=_blank,role=external].
+
+[NOTE]
+.Retrying operations
+====
+All operations support Reactor's retry mechanism:
+
+[source,java]
+----
+include::example$extensions/reactor/dispatching/QueryGatewayExamples.java[tag=query-retry,indent=0]
+----
+This call will retry sending the query a maximum of five times when it fails.
+====
+
+== Configuration
+
+The `ReactorCommandGateway`, `ReactorQueryGateway`, and `ReactorEventGateway` are registered automatically when the `axon-reactor` artifact is on the classpath.
+They delegate to the regular `CommandGateway`, `QueryGateway`, and `EventGateway` of your application.
+
+In a Spring Boot application, the gateways are available as beans, as the examples on this page show.
+In a plain Java application, retrieve a gateway from the `AxonConfiguration`:
+
+[source,java]
+----
+include::example$extensions/reactor/dispatching/PlainJavaGatewayLookup.java[tag=plain-java-gateway,indent=0]
+----
+
+Every operation of the gateways is also available with a `ProcessingContext` parameter.
+Provide it when you dispatch from within a message handler, to propagate correlation data from one message to another.
+When dispatching from outside a handler, use the variants without the `ProcessingContext`.
+
+== Reactor command gateway
+
+This section describes the methods on the `ReactorCommandGateway`.
+
+[[send]]
+=== `send`
+
+Sends the given command once the caller subscribes to the command result.
+Returns immediately.
+
+There are two variants:
+
+* `send(command, resultType)` returns a `Mono<R>` with the command's result, converted to the given `resultType`.
+* `send(command)` returns a `Mono<Void>` that completes once the command has been handled, regardless of its result.
+
+A common pattern is using the REST API to send a command.
+In this case it is recommended to, for example, use link:https://docs.spring.io/spring-framework/reference/web/webflux.html[WebFlux,window=_blank,role=external], and return the command result `Mono` directly to the controller:
+
+[source,java]
+.Sending a command from a Spring WebFlux Controller.
+----
+include::example$extensions/reactor/dispatching/CommandGatewayExamples.java[tag=send-controller,indent=0]
+----
+
+If the command's result is of no interest, use the `Mono<Void>` variant:
+
+[source,java]
+----
+include::example$extensions/reactor/dispatching/CommandGatewayExamples.java[tag=send-without-result,indent=0]
+----
+
+Another common pattern is "send and forget":
+
+[source,java]
+.Function that sends a command and returns immediately without waiting for the result.
+----
+include::example$extensions/reactor/dispatching/CommandGatewayExamples.java[tag=send-and-forget,indent=0]
+----
+
+== Reactor query gateway
+
+This section describes the methods on the `ReactorQueryGateway`.
+
+[[query]]
+=== `query`
+
+Sends the given `query`, expecting a response in the form of `responseType` from a single source.
+
+[source,java]
+.Recommended way of using the Reactor query gateway within a Spring REST controller.
+----
+include::example$extensions/reactor/dispatching/QueryGatewayExamples.java[tag=query-controller,indent=0]
+----
+
+[[querymany]]
+=== `queryMany`
+
+Sends the given `query`, expecting a list of `responseType` instances as the response.
+The result is a `Mono` of that list, as shown in the controller above.
+
+[[streamingquery]]
+=== `streamingQuery`
+
+Sends the given `query` as a streaming query, expecting the response to be streamed element by element.
+The result is a `Flux` of `responseType` instances, as shown in the controller above.
+
+[[subscriptionquery]]
+=== `subscriptionQuery`
+
+Sends the given `query` as a subscription query.
+The resulting `Flux` first emits the initial result, and then keeps streaming incremental updates until the subscriber cancels its subscription.
+
+Note that the initial result and the updates are both converted to the same `responseType`.
+
+[source,java]
+----
+include::example$extensions/reactor/dispatching/QueryGatewayExamples.java[tag=subscription-query,indent=0]
+----
+
+== Reactor event gateway
+
+Reactive variation of the `EventGateway`.
+Provides support for reactive return types.
+
+[[publish]]
+=== `publish`
+
+Publishes the given `events` once the caller subscribes to the resulting `Mono`.
+The `Mono` completes when the events have been published.
+
+[source,java]
+----
+include::example$extensions/reactor/dispatching/EventGatewayExamples.java[tag=publish-events,indent=0]
+----
+
+The messages sent through the Reactor gateways can be intercepted before they are dispatched.
+See xref:extensions:reactor/intercepting.adoc[Intercepting] for the details.
