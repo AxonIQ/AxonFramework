@@ -77,16 +77,16 @@ public class SequencingEventHandlingComponent extends DelegatingEventHandlingCom
         Map<Object, CompletableFuture<?>> invocationsBySequenceIdentifier =
                 context.computeResourceIfAbsent(sequencedInvocationsKey, ConcurrentHashMap::new);
 
+        Object sequenceIdentifier = sequenceIdentifierFor(event, context);
+        var previous = new CompletableFuture<CompletableFuture<?>>();
         //noinspection unchecked
-        CompletableFuture<Message> resultFuture = (CompletableFuture<Message>) invocationsBySequenceIdentifier.compute(
-                sequenceIdentifierFor(event, context),
-                (sequenceIdentifier, previousInvocation) -> chainedSequenceInvocations(
-                        sequenceIdentifier,
-                        previousInvocation,
-                        event,
-                        context
-                ));
-        return MessageStream.fromFuture(resultFuture).ignoreEntries();
+        var invocation = previous.thenCompose(
+                previousInvocation -> (CompletableFuture<Message>) chainedSequenceInvocations(
+                        sequenceIdentifier, previousInvocation, event, context
+                )
+        );
+        previous.complete(invocationsBySequenceIdentifier.put(sequenceIdentifier, invocation));
+        return MessageStream.fromFuture(invocation).ignoreEntries();
     }
 
     private CompletableFuture<?> chainedSequenceInvocations(

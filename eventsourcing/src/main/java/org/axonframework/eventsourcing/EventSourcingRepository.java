@@ -178,20 +178,19 @@ public class EventSourcingRepository<ID, E> implements Repository.LifecycleManag
                                                            boolean create,
                                                            ProcessingContext context) {
         var managedEntities = context.computeResourceIfAbsent(managedEntitiesKey, ConcurrentHashMap::new);
-
-        return managedEntities.computeIfAbsent(
-                identifier,
-                id -> lifecycleHandler.source(identifier, context)
-                                      .thenApply(
-                                              entity -> create && entity == null
-                                                      ? initializeQuietly(identifier, context)
-                                                      : entity
-                                      )
-                                      .thenApply(e -> new EventSourcedEntity<>(identifier, e))
-                                      .whenComplete((entity, exception) -> updateActiveEntity(
-                                              entity, context, exception
-                                      ))
-        ).thenApply(
+        var start = new CompletableFuture<Void>();
+        var sourcing = start.thenCompose(ignored -> lifecycleHandler.source(identifier, context))
+                            .thenApply(entity -> create && entity == null
+                                    ? initializeQuietly(identifier, context)
+                                    : entity)
+                            .thenApply(e -> new EventSourcedEntity<>(identifier, e))
+                            .whenComplete((entity, exception) -> updateActiveEntity(entity, context, exception));
+        var managedEntity = managedEntities.putIfAbsent(identifier, sourcing);
+        if (managedEntity == null) {
+            managedEntity = sourcing;
+            start.complete(null);
+        }
+        return managedEntity.thenApply(
                 entity -> {
                     if (create && entity.entity() == null) {
                         initializeIfAbsent(identifier, context, entity);
