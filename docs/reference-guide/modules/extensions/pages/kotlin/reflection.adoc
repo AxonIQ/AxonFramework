@@ -1,0 +1,47 @@
+:navtitle: Property Access and Nullability
+= Property Access and Nullability
+
+The `axon-kotlin` module registers two Kotlin-aware components through `ServiceLoader`.
+Having the module on the classpath is all that is needed: there is nothing to configure or call.
+
+[[property-access]]
+== Property access
+
+`KotlinReflectPropertyAccessStrategy` resolves properties of Kotlin classes through Kotlin reflection.
+It has a higher priority than the default strategy, so Kotlin classes are always resolved through it.
+Classes not compiled by Kotlin keep using the default strategy.
+
+Axon Framework reads properties, for example, to resolve entity identifiers from commands and events.
+When such a property is a Kotlin `value class`, the strategy wraps the underlying value into the value class where needed.
+Identifier types can therefore be declared as value classes:
+
+[source,kotlin]
+----
+@JvmInline
+value class CardId(val value: String)
+
+data class IssueCard(@get:TargetEntityId val cardId: CardId)
+----
+
+[[nullability]]
+== Nullability
+
+Kotlin's nullable types (`T?`) are not visible to Java reflection at runtime.
+`KotlinReflectNullabilityResolver` reads the nullability from the Kotlin declaration instead.
+A handler parameter declared as `MyEntity?` is therefore treated the same way as a Java parameter annotated with `@Nullable`, and a non-nullable parameter is treated as non-null.
+
+[source,kotlin]
+----
+import org.axonframework.messaging.commandhandling.annotation.CommandHandler
+import org.axonframework.modelling.annotation.InjectEntity
+
+class CardCommandHandler {
+
+    @CommandHandler
+    fun handle(command: ArchiveCard, @InjectEntity card: Card?) {
+        // card is null when the entity does not exist yet
+    }
+}
+----
+
+Parameters of classes not compiled by Kotlin are left to Axon Framework's regular annotation-based nullability check.

@@ -1,0 +1,18 @@
+:navtitle: Extensions
+= Extensions
+
+Extensions build on the Framework's core to support a specific language, library or integration, without making that support a dependency of the core modules.
+Each extension is a separate artifact that you add to your project when you need it, and is versioned together with Axon Framework.
+
+This section contains the guides of the extensions that have a dedicated documentation page.
+For an overview of all modules and extensions, including their artifact and group ids, see xref:ROOT:modules.adoc[].
+
+== Available extensions
+
+[cols="1,3",options="header"]
+|===
+|Extension |Description
+
+|xref:extensions:kotlin/index.adoc[Kotlin]
+|Idiomatic Kotlin support for Axon Framework: reified extension functions for messaging, event-sourced entity helpers, Kotlin-aware property access and nullability, and test fixture extensions.
+|===

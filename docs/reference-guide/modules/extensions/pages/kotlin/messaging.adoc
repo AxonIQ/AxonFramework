@@ -1,0 +1,163 @@
+:navtitle: Messaging
+= Messaging
+
+This section describes the extension functions available when dispatching commands and queries, emitting query updates, and working with message metadata.
+All of them live in the `org.axonframework.extension.kotlin.messaging` package.
+
+== Commands
+
+[[commandgateway]]
+=== `CommandGateway`
+
+The `CommandGateway` offers two reified extension functions.
+Both take the expected result type as a type argument, instead of a `Class` parameter.
+
+`sendWithResult<R>(command)`::
+Sends the command and returns a `CompletableFuture<R>`.
+This is the reified equivalent of `CommandGateway#send(Object, Class)`.
+
+`sendAndWait<R>(command)`::
+Sends the command, blocks until it is handled, and returns the result as `R`.
+This is the reified equivalent of `CommandGateway#sendAndWait(Object, Class)`.
+Unlike the Java method, the Kotlin function never returns `null`: it throws an `IllegalStateException` when the handler returns no result.
+Use `sendWithResult` if a `null` result is a valid outcome.
+
+[source,kotlin]
+----
+import org.axonframework.extension.kotlin.messaging.sendAndWait
+import org.axonframework.extension.kotlin.messaging.sendWithResult
+import org.axonframework.messaging.commandhandling.gateway.CommandGateway
+import java.util.concurrent.CompletableFuture
+
+class CardService(private val commandGateway: CommandGateway) {
+
+    // Non-blocking, the result is converted to a String once handling completes
+    fun issueCard(command: IssueCardCommand): CompletableFuture<String> =
+        commandGateway.sendWithResult<String>(command)
+
+    // Blocking, returns the converted result directly
+    fun issueCardAndWait(command: IssueCardCommand): String =
+        commandGateway.sendAndWait<String>(command)
+}
+----
+
+NOTE: The extension functions only cover commands that return a result.
+To dispatch a command without a result type, use the `CommandGateway` methods directly.
+
+== Queries
+
+[[querygateway]]
+=== `QueryGateway`
+
+The `QueryGateway` offers reified extension functions that take the response type as a type argument, instead of a `Class` parameter.
+
+[cols="2,3,3",options="header"]
+|===
+|Extension function |Returns |Equivalent `QueryGateway` method
+
+|`query<R>(query)`
+|`CompletableFuture<R>`
+|`query(Object, Class)`
+
+|`queryMany<R>(query)`
+|`CompletableFuture<List<R>>`
+|`queryMany(Object, Class)`
+
+|`streamingQuery<R>(query)`
+|`Publisher<R>`
+|`streamingQuery(Object, Class)`
+
+|`subscriptionQuery<R>(query)`
+|`Publisher<R>`
+|`subscriptionQuery(Object, Class)`
+|===
+
+[source,kotlin]
+----
+import org.axonframework.extension.kotlin.messaging.query
+import org.axonframework.extension.kotlin.messaging.queryMany
+import org.axonframework.messaging.queryhandling.gateway.QueryGateway
+import java.util.concurrent.CompletableFuture
+
+class CardQueryService(private val queryGateway: QueryGateway) {
+
+    fun totalNumberOfCards(): CompletableFuture<Int> =
+        queryGateway.query<Int>(CountCardSummariesQuery())
+
+    fun cardSummaries(): CompletableFuture<List<CardSummary>> =
+        queryGateway.queryMany<CardSummary>(FetchCardSummariesQuery())
+}
+----
+
+Kotlin can often infer the type argument from the expected type, so the following is equivalent to the first function above:
+
+[source,kotlin]
+----
+fun totalNumberOfCards(): CompletableFuture<Int> =
+    queryGateway.query(CountCardSummariesQuery())
+----
+
+[[queryupdateemitter]]
+=== `QueryUpdateEmitter`
+
+The `emit<Q, U>(update) { filter }` function on the `QueryUpdateEmitter` takes the query type and update type as type arguments.
+Its filter is a Kotlin lambda, which can be written outside the parentheses.
+Only subscription queries of type `Q` for which the filter returns `true` receive the update.
+The `QueryUpdateEmitter` is available as a parameter of a message handler, such as the event handler below.
+
+[source,kotlin]
+----
+import org.axonframework.extension.kotlin.messaging.emit
+import org.axonframework.messaging.eventhandling.annotation.EventHandler
+import org.axonframework.messaging.queryhandling.QueryUpdateEmitter
+
+class CardSummaryProjection {
+
+    @EventHandler
+    fun on(event: CardIssuedEvent, queryUpdateEmitter: QueryUpdateEmitter) {
+        // Update the projection here
+
+        // Then emit the update to the subscribers whose filter matches
+        queryUpdateEmitter.emit<CountCardSummariesQuery, CountChangedUpdate>(CountChangedUpdate()) { query ->
+            event.id.startsWith(query.idFilter)
+        }
+    }
+}
+----
+
+== Metadata
+
+Every message carries metadata next to its payload: an immutable map of string keys to string values.
+Metadata typically holds contextual information, such as a correlation id, a tenant, or the user that triggered the message.
+The helpers below make reading and building that metadata feel natural in Kotlin:
+
+`AxonMetadata`::
+A type alias for `org.axonframework.messaging.core.Metadata`.
+It avoids a clash with Kotlin's own `kotlin.Metadata` annotation.
+
+`Message.metadata`::
+A property that reads the metadata of any `Message`, replacing the `metadata()` call.
+
+`AxonMetadata.and(Pair<String, String?>)`::
+Adds an entry using Kotlin's link:https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/to.html[`to` function,window=_blank,role=external].
+
+`AxonMetadata.contains(AxonMetadata)`::
+Returns `true` if every entry of the given metadata is present, with an equal value, in the receiver.
+An empty metadata is therefore contained in any metadata.
+
+[source,kotlin]
+----
+import org.axonframework.extension.kotlin.messaging.AxonMetadata
+import org.axonframework.extension.kotlin.messaging.and
+import org.axonframework.extension.kotlin.messaging.contains
+import org.axonframework.extension.kotlin.messaging.metadata
+import org.axonframework.messaging.core.Message
+
+fun isFromGame(message: Message, gameId: String): Boolean {
+    val expected = AxonMetadata.with("gameId", gameId)
+    return message.metadata.contains(expected)
+}
+
+val gameMetadata = AxonMetadata.with("gameId", "game-1")
+    .and("playerId" to "player-1")
+----

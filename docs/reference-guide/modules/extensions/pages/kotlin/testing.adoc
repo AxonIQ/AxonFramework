@@ -1,0 +1,52 @@
+:navtitle: Testing
+= Testing
+
+The `axon-kotlin-test` module adds extension functions to the xref:testing:index.adoc[test fixture].
+They live in the `org.axonframework.extension.kotlin.test` package.
+
+[[whenever]]
+== `whenever`
+
+`when` is a reserved word in Kotlin, so the fixture's `when()` method needs backticks.
+`whenever` replaces it on both the setup and the given phase:
+
+[cols="2,3",options="header"]
+|===
+|Function |Equivalent
+
+|`whenever()`
+|`when()`
+
+|`whenever(command)`
+|`when().command(command)`
+|===
+
+[[exception]]
+== `exception`
+
+On the assertions of the then phase, `exception` accepts a `KClass` instead of a `Class`:
+
+* `exception(KClass<out Throwable>)`
+* `exception(KClass<out Throwable>, message: String)`
+
+[source,kotlin]
+----
+import org.axonframework.extension.kotlin.test.exception
+import org.axonframework.extension.kotlin.test.whenever
+import org.axonframework.test.fixture.AxonTestFixture
+import org.junit.jupiter.api.Test
+
+class CardTest {
+
+    private lateinit var fixture: AxonTestFixture
+
+    @Test
+    fun `issuing an existing card fails`() {
+        fixture.given()
+            .event(CardIssued("card-1"))
+            .whenever(IssueCard("card-1"))
+            .then()
+            .exception(IllegalStateException::class, "Card already issued")
+    }
+}
+----
