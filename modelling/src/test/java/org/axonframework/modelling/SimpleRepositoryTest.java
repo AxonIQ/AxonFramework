@@ -145,4 +145,35 @@ class SimpleRepositoryTest {
             return CompletableFuture.completedFuture(null);
         }).get(5, TimeUnit.SECONDS);
     }
+
+    @Test
+    void secondLoadOfTheSameEntityDoesNotWaitWhileTheFirstLoadIsLoading()
+            throws ExecutionException, InterruptedException, TimeoutException {
+        // given - loading of "42" only finishes after a second load of "42", on another thread, has returned
+        AtomicReference<SimpleRepository<String, Integer>> repository = new AtomicReference<>();
+        CompletableFuture<CompletableFuture<ManagedEntity<String, Integer>>> secondLoad = new CompletableFuture<>();
+        repository.set(new SimpleRepository<>(
+                String.class,
+                Integer.class,
+                (id, context) -> {
+                    if (loadedCounter.incrementAndGet() == 1) {
+                        Thread.ofVirtual().start(() -> secondLoad.complete(repository.get().load(id, context)));
+                        secondLoad.orTimeout(2, TimeUnit.SECONDS).join();
+                    }
+                    return CompletableFuture.completedFuture(Integer.parseInt(id));
+                },
+                (id, entity, context) -> CompletableFuture.completedFuture(null)
+        ));
+
+        aUnitOfWork().executeWithResult(ctx -> {
+            // when
+            ManagedEntity<String, Integer> first = repository.get().load("42", ctx).join();
+
+            // then - the second load returned while the first was still loading, and both share one managed entity
+            ManagedEntity<String, Integer> second = secondLoad.resultNow().orTimeout(2, TimeUnit.SECONDS).join();
+            assertSame(first, second);
+            assertEquals(1, loadedCounter.get());
+            return CompletableFuture.completedFuture(null);
+        }).get(5, TimeUnit.SECONDS);
+    }
 }
