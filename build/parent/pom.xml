@@ -44,6 +44,7 @@
         <javax.cache-api.version>1.1.1</javax.cache-api.version>
         <!-- Database -->
         <c3p0.version>0.9.1.2</c3p0.version>
+        <atomikos.version>6.0.0</atomikos.version>
         <hikari.version>7.1.0</hikari.version>
         <hsqldb.version>2.7.4</hsqldb.version>
         <hibernate-core.version>7.4.14.Final</hibernate-core.version>
@@ -57,6 +58,7 @@
         <jakarta.el-impl.version>6.0.0</jakarta.el-impl.version>
         <jakarta.inject.version>2.0.1.MR</jakarta.inject.version>
         <jakarta.persistence.version>3.2.0</jakarta.persistence.version>
+        <jakarta.transaction.version>2.0.1</jakarta.transaction.version>
         <jakarta.validation.version>3.1.1</jakarta.validation.version>
         <jspecify.version>1.0.1</jspecify.version>
         <!-- Logging -->
@@ -139,6 +141,38 @@
                 <groupId>com.zaxxer</groupId>
                 <artifactId>HikariCP</artifactId>
                 <version>${hikari.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.atomikos</groupId>
+                <artifactId>transactions-jta</artifactId>
+                <version>${atomikos.version}</version>
+                <classifier>jakarta</classifier>
+            </dependency>
+            <dependency>
+                <groupId>com.atomikos</groupId>
+                <artifactId>transactions-jdbc</artifactId>
+                <version>${atomikos.version}</version>
+                <classifier>jakarta</classifier>
+            </dependency>
+            <dependency>
+                <groupId>com.atomikos</groupId>
+                <artifactId>transactions</artifactId>
+                <version>${atomikos.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.atomikos</groupId>
+                <artifactId>transactions-api</artifactId>
+                <version>${atomikos.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.atomikos</groupId>
+                <artifactId>atomikos-util</artifactId>
+                <version>${atomikos.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>jakarta.transaction</groupId>
+                <artifactId>jakarta.transaction-api</artifactId>
+                <version>${jakarta.transaction.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.hsqldb</groupId>

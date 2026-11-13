@@ -22,6 +22,7 @@ import org.axonframework.common.jpa.EntityManagerExecutor;
 import org.axonframework.common.jpa.EntityManagerProvider;
 import org.axonframework.common.jpa.SimpleEntityManagerProvider;
 import org.axonframework.conversion.TestConverter;
+import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.core.unitofwork.transaction.Transaction;
 import org.axonframework.messaging.core.unitofwork.transaction.TransactionManager;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.jpa.JpaTokenStore;
@@ -81,12 +82,12 @@ class JpaTokenStoreTest {
     @Transactional
     @Test
     void stealingFromOtherThreadFailsWithRowLock() throws Exception {
-        joinAndUnwrap(jpaTokenStore.initializeTokenSegments("processor", 1, null, null));
+        joinAndUnwrap(jpaTokenStore.initializeTokenSegments("processor", 1, null, new StubProcessingContext()));
 
         ExecutorService executor1 = Executors.newSingleThreadExecutor();
         CountDownLatch cdl = new CountDownLatch(1);
         try {
-            jpaTokenStore.fetchToken("processor", 0, null);
+            jpaTokenStore.fetchToken("processor", 0, new StubProcessingContext());
             Future<?> result = executor1.submit(() -> {
 
                 DefaultTransactionDefinition txDef = new DefaultTransactionDefinition();
@@ -94,7 +95,7 @@ class JpaTokenStoreTest {
                 TransactionStatus tx = transactionManager.getTransaction(txDef);
                 cdl.countDown();
                 try {
-                    joinAndUnwrap(stealingJpaTokenStore.fetchToken("processor", 0, null));
+                    joinAndUnwrap(stealingJpaTokenStore.fetchToken("processor", 0, new StubProcessingContext()));
                 } finally {
                     transactionManager.rollback(tx);
                 }
