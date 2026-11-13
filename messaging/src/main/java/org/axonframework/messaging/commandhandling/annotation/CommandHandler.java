@@ -92,4 +92,14 @@ public @interface CommandHandler {
      * @return The payload type expected by this handler.
      */
     Class<?> payloadType() default Object.class;
+
+    /**
+     * The version range of the command this handler listens to.
+     * <p>
+     * Defaults to an empty string, meaning the handler accepts any version of the command.
+     * The string can define a specific version (e.g. {@code "1.0"}) or an inclusive range (e.g. {@code "1.0-2.0"}).
+     *
+     * @return The version range of the command expected by this handler.
+     */
+    String versionRange() default "";
 }
