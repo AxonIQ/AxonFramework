@@ -4,3 +4,6 @@
 *** xref:extensions:kotlin/eventsourcing.adoc[]
 *** xref:extensions:kotlin/testing.adoc[]
 *** xref:extensions:kotlin/reflection.adoc[]
+** xref:extensions:reactor/index.adoc[]
+*** xref:extensions:reactor/dispatching.adoc[]
+*** xref:extensions:reactor/intercepting.adoc[]

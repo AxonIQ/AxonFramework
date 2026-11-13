@@ -130,6 +130,12 @@
             <groupId>org.hibernate.orm</groupId>
             <artifactId>hibernate-core</artifactId>
         </dependency>
+        <!-- Reactor extension samples on extensions/reactor -->
+        <dependency>
+            <groupId>org.axonframework.extensions.reactor</groupId>
+            <artifactId>axon-reactor</artifactId>
+            <version>${project.version}</version>
+        </dependency>
         <!-- Metrics extension samples on monitoring/metrics.adoc -->
         <dependency>
             <groupId>org.axonframework.extensions.metrics</groupId>
@@ -178,6 +184,7 @@
                                 <source>${project.basedir}/../reference-guide/modules/commands/examples</source>
                                 <source>${project.basedir}/../reference-guide/modules/configuration/examples</source>
                                 <source>${project.basedir}/../reference-guide/modules/events/examples</source>
+                                <source>${project.basedir}/../reference-guide/modules/extensions/examples</source>
                                 <source>${project.basedir}/../reference-guide/modules/messaging-concepts/examples</source>
                                 <source>${project.basedir}/../reference-guide/modules/monitoring/examples</source>
                                 <source>${project.basedir}/../reference-guide/modules/queries/examples</source>
