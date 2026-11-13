@@ -64,7 +64,7 @@ testImplementation("org.axonframework.extensions.kotlin:axon-kotlin-test:$axonVe
 |Sub-Section |Purpose
 
 |xref:extensions:kotlin/messaging.adoc[Messaging] |Sending commands and queries with reified types, emitting query updates, and working with metadata
-|xref:extensions:kotlin/eventsourcing.adoc[Event sourcing] |Declaring event-sourced entities and evolving state conditionally
+|xref:extensions:kotlin/eventsourcing.adoc[Event Sourcing] |Declaring event-sourced entities and evolving state conditionally
 |xref:extensions:kotlin/testing.adoc[Testing] |Kotlin-friendly test fixture methods
-|xref:extensions:kotlin/reflection.adoc[Property access and nullability] |Kotlin value classes and nullable types in handlers and entities
+|xref:extensions:kotlin/reflection.adoc[Property Access and Nullability] |Kotlin value classes and nullable types in handlers and entities
 |===

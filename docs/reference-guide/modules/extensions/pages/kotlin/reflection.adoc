@@ -1,5 +1,5 @@
 :navtitle: Property Access and Nullability
-= Property access and nullability
+= Property Access and Nullability
 
 The `axon-kotlin` module registers two Kotlin-aware components through `ServiceLoader`.
 Having the module on the classpath is all that is needed: there is nothing to configure or call.

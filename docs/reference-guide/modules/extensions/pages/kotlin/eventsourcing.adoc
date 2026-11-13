@@ -1,5 +1,5 @@
 :navtitle: Event Sourcing
-= Event sourcing
+= Event Sourcing
 
 This section describes the helpers for declaring and evolving event-sourced entities.
 They live in the `org.axonframework.extension.kotlin.eventsourcing` package.
