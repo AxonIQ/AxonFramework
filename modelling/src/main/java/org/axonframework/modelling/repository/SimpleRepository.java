@@ -16,7 +16,6 @@
 
 package org.axonframework.modelling.repository;
 
-import org.axonframework.common.FutureUtils;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.messaging.core.Context.ResourceKey;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
@@ -107,19 +106,20 @@ public class SimpleRepository<ID, E> implements Repository.LifecycleManagement<I
     @Override
     public CompletableFuture<ManagedEntity<ID, E>> load(ID id, ProcessingContext context) {
         var managedEntities = context.computeResourceIfAbsent(managedEntitiesKey, ConcurrentHashMap::new);
-        var loading = new CompletableFuture<ManagedEntity<ID, E>>();
+        var start = new CompletableFuture<Void>();
+        CompletableFuture<ManagedEntity<ID, E>> loading = start.thenCompose(
+                ignored -> loader.load(id, context)
+                                 .thenApply((entity) -> {
+                                     SimpleEntity<ID, E> managedEntity = new SimpleEntity<>(id, entity);
+                                     attachEntitySaveToContext(id, managedEntity, context);
+                                     return managedEntity;
+                                 })
+        );
         var existing = managedEntities.putIfAbsent(id, loading);
         if (existing != null) {
             return existing;
         }
-        // Loading may block on the store, so it must not run while the map holds a lock on this entry.
-        FutureUtils.runFailing(() -> loader.load(id, context))
-                   .thenApply((entity) -> {
-                       SimpleEntity<ID, E> managedEntity = new SimpleEntity<>(id, entity);
-                       attachEntitySaveToContext(id, managedEntity, context);
-                       return managedEntity;
-                   })
-                   .whenComplete(FutureUtils.alsoComplete(loading));
+        start.complete(null);
         return loading;
     }
 

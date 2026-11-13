@@ -16,7 +16,6 @@
 
 package org.axonframework.eventsourcing;
 
-import org.axonframework.common.FutureUtils;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.eventsourcing.eventstore.AnnotationBasedTagResolver;
 import org.axonframework.eventsourcing.eventstore.EventStore;
@@ -179,16 +178,17 @@ public class EventSourcingRepository<ID, E> implements Repository.LifecycleManag
                                                            boolean create,
                                                            ProcessingContext context) {
         var managedEntities = context.computeResourceIfAbsent(managedEntitiesKey, ConcurrentHashMap::new);
-        var sourcing = new CompletableFuture<EventSourcedEntity<ID, E>>();
+        var start = new CompletableFuture<Void>();
+        var sourcing = start.thenCompose(ignored -> lifecycleHandler.source(identifier, context))
+                            .thenApply(entity -> create && entity == null
+                                    ? initializeQuietly(identifier, context)
+                                    : entity)
+                            .thenApply(e -> new EventSourcedEntity<>(identifier, e))
+                            .whenComplete((entity, exception) -> updateActiveEntity(entity, context, exception));
         var managedEntity = managedEntities.putIfAbsent(identifier, sourcing);
         if (managedEntity == null) {
             managedEntity = sourcing;
-            // Sourcing may block on the event store, so it must not run while the map holds a lock on this entry.
-            FutureUtils.runFailing(() -> lifecycleHandler.source(identifier, context))
-                       .thenApply(entity -> create && entity == null ? initializeQuietly(identifier, context) : entity)
-                       .thenApply(e -> new EventSourcedEntity<>(identifier, e))
-                       .whenComplete((entity, exception) -> updateActiveEntity(entity, context, exception))
-                       .whenComplete(FutureUtils.alsoComplete(sourcing));
+            start.complete(null);
         }
         return managedEntity.thenApply(
                 entity -> {
