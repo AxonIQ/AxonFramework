@@ -37,6 +37,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
@@ -236,6 +237,35 @@ class SequencingEventHandlingComponentTest {
 
         // then the second event was handled without waiting for the first, so the two were distinct keys
         assertThat(invokedWhileFirstStillRunning).containsExactly(sentinelSequenced, dataSequenced);
+    }
+
+    @Test
+    void anotherThreadCanQueueAnEventOfTheSameSequenceWhileTheHandlerRuns() {
+        // given a handler that, while handling the first event, hands a second event of the same sequence to a
+        // virtual thread and waits for that call to return. Were the handler to run while the invocation map holds
+        // the lock on the sequence, that call would block until the handler finished.
+        EventMessage first = testEvent("event-1_seq-A");
+        EventMessage second = testEvent("event-2_seq-A");
+        EventHandlingComponent eventHandlingComponent = sequencingEventHandlingComponent();
+        AtomicBoolean secondCallReturned = new AtomicBoolean();
+        handlerRegistry.subscribe(new QualifiedName(TestPayload.class), (event, context) -> {
+            if (event.equals(first)) {
+                Thread handOver = Thread.ofVirtual().start(() -> eventHandlingComponent.handle(second, context));
+                try {
+                    secondCallReturned.set(handOver.join(Duration.ofSeconds(2)));
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            return MessageStream.empty();
+        });
+
+        // when
+        handleEventsInUnitOfWork(eventHandlingComponent, List.of(first));
+
+        // then the second call returned while the first event was handled, and the second event was handled after it
+        assertThat(secondCallReturned).isTrue();
+        assertThat(recordingComponent.recorded()).containsExactly(first, second);
     }
 
     static @NonNull EventMessage testEvent(String payload) {

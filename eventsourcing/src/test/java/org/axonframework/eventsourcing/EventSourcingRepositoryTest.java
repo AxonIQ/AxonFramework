@@ -39,6 +39,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.UnaryOperator;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -256,6 +257,29 @@ class EventSourcingRepositoryTest {
 
         assertSame(firstResult, secondResult);
         assertEquals("test(created)", secondResult.entity());
+    }
+
+    @Test
+    void secondLoadOfTheSameEntityDoesNotWaitWhileTheFirstLoadIsSourcing() {
+        // given - sourcing of "slow" only finishes after a second load of "slow", on another thread, has returned
+        ProcessingContext processingContext = new StubProcessingContext();
+        CompletableFuture<CompletableFuture<ManagedEntity<String, String>>> secondLoad = new CompletableFuture<>();
+        AtomicBoolean firstSourcing = new AtomicBoolean(true);
+        when(handler.source(eq("slow"), any())).thenAnswer(invocation -> {
+            if (firstSourcing.getAndSet(false)) {
+                Thread.ofVirtual().start(() -> secondLoad.complete(testSubject.load("slow", processingContext)));
+                secondLoad.get(2, TimeUnit.SECONDS);
+            }
+            return CompletableFuture.completedFuture("slow(0)");
+        });
+
+        // when
+        ManagedEntity<String, String> first = testSubject.load("slow", processingContext).join();
+
+        // then - the second load returned while the first was still sourcing, and both share one managed entity
+        ManagedEntity<String, String> second = secondLoad.resultNow().orTimeout(2, TimeUnit.SECONDS).join();
+        assertThat(second).isSameAs(first);
+        verify(handler, times(1)).source("slow", processingContext);
     }
 
     @Nested
