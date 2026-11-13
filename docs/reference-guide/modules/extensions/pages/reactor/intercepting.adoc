@@ -1,0 +1,123 @@
+:navtitle: Intercepting
+= Intercepting
+
+Axon provides a notion of interceptors.
+The Reactor gateways allow for similar interceptor logic, namely the `ReactorMessageDispatchInterceptor`.
+It allows us to centrally define rules and filters that will be applied to the messages sent through the Reactor gateways.
+
+NOTE: Interceptors will be applied in the order they have been registered.
+
+== Reactor dispatch interceptors
+
+The `ReactorMessageDispatchInterceptor` should be used to centrally apply rules and validations for outgoing messages.
+It is the Reactor counterpart of the `MessageDispatchInterceptor`, with one important difference: it runs inside the Reactor subscription.
+The Reactor `Context` is thus available to the interceptor, which enables integration with reactive context holders such as Spring Security's `ReactiveSecurityContextHolder`.
+
+The interface is described as follows:
+
+[source,java]
+----
+@FunctionalInterface
+public interface ReactorMessageDispatchInterceptor<M extends Message> {
+
+    Mono<?> interceptOnDispatch(M message,
+                                @Nullable ProcessingContext context,
+                                ReactorMessageDispatchInterceptorChain<M> chain);
+}
+----
+
+An interceptor receives the `message` that is being dispatched, the active `ProcessingContext` (if any), and the remaining `chain`.
+It continues the chain by calling `chain.proceed(message, context)`, optionally with an enriched message.
+Not calling `proceed` discards the message.
+Here are a couple of examples how a dispatch interceptor could be used:
+
+[source,java]
+.Dispatch interceptor that adds a key-value pair to the message's `Metadata`.
+----
+import org.axonframework.extension.reactor.messaging.core.ReactorMessageDispatchInterceptor;
+import org.axonframework.extension.reactor.messaging.core.ReactorMessageDispatchInterceptorChain;
+import org.axonframework.messaging.commandhandling.CommandMessage;
+import org.axonframework.messaging.core.Metadata;
+import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.jspecify.annotations.Nullable;
+import reactor.core.publisher.Mono;
+
+class MetadataEnrichingInterceptor implements ReactorMessageDispatchInterceptor<CommandMessage> {
+
+    @Override
+    public Mono<?> interceptOnDispatch(CommandMessage message,
+                                       @Nullable ProcessingContext context,
+                                       ReactorMessageDispatchInterceptorChain<CommandMessage> chain) {
+        return chain.proceed(message.andMetadata(Metadata.with("key1", "value1")), context);
+    }
+}
+----
+
+[source,java]
+.Dispatch interceptor that discards the message, based on a security flag in the Reactor Context.
+----
+class SecurityFlagInterceptor implements ReactorMessageDispatchInterceptor<CommandMessage> {
+
+    @Override
+    public Mono<?> interceptOnDispatch(CommandMessage message,
+                                       @Nullable ProcessingContext context,
+                                       ReactorMessageDispatchInterceptorChain<CommandMessage> chain) {
+        return Mono.deferContextual(
+                reactorContext -> reactorContext.hasKey("security")
+                        ? chain.proceed(message, context)
+                        : Mono.empty() // discards the message
+        );
+    }
+}
+----
+
+An interceptor can be typed on `CommandMessage`, `EventMessage`, or `QueryMessage` to only apply to that type of message.
+An interceptor typed on `Message` applies to all of them.
+For an example that integrates with Spring Security, see xref:messaging-concepts:message-intercepting.adoc[Message interception].
+
+== Registering interceptors
+
+In a Spring Boot application, declare the interceptors as beans.
+They are discovered and registered automatically, on the gateway matching their message type:
+
+[source,java]
+----
+import org.axonframework.extension.reactor.messaging.core.ReactorMessageDispatchInterceptor;
+import org.axonframework.messaging.commandhandling.CommandMessage;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+class SpringInterceptorConfiguration {
+
+    @Bean
+    ReactorMessageDispatchInterceptor<CommandMessage> metadataEnrichingInterceptor() {
+        return new MetadataEnrichingInterceptor();
+    }
+}
+----
+
+In a plain Java application, register the interceptor by decorating the `ReactorDispatchInterceptorRegistry` component:
+
+[source,java]
+----
+import org.axonframework.extension.reactor.messaging.core.interception.ReactorDispatchInterceptorRegistry;
+import org.axonframework.messaging.core.configuration.MessagingConfigurer;
+
+class PlainJavaInterceptorRegistration {
+
+    MessagingConfigurer register(MessagingConfigurer configurer) {
+        return configurer.componentRegistry(
+                registry -> registry.registerDecorator(
+                        ReactorDispatchInterceptorRegistry.class,
+                        0,
+                        (config, name, delegate) -> delegate.registerCommandInterceptor(
+                                c -> new MetadataEnrichingInterceptor()
+                        )
+                )
+        );
+    }
+}
+----
+
+The registry also offers `registerEventInterceptor`, `registerQueryInterceptor`, and `registerInterceptor` for interceptors on events, queries, and all messages, respectively.
