@@ -1,0 +1,6 @@
+* xref:extensions:index.adoc[]
+** xref:extensions:kotlin/index.adoc[]
+*** xref:extensions:kotlin/messaging.adoc[]
+*** xref:extensions:kotlin/eventsourcing.adoc[]
+*** xref:extensions:kotlin/testing.adoc[]
+*** xref:extensions:kotlin/reflection.adoc[]

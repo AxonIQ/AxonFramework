@@ -1,0 +1,35 @@
+:navtitle: Testing
+= Testing
+
+The `axon-kotlin-test` module adds extension functions to the xref:testing:index.adoc[test fixture].
+They live in the `org.axonframework.extension.kotlin.test` package.
+
+[[whenever]]
+== `whenever`
+
+`when` is a reserved word in Kotlin, so the fixture's `when()` method needs backticks.
+`whenever` replaces it on both the setup and the given phase:
+
+[cols="2,3",options="header"]
+|===
+|Function |Equivalent
+
+|`whenever()`
+|`when()`
+
+|`whenever(command)`
+|`when().command(command)`
+|===
+
+[[exception]]
+== `exception`
+
+On the assertions of the then phase, `exception` accepts a `KClass` instead of a `Class`:
+
+* `exception(KClass<out Throwable>)`
+* `exception(KClass<out Throwable>, message: String)`
+
+[source,kotlin]
+----
+include::example$extensions/kotlin/testing/CardTest.kt[tag=fixture-test,indent=0]
+----
