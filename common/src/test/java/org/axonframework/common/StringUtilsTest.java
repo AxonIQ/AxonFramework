@@ -72,6 +72,16 @@ class StringUtilsTest {
     }
 
     @Test
+    void lowerCaseFirstCharacterOfReturnsNullForNull() {
+        assertNull(lowerCaseFirstCharacterOf(null));
+    }
+
+    @Test
+    void lowerCaseFirstCharacterOfReturnsEmptyForEmpty() {
+        assertEquals("", lowerCaseFirstCharacterOf(""));
+    }
+
+    @Test
     void capitalizeReturnsStringWithFirstCharacterUppercase() {
         String allLowercase = "foo";
         String capitalizedOutputOfAllLowercase = "Foo";

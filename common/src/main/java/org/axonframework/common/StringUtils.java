@@ -72,12 +72,19 @@ public final class StringUtils {
 
     /**
      * Return the given {@code s}, with its first character lowercase.
+     * <p>
+     * When the given {@code s} is {@code null} or empty, the returned value is also {@code s}.
      *
      * @param s The input string to adjust to a version with the first character as a lowercase.
-     * @return The input string, with first character lowercase.
+     * @return The input string, with first character lowercase, or {@code null} if the given {@code s} is
+     * {@code null}.
      */
-    public static String lowerCaseFirstCharacterOf(String s) {
-        return s.substring(0, 1).toLowerCase() + s.substring(1);
+    @Nullable
+    public static String lowerCaseFirstCharacterOf(@Nullable String s) {
+        if (s == null || s.isEmpty()) {
+            return s;
+        }
+        return Character.toLowerCase(s.charAt(0)) + s.substring(1);
     }
 
     /**
@@ -97,4 +104,3 @@ public final class StringUtils {
         return Character.toUpperCase(string.charAt(0)) + string.substring(1);
     }
 }
-
