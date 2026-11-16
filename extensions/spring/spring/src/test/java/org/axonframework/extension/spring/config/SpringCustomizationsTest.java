@@ -24,20 +24,27 @@ import org.axonframework.messaging.core.SubscribableEventSource;
 import org.axonframework.messaging.core.configuration.MessagingConfigurer;
 import org.axonframework.messaging.core.sequencing.SequencingPolicy;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
+import org.axonframework.messaging.eventhandling.AsyncInMemoryStreamableEventSource;
 import org.axonframework.messaging.eventhandling.EventBus;
 import org.axonframework.messaging.eventhandling.EventMessage;
+import org.axonframework.messaging.eventhandling.EventTestUtils;
 import org.axonframework.messaging.eventhandling.SimpleEventBus;
 import org.axonframework.messaging.eventhandling.configuration.EventBusConfigurationDefaults;
 import org.axonframework.messaging.eventhandling.configuration.EventProcessorConfiguration;
 import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorConfiguration;
+import org.axonframework.messaging.eventhandling.processing.streaming.token.ReplayToken;
+import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.inmemory.InMemoryTokenStore;
 import org.axonframework.messaging.eventhandling.processing.subscribing.SubscribingEventProcessorConfiguration;
 import org.axonframework.messaging.eventstreaming.StreamableEventSource;
+import org.axonframework.extension.spring.config.EventProcessorSettings.InitialToken;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.*;
 
+import java.time.Instant;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -455,6 +462,118 @@ class SpringCustomizationsTest {
         }
     }
 
+    @Nested
+    class PooledInitialToken {
+
+        @Test
+        void keepsTheProcessorConfigurationDefaultForTheDefaultInitialToken() {
+            // given
+            var source = new AsyncInMemoryStreamableEventSource();
+            source.publishMessage(EventTestUtils.createEvent(0));
+            var configuration = configuration(cr -> cr.registerComponent(StreamableEventSource.class,
+                                                                         cfg -> source));
+
+            // when
+            var result = customizePooledWithInitialToken(configuration, InitialToken.DEFAULT, null);
+
+            // then
+            assertThat(result.initialToken().apply(source).orTimeout(5, TimeUnit.SECONDS).join())
+                    .isEqualTo(pooledProcessorConfiguration().initialToken().apply(source)
+                                                             .orTimeout(5, TimeUnit.SECONDS).join());
+        }
+
+        @Test
+        void startsAtTheFirstPositionForTail() {
+            // given
+            var source = new AsyncInMemoryStreamableEventSource();
+            source.publishMessage(EventTestUtils.createEvent(0));
+            var configuration = configuration(cr -> {
+            });
+
+            // when
+            var result = customizePooledWithInitialToken(configuration, InitialToken.FIRST, null);
+
+            // then
+            TrackingToken token = result.initialToken().apply(source).orTimeout(5, TimeUnit.SECONDS).join();
+            assertThat(ReplayToken.getTokenAtReset(token)).hasValue(-1);
+        }
+
+        @Test
+        void startsAtTheLatestPositionForHead() {
+            // given
+            var source = new AsyncInMemoryStreamableEventSource();
+            source.publishMessage(EventTestUtils.createEvent(0));
+            source.publishMessage(EventTestUtils.createEvent(1));
+            var configuration = configuration(cr -> {
+            });
+
+            // when
+            var result = customizePooledWithInitialToken(configuration, InitialToken.LATEST, null);
+
+            // then
+            assertThat(result.initialToken().apply(source).orTimeout(5, TimeUnit.SECONDS).join())
+                    .isEqualTo(source.latestToken(null).orTimeout(5, TimeUnit.SECONDS).join());
+        }
+
+        @Test
+        void startsAtTheGivenTimestampForAtTimestamp() {
+            // given
+            var source = new AsyncInMemoryStreamableEventSource();
+            source.publishMessage(EventTestUtils.createEvent(0));
+            source.publishMessage(EventTestUtils.createEvent(1));
+            Instant timestamp = Instant.now().plusSeconds(3600);
+            var configuration = configuration(cr -> {
+            });
+
+            // when
+            var result = customizePooledWithInitialToken(configuration, InitialToken.AT_TIMESTAMP, timestamp);
+
+            // then
+            assertThat(result.initialToken().apply(source).orTimeout(5, TimeUnit.SECONDS).join())
+                    .isEqualTo(source.tokenAt(timestamp, null).orTimeout(5, TimeUnit.SECONDS).join());
+        }
+
+        @Test
+        void failsForAtTimestampWithoutATimestamp() {
+            // given
+            var configuration = configuration(cr -> {
+            });
+
+            // when / then
+            assertThatThrownBy(() -> customizePooledWithInitialToken(configuration, InitialToken.AT_TIMESTAMP, null))
+                    .isInstanceOf(AxonConfigurationException.class)
+                    .hasMessageContaining("initial-token-timestamp")
+                    .hasMessageContaining(PROCESSOR_NAME);
+        }
+
+        @Test
+        void ignoresATimestampForAnyOtherInitialToken() {
+            // given
+            var source = new AsyncInMemoryStreamableEventSource();
+            source.publishMessage(EventTestUtils.createEvent(0));
+            var configuration = configuration(cr -> {
+            });
+
+            // when
+            var result = customizePooledWithInitialToken(configuration, InitialToken.LATEST, Instant.now());
+
+            // then
+            assertThat(result.initialToken().apply(source).orTimeout(5, TimeUnit.SECONDS).join())
+                    .isEqualTo(source.latestToken(null).orTimeout(5, TimeUnit.SECONDS).join());
+        }
+    }
+
+    private static PooledStreamingEventProcessorConfiguration customizePooledWithInitialToken(
+            Configuration configuration,
+            InitialToken initialToken,
+            @Nullable Instant timestamp
+    ) {
+        return SpringCustomizations
+                .pooledStreamingCustomizations(PROCESSOR_NAME,
+                                               new TestPooledSettings(null, null, null, initialToken, timestamp))
+                .apply(configuration, pooledProcessorConfiguration());
+    }
+
     private static AxonConfiguration configuration(Consumer<ComponentRegistry> components) {
         MessagingConfigurer configurer = MessagingConfigurer.create();
         // classpath enhancers, like the event sourcing defaults, would register additional event sources
@@ -539,11 +658,17 @@ class SpringCustomizationsTest {
     private record TestPooledSettings(
             @Nullable String source,
             @Nullable String tokenStore,
-            @Nullable String sequencingPolicy
+            @Nullable String sequencingPolicy,
+            InitialToken initialToken,
+            @Nullable Instant initialTokenTimestamp
     ) implements EventProcessorSettings.PooledEventProcessorSettings {
 
         TestPooledSettings(@Nullable String source, @Nullable String tokenStore) {
             this(source, tokenStore, null);
+        }
+
+        TestPooledSettings(@Nullable String source, @Nullable String tokenStore, @Nullable String sequencingPolicy) {
+            this(source, tokenStore, sequencingPolicy, InitialToken.DEFAULT, null);
         }
 
         @Override

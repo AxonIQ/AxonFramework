@@ -32,6 +32,7 @@ import org.springframework.boot.context.properties.bind.Bindable;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.core.env.Environment;
 
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -195,6 +196,23 @@ public class EventProcessorProperties {
          */
         @Nullable
         private String sequencingPolicy;
+
+        /**
+         * The position a {@link PooledStreamingEventProcessor} starts streaming from when it has no token yet.
+         * <p>
+         * Defaults to {@link EventProcessorSettings.InitialToken#DEFAULT}, which keeps the first position of the event
+         * stream.
+         */
+        private EventProcessorSettings.InitialToken initialToken = EventProcessorSettings.InitialToken.DEFAULT;
+
+        /**
+         * The timestamp to start streaming from, as an ISO-8601 instant like {@code 2026-01-01T00:00:00Z}.
+         * <p>
+         * Required when {@link #initialToken} is {@link EventProcessorSettings.InitialToken#AT_TIMESTAMP}, and ignored
+         * otherwise.
+         */
+        @Nullable
+        private Instant initialTokenTimestamp;
 
         /**
          * Returns the name of the bean that should be used as source for Event Messages. If not provided, the
@@ -441,5 +459,36 @@ public class EventProcessorProperties {
             this.sequencingPolicy = sequencingPolicy;
         }
 
+        @Override
+        public EventProcessorSettings.InitialToken initialToken() {
+            return initialToken;
+        }
+
+        /**
+         * Sets the position a {@link PooledStreamingEventProcessor} starts streaming from when it has no token yet.
+         * <p>
+         * Defaults to {@link EventProcessorSettings.InitialToken#DEFAULT}.
+         *
+         * @param initialToken the position to start streaming from
+         */
+        public void setInitialToken(EventProcessorSettings.InitialToken initialToken) {
+            this.initialToken = Objects.requireNonNull(initialToken, "InitialToken cannot be null");
+        }
+
+        @Override
+        @Nullable
+        public Instant initialTokenTimestamp() {
+            return initialTokenTimestamp;
+        }
+
+        /**
+         * Sets the timestamp to start streaming from. Required when the initial token is
+         * {@link EventProcessorSettings.InitialToken#AT_TIMESTAMP}, and ignored otherwise.
+         *
+         * @param initialTokenTimestamp the timestamp to start streaming from
+         */
+        public void setInitialTokenTimestamp(Instant initialTokenTimestamp) {
+            this.initialTokenTimestamp = initialTokenTimestamp;
+        }
     }
 }
