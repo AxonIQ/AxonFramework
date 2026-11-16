@@ -32,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.fail;
 import static org.junit.jupiter.params.provider.Arguments.*;
@@ -119,5 +120,69 @@ class JacksonConverterTest extends ConverterTestSuite<JacksonConverter> {
                 .hasMessageContaining("Jackson 3")
                 .hasMessageContaining("Jackson 2")
                 .hasMessageContaining(com.fasterxml.jackson.databind.JsonNode.class.getName());
+    }
+
+    @Nested
+    class NullInput {
+
+        @Test
+        void convertToPojoReturnsNull() {
+            // given
+            JacksonConverter testSubject = buildConverter();
+
+            // when
+            SomeInput result = testSubject.convert(null, SomeInput.class);
+
+            // then
+            assertThat(result).isNull();
+        }
+
+        @Test
+        void convertToGenericTypeReturnsNull() {
+            // given
+            JacksonConverter testSubject = buildConverter();
+
+            // when
+            List<SomeInput> result = testSubject.convert(null, SOME_INPUT_LIST_TYPE_REF.getType());
+
+            // then
+            assertThat(result).isNull();
+        }
+
+        @Test
+        void convertToByteArrayReturnsNull() {
+            // given
+            JacksonConverter testSubject = buildConverter();
+
+            // when
+            byte[] result = testSubject.convert(null, byte[].class);
+
+            // then
+            assertThat(result).isNull();
+        }
+
+        @Test
+        void convertToStringReturnsNull() {
+            // given
+            JacksonConverter testSubject = buildConverter();
+
+            // when
+            String result = testSubject.convert(null, String.class);
+
+            // then
+            assertThat(result).isNull();
+        }
+
+        @Test
+        void convertToObjectNodeReturnsNull() {
+            // given
+            JacksonConverter testSubject = buildConverter();
+
+            // when
+            ObjectNode result = testSubject.convert(null, ObjectNode.class);
+
+            // then
+            assertThat(result).isNull();
+        }
     }
 }
