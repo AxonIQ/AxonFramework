@@ -191,7 +191,7 @@ class EventProcessorDefaultsTest {
         @Test
         void initialTokenCanBeSetAsAGlobalDefault() {
             // given
-            Environment environment = environmentWith(DEFAULTS + "pooled.initial-token", "head",
+            Environment environment = environmentWith(DEFAULTS + "pooled.initial-token", "latest",
                                                       PROCESSOR + "batch-size", "2");
 
             // when
@@ -217,7 +217,7 @@ class EventProcessorDefaultsTest {
             // given / when / then
             new ApplicationContextRunner()
                     .withUserConfiguration(TestContext.class)
-                    .withPropertyValues(DEFAULTS + "pooled.initial-token=head")
+                    .withPropertyValues(DEFAULTS + "pooled.initial-token=latest")
                     .run(context -> assertThat(context).hasNotFailed());
         }
     }

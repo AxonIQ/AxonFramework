@@ -258,7 +258,7 @@ Pooled streaming processors read `axon.eventhandling.defaults.pooled.*`, subscri
 ----
 axon.eventhandling.defaults.pooled.batch-size=50
 axon.eventhandling.defaults.pooled.thread-count=8
-axon.eventhandling.defaults.pooled.initial-token=head
+axon.eventhandling.defaults.pooled.initial-token=latest
 axon.eventhandling.defaults.subscribing.source=myEventSource
 ----
 
@@ -340,7 +340,7 @@ All properties are set per processor under `axon.eventhandling.processors.<name>
 |`initial-token`
 |Pooled
 |`default`
-|Position to start from when the processor has no token: `default` (first position of the event stream), `tail` (first position), `head` (latest position, only events appended afterwards are handled), or `at_timestamp`.
+|Position to start from when the processor has no token: `default` (first position of the event stream), `first` (first position of the event stream), `latest` (latest position, only events appended afterwards are handled), or `at_timestamp`.
 
 |`initial-token-timestamp`
 |Pooled
