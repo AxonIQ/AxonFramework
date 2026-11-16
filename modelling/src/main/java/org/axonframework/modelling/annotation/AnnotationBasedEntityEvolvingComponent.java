@@ -80,7 +80,7 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
     private final AnnotatedHandlerInspector<E> inspector;
     private final EventConverter converter;
     private final Map<Class<?>, Map<QualifiedName, List<MessageHandlingMember<? super E>>>> handlersByEntityType;
-    private final Set<Class<?>> knownResultTypes;
+    private final Set<Class<? extends E>> evolvableTypes;
 
     /**
      * Initialize a new annotation-based {@link EntityEvolver}.
@@ -138,6 +138,8 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
 
     /**
      * Initialize a new annotation-based {@link EntityEvolver}.
+     * <p>
+     * Defaults the evolvable types to {@code entityType}, so a handler may only return that type.
      *
      * @param entityType          The type of entity this instance will handle state changes for.
      * @param inspector           The inspector to use to find the annotated handlers on the entity.
@@ -148,39 +150,36 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
                                                   AnnotatedHandlerInspector<E> inspector,
                                                   EventConverter converter,
                                                   MessageTypeResolver messageTypeResolver) {
-        this(entityType, inspector, converter, messageTypeResolver, Set.of());
+        this(entityType, inspector, converter, messageTypeResolver, Set.<Class<? extends E>>of(entityType));
     }
 
     /**
      * Initialize a new annotation-based {@link EntityEvolver} that rejects handler results whose runtime type is not
-     * among the given {@code knownResultTypes}.
+     * among the given {@code evolvableTypes}.
      * <p>
-     * An empty {@code knownResultTypes} set keeps the previous behavior: any result assignable to {@code entityType} is
-     * accepted. That remains necessary for declarative setups. The annotated metamodel passes the entity type plus
-     * every registered concrete type, including types discovered from a sealed hierarchy, so a handler may return a
-     * sibling type.
+     * The annotated metamodel passes the entity type plus every registered concrete type, including types discovered
+     * from a sealed hierarchy, so a handler may return a sibling type.
      *
      * @param entityType          the type of entity this instance will handle state changes for
      * @param inspector           the inspector to use to find the annotated handlers on the entity
      * @param converter           the converter to use for converting event payloads to the handler's expected type
      * @param messageTypeResolver the resolver to use for resolving the event message type
-     * @param knownResultTypes    the entity type and registered concrete types that a handler may return; empty to skip
-     *                            the check
+     * @param evolvableTypes      the entity type and registered concrete types that a handler may return
      */
     public AnnotationBasedEntityEvolvingComponent(Class<E> entityType,
                                                   AnnotatedHandlerInspector<E> inspector,
                                                   EventConverter converter,
                                                   MessageTypeResolver messageTypeResolver,
-                                                  Set<Class<?>> knownResultTypes) {
+                                                  Set<Class<? extends E>> evolvableTypes) {
         this.entityType = requireNonNull(entityType, "The entity type must not be null.");
         this.inspector = requireNonNull(inspector, "The Annotated Handler Inspector must not be null.");
         this.converter = requireNonNull(converter, "The Converter must not be null.");
         this.handlersByEntityType = indexHandlersByEntityType(
                 requireNonNull(messageTypeResolver, "The Message Type Resolver must not be null.")
         );
-        this.knownResultTypes = Set.copyOf(requireNonNull(
-                knownResultTypes,
-                "The known result types must not be null."
+        this.evolvableTypes = Set.copyOf(requireNonNull(
+                evolvableTypes,
+                "The evolvable types must not be null."
         ));
     }
 
@@ -313,7 +312,7 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
             var resultPayload = potentialEntityFromStream.message().payload();
             if (resultPayload != null && entityType.isAssignableFrom(resultPayload.getClass())) {
                 Class<?> resultType = resultPayload.getClass();
-                if (!knownResultTypes.isEmpty() && !knownResultTypes.contains(resultType)) {
+                if (!evolvableTypes.contains(resultType)) {
                     throw new StateEvolvingException(
                             ("Cannot apply [%s]: [%s] returned [%s], which is not the entity type [%s] or a registered "
                                     + "concrete type. List it in @EventSourcedEntity(concreteTypes = ...) or make the "
