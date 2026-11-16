@@ -46,30 +46,6 @@ class UnknownSubclassEventSourcingHandlerTest {
 
     private static final String ID = "w1";
 
-    private static <E> E publishThenLoad(EventSourcedEntityModule<String, E> module,
-                                         Class<E> entityType,
-                                         Object... payloads) {
-        AxonConfiguration configuration = EventSourcingConfigurer.create()
-                                                                 .registerEntity(module)
-                                                                 .start();
-        try {
-            var unitOfWorkFactory = configuration.getComponent(UnitOfWorkFactory.class);
-            var eventStore = configuration.getComponent(EventStore.class);
-            unitOfWorkFactory.create().executeWithResult(context -> {
-                var events = Arrays.stream(payloads).map(payload -> asEventMessage(payload)).toList();
-                return eventStore.publish(context, events);
-            }).orTimeout(10, TimeUnit.SECONDS).join();
-            return unitOfWorkFactory.create().executeWithResult(
-                    context -> configuration.getComponent(StateManager.class)
-                                            .repository(entityType, String.class)
-                                            .load(ID, context)
-                                            .thenApply(ManagedEntity::entity)
-            ).orTimeout(10, TimeUnit.SECONDS).join();
-        } finally {
-            configuration.shutdown();
-        }
-    }
-
     @Nested
     class UnlistedSubclass {
 
@@ -238,6 +214,30 @@ class UnknownSubclassEventSourcingHandlerTest {
             OpenCard on(Deposited event) {
                 return new OpenCard(balance + event.amount());
             }
+        }
+    }
+
+    private static <E> E publishThenLoad(EventSourcedEntityModule<String, E> module,
+                                         Class<E> entityType,
+                                         Object... payloads) {
+        AxonConfiguration configuration = EventSourcingConfigurer.create()
+                                                                 .registerEntity(module)
+                                                                 .start();
+        try {
+            var unitOfWorkFactory = configuration.getComponent(UnitOfWorkFactory.class);
+            var eventStore = configuration.getComponent(EventStore.class);
+            unitOfWorkFactory.create().executeWithResult(context -> {
+                var events = Arrays.stream(payloads).map(payload -> asEventMessage(payload)).toList();
+                return eventStore.publish(context, events);
+            }).orTimeout(10, TimeUnit.SECONDS).join();
+            return unitOfWorkFactory.create().executeWithResult(
+                    context -> configuration.getComponent(StateManager.class)
+                                            .repository(entityType, String.class)
+                                            .load(ID, context)
+                                            .thenApply(ManagedEntity::entity)
+            ).orTimeout(10, TimeUnit.SECONDS).join();
+        } finally {
+            configuration.shutdown();
         }
     }
 }

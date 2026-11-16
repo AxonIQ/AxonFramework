@@ -46,6 +46,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -566,7 +567,8 @@ class AnnotationBasedEntityEvolvingComponentTest {
                                 Set.of(InitialCourse.class, CreatedCourse.class, PublishedCourse.class)
                         ),
                         converter,
-                        messageTypeResolver
+                        messageTypeResolver,
+                        Set.of(Course.class, InitialCourse.class, CreatedCourse.class, PublishedCourse.class)
                 );
 
         @Test
@@ -2058,6 +2060,8 @@ class AnnotationBasedEntityEvolvingComponentTest {
     }
 
     private static <E> E evolve(Class<E> type, Set<Class<? extends E>> concreteTypes, E entity, Object payload) {
+        Set<Class<? extends E>> evolvableTypes = new HashSet<>(concreteTypes);
+        evolvableTypes.add(type);
         var evolver = new AnnotationBasedEntityEvolvingComponent<>(
                 type,
                 inspectType(type,
@@ -2066,7 +2070,8 @@ class AnnotationBasedEntityEvolvingComponentTest {
                             ClasspathHandlerDefinition.forClass(type),
                             concreteTypes),
                 converter,
-                messageTypeResolver
+                messageTypeResolver,
+                evolvableTypes
         );
         var event = payload instanceof EventMessage message ? message : asEventMessage(payload);
         return evolver.evolve(entity, event, StubProcessingContext.forMessage(event));
@@ -2092,26 +2097,25 @@ class AnnotationBasedEntityEvolvingComponentTest {
 
         }
 
-        private static final EntityEvolver<Wallet> WALLET_EVOLVER = new AnnotationBasedEntityEvolvingComponent<>(
-                Wallet.class,
-                inspectType(
-                        Wallet.class,
-                        messageTypeResolver,
-                        ClasspathParameterResolverFactory.forClass(Wallet.class),
-                        ClasspathHandlerDefinition.forClass(Wallet.class)
-                ),
-                converter,
-                messageTypeResolver,
-                Set.of(Wallet.class)
-        );
-
         @Test
         void failsWhenHandlerReturnsSubclassNotIndexedByTheEvolver() {
             // given
+            var evolver = new AnnotationBasedEntityEvolvingComponent<>(
+                    Wallet.class,
+                    inspectType(
+                            Wallet.class,
+                            messageTypeResolver,
+                            ClasspathParameterResolverFactory.forClass(Wallet.class),
+                            ClasspathHandlerDefinition.forClass(Wallet.class)
+                    ),
+                    converter,
+                    messageTypeResolver,
+                    Set.<Class<? extends Wallet>>of(Wallet.class)
+            );
             var event = asEventMessage("opened");
 
             // when / then
-            assertThatThrownBy(() -> WALLET_EVOLVER.evolve(
+            assertThatThrownBy(() -> evolver.evolve(
                     new Wallet(),
                     event,
                     StubProcessingContext.forMessage(event)
@@ -2125,7 +2129,7 @@ class AnnotationBasedEntityEvolvingComponentTest {
         }
 
         @Test
-        void evolvesIntoSubclassWhenItIsAKnownResultType() {
+        void evolvesIntoSubclassWhenItIsAnEvolvableType() {
             // given
             var evolver = new AnnotationBasedEntityEvolvingComponent<>(
                     Wallet.class,

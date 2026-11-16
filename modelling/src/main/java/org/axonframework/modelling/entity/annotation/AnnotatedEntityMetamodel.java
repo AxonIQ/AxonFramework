@@ -122,7 +122,7 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
     private final List<AnnotatedEntityMetamodel<?>> childMetamodels = new LinkedList<>();
     private final List<QualifiedName> commandsToSkip;
     private final @Nullable Class<?> polymorphicSuperType;
-    private final Set<Class<?>> knownResultTypes;
+    private final Set<Class<?>> evolvableTypes;
 
     /**
      * Instantiate an annotated {@link EntityMetamodel} of a concrete entity type.
@@ -151,7 +151,7 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
     ) {
         return new AnnotatedEntityMetamodel<>(
                 entityType, Set.of(), parameterResolverFactory, handlerDefinition, messageTypeResolver,
-                messageConverter, eventConverter, List.of(), null
+                messageConverter, eventConverter, List.of(), null, Set.<Class<?>>of(entityType)
         );
     }
 
@@ -225,7 +225,7 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
                       () -> "The concreteTypes set must not be empty for a polymorphic entity type.");
         return new AnnotatedEntityMetamodel<>(
                 entityType, concreteTypes, parameterResolverFactory, handlerDefinition, messageTypeResolver,
-                messageConverter, eventConverter, List.of(), null
+                messageConverter, eventConverter, List.of(), null, Set.<Class<?>>of()
         );
     }
 
@@ -256,35 +256,7 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
      * @param polymorphicSuperType     the polymorphic super type this metamodel is a concrete type of, or {@code null}
      *                                 when it is not a polymorphic entity. Used to ensure registered interceptors
      *                                 aren't added on both the parent and the child entity
-     */
-    private AnnotatedEntityMetamodel(
-            Class<E> entityType,
-            Set<Class<? extends E>> concreteTypes,
-            ParameterResolverFactory parameterResolverFactory,
-            HandlerDefinition handlerDefinition, MessageTypeResolver messageTypeResolver,
-            MessageConverter messageConverter,
-            EventConverter eventConverter,
-            List<QualifiedName> commandsToSkip,
-            @Nullable Class<?> polymorphicSuperType
-    ) {
-        this(entityType,
-             concreteTypes,
-             parameterResolverFactory,
-             handlerDefinition,
-             messageTypeResolver,
-             messageConverter,
-             eventConverter,
-             commandsToSkip,
-             polymorphicSuperType,
-             Set.of());
-    }
-
-    /**
-     * Instantiate an annotated {@link EntityMetamodel} of an entity type, telling the evolver which runtime types a
-     * handler may return.
-     *
-     * @param knownResultTypes the entity type and registered concrete types that a handler may return; empty to default
-     *                         to this metamodel's entity type
+     * @param evolvableTypes           the entity type and registered concrete types that a handler may return
      */
     private AnnotatedEntityMetamodel(
             Class<E> entityType,
@@ -295,11 +267,11 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
             EventConverter eventConverter,
             List<QualifiedName> commandsToSkip,
             @Nullable Class<?> polymorphicSuperType,
-            Set<Class<?>> knownResultTypes
+            Set<Class<?>> evolvableTypes
     ) {
         this.commandsToSkip = requireNonNull(commandsToSkip, "The commandsToSkip may not be null.");
         this.polymorphicSuperType = polymorphicSuperType;
-        this.knownResultTypes = Set.copyOf(requireNonNull(knownResultTypes, "The knownResultTypes may not be null."));
+        this.evolvableTypes = Set.copyOf(requireNonNull(evolvableTypes, "The evolvableTypes may not be null."));
         this.entityType = requireNonNull(entityType, "The entityType may not be null.");
         this.parameterResolverFactory = requireNonNull(parameterResolverFactory,
                                                        "The parameterResolverFactory may not be null.");
@@ -325,9 +297,10 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
         // because concrete metamodels are only reached through the PolymorphicEntityMetamodel of the super type.
         //noinspection unchecked
         Class<E> evolvedType = polymorphicSuperType != null ? (Class<E>) polymorphicSuperType : entityType;
-        Set<Class<?>> evolverResultTypes = knownResultTypes.isEmpty() ? Set.of(entityType) : knownResultTypes;
+        @SuppressWarnings("unchecked")
+        Set<Class<? extends E>> evolvableTypes = (Set<Class<? extends E>>) (Set<?>) this.evolvableTypes;
         builder.entityEvolver(new AnnotationBasedEntityEvolvingComponent<>(
-                evolvedType, inspected, eventConverter, messageTypeResolver, evolverResultTypes
+                evolvedType, inspected, eventConverter, messageTypeResolver, evolvableTypes
         ));
         initializeDetectedHandlers(builder, inspected);
         registerCommandInterceptors(builder, inspected);
@@ -356,12 +329,12 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
         // initializeDetectedHandlers and the commandsToSkip javadoc for why.
         List<QualifiedName> registeredCreationalCommands = initializeDetectedHandlers(builder, inspected);
         registerCommandInterceptors(builder, inspected);
-        Set<Class<?>> hierarchyTypes = new HashSet<>(concreteTypes);
-        hierarchyTypes.add(entityType);
+        Set<Class<?>> evolvableTypes = new HashSet<>(concreteTypes);
+        evolvableTypes.add(entityType);
         concreteTypes.forEach(concreteType -> {
             AnnotatedEntityMetamodel<? extends E> createdConcreteEntityModel = new AnnotatedEntityMetamodel<>(
                     concreteType, Set.of(), parameterResolverFactory, handlerDefinition, messageTypeResolver,
-                    messageConverter, eventConverter, registeredCreationalCommands, entityType, hierarchyTypes
+                    messageConverter, eventConverter, registeredCreationalCommands, entityType, evolvableTypes
             );
             concreteMetamodels.add(createdConcreteEntityModel);
             builder.addConcreteType(createdConcreteEntityModel);
@@ -674,7 +647,7 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
         logger.debug("Creating child entity metamodel for class: {}", clazz);
         return new AnnotatedEntityMetamodel<>(
                 clazz, Set.of(), parameterResolverFactory, handlerDefinition, messageTypeResolver, messageConverter,
-                eventConverter, List.of(), null
+                eventConverter, List.of(), null, Set.<Class<?>>of(clazz)
         );
     }
 
