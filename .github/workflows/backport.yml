@@ -47,7 +47,7 @@ jobs:
 
       - name: Backport
         id: backport
-        uses: korthout/backport-action@v4
+        uses: korthout/backport-action@v5
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           source_pr_number: ${{ steps.parse.outputs.pr_number }}
