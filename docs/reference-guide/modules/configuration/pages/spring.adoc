@@ -112,6 +112,9 @@ Besides beans, decorators, and enhancers, several parts of the auto-configuratio
 |`axon.eventhandling.processors.<name>.*`
 |Configures an individual event processor: mode, initial segment count, batch size, thread count, and more. See xref:#event-processor-configuration[Event processor configuration] below for the full reference.
 
+|`axon.eventhandling.defaults.pooled.*` / `axon.eventhandling.defaults.subscribing.*`
+|Default settings for all pooled streaming or all subscribing event processors. See xref:#global-event-processor-defaults[Global event processor defaults].
+
 |`axon.eventhandling.tokenstore.claim-timeout`
 |How long a streaming event processor waits before forcing a claim on a token segment that has not been updated.
 
@@ -235,13 +238,118 @@ include::example$configuration/spring/EventProcessorDefinitionExamples.java[tag=
 
 When using multiple configuration approaches:
 
-1. `EventProcessorDefinition` beans take precedence over properties-based configuration
-2. If a handler matches multiple `EventProcessorDefinition` selectors, an `AxonConfigurationException` is thrown at startup
-3. Handlers not matched by any `EventProcessorDefinition` are assigned based on their package name (default behavior)
+1. Global customization beans are applied last, after `EventProcessorDefinition` beans
+2. `EventProcessorDefinition` beans take precedence over properties-based configuration
+3. Properties of a specific processor (`axon.eventhandling.processors.<name>.*`) take precedence over the global defaults (`axon.eventhandling.defaults.<type>.*`)
+4. If a handler matches multiple `EventProcessorDefinition` selectors, an `AxonConfigurationException` is thrown at startup
+5. Handlers not matched by any `EventProcessorDefinition` are assigned based on their package name (default behavior)
 
 To avoid conflicts, ensure each handler is matched by at most one `EventProcessorDefinition` using mutually exclusive selectors.
 
 For comprehensive event processor configuration examples and detailed information, see xref:events:event-processors/streaming.adoc[Event Processors].
+
+[#global-event-processor-defaults]
+=== Global event processor defaults
+
+Settings that apply to all event processors of one type are configured under `axon.eventhandling.defaults`.
+Pooled streaming processors read `axon.eventhandling.defaults.pooled.*`, subscribing processors read `axon.eventhandling.defaults.subscribing.*`:
+
+[source,properties]
+----
+axon.eventhandling.defaults.pooled.batch-size=50
+axon.eventhandling.defaults.pooled.thread-count=8
+axon.eventhandling.defaults.pooled.initial-token=head
+axon.eventhandling.defaults.subscribing.source=myEventSource
+----
+
+A processor starts from the defaults of its type, and each property set on `axon.eventhandling.processors.<name>.*` overrides the matching default.
+The `mode` property is not a default, as it selects the type.
+A processor without a `mode` property is a pooled streaming processor.
+
+Settings that properties cannot express, such as a dead-letter queue, an error handler, or interceptors, are applied to all processors of a type through `PooledStreamingEventProcessorModule.Customization` and `SubscribingEventProcessorModule.Customization` beans:
+
+[source,java]
+----
+include::example$configuration/spring/GlobalEventProcessorDefaultsExamples.java[tag=global-customizations,indent=0]
+----
+
+[#event-processor-properties]
+== Event processor properties
+
+All properties are set per processor under `axon.eventhandling.processors.<name>.`, or as a default for all processors of a type under `axon.eventhandling.defaults.pooled.` and `axon.eventhandling.defaults.subscribing.`.
+
+[cols="2,1,1,3"]
+|===
+|Property |Applies to |Default |Description
+
+|`mode`
+|Both
+|`pooled`
+|Type of the processor: `pooled` or `subscribing`. Not available as a default.
+
+|`source`
+|Both
+|Unset
+|Name of the bean to read events from. When unset, a pooled processor reads from the event store and a subscribing processor from the event bus.
+
+|`initial-segment-count`
+|Pooled
+|`16`
+|Number of segments created when the processor starts for the first time.
+
+|`thread-count`
+|Pooled
+|`4`
+|Maximum number of threads used to process events.
+
+|`batch-size`
+|Pooled
+|`1`
+|Maximum number of events processed in a single batch.
+
+|`token-store`
+|Pooled
+|Unset
+|Name of the `TokenStore` bean. When unset, the bean named `tokenStore` is used, or the single `TokenStore` bean of the application.
+
+|`token-claim-interval`
+|Pooled
+|`5000`
+|Time to wait after a failed attempt to claim a token, in the unit of `token-claim-interval-time-unit`.
+
+|`token-claim-interval-time-unit`
+|Pooled
+|`MILLISECONDS`
+|`TimeUnit` of `token-claim-interval`.
+
+|`claim-extension-threshold`
+|Pooled
+|`5000`
+|Time in milliseconds after which a work package extends the claim on its token when no events are handled.
+
+|`coordinator-claim-extension`
+|Pooled
+|`false`
+|Whether the coordinator extends the claims of the work packages. Enable when event handling regularly takes longer than the claim timeout of the token store.
+
+|`sequencing-policy`
+|Pooled
+|Unset
+|Name of the `SequencingPolicy` bean applied to components without a more specific policy.
+
+|`initial-token`
+|Pooled
+|`default`
+|Position to start from when the processor has no token: `default` (first position of the event stream), `tail` (first position), `head` (latest position, only events appended afterwards are handled), or `at_timestamp`.
+
+|`initial-token-timestamp`
+|Pooled
+|Unset
+|ISO-8601 instant, such as `2026-01-01T00:00:00Z`, to start from. Required when `initial-token` is `at_timestamp`, ignored otherwise.
+|===
+
+The application fails to start when `initial-token` is `at_timestamp` and `initial-token-timestamp` is missing.
+See xref:events:event-processors/streaming.adoc#initial_token_config[Initial token] for the programmatic configuration.
 
 [#spring-and-axon-impl-details]
 == Implementation details
