@@ -15,4 +15,7 @@ For an overview of all modules and extensions, including their artifact and grou
 
 |xref:extensions:kotlin/index.adoc[Kotlin]
 |Idiomatic Kotlin support for Axon Framework: reified extension functions for messaging, event-sourced entity helpers, Kotlin-aware property access and nullability, and test fixture extensions.
+
+|xref:extensions:reactor/index.adoc[Reactor]
+|Reactive gateways for commands, queries and events based on Project Reactor, returning `Mono` and `Flux` instead of `CompletableFuture`.
 |===
