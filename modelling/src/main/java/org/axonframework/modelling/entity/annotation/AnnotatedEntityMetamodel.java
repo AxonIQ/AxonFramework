@@ -223,9 +223,11 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
         requireNonNull(concreteTypes, "The concreteTypes may not be null.");
         Assert.isTrue(!concreteTypes.isEmpty(),
                       () -> "The concreteTypes set must not be empty for a polymorphic entity type.");
+        Set<Class<?>> evolvableTypes = new HashSet<>(concreteTypes);
+        evolvableTypes.add(entityType);
         return new AnnotatedEntityMetamodel<>(
                 entityType, concreteTypes, parameterResolverFactory, handlerDefinition, messageTypeResolver,
-                messageConverter, eventConverter, List.of(), null, Set.<Class<?>>of()
+                messageConverter, eventConverter, List.of(), null, evolvableTypes
         );
     }
 
@@ -329,12 +331,10 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
         // initializeDetectedHandlers and the commandsToSkip javadoc for why.
         List<QualifiedName> registeredCreationalCommands = initializeDetectedHandlers(builder, inspected);
         registerCommandInterceptors(builder, inspected);
-        Set<Class<?>> evolvableTypes = new HashSet<>(concreteTypes);
-        evolvableTypes.add(entityType);
         concreteTypes.forEach(concreteType -> {
             AnnotatedEntityMetamodel<? extends E> createdConcreteEntityModel = new AnnotatedEntityMetamodel<>(
                     concreteType, Set.of(), parameterResolverFactory, handlerDefinition, messageTypeResolver,
-                    messageConverter, eventConverter, registeredCreationalCommands, entityType, evolvableTypes
+                    messageConverter, eventConverter, registeredCreationalCommands, entityType, this.evolvableTypes
             );
             concreteMetamodels.add(createdConcreteEntityModel);
             builder.addConcreteType(createdConcreteEntityModel);
