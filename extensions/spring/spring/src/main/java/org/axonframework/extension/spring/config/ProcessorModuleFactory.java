@@ -51,6 +51,10 @@ public interface ProcessorModuleFactory {
      * <p>
      * Each module represents an event processor with its assigned event handlers. The factory determines the
      * assignment logic and creates appropriately configured modules.
+     * <p>
+     * The given {@code handlers} are iterated in the order in which they should be invoked (for example, as defined
+     * through {@link org.springframework.core.annotation.Order @Order}). Implementations should retain this order
+     * for the handlers assigned to the same processor.
      *
      * @param handlers The set of discovered event handler components to be assigned to processors.
      * @return A set of event processor modules, each containing its assigned event handlers.

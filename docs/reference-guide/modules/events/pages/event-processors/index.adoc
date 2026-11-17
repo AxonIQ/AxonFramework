@@ -151,6 +151,7 @@ Thus, the ordering in which an Event Processor will call handling components for
 
 If we use an autodetected configuration like Spring as the mechanism for wiring everything, we can explicitly specify the event handler component ordering by adding the `@Order` annotation.
 This annotation is placed on the event handling component class, containing an `integer` value to specify the ordering.
+Components with an equal order, including those without the annotation, are invoked in the order in which they were registered.
 
 Note that it is *not possible* to order event handlers belonging to different Event Processors.
 Each Event Processor acts as an isolated component without any intervention from other Event Processors.
