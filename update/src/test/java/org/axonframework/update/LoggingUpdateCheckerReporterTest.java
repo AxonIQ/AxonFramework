@@ -16,17 +16,20 @@
 
 package org.axonframework.update;
 
+import org.apache.logging.log4j.spi.ExtendedLogger;
+import org.apache.logging.slf4j.Log4jLogger;
 import org.axonframework.update.api.Artifact;
-import org.axonframework.update.api.UpdateCheckRequest;
-import org.axonframework.update.api.UpdateCheckResponse;
 import org.axonframework.update.api.ArtifactAvailableUpgrade;
 import org.axonframework.update.api.DetectedVulnerability;
 import org.axonframework.update.api.DetectedVulnerabilitySeverity;
+import org.axonframework.update.api.UpdateCheckRequest;
+import org.axonframework.update.api.UpdateCheckResponse;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.*;
 import org.mockito.junit.jupiter.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.util.ReflectionUtils;
 
 import java.lang.reflect.Field;
 import java.util.List;
@@ -38,7 +41,7 @@ class LoggingUpdateCheckerReporterTest {
 
     private LoggingUpdateCheckerReporter reporter;
     private Logger originalLogger;
-    private Logger mockLogger;
+    private ExtendedLogger mockLogger;
 
     private final UpdateCheckRequest sampleRequest = new UpdateCheckRequest(
             "my-machine-id-1234",
@@ -61,14 +64,22 @@ class LoggingUpdateCheckerReporterTest {
     void setUp() throws Exception {
         reporter = new LoggingUpdateCheckerReporter();
 
-        // Get and store the original logger
-        Field loggerField = LoggingUpdateCheckerReporter.class.getDeclaredField("logger");
-        loggerField.setAccessible(true);
+        Log4jLogger logger = (Log4jLogger) LoggerFactory.getLogger(LoggingUpdateCheckerReporter.class);
+        Field loggerField = logger.getClass().getDeclaredField("logger");
+        ReflectionUtils.makeAccessible(loggerField);
         originalLogger = (Logger) loggerField.get(null);
 
-        // Create and set the spied logger
-        mockLogger = spy(LoggerFactory.getLogger(LoggingUpdateCheckerReporter.class));
-        loggerField.set(null, mockLogger);
+        mockLogger = mock(ExtendedLogger.class);
+        loggerField.set(logger, mockLogger);
+
+        // Get and store the original logger
+//        Field loggerField = LoggingUpdateCheckerReporter.class.getDeclaredField("logger");
+//        loggerField.setAccessible(true);
+//        originalLogger = (Logger) loggerField.get(null);
+//
+//        // Create and set the spied logger
+//        mockLogger = mock(ExtendedLogger.class);;
+//        loggerField.set(null, mockLogger);
     }
 
     @AfterEach

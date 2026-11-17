@@ -39,7 +39,6 @@ public class LoggingUpdateCheckerReporter implements UpdateCheckerReporter {
 
     @Override
     public void report(UpdateCheckRequest request, UpdateCheckResponse updateCheckResponse) {
-
         boolean hasUpgrades = !updateCheckResponse.upgrades().isEmpty();
         boolean hasVulnerabilities = !updateCheckResponse.vulnerabilities().isEmpty();
         if (hasVulnerabilities) {
