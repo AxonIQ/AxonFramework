@@ -76,6 +76,7 @@ public abstract class SnapshottingEntityLifecycleHandlerTestSuite {
     private volatile int evolveCalls;
 
     private ListAppender handlerLog;
+    private AxonConfiguration configuration;
     private StateManager stateManager;
     private EventStore eventStore;
     private UnitOfWorkFactory unitOfWorkFactory;
@@ -104,7 +105,7 @@ public abstract class SnapshottingEntityLifecycleHandlerTestSuite {
         SnapshotPolicy snapshotPolicy = SnapshotPolicy.afterEvents(5)
             .or(SnapshotPolicy.whenEventMatches(msg -> msg.type().qualifiedName().equals(new QualifiedName(AccountClosed.class))));
 
-        AxonConfiguration configuration = EventSourcingConfigurer.create()
+        configuration = EventSourcingConfigurer.create()
             .componentRegistry(cr -> cr.registerComponent(Converter.class, c -> eventConverter))
             .componentRegistry(this::registerComponents)
             .registerEntity(
@@ -136,6 +137,7 @@ public abstract class SnapshottingEntityLifecycleHandlerTestSuite {
     void afterEach() {
         ((Logger) LogManager.getLogger(SnapshottingEntityLifecycleHandler.class)).removeAppender(handlerLog);
         handlerLog.stop();
+        configuration.shutdown();
     }
 
     @Test
