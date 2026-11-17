@@ -19,6 +19,7 @@ package org.axonframework.messaging.core.configuration;
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.common.configuration.ConfigurationEnhancer;
+import org.axonframework.common.configuration.DecoratorOrder;
 import org.axonframework.conversion.Converter;
 import org.axonframework.conversion.DelegatingGeneralConverter;
 import org.axonframework.conversion.GeneralConverter;
@@ -150,8 +151,11 @@ public class MessagingConfigurationDefaults implements ConfigurationEnhancer {
      * The order of the {@link ConvertingCommandGateway} is set to {@code Integer.MIN_VALUE + 100} to ensure it is
      * applied very early in the configuration process, but not the earliest to allow for other decorators to be
      * applied.
+     *
+     * @deprecated in favor of {@link DecoratorOrder#CONVERTING}
      */
-    public static final int CONVERTING_COMMAND_GATEWAY_ORDER = Integer.MIN_VALUE + 100;
+    @Deprecated(since = "5.5.0")
+    public static final int CONVERTING_COMMAND_GATEWAY_ORDER = DecoratorOrder.CONVERTING;
     /**
      * The component name for the default command sequencing policy.
      */
@@ -413,7 +417,7 @@ public class MessagingConfigurationDefaults implements ConfigurationEnhancer {
     private static void registerDecorators(ComponentRegistry registry) {
         registry.registerDecorator(
                 CommandGateway.class,
-                CONVERTING_COMMAND_GATEWAY_ORDER,
+                DecoratorOrder.CONVERTING,
                 (config, name, delegate) -> new ConvertingCommandGateway(
                         delegate,
                         config.getComponent(MessageConverter.class)
@@ -421,14 +425,14 @@ public class MessagingConfigurationDefaults implements ConfigurationEnhancer {
         );
         registry.registerDecorator(
                 CommandBus.class,
-                RetryingCommandBus.DECORATION_ORDER,
+                DecoratorOrder.RETRYING,
                 (config, name, delegate) -> config.getOptionalComponent(RetryScheduler.class)
                         .<CommandBus>map(retryScheduler -> new RetryingCommandBus(delegate, retryScheduler))
                         .orElse(delegate)
         );
         registry.registerDecorator(
                 CommandBus.class,
-                InterceptingCommandBus.DECORATION_ORDER,
+                DecoratorOrder.INTERCEPTING,
                 (config, name, delegate) -> {
                     List<MessageHandlerInterceptor<? super CommandMessage>> handlerInterceptors =
                             config.getComponent(HandlerInterceptorRegistry.class)
@@ -444,7 +448,7 @@ public class MessagingConfigurationDefaults implements ConfigurationEnhancer {
         );
         registry.registerDecorator(
                 QueryBus.class,
-                InterceptingQueryBus.DECORATION_ORDER,
+                DecoratorOrder.INTERCEPTING,
                 (config, name, delegate) -> {
                     List<MessageHandlerInterceptor<? super QueryMessage>> handlerInterceptors =
                             config.getComponent(HandlerInterceptorRegistry.class)

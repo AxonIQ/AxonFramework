@@ -16,6 +16,7 @@
 
 package org.axonframework.messaging.eventhandling;
 
+import org.axonframework.common.configuration.DecoratorOrder;
 import org.jspecify.annotations.Nullable;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.infra.ComponentDescriptor;
@@ -56,8 +57,11 @@ public class InterceptingEventSink implements EventSink {
      * <p>
      * The order of the {@code InterceptingEventSink} is set to {@code Integer.MIN_VALUE + 100} to ensure it is applied
      * very early in the configuration process, but not the earliest to allow for other decorators to be applied.
+     *
+     * @deprecated in favor of {@link DecoratorOrder#INTERCEPTING}
      */
-    public static final int DECORATION_ORDER = Integer.MIN_VALUE + 100;
+    @Deprecated(since = "5.5.0")
+    public static final int DECORATION_ORDER = DecoratorOrder.INTERCEPTING;
 
     private final EventSink delegate;
     private final List<MessageDispatchInterceptor<? super EventMessage>> interceptors;

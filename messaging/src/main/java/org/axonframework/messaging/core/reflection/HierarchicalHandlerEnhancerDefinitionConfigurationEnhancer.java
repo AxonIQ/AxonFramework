@@ -20,6 +20,7 @@ import org.axonframework.common.annotation.RegistrationScope;
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.common.configuration.ConfigurationEnhancer;
+import org.axonframework.common.configuration.DecoratorOrder;
 import org.axonframework.messaging.core.annotation.HandlerEnhancerDefinition;
 import org.axonframework.messaging.core.annotation.MultiHandlerEnhancerDefinition;
 
@@ -53,7 +54,7 @@ public class HierarchicalHandlerEnhancerDefinitionConfigurationEnhancer implemen
                 HandlerEnhancerDefinition.class,
                 // We want this to be executed late, but still allow users to be able to add enhancers
                 // after this enhancer. Which would then not be available for child configurations.
-                Integer.MAX_VALUE >> 1,
+                DecoratorOrder.HIERARCHICAL,
                 (config, componentName, component) ->
                         Optional.ofNullable(config.getParent())
                                 .flatMap(parentConfig -> parentConfig.getOptionalComponent(

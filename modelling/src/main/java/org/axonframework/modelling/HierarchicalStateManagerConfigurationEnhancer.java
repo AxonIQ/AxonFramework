@@ -20,6 +20,7 @@ import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.ConfigurationEnhancer;
 
 import java.util.Optional;
+import org.axonframework.common.configuration.DecoratorOrder;
 
 /**
  * {@link ConfigurationEnhancer} that registers a decorator for the {@link StateManager} that, when a parent
@@ -46,7 +47,7 @@ public class HierarchicalStateManagerConfigurationEnhancer implements Configurat
     public void enhance(ComponentRegistry componentRegistry) {
         componentRegistry.registerDecorator(
                 StateManager.class,
-                Integer.MAX_VALUE,
+                DecoratorOrder.HIERARCHICAL,
                 (config, componentName, component) -> {
                     Optional<StateManager> parentComponent = Optional
                             .ofNullable(config.getParent())

@@ -16,6 +16,7 @@
 
 package org.axonframework.messaging.tracing.configuration;
 
+import org.axonframework.common.configuration.DecoratorOrder;
 import org.axonframework.messaging.tracing.SpanFactory;
 import org.axonframework.messaging.commandhandling.tracing.TracingCommandBus;
 import org.axonframework.messaging.eventhandling.tracing.TracingEventBus;
@@ -59,8 +60,11 @@ public final class MessagingTracingConfigurationEnhancer implements Configuratio
     /**
      * Decorator order for the messaging tracing decorators -- see
      * {@link TracingConfigurationOrder#TRACING_DECORATOR_ORDER} for the full ordering rationale.
+     *
+     * @deprecated in favor of {@link DecoratorOrder#TRACING}
      */
-    public static final int TRACING_DECORATOR_ORDER = TracingConfigurationOrder.TRACING_DECORATOR_ORDER;
+    @Deprecated(since = "5.5.0")
+    public static final int TRACING_DECORATOR_ORDER = DecoratorOrder.TRACING;
 
     /**
      * Fully qualified name of {@code EventStore} from {@code axon-eventsourcing}. Resolved by name so that this module
@@ -75,7 +79,7 @@ public final class MessagingTracingConfigurationEnhancer implements Configuratio
                                       c -> MessagingTracingSettings.enabledByDefault());
         registry.registerDecorator(
                 CommandBus.class,
-                TRACING_DECORATOR_ORDER,
+                DecoratorOrder.TRACING,
                 (config, name, delegate) -> {
                     SpanFactory spanFactory = spanFactory(config);
                     if (spanFactory == null || !settings(config).commandBusEnabled()) {
@@ -89,7 +93,7 @@ public final class MessagingTracingConfigurationEnhancer implements Configuratio
         // (see DecoratedComponent#resolve). Each lambda below produces the wrapper that matches the actual subtype.
         registry.registerDecorator(
                 EventSink.class,
-                TRACING_DECORATOR_ORDER,
+                DecoratorOrder.TRACING,
                 (config, name, delegate) -> {
                     // EventBus / EventStore slots are handled by the dedicated decorators below / in the
                     // eventsourcing module -- skip them here to keep this lambda type-preserving for EventSink.
@@ -105,7 +109,7 @@ public final class MessagingTracingConfigurationEnhancer implements Configuratio
         );
         registry.registerDecorator(
                 EventBus.class,
-                TRACING_DECORATOR_ORDER,
+                DecoratorOrder.TRACING,
                 (config, name, delegate) -> {
                     // EventStore slots are handled by the eventsourcing module's enhancer -- skip them here.
                     if (isEventStore(delegate)) {
@@ -120,7 +124,7 @@ public final class MessagingTracingConfigurationEnhancer implements Configuratio
         );
         registry.registerDecorator(
                 EventHandlingComponent.class,
-                TRACING_DECORATOR_ORDER,
+                DecoratorOrder.TRACING,
                 (config, name, delegate) -> {
                     // Only event-handling components owned by an event processor are traced -- not ad-hoc components.
                     Optional<EventProcessorConfiguration> processorConfig = config.getOptionalComponent(
@@ -146,7 +150,7 @@ public final class MessagingTracingConfigurationEnhancer implements Configuratio
         );
         registry.registerDecorator(
                 QueryBus.class,
-                TRACING_DECORATOR_ORDER,
+                DecoratorOrder.TRACING,
                 (config, name, delegate) -> {
                     SpanFactory spanFactory = spanFactory(config);
                     if (spanFactory == null || !settings(config).queryBusEnabled()) {

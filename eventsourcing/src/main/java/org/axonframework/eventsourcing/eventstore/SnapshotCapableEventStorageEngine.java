@@ -18,6 +18,7 @@ package org.axonframework.eventsourcing.eventstore;
 
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.configuration.DecoratingComponent;
+import org.axonframework.common.configuration.DecoratorOrder;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.eventsourcing.snapshot.api.Snapshot;
 import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
@@ -57,8 +58,11 @@ public class SnapshotCapableEventStorageEngine implements EventStorageEngine {
 
     /**
      * The decoration order used when registering this wrapper as a decorator for {@link EventStorageEngine} components.
+     *
+     * @deprecated in favor of {@link DecoratorOrder#DEFAULT}
      */
-    public static final int DECORATION_ORDER = 0;
+    @Deprecated(since = "5.5.0")
+    public static final int DECORATION_ORDER = DecoratorOrder.DEFAULT;
 
     private static final Logger LOGGER = LoggerFactory.getLogger(SnapshotCapableEventStorageEngine.class);
 

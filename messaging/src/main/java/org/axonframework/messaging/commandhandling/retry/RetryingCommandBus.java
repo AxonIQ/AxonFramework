@@ -16,6 +16,7 @@
 
 package org.axonframework.messaging.commandhandling.retry;
 
+import org.axonframework.common.configuration.DecoratorOrder;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.messaging.commandhandling.CommandBus;
 import org.axonframework.messaging.commandhandling.CommandHandler;
@@ -53,8 +54,11 @@ public class RetryingCommandBus implements CommandBus {
      * Set to {@code Integer.MIN_VALUE + 1000} to ensure it wraps the
      * {@link org.axonframework.messaging.commandhandling.interception.InterceptingCommandBus} (order
      * {@code Integer.MIN_VALUE + 100}), so that retries also pass through the interceptor chain.
+     *
+     * @deprecated in favor of {@link DecoratorOrder#RETRYING}
      */
-    public static final int DECORATION_ORDER = Integer.MIN_VALUE + 1000;
+    @Deprecated(since = "5.5.0")
+    public static final int DECORATION_ORDER = DecoratorOrder.RETRYING;
 
     private final CommandBus delegate;
     private final RetryScheduler retryScheduler;

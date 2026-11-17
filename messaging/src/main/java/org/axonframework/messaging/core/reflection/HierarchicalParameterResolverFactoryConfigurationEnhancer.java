@@ -18,6 +18,7 @@ package org.axonframework.messaging.core.reflection;
 
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.ConfigurationEnhancer;
+import org.axonframework.common.configuration.DecoratorOrder;
 import org.axonframework.messaging.core.annotation.HierarchicalParameterResolverFactory;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
 
@@ -41,7 +42,7 @@ public class HierarchicalParameterResolverFactoryConfigurationEnhancer implement
                 ParameterResolverFactory.class,
                 // We want this to be executed late, but still allow users to be able to add resolvers
                 // after this enhancer. Which would then not be available for child configurations.
-                Integer.MAX_VALUE >> 1,
+                DecoratorOrder.HIERARCHICAL,
                 (config, componentName, component) -> {
                     Optional<ParameterResolverFactory> parentComponent = Optional
                             .ofNullable(config.getParent())
