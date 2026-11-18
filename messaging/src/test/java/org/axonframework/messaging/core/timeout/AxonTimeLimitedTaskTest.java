@@ -79,7 +79,29 @@ class AxonTimeLimitedTaskTest {
 
         assertTrue(testSubject.isInterrupted());
         assertFalse(testSubject.isCompleted());
-        verify(logger, atLeast(3)).warn(anyString(), any(), any(), any(), any());
+        verify(logger, atLeast(3)).warn(anyString(), any(), any(), any(), any(), any());
+        // Awaiting termination to ensure none of the AxonTimeLimitedTask hang
+        executor.awaitTermination(250, TimeUnit.MILLISECONDS);
+    }
+
+    @Test
+    void logsThatTheTaskWaitsForAnAsynchronousResultWhenNoThreadIsBound() throws InterruptedException {
+        ScheduledThreadPoolExecutor executor = AxonTaskJanitor.createExecutor();
+        Logger logger = spy(LoggerFactory.getLogger("MyLogger"));
+        AxonTimeLimitedTask testSubject = new AxonTimeLimitedTask(
+                "My test task", 100, 50, 10, executor, logger, null
+        );
+
+        testSubject.start();
+        Thread.sleep(150);
+
+        assertTrue(testSubject.isInterrupted());
+        assertFalse(Thread.currentThread().isInterrupted());
+        verify(logger, atLeastOnce()).warn(
+                anyString(), eq("My test task"), any(), eq("Will time out in"), any(),
+                eq("No thread is processing it, as it is waiting for an asynchronous result.")
+        );
+        verify(logger).error(contains("is waiting for an asynchronous result"), eq("My test task"), eq(100));
         // Awaiting termination to ensure none of the AxonTimeLimitedTask hang
         executor.awaitTermination(250, TimeUnit.MILLISECONDS);
     }
@@ -192,7 +214,7 @@ class AxonTimeLimitedTaskTest {
         assertFalse(testSubject.isCompleted());
         // Complete manually to ensure it does not block the AxonTaskJanitor!
         testSubject.complete();
-        verify(logger, atLeast(3)).warn(anyString(), any(), any(), any(), any());
+        verify(logger, atLeast(3)).warn(anyString(), any(), any(), any(), any(), any());
         // Awaiting termination to ensure none of the AxonTimeLimitedTask hang
         executor.awaitTermination(250, TimeUnit.MILLISECONDS);
     }
