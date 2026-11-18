@@ -34,7 +34,7 @@ Any patch release made for an Axon project is tailored towards resolving bugs. T
 
 Thank you to all the contributors who worked on this release:
 
-link:https://github.com/hjohn[@hjohn], link:https://github.com/schananas[@schananas], and link:https://github.com/smcvb[@smcvb]
+link:https://github.com/hjohn[@hjohn], link:https://github.com/schananas[@schananas], link:https://github.com/CodeDrivenMitch[@CodeDrivenMitch], https://github.com/MateuszNaKodach[@MateuszNaKodach], and link:https://github.com/smcvb[@smcvb]
 
 === Release 5.4.1
 
