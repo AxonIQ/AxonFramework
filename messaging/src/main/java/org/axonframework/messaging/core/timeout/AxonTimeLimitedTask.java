@@ -352,10 +352,11 @@ class AxonTimeLimitedTask {
      */
     private void scheduleWarningOrInterrupt() {
         long takenTime = System.currentTimeMillis() - startTimeMs;
+        String outcome = activeThreads.isEmpty() ? "Will time out in" : "Will be interrupted in";
         logger.warn("""
-                            {} is taking a long time to process. Current time: [{}ms]. Will be interrupted in [{}ms].
+                            {} is taking a long time to process. Current time: [{}ms]. {} [{}ms].
                             {}""",
-                    taskName, takenTime, timeout - takenTime, describeActiveThreads());
+                    taskName, takenTime, outcome, timeout - takenTime, describeActiveThreads());
         if (takenTime + warningInterval < timeout) {
             scheduleWarning(warningInterval);
         } else {
@@ -377,8 +378,15 @@ class AxonTimeLimitedTask {
             currentScheduledFuture = scheduledExecutorService.schedule(() -> {
                 synchronized (lock) {
                     if (!completed && !interrupted) {
-                        logger.error("{} has exceeded its timeout of [{}ms]. Interrupting thread(s).\n{}",
-                                     taskName, timeout, describeActiveThreads());
+                        if (activeThreads.isEmpty()) {
+                            logger.error("{} has exceeded its timeout of [{}ms]. No thread is processing it, as it "
+                                                 + "is waiting for an asynchronous result. It will fail with a "
+                                                 + "timeout once that result completes.",
+                                         taskName, timeout);
+                        } else {
+                            logger.error("{} has exceeded its timeout of [{}ms]. Interrupting thread(s).\n{}",
+                                         taskName, timeout, describeActiveThreads());
+                        }
                         interrupted = true;
                         activeThreads.forEach(Thread::interrupt);
                     }
@@ -391,6 +399,9 @@ class AxonTimeLimitedTask {
     }
 
     private String describeActiveThreads() {
+        if (activeThreads.isEmpty()) {
+            return "No thread is processing it, as it is waiting for an asynchronous result.";
+        }
         StringBuilder sb = new StringBuilder();
         for (Thread activeThread : activeThreads) {
             sb.append("Stacktrace of thread [").append(activeThread.getName()).append("]:\n");
