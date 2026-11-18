@@ -6,6 +6,36 @@ Any patch release made for an Axon project is tailored towards resolving bugs. T
 [#release_5_4]
 == Release 5.4
 
+=== Release 5.4.2
+
+==== Enhancements
+
+- [Backport axon-5.4.x] [#5232] Extend token claims of idle and busy segments in time link:https://github.com/AxonIQ/AxonFramework/pull/5272[#5272]
+- [Backport axon-5.4.x] Require a processing context for `TokenStore` operations link:https://github.com/AxonIQ/AxonFramework/pull/5270[#5270]
+- [Backport axon-5.4.x] [#5205] Document `Metadata` value switch from `?` to `String` and auto-convert to `String` in JPA `EventStorageEngine` link:https://github.com/AxonIQ/AxonFramework/pull/5259[#5259]
+- [Backport axon-5.4.x] Mark `protected`, `@Internal`, and document `AggregateBasedJpaEventStorageEngine#queryEventsBy` link:https://github.com/AxonIQ/AxonFramework/pull/5238[#5238]
+- [Backport axon-5.4.x] Make the coordinator's wait for a full work package configurable, and stop it losing a wake-up link:https://github.com/AxonIQ/AxonFramework/pull/5233[#5233]
+- [Backport axon-5.4.x] Spring Cloud Connector - Spring Boot 4 example link:https://github.com/AxonIQ/AxonFramework/pull/5225[#5225]
+- [Backport axon-5.4.x] Replace `cache` for artifact-steps in the release GHA link:https://github.com/AxonIQ/AxonFramework/pull/5221[#5221]
+
+==== Bug fixes
+
+- [Backport axon-5.4.x] Remove `@Internal` marker from `EventCoordinator` link:https://github.com/AxonIQ/AxonFramework/pull/5295[#5295]
+- [#5278] Run entity loads and event handlers outside the map lock link:https://github.com/AxonIQ/AxonFramework/pull/5279[#5279]
+- [Port | #5125 & #5126] Run each event sourcing handler of an entity hierarchy once, and apply events once to polymorphic entities link:https://github.com/AxonIQ/AxonFramework/pull/5260[#5260]
+- [Backport axon-5.4.x] [#5217] Correct Consistency Marker position for `AggregateBasedJpaEventStorageEngine` when sourcing after snapshot link:https://github.com/AxonIQ/AxonFramework/pull/5256[#5256]
+- [Backport axon-5.4.x] Run all MessageStream suite cases and check how streams treat their sources link:https://github.com/AxonIQ/AxonFramework/pull/5245[#5245]
+- [Backport axon-5.4.x] Fine tune `null` and empty-String support for the namespace link:https://github.com/AxonIQ/AxonFramework/pull/5244[#5244]
+- [Backport axon-5.4.x] Invoke `AxonConfiguration#start()` in `AbstractQueryTestSuite` implementation link:https://github.com/AxonIQ/AxonFramework/pull/5243[#5243]
+- [Backport axon-5.4.x | #713] Run AbstractMessageStream.fetchNext without holding the stream lock link:https://github.com/AxonIQ/AxonFramework/pull/5236[#5236]
+- [Backport axon-5.4.x] Keep query-update counts and carry the emitUpdate trace context on updates link:https://github.com/AxonIQ/AxonFramework/pull/5229[#5229]
+
+==== Contributors
+
+Thank you to all the contributors who worked on this release:
+
+link:https://github.com/hjohn[@hjohn], link:https://github.com/schananas[@schananas], link:https://github.com/CodeDrivenMitch[@CodeDrivenMitch], https://github.com/MateuszNaKodach[@MateuszNaKodach], and link:https://github.com/smcvb[@smcvb]
+
 === Release 5.4.1
 
 ==== Enhancements
