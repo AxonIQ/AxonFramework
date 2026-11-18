@@ -29,7 +29,7 @@ this tutorial will help you understand these new concepts through practical exam
 == About this tutorial
 This tutorial will guide you through creating a "Axon University Registration Application" using Axon Framework 5.
 We will implement features using Vertical Slice Architecture using "Test First" approach.
-You will also see the DCB in action along with persisting the events in the Axon Server 2025.
+You will also see the DCB in action along with persisting the events in Axon Server.
 
 You can either:
 
