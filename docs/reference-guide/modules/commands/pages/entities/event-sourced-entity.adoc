@@ -170,6 +170,9 @@ include::example$commands/entities/eventsourcedentity/autodetected/CourseEntityC
 <1> The first argument is the identifier type; the second is the entity class.
 The `EventSourcedEntityModule#autodetected` flow reads `@CommandHandler`, `@EventSourcingHandler`, and `@EntityCreator` annotations from the class automatically.
 
+An `@EventSourcingHandler` matches events by the name of its payload type.
+Set its `eventName` attribute to evolve from an event published under another name, as described in xref:events:event-handlers.adoc#annotated_event_handler_name_resolution[Annotated event handler name resolution].
+
 [#_spring_boot]
 === Spring Boot
 
