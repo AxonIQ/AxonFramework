@@ -55,7 +55,8 @@ import java.lang.annotation.Target;
  *     {@link org.axonframework.messaging.core.Message},
  *     {@link org.axonframework.messaging.core.Metadata}, a
  *     {@link org.axonframework.messaging.core.annotation.MetadataValue}, the
- *     {@link org.axonframework.messaging.core.unitofwork.ProcessingContext}, and a configured component through
+ *     {@link org.axonframework.messaging.core.unitofwork.ProcessingContext}, the
+ *     {@link org.axonframework.messaging.core.MessageTypeResolver}, and a configured component through
  *     {@link org.axonframework.messaging.core.annotation.InjectComponent}. Any other parameter, such as an
  *     unannotated component, an entity or an {@code EventAppender}, is rejected.</li>
  * </ul>
@@ -80,7 +81,7 @@ import java.lang.annotation.Target;
  *     {@literal @}AppendCriteriaBuilder
  *     static EventCriteria withdrawals(WithdrawMoney command,
  *                                      EventCriteria sourcingCriteria,
- *                                      {@literal @}InjectComponent MessageTypeResolver messageTypeResolver) {
+ *                                      MessageTypeResolver messageTypeResolver) {
  *         return sourcingCriteria.withEventTypes(messageTypeResolver, MoneyWithdrawn.class);
  *     }
  * }

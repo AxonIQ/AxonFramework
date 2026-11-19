@@ -25,6 +25,7 @@ import org.axonframework.eventsourcing.commandhandling.AppendCriteriaInterceptor
 import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.core.Context.ResourceKey;
 import org.axonframework.messaging.core.Message;
+import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.Metadata;
 import org.axonframework.messaging.core.MessageHandlerInterceptorChain;
 import org.axonframework.messaging.core.MessageStream;
@@ -76,7 +77,8 @@ public class AppendCriteriaBuilderDefinition implements HandlerEnhancerDefinitio
      * Parameter types an {@link AppendCriteriaBuilder} may declare after its payload, as they resolve without waiting.
      */
     private static final Set<Class<?>> IMMEDIATE_TYPES = Set.of(
-            EventCriteria.class, CommandMessage.class, Message.class, Metadata.class, ProcessingContext.class
+            EventCriteria.class, CommandMessage.class, Message.class, Metadata.class, ProcessingContext.class,
+            MessageTypeResolver.class
     );
 
     @Override

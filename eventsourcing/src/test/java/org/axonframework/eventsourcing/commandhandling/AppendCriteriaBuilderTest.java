@@ -233,6 +233,18 @@ class AppendCriteriaBuilderTest {
                     configuration.getComponent(EventStore.class)
             );
         }
+
+        @Test
+        void builderReceivesAnUnannotatedMessageTypeResolver() {
+            // given
+            var component = component(new UnannotatedResolverBuilderHandler());
+
+            // when
+            handle(component, command(new UseCredits("one"))).join();
+
+            // then
+            assertThat(invocations).containsExactly(configuration.getComponent(MessageTypeResolver.class));
+        }
     }
 
     @Nested
@@ -427,7 +439,7 @@ class AppendCriteriaBuilderTest {
 
         @Test
         void builderWithAnUnannotatedComponentIsRejectedAtStartup() {
-            assertThatThrownBy(() -> component(new UnannotatedResolverBuilderHandler()))
+            assertThatThrownBy(() -> component(new UnannotatedEventStoreBuilderHandler()))
                     .isInstanceOf(AxonConfigurationException.class)
                     .hasMessageContaining("must resolve without waiting");
         }
@@ -767,6 +779,15 @@ class AppendCriteriaBuilderTest {
 
         @AppendCriteriaBuilder
         static EventCriteria use(UseCredits command, MessageTypeResolver resolver) {
+            invocations.add(resolver);
+            return EventCriteria.havingAnyTag();
+        }
+    }
+
+    static class UnannotatedEventStoreBuilderHandler extends CreditsHandlerWithoutBuilder {
+
+        @AppendCriteriaBuilder
+        static EventCriteria use(UseCredits command, EventStore eventStore) {
             return EventCriteria.havingAnyTag();
         }
     }
