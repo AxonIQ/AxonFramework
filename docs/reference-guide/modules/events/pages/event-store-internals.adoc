@@ -209,11 +209,29 @@ include::example$events/eventstoreinternals/appendcriteria/annotation/UsernameCo
 
 * The append fails if a matching event already exists or is appended concurrently.
 * Tag the appended events with the values the criteria use, as the example does with `tenantId`.
-* Returning the supplied criteria keeps the command unconditional, except for an entity created without loading: it receives the tags of its appended events, which are then checked from the start of the history.
+* Returning the supplied criteria keeps the command unconditional.
+* An entity created without loading is the exception.
+Its builder receives criteria that select all tags of the appended events, and the event store checks them from the start of the history.
+An event matches only if it has all of those tags, so this check rejects only an exact repeat.
 * Setting event types with `withEventTypes` on the supplied criteria defines a boundary where there was none, so every event of those types in the history is checked.
 A `CommandMessage` builder that does this applies it to every command that sources nothing.
 * A command that sourced something checks its append criteria only after the position it read, whatever the criteria select.
 To check a key from the beginning of the history, use a command that sources nothing.
+
+To keep an entity unique by its identifier and by another value, return criteria for each tag and join them with `or`:
+
+[source,java]
+----
+include::example$events/eventstoreinternals/appendcriteria/entity/User.java[tag=unique-entity-append-criteria,indent=0]
+----
+
+`RegisterUser` has no `@TargetEntityId`, so the framework creates the `User` without loading it.
+The event store checks the criteria from the start of the history and rejects a second user with the same identifier or the same username.
+Without the builder, a second `RegisterUser` with the same identifier and another username succeeds, because its event has different tags.
+
+With `@TargetEntityId` on `RegisterUser`, the framework loads the `User` first.
+The framework then rejects a second registration with the same identifier.
+The event store checks the username only against events appended after that read, so it does not detect an earlier user with the same username.
 
 === Choosing a narrower boundary
 
