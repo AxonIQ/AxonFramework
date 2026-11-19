@@ -756,10 +756,14 @@ class AppendCriteriaInterceptorTest {
         return MessageStream.empty();
     }
 
+    /**
+     * Handles the {@code command} and asserts that handling succeeded. Waiting on the unit of work alone would miss a
+     * failed command, as a failed result stream does not fail the unit of work.
+     */
     private void handleSuccessfully(CommandHandlingComponent component, CommandMessage command) {
-        var uow = aUnitOfWork();
-        uow.runOnPreInvocation(context -> component.handle(command, context));
-        awaitSuccessfulCompletion(uow.execute());
+        awaitSuccessfulCompletion(aUnitOfWork().executeWithResult(
+                context -> component.handle(command, context).first().asCompletableFuture()
+        ));
     }
 
     /**

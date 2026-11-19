@@ -14,14 +14,14 @@
  * limitations under the License.
  */
 
-package org.axonframework.eventsourcing.commandhandling;
+package org.axonframework.eventsourcing.commandhandling.annotation;
 
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.Priority;
 import org.axonframework.common.configuration.ComponentNotFoundException;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.eventsourcing.annotation.EventTag;
-import org.axonframework.eventsourcing.commandhandling.annotation.AppendCriteriaBuilder;
+import org.axonframework.eventsourcing.commandhandling.AppendCriteriaInterceptor;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
 import org.axonframework.eventsourcing.eventstore.AppendCondition;
 import org.axonframework.eventsourcing.eventstore.AppendEventsTransactionRejectedException;
