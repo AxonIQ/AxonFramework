@@ -146,18 +146,18 @@ include::example$events/eventstoreinternals/appendcriteria/entity/Account.java[t
 `@EventCriteriaBuilder` selects the events the entity reads, and `@AppendCriteriaBuilder` selects the events a command handled by the entity conflicts with.
 Above, a withdrawal reads deposits, but a concurrent deposit cannot overdraw the account, so deposits are not part of the boundary.
 Builders on an entity apply to the commands that entity handles, including commands creating it, not to every use of the entity.
+Both builders are optional: without an `@EventCriteriaBuilder` the entity is sourced by its tag, and without an `@AppendCriteriaBuilder` a command keeps its sourcing criteria.
 
-`@AppendCriteriaBuilder` is a `@CommandHandlerInterceptor`, so it is found and matched like any command handler interceptor.
-It does not run before the handler, though: it runs when the events are appended, once everything was sourced.
+The `@AppendCriteriaBuilder` is internally structured as a `@CommandHandlerInterceptor`, so it is found and matched like any command handler interceptor.
 
-Builder rules:
+There are a couple of rules when it comes to the append criteria builder:
 
 * A builder applies to the commands handled on its class whose payload is assignable to its first parameter.
 A first parameter of type `CommandMessage` applies to every command.
 The payload is converted to the handler's type first, so a builder also matches serialized commands and commands named with `@Command(name = ...)`.
 * Commands without a matching builder keep their sourcing criteria.
 * At most one builder applies to a command.
-When two builders, or a builder and an `AppendCriteriaInterceptor`, match the same command, the command fails.
+When two builders, or a builder and an `AppendCriteriaInterceptor`, match the same command, the application still starts, but handling that command fails.
 * A nested entity declares builders for its own handlers, as `Card` does above.
 Builders of the parent entity also see the commands forwarded to its children, so keep them to the parent's own command types.
 * A builder is `static` and returns `EventCriteria`, or startup fails with an `AxonConfigurationException`.
@@ -184,7 +184,7 @@ Pass an `AppendCriteriaResolver` instead of a function when the criteria depend 
 To decide for every command of every component in the module, use `AppendCriteriaInterceptor.forAllCommands(fallback)` with one `AppendCriteriaResolver`.
 That resolver receives the command as dispatched, so read a serialized payload with `payloadAs`.
 Criteria added with `andForCommand` take precedence over it for their command.
-A command whose criteria more than one resolver decides, for example a builder and an interceptor, fails.
+A command whose criteria more than one resolver decides, for example a builder and an interceptor, fails when it is handled; startup does not detect this.
 
 For a declaratively built entity, register the interceptor on the metamodel builder through `EntityCommandHandlerInterceptor.of`:
 

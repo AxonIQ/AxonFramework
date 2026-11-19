@@ -15,7 +15,9 @@
  */
 
 /**
- * Annotations for declaring append criteria on command-handling classes.
+ * Annotations for command handling specific to event sourcing, for example
+ * {@link org.axonframework.eventsourcing.commandhandling.annotation.AppendCriteriaBuilder} to declare the append
+ * criteria of a command.
  */
 @NullMarked
 package org.axonframework.eventsourcing.commandhandling.annotation;

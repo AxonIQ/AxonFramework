@@ -15,7 +15,8 @@
  */
 
 /**
- * Components for resolving append criteria per command invocation.
+ * Command handling support specific to event sourcing, for example deciding the append criteria of a command
+ * through an {@link org.axonframework.eventsourcing.commandhandling.AppendCriteriaInterceptor}.
  */
 @NullMarked
 package org.axonframework.eventsourcing.commandhandling;
