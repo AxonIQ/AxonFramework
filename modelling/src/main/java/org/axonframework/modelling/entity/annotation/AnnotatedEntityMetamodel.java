@@ -43,6 +43,7 @@ import org.axonframework.messaging.core.interception.annotation.MessageHandlerIn
 import org.axonframework.messaging.core.interception.annotation.NoMoreInterceptors;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
+import org.axonframework.messaging.eventhandling.annotation.EventHandlingMember;
 import org.axonframework.messaging.eventhandling.conversion.EventConverter;
 import org.axonframework.modelling.annotation.AnnotationBasedEntityEvolvingComponent;
 import org.axonframework.modelling.entity.ConcreteEntityMetamodel;
@@ -379,6 +380,7 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
     private QualifiedName qualifiedNameFor(MessageHandlingMember<? super E> handler) {
         return handler.unwrap(CommandHandlingMember.class)
                       .map(CommandHandlingMember::commandName)
+                      .or(() -> handler.unwrap(EventHandlingMember.class).map(EventHandlingMember::eventName))
                       // Filter empty Strings to fall back to the MessageTypeResolver.
                       .filter(StringUtils::nonEmpty)
                       .map(QualifiedName::new)
