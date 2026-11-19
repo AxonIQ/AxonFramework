@@ -407,7 +407,8 @@ class DefaultEventStoreTransactionTest {
                 return MessageStream.empty();
             });
             CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
-                    List.of(new AppendCriteriaInterceptor((command, sourcingCriteria, context) -> unrelatedCriteria
+                    List.of(AppendCriteriaInterceptor.forAllCommands(
+                            (command, sourcingCriteria, context) -> unrelatedCriteria
                     )),
                     delegate
             );
@@ -441,7 +442,8 @@ class DefaultEventStoreTransactionTest {
                 return MessageStream.empty();
             });
             CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
-                    List.of(new AppendCriteriaInterceptor((command, sourcingCriteria, context) -> sourcingCriteria
+                    List.of(AppendCriteriaInterceptor.forAllCommands(
+                            (command, sourcingCriteria, context) -> sourcingCriteria
                     )),
                     delegate
             );

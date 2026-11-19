@@ -16,6 +16,7 @@
 
 package org.axonframework.eventsourcing.commandhandling;
 
+import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.eventsourcing.eventstore.AppendCondition;
 import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.messaging.commandhandling.CommandMessage;
@@ -57,27 +58,29 @@ import static java.util.Objects.requireNonNull;
  *                              .commandHandlers()
  *                              .commandHandlingComponent(c -> creditComponent)
  *                              .intercepted(c -> AppendCriteriaInterceptor
- *                                      .create()
  *                                      .forCommand(useCredits, sourcing -> sourcing.withEventTypes(creditsUsed))
- *                                      .forCommand(registerUsername, (command, sourcing, context) -> uniqueName))
+ *                                      .andForCommand(registerUsername, (command, sourcing, context) -> uniqueName))
  * );
  * }</pre>
- * To decide for every intercepted command instead, pass a single resolver to the constructor:
- * {@code new AppendCriteriaInterceptor(resolver)}. Criteria registered through {@code forCommand} on such an
- * interceptor take precedence over that resolver for their command.
+ * To decide for every intercepted command instead, use {@code AppendCriteriaInterceptor.forAllCommands(fallback)}.
+ * Criteria added through {@code andForCommand} on such an interceptor take precedence over that fallback for their
+ * command. An interceptor is immutable: {@code andForCommand} returns a new instance.
+ * <p>
  * For an entity configured through an {@link org.axonframework.modelling.entity.EntityMetamodelBuilder}, adapt it with
  * {@link org.axonframework.modelling.entity.EntityCommandHandlerInterceptor#of(MessageHandlerInterceptor)}:
  * <pre>{@code
  * builder.instanceCommandHandler(useCredits, useCreditsHandler)
- *        .commandHandlerInterceptor(EntityCommandHandlerInterceptor.of(new AppendCriteriaInterceptor(resolver)));
+ *        .commandHandlerInterceptor(EntityCommandHandlerInterceptor.of(
+ *                AppendCriteriaInterceptor.forAllCommands(resolver)
+ *        ));
  * }</pre>
  * <p>
  * Keep the following in mind when registering it:
  * <ul>
- *     <li>Commands are matched by the {@link QualifiedName} of their type, so the payload is not converted. A resolver
- *     given to the constructor applies to every command the interceptor intercepts: on a {@code CommandHandlingModule}
- *     that is every command of every component in that module, and on an entity it also covers commands forwarded to
- *     its child entities.</li>
+ *     <li>Commands are matched by the {@link QualifiedName} of their type, so the payload is not converted. The
+ *     fallback given to {@code forAllCommands} applies to every command the interceptor intercepts: on a
+ *     {@code CommandHandlingModule} that is every command of every component in that module, and on an entity it also
+ *     covers commands forwarded to its child entities.</li>
  *     <li>At most one resolver applies per command. A command reaching two of these interceptors that both decide its
  *     criteria, or one of them and an {@code AppendCriteriaBuilder}, fails rather than letting one silently win. A
  *     command this interceptor has no criteria for is left to the others.</li>
@@ -99,73 +102,96 @@ public final class AppendCriteriaInterceptor implements MessageHandlerIntercepto
 
     private static final ResourceKey<Boolean> APPLIED_KEY = ResourceKey.withLabel("appendCriteriaApplied");
 
-    private final Map<QualifiedName, AppendCriteriaResolver> resolvers = new HashMap<>();
+    private final Map<QualifiedName, AppendCriteriaResolver> resolvers;
     @Nullable
     private final AppendCriteriaResolver fallback;
 
+    private AppendCriteriaInterceptor(Map<QualifiedName, AppendCriteriaResolver> resolvers,
+                                      @Nullable AppendCriteriaResolver fallback) {
+        this.resolvers = Map.copyOf(resolvers);
+        this.fallback = fallback;
+    }
+
     /**
-     * Creates an interceptor letting the given {@code resolver} decide the append criteria of every command it
-     * intercepts.
-     * <p>
-     * Criteria registered for a specific command through {@link #forCommand(QualifiedName, AppendCriteriaResolver)}
-     * take precedence over this {@code resolver}.
+     * Creates an interceptor letting the given {@code fallback} decide the append criteria of every command it
+     * intercepts, except those registered through {@link #andForCommand(QualifiedName, AppendCriteriaResolver)}.
      *
-     * @param resolver the resolver deciding the append criteria of each intercepted command
+     * @param fallback the resolver deciding the append criteria of each intercepted command
+     * @return an interceptor deciding the append criteria of every command
      */
-    public AppendCriteriaInterceptor(AppendCriteriaResolver resolver) {
-        this.fallback = requireNonNull(resolver, "The append criteria resolver cannot be null.");
-    }
-
-    private AppendCriteriaInterceptor() {
-        this.fallback = null;
+    public static AppendCriteriaInterceptor forAllCommands(AppendCriteriaResolver fallback) {
+        return new AppendCriteriaInterceptor(Map.of(),
+                                             requireNonNull(fallback, "The append criteria resolver cannot be null."));
     }
 
     /**
-     * Creates an interceptor without criteria, to register them per command name through
-     * {@link #forCommand(QualifiedName, UnaryOperator)} or {@link #forCommand(QualifiedName, AppendCriteriaResolver)}.
-     * Commands without registered criteria keep their sourcing criteria.
-     *
-     * @return an interceptor deciding the append criteria of no command yet
-     */
-    public static AppendCriteriaInterceptor create() {
-        return new AppendCriteriaInterceptor();
-    }
-
-    /**
-     * Registers the append criteria of the command with the given {@code name}, derived from its sourcing criteria.
+     * Creates an interceptor deciding the append criteria of the command with the given {@code name} only, derived
+     * from its sourcing criteria. Commands with other names keep their sourcing criteria.
      * <p>
      * Use this for criteria that only depend on what the command sourced, such as narrowing them to the event types
      * that can invalidate its decision: {@code sourcing -> sourcing.withEventTypes(creditsUsed)}.
      *
      * @param name     the name of the command to decide the append criteria for
      * @param criteria the function deriving the append criteria from the sourcing criteria
-     * @return this interceptor, for fluent interfacing
-     * @throws IllegalArgumentException if criteria are already registered for a command with the given {@code name}
+     * @return an interceptor deciding the append criteria of that command
      */
-    public AppendCriteriaInterceptor forCommand(QualifiedName name, UnaryOperator<EventCriteria> criteria) {
-        requireNonNull(criteria, "The append criteria function cannot be null.");
-        return forCommand(name, (command, sourcingCriteria, context) -> criteria.apply(sourcingCriteria));
+    public static AppendCriteriaInterceptor forCommand(QualifiedName name, UnaryOperator<EventCriteria> criteria) {
+        return new AppendCriteriaInterceptor(Map.of(), null).andForCommand(name, criteria);
     }
 
     /**
-     * Registers the given {@code resolver} to decide the append criteria of the command with the given {@code name}.
+     * Creates an interceptor letting the given {@code resolver} decide the append criteria of the command with the
+     * given {@code name} only. Commands with other names keep their sourcing criteria.
      * <p>
      * Use this for criteria that depend on the command or the context, such as a unique key taken from the payload.
      *
      * @param name     the name of the command to decide the append criteria for
      * @param resolver the resolver deciding the append criteria of that command
-     * @return this interceptor, for fluent interfacing
-     * @throws IllegalArgumentException if criteria are already registered for a command with the given {@code name}
+     * @return an interceptor deciding the append criteria of that command
      */
-    public AppendCriteriaInterceptor forCommand(QualifiedName name, AppendCriteriaResolver resolver) {
+    public static AppendCriteriaInterceptor forCommand(QualifiedName name, AppendCriteriaResolver resolver) {
+        return new AppendCriteriaInterceptor(Map.of(), null).andForCommand(name, resolver);
+    }
+
+    /**
+     * Returns a copy of this interceptor that also decides the append criteria of the command with the given
+     * {@code name}, derived from its sourcing criteria.
+     * <p>
+     * Use this for criteria that only depend on what the command sourced, such as narrowing them to the event types
+     * that can invalidate its decision: {@code sourcing -> sourcing.withEventTypes(creditsUsed)}.
+     *
+     * @param name     the name of the command to decide the append criteria for
+     * @param criteria the function deriving the append criteria from the sourcing criteria
+     * @return a new interceptor with the given criteria added, leaving this one unchanged
+     * @throws AxonConfigurationException if criteria are already registered for a command with the given {@code name}
+     */
+    public AppendCriteriaInterceptor andForCommand(QualifiedName name, UnaryOperator<EventCriteria> criteria) {
+        requireNonNull(criteria, "The append criteria function cannot be null.");
+        return andForCommand(name, (command, sourcingCriteria, context) -> criteria.apply(sourcingCriteria));
+    }
+
+    /**
+     * Returns a copy of this interceptor that also lets the given {@code resolver} decide the append criteria of the
+     * command with the given {@code name}.
+     * <p>
+     * Use this for criteria that depend on the command or the context, such as a unique key taken from the payload.
+     *
+     * @param name     the name of the command to decide the append criteria for
+     * @param resolver the resolver deciding the append criteria of that command
+     * @return a new interceptor with the given resolver added, leaving this one unchanged
+     * @throws AxonConfigurationException if criteria are already registered for a command with the given {@code name}
+     */
+    public AppendCriteriaInterceptor andForCommand(QualifiedName name, AppendCriteriaResolver resolver) {
         requireNonNull(name, "The command name cannot be null.");
         requireNonNull(resolver, "The append criteria resolver cannot be null.");
-        if (resolvers.putIfAbsent(name, resolver) != null) {
-            throw new IllegalArgumentException(
+        if (resolvers.containsKey(name)) {
+            throw new AxonConfigurationException(
                     "Append criteria are already registered for command [%s].".formatted(name)
             );
         }
-        return this;
+        Map<QualifiedName, AppendCriteriaResolver> extended = new HashMap<>(resolvers);
+        extended.put(name, resolver);
+        return new AppendCriteriaInterceptor(extended, fallback);
     }
 
     @Override

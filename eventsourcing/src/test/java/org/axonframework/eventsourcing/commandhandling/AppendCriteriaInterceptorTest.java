@@ -16,6 +16,7 @@
 
 package org.axonframework.eventsourcing.commandhandling;
 
+import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
 import org.axonframework.eventsourcing.eventstore.AppendCondition;
@@ -104,7 +105,7 @@ class AppendCriteriaInterceptorTest {
             };
             CommandHandlingComponent component =
                     new InterceptingCommandHandlingComponent(
-                            List.of(new AppendCriteriaInterceptor(resolver
+                            List.of(AppendCriteriaInterceptor.forAllCommands(resolver
                             )),
                             delegate
                     );
@@ -139,7 +140,7 @@ class AppendCriteriaInterceptorTest {
                 return MessageStream.empty();
             });
             CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
-                    List.of(new AppendCriteriaInterceptor((command, sourcingCriteria, context) -> {
+                    List.of(AppendCriteriaInterceptor.forAllCommands((command, sourcingCriteria, context) -> {
                                 received.add(sourcingCriteria);
                                 return sourcingCriteria;
                             }
@@ -180,7 +181,7 @@ class AppendCriteriaInterceptorTest {
                 return MessageStream.empty();
             });
             CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
-                    List.of(new AppendCriteriaInterceptor((command, criteria, context) -> commandCriteria
+                    List.of(AppendCriteriaInterceptor.forAllCommands((command, criteria, context) -> commandCriteria
                     )),
                     delegate
             );
@@ -209,7 +210,7 @@ class AppendCriteriaInterceptorTest {
                 return MessageStream.empty();
             });
             CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
-                    List.of(new AppendCriteriaInterceptor((command, sourcingCriteria, context) -> {
+                    List.of(AppendCriteriaInterceptor.forAllCommands((command, sourcingCriteria, context) -> {
                                 receivedSourcingCriteria.set(sourcingCriteria);
                                 return commandCriteria;
                             }
@@ -242,7 +243,7 @@ class AppendCriteriaInterceptorTest {
                 return MessageStream.empty();
             });
             CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
-                    List.of(new AppendCriteriaInterceptor((command, sourcingCriteria, context) -> {
+                    List.of(AppendCriteriaInterceptor.forAllCommands((command, sourcingCriteria, context) -> {
                         receivedSourcingCriteria.set(sourcingCriteria);
                         return sourcingCriteria;
                     })),
@@ -271,7 +272,8 @@ class AppendCriteriaInterceptorTest {
                 return MessageStream.empty();
             });
             CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
-                    List.of(new AppendCriteriaInterceptor((command, sourcingCriteria, context) -> sourcingCriteria)),
+                    List.of(AppendCriteriaInterceptor.forAllCommands(
+                            (command, sourcingCriteria, context) -> sourcingCriteria)),
                     delegate
             );
 
@@ -292,7 +294,7 @@ class AppendCriteriaInterceptorTest {
                 return MessageStream.empty();
             });
             CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
-                    List.of(new AppendCriteriaInterceptor((command, sourcingCriteria, context) -> {
+                    List.of(AppendCriteriaInterceptor.forAllCommands((command, sourcingCriteria, context) -> {
                                 throw new IllegalStateException("Cannot resolve append criteria");
                             }
                     )),
@@ -320,7 +322,7 @@ class AppendCriteriaInterceptorTest {
                 return MessageStream.empty();
             });
             CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
-                    List.of(new AppendCriteriaInterceptor((command, sourcingCriteria, context) -> null)),
+                    List.of(AppendCriteriaInterceptor.forAllCommands((command, sourcingCriteria, context) -> null)),
                     delegate
             );
             var uow = aUnitOfWork();
@@ -338,8 +340,9 @@ class AppendCriteriaInterceptorTest {
     }
 
     /**
-     * Covers registering criteria per command name through {@link AppendCriteriaInterceptor#create()} and
-     * {@link AppendCriteriaInterceptor#forCommand(QualifiedName, AppendCriteriaResolver)}.
+     * Covers registering criteria per command name through
+     * {@link AppendCriteriaInterceptor#forCommand(QualifiedName, AppendCriteriaResolver)} and
+     * {@link AppendCriteriaInterceptor#andForCommand(QualifiedName, AppendCriteriaResolver)}.
      */
     @Nested
     class PerCommand {
@@ -352,8 +355,7 @@ class AppendCriteriaInterceptorTest {
         void namedCommandGetsItsCriteriaWhileOtherCommandsKeepTheirSourcingCriteria() {
             // given
             CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
-                    List.of(AppendCriteriaInterceptor.create()
-                                                     .forCommand(USE_CREDITS,
+                    List.of(AppendCriteriaInterceptor.forCommand(USE_CREDITS,
                                                                  sourcing -> sourcing.withEventTypes(CREDITS_CHANGED))),
                     observingComponent()
             );
@@ -376,8 +378,7 @@ class AppendCriteriaInterceptorTest {
             List<EventCriteria> receivedSourcingCriteria = new ArrayList<>();
             EventCriteria decision = EventCriteria.havingTags("decision", "use-credits");
             CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
-                    List.of(AppendCriteriaInterceptor.create()
-                                                     .forCommand(USE_CREDITS, (command, sourcing, context) -> {
+                    List.of(AppendCriteriaInterceptor.forCommand(USE_CREDITS, (command, sourcing, context) -> {
                                                          resolvedCommands.add(command);
                                                          receivedSourcingCriteria.add(sourcing);
                                                          return decision;
@@ -397,13 +398,13 @@ class AppendCriteriaInterceptorTest {
         }
 
         @Test
-        void namedCommandTakesPrecedenceOverTheResolverGivenToTheConstructor() {
+        void namedCommandTakesPrecedenceOverTheFallback() {
             // given
             EventCriteria named = EventCriteria.havingTags("decision", "named");
             EventCriteria fallback = EventCriteria.havingTags("decision", "fallback");
             CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
-                    List.of(new AppendCriteriaInterceptor((command, sourcing, context) -> fallback)
-                                    .forCommand(USE_CREDITS, sourcing -> named)),
+                    List.of(AppendCriteriaInterceptor.forAllCommands((command, sourcing, context) -> fallback)
+                                    .andForCommand(USE_CREDITS, sourcing -> named)),
                     observingComponent()
             );
 
@@ -421,11 +422,11 @@ class AppendCriteriaInterceptorTest {
             // given an inner interceptor covering every command, behind one naming only another command
             EventCriteria inner = EventCriteria.havingTags("decision", "inner");
             CommandHandlingComponent innerComponent = new InterceptingCommandHandlingComponent(
-                    List.of(new AppendCriteriaInterceptor((command, sourcing, context) -> inner)),
+                    List.of(AppendCriteriaInterceptor.forAllCommands((command, sourcing, context) -> inner)),
                     observingComponent()
             );
             CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
-                    List.of(AppendCriteriaInterceptor.create().forCommand(USE_CREDITS, sourcing -> sourcing)),
+                    List.of(AppendCriteriaInterceptor.forCommand(USE_CREDITS, sourcing -> sourcing)),
                     innerComponent
             );
 
@@ -437,28 +438,44 @@ class AppendCriteriaInterceptorTest {
         }
 
         @Test
+        void addingCriteriaLeavesAnInterceptorInUseUnchanged() {
+            // given an interceptor already handling commands
+            AppendCriteriaInterceptor inUse = AppendCriteriaInterceptor.forCommand(USE_CREDITS, sourcing -> sourcing);
+            CommandHandlingComponent component =
+                    new InterceptingCommandHandlingComponent(List.of(inUse), observingComponent());
+
+            // when criteria for another command are added afterwards
+            AppendCriteriaInterceptor extended =
+                    inUse.andForCommand(TOP_UP_CREDITS, sourcing -> EventCriteria.havingTags("late", "registration"));
+            handleSuccessfully(component, command(TOP_UP_CREDITS, "two"));
+
+            // then the interceptor in use does not see them
+            assertThat(extended).isNotSameAs(inUse);
+            assertThat(finalConditions.get(TOP_UP_CREDITS).criteria()).isEqualTo(EventCriteria.havingTags(ACCOUNT_TWO));
+        }
+
+        @Test
         void registeringTheSameCommandTwiceFails() {
             // given
-            AppendCriteriaInterceptor interceptor = AppendCriteriaInterceptor.create()
-                                                                             .forCommand(USE_CREDITS, s -> s);
+            AppendCriteriaInterceptor interceptor = AppendCriteriaInterceptor.forCommand(USE_CREDITS, s -> s);
 
             // when / then
-            assertThatThrownBy(() -> interceptor.forCommand(USE_CREDITS, s -> s))
-                    .isInstanceOf(IllegalArgumentException.class)
+            assertThatThrownBy(() -> interceptor.andForCommand(USE_CREDITS, s -> s))
+                    .isInstanceOf(AxonConfigurationException.class)
                     .hasMessageContaining("credits.UseCredits");
         }
 
         @Test
         void rejectsNullArguments() {
-            AppendCriteriaInterceptor interceptor = AppendCriteriaInterceptor.create();
+            AppendCriteriaInterceptor interceptor = AppendCriteriaInterceptor.forCommand(TOP_UP_CREDITS, s -> s);
             //noinspection DataFlowIssue
-            assertThatThrownBy(() -> interceptor.forCommand(null, s -> s))
+            assertThatThrownBy(() -> interceptor.andForCommand(null, s -> s))
                     .isInstanceOf(NullPointerException.class);
             //noinspection DataFlowIssue
-            assertThatThrownBy(() -> interceptor.forCommand(USE_CREDITS, (UnaryOperator<EventCriteria>) null))
+            assertThatThrownBy(() -> interceptor.andForCommand(USE_CREDITS, (UnaryOperator<EventCriteria>) null))
                     .isInstanceOf(NullPointerException.class);
             //noinspection DataFlowIssue
-            assertThatThrownBy(() -> interceptor.forCommand(USE_CREDITS, (AppendCriteriaResolver) null))
+            assertThatThrownBy(() -> interceptor.andForCommand(USE_CREDITS, (AppendCriteriaResolver) null))
                     .isInstanceOf(NullPointerException.class);
         }
 
@@ -489,11 +506,13 @@ class AppendCriteriaInterceptorTest {
             SimpleCommandHandlingComponent delegate = SimpleCommandHandlingComponent.create("duplicate");
             delegate.subscribe(USE_CREDITS, (command, context) -> MessageStream.empty());
             CommandHandlingComponent first = new InterceptingCommandHandlingComponent(
-                    List.of(new AppendCriteriaInterceptor((command, sourcingCriteria, context) -> sourcingCriteria)),
+                    List.of(AppendCriteriaInterceptor.forAllCommands(
+                            (command, sourcingCriteria, context) -> sourcingCriteria)),
                     delegate
             );
             CommandHandlingComponent second = new InterceptingCommandHandlingComponent(
-                    List.of(new AppendCriteriaInterceptor((command, sourcingCriteria, context) -> sourcingCriteria)),
+                    List.of(AppendCriteriaInterceptor.forAllCommands(
+                            (command, sourcingCriteria, context) -> sourcingCriteria)),
                     first
             );
             CommandMessage command = command(USE_CREDITS, "one");
@@ -528,7 +547,7 @@ class AppendCriteriaInterceptorTest {
                             CommandHandlingModule.named("credits")
                                                  .commandHandlers()
                                                  .commandHandlingComponent(c -> observingComponent(finalCondition))
-                                                 .intercepted(c -> new AppendCriteriaInterceptor(
+                                                 .intercepted(c -> AppendCriteriaInterceptor.forAllCommands(
                                                          (command, sourcingCriteria, context) -> {
                                                              resolvedCommands.add(command);
                                                              return commandCriteria;
@@ -562,7 +581,8 @@ class AppendCriteriaInterceptorTest {
                     .instanceCommandHandler(USE_CREDITS, (command, entity, context) ->
                             sourceAccountAndAppend(command, context, finalCondition))
                     .commandHandlerInterceptor(EntityCommandHandlerInterceptor.of(
-                            new AppendCriteriaInterceptor((command, sourcingCriteria, context) -> commandCriteria)
+                            AppendCriteriaInterceptor.forAllCommands(
+                                    (command, sourcingCriteria, context) -> commandCriteria)
                     ))
                     .build();
 
@@ -591,7 +611,8 @@ class AppendCriteriaInterceptorTest {
                         return MessageStream.empty().cast();
                     })
                     .commandHandlerInterceptor(EntityCommandHandlerInterceptor.of(
-                            new AppendCriteriaInterceptor((command, sourcingCriteria, context) -> reservation)
+                            AppendCriteriaInterceptor.forAllCommands(
+                                    (command, sourcingCriteria, context) -> reservation)
                     ))
                     .build();
 
@@ -625,7 +646,7 @@ class AppendCriteriaInterceptorTest {
                                       ))
                                       .build())
                     .commandHandlerInterceptor(EntityCommandHandlerInterceptor.of(
-                            new AppendCriteriaInterceptor((command, sourcingCriteria, context) -> {
+                            AppendCriteriaInterceptor.forAllCommands((command, sourcingCriteria, context) -> {
                                 resolvedCommands.add(command);
                                 return commandCriteria;
                             })
@@ -652,7 +673,7 @@ class AppendCriteriaInterceptorTest {
                     .instanceCommandHandler(REPLACE_CARD, (command, card, context) ->
                             AppendCriteriaInterceptorTest.this.sourceAccountAndAppend(command, context))
                     .commandHandlerInterceptor(EntityCommandHandlerInterceptor.of(
-                            new AppendCriteriaInterceptor(resolver)
+                            AppendCriteriaInterceptor.forAllCommands(resolver)
                     ))
                     .build();
             EntityMetamodel<Balance> metamodel = ConcreteEntityMetamodel
@@ -664,7 +685,7 @@ class AppendCriteriaInterceptorTest {
                                       ))
                                       .build())
                     .commandHandlerInterceptor(EntityCommandHandlerInterceptor.of(
-                            new AppendCriteriaInterceptor(resolver)
+                            AppendCriteriaInterceptor.forAllCommands(resolver)
                     ))
                     .build();
 
@@ -683,7 +704,7 @@ class AppendCriteriaInterceptorTest {
         void rejectsNullResolver() {
             // when / then
             //noinspection DataFlowIssue
-            assertThatThrownBy(() -> new AppendCriteriaInterceptor(null))
+            assertThatThrownBy(() -> AppendCriteriaInterceptor.forAllCommands(null))
                     .isInstanceOf(NullPointerException.class)
                     .hasMessageContaining("append criteria resolver cannot be null");
         }

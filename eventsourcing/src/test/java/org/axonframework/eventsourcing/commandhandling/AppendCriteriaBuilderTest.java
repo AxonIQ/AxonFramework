@@ -284,8 +284,7 @@ class AppendCriteriaBuilderTest {
         void interceptorForAnotherCommandLeavesTheBuilderToDecide() {
             // given an interceptor with criteria for TopUpCredits only, around a builder for UseCredits
             CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
-                    List.of(AppendCriteriaInterceptor.create()
-                                                     .forCommand(new QualifiedName(TopUpCredits.class), s -> s)),
+                    List.of(AppendCriteriaInterceptor.forCommand(new QualifiedName(TopUpCredits.class), s -> s)),
                     component(new CreditsHandler())
             );
 
@@ -346,7 +345,8 @@ class AppendCriteriaBuilderTest {
         void interceptorAndBuilderDecidingOneCommandFailTheCommand() {
             // given a module-style interceptor deciding every command, around a component with a builder
             CommandHandlingComponent component = new InterceptingCommandHandlingComponent(
-                    List.of(new AppendCriteriaInterceptor((command, sourcingCriteria, context) -> sourcingCriteria)),
+                    List.of(AppendCriteriaInterceptor.forAllCommands(
+                            (command, sourcingCriteria, context) -> sourcingCriteria)),
                     component(new CreditsHandler())
             );
 

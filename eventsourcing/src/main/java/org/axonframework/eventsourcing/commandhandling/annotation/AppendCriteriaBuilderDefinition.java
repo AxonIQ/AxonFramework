@@ -99,7 +99,7 @@ public class AppendCriteriaBuilderDefinition implements HandlerEnhancerDefinitio
             extends WrappedMessageHandlingMember<T>
             implements MessageInterceptingMember<T> {
 
-        private final AppendCriteriaInterceptor interceptor = new AppendCriteriaInterceptor(this::invoke);
+        private final AppendCriteriaInterceptor interceptor = AppendCriteriaInterceptor.forAllCommands(this::invoke);
 
         private AppendCriteriaBuilderMember(MessageHandlingMember<T> delegate, Method method) {
             super(delegate);

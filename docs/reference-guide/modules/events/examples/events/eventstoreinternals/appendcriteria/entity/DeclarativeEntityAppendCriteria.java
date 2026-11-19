@@ -31,7 +31,6 @@ public class DeclarativeEntityAppendCriteria {
     public static EntityMetamodel<CreditBalance> messagingModel(Configuration configuration,
                                                                 EntityMetamodelBuilder<CreditBalance> builder) {
         AppendCriteriaInterceptor appendCriteria = AppendCriteriaInterceptor
-                .create()
                 .forCommand(new QualifiedName("credits.UseCredits"),
                             sourcingCriteria -> sourcingCriteria.withEventTypes(new QualifiedName(CreditsUsed.class)));
         return builder

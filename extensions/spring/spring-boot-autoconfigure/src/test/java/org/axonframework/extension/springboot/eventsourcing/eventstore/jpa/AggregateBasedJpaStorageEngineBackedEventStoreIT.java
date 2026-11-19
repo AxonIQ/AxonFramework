@@ -287,7 +287,7 @@ class AggregateBasedJpaStorageEngineBackedEventStoreIT extends
                 return MessageStream.empty();
             });
             return new InterceptingCommandHandlingComponent(
-                    List.of(new AppendCriteriaInterceptor(resolver)), handler
+                    List.of(AppendCriteriaInterceptor.forAllCommands(resolver)), handler
             );
         }
 

@@ -144,7 +144,7 @@ public abstract class AppendCriteriaIT extends AbstractCommandHandlingStudentIT 
             registerCommandHandlers(handlerPhase -> handlerPhase
                     .autodetectedCommandHandlingComponent(c -> new SymmetricEnrollmentHandler(interleaving))
                     .autodetectedCommandHandlingComponent(c -> new ConcurrentWriterHandler())
-                    .intercepted(c -> new AppendCriteriaInterceptor((command, sourcingCriteria, context) ->
+                    .intercepted(c -> AppendCriteriaInterceptor.forAllCommands((command, sourcingCriteria, context) ->
                                     ENROLL_STUDENT.equals(command.type().qualifiedName())
                                             ? sourcingCriteria.withEventTypes(STUDENT_ENROLLED)
                                             : sourcingCriteria
