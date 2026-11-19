@@ -17,6 +17,8 @@
 package org.axonframework.eventsourcing.commandhandling;
 
 import org.axonframework.common.AxonConfigurationException;
+import org.axonframework.common.Priority;
+import org.axonframework.common.configuration.ComponentNotFoundException;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.eventsourcing.annotation.EventTag;
 import org.axonframework.eventsourcing.commandhandling.annotation.AppendCriteriaBuilder;
@@ -424,6 +426,41 @@ class AppendCriteriaBuilderTest {
         }
 
         @Test
+        void builderWithAnUnannotatedComponentIsRejectedAtStartup() {
+            assertThatThrownBy(() -> component(new UnannotatedResolverBuilderHandler()))
+                    .isInstanceOf(AxonConfigurationException.class)
+                    .hasMessageContaining("must resolve without waiting");
+        }
+
+        @Test
+        void builderWithAnUnannotatedEventAppenderIsRejectedAtStartup() {
+            assertThatThrownBy(() -> component(new UnannotatedAppenderBuilderHandler()))
+                    .isInstanceOf(AxonConfigurationException.class)
+                    .hasMessageContaining("must resolve without waiting");
+        }
+
+        @Test
+        void builderWithAnUnannotatedCommandDispatcherIsRejectedAtStartup() {
+            assertThatThrownBy(() -> component(new UnannotatedDispatcherBuilderHandler()))
+                    .isInstanceOf(AxonConfigurationException.class)
+                    .hasMessageContaining("must resolve without waiting");
+        }
+
+        @Test
+        void builderInjectingAnEventAppenderIsRejectedAtStartup() {
+            assertThatThrownBy(() -> component(new InjectedAppenderBuilderHandler()))
+                    .isInstanceOf(ComponentNotFoundException.class)
+                    .hasMessageContaining(EventAppender.class.getName());
+        }
+
+        @Test
+        void builderInjectingACommandDispatcherIsRejectedAtStartup() {
+            assertThatThrownBy(() -> component(new InjectedDispatcherBuilderHandler()))
+                    .isInstanceOf(ComponentNotFoundException.class)
+                    .hasMessageContaining(CommandDispatcher.class.getName());
+        }
+
+        @Test
         void nonStaticBuilderIsRejectedAtStartup() {
             assertThatThrownBy(() -> component(new NonStaticBuilderHandler()))
                     .isInstanceOf(AxonConfigurationException.class)
@@ -592,7 +629,7 @@ class AppendCriteriaBuilderTest {
         static EventCriteria criteria(UseCredits command,
                                       EventCriteria sourcingCriteria,
                                       @MetadataValue("tenantId") String tenantId,
-                                      MessageTypeResolver messageTypeResolver,
+                                      @InjectComponent MessageTypeResolver messageTypeResolver,
                                       @InjectComponent EventStore eventStore) {
             invocations.addAll(List.of(sourcingCriteria, tenantId, messageTypeResolver, eventStore));
             return sourcingCriteria;
@@ -652,7 +689,7 @@ class AppendCriteriaBuilderTest {
     static class PendingParameterBuilderHandler extends CreditsHandlerWithoutBuilder {
 
         @AppendCriteriaBuilder
-        static EventCriteria use(UseCredits command, PendingValue value) {
+        static EventCriteria use(UseCredits command, @InjectComponent PendingValue value) {
             return EventCriteria.havingAnyTag();
         }
     }
@@ -662,8 +699,10 @@ class AppendCriteriaBuilderTest {
     }
 
     /**
-     * Resolves a {@link PendingValue} parameter to a value that never arrives.
+     * Resolves a {@link PendingValue} parameter to a value that never arrives. Its priority puts it ahead of the
+     * component lookup, as the parameter is annotated with {@link InjectComponent} to pass the startup check.
      */
+    @Priority(Priority.FIRST)
     static class PendingValueParameterResolverFactory implements ParameterResolverFactory {
 
         @Nullable
@@ -720,6 +759,46 @@ class AppendCriteriaBuilderTest {
 
         @AppendCriteriaBuilder
         static EventCriteria use(UseCredits command, @InjectEntity(idProperty = "accountId") Object account) {
+            return EventCriteria.havingAnyTag();
+        }
+    }
+
+    static class UnannotatedResolverBuilderHandler extends CreditsHandlerWithoutBuilder {
+
+        @AppendCriteriaBuilder
+        static EventCriteria use(UseCredits command, MessageTypeResolver resolver) {
+            return EventCriteria.havingAnyTag();
+        }
+    }
+
+    static class UnannotatedAppenderBuilderHandler extends CreditsHandlerWithoutBuilder {
+
+        @AppendCriteriaBuilder
+        static EventCriteria use(UseCredits command, EventAppender appender) {
+            return EventCriteria.havingAnyTag();
+        }
+    }
+
+    static class UnannotatedDispatcherBuilderHandler extends CreditsHandlerWithoutBuilder {
+
+        @AppendCriteriaBuilder
+        static EventCriteria use(UseCredits command, CommandDispatcher dispatcher) {
+            return EventCriteria.havingAnyTag();
+        }
+    }
+
+    static class InjectedAppenderBuilderHandler extends CreditsHandlerWithoutBuilder {
+
+        @AppendCriteriaBuilder
+        static EventCriteria use(UseCredits command, @InjectComponent EventAppender appender) {
+            return EventCriteria.havingAnyTag();
+        }
+    }
+
+    static class InjectedDispatcherBuilderHandler extends CreditsHandlerWithoutBuilder {
+
+        @AppendCriteriaBuilder
+        static EventCriteria use(UseCredits command, @InjectComponent CommandDispatcher dispatcher) {
             return EventCriteria.havingAnyTag();
         }
     }

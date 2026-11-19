@@ -115,7 +115,7 @@ public class AppendCriteriaBuilderDefinition implements HandlerEnhancerDefinitio
                     throw new AxonConfigurationException(
                             ("An @AppendCriteriaBuilder parameter must resolve without waiting, as the method runs "
                                     + "while the append condition is finalized: [%s]. Use the command, its metadata, "
-                                    + "the sourcing criteria or a component. Violating method: %s")
+                                    + "the sourcing criteria or an @InjectComponent component. Violating method: %s")
                                     .formatted(parameters[i], delegate.signature())
                     );
                 }
@@ -125,9 +125,7 @@ public class AppendCriteriaBuilderDefinition implements HandlerEnhancerDefinitio
         private static boolean resolvesImmediately(Parameter parameter) {
             return IMMEDIATE_TYPES.contains(parameter.getType())
                     || AnnotationUtils.isAnnotationPresent(parameter, MetadataValue.class)
-                    || AnnotationUtils.isAnnotationPresent(parameter, InjectComponent.class)
-                    // an unannotated type is a configured component
-                    || parameter.getAnnotations().length == 0;
+                    || AnnotationUtils.isAnnotationPresent(parameter, InjectComponent.class);
         }
 
         @Override
