@@ -53,7 +53,8 @@ public interface AppendCriteriaResolver {
      * @param command          the command being handled
      * @param sourcingCriteria the complete criteria accumulated through sourcing for this command invocation, or
      *                         criteria matching every event, {@link EventCriteria#havingAnyTag()}, when the command
-     *                         sourced nothing
+     *                         sourced nothing; an entity created without loading receives criteria selecting the tags
+     *                         of its appended events instead
      * @param context          the context in which the command is handled
      * @return the complete append criteria for this command, never {@code null}
      */

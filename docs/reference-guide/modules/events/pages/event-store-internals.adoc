@@ -209,7 +209,7 @@ include::example$events/eventstoreinternals/appendcriteria/annotation/UsernameCo
 
 * The append fails if a matching event already exists or is appended concurrently.
 * Tag the appended events with the values the criteria use, as the example does with `tenantId`.
-* Returning the supplied criteria keeps the command unconditional.
+* Returning the supplied criteria keeps the command unconditional, except for an entity created without loading: it receives the tags of its appended events, which are then checked from the start of the history.
 * Setting event types with `withEventTypes` on the supplied criteria defines a boundary where there was none, so every event of those types in the history is checked.
 A `CommandMessage` builder that does this applies it to every command that sources nothing.
 * A command that sourced something checks its append criteria only after the position it read, whatever the criteria select.
