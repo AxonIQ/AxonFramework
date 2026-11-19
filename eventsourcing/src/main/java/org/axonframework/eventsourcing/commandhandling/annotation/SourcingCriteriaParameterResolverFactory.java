@@ -32,7 +32,8 @@ import java.util.concurrent.CompletableFuture;
  * {@link ParameterResolverFactory} resolving the {@link EventCriteria} parameter of an {@link AppendCriteriaBuilder}
  * method to the criteria accumulated through sourcing for the command.
  * <p>
- * This factory is internal, as the framework picks it up from the classpath. The criteria are only known when the
+ * This factory is internal, as the framework picks it up from the classpath. It is public only because the
+ * {@link java.util.ServiceLoader} doing so cannot instantiate a non-public class. The criteria are only known when the
  * events are appended, which is when {@link AppendCriteriaBuilderDefinition} invokes the method, so the parameter does
  * not take part in deciding whether the builder matches a command.
  *
@@ -64,6 +65,8 @@ public class SourcingCriteriaParameterResolverFactory implements ParameterResolv
 
         @Override
         public boolean matches(ProcessingContext context) {
+            // Matching runs before the handler, when the criteria do not exist yet, so requiring them would make the
+            // builder never match. Only @AppendCriteriaBuilder methods get this resolver, and they only see commands.
             return true;
         }
     }

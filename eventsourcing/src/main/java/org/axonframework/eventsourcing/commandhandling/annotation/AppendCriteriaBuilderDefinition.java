@@ -83,10 +83,9 @@ public class AppendCriteriaBuilderDefinition implements HandlerEnhancerDefinitio
 
     @Override
     public <T> MessageHandlingMember<T> wrapHandler(MessageHandlingMember<T> original) {
-        // every builder is an interceptor, so a map lookup skips the annotation scan for all other handlers
-        if (original.attribute(HandlerAttributes.INTERCEPTOR_MESSAGE_TYPE).isEmpty()
-                // the flattened enhancer list may hold this definition more than once
-                || original.unwrap(AppendCriteriaBuilderMember.class).isPresent()) {
+        // Handler enhancer lists are not de-duplicated, so this definition may see a builder it already wrapped. A
+        // second wrapper would register the builder twice for one command, which fails that command.
+        if (original.unwrap(AppendCriteriaBuilderMember.class).isPresent()) {
             return original;
         }
         return original.unwrap(Method.class)
@@ -103,6 +102,15 @@ public class AppendCriteriaBuilderDefinition implements HandlerEnhancerDefinitio
 
         private AppendCriteriaBuilderMember(MessageHandlingMember<T> delegate, Method method) {
             super(delegate);
+            Object interceptedType = delegate.attribute(HandlerAttributes.INTERCEPTOR_MESSAGE_TYPE).orElse(null);
+            if (interceptedType != CommandMessage.class) {
+                // for example a method also annotated with @EventHandlerInterceptor, which would never see a command
+                throw new AxonConfigurationException(
+                        "An @AppendCriteriaBuilder method must intercept commands, but intercepts [%s]. "
+                                .formatted(interceptedType)
+                                + "Violating method: " + delegate.signature()
+                );
+            }
             if (!Modifier.isStatic(method.getModifiers())
                     || !EventCriteria.class.isAssignableFrom(method.getReturnType())) {
                 throw new AxonConfigurationException(
@@ -110,7 +118,7 @@ public class AppendCriteriaBuilderDefinition implements HandlerEnhancerDefinitio
                                 + delegate.signature()
                 );
             }
-            // An allow-list, like @EventCriteriaBuilder's: allowing more parameters later does not break anyone.
+            // An allow-list: allowing more parameters later does not break anyone.
             Parameter[] parameters = method.getParameters();
             for (int i = 1; i < parameters.length; i++) {
                 if (!resolvesImmediately(parameters[i])) {
@@ -132,12 +140,17 @@ public class AppendCriteriaBuilderDefinition implements HandlerEnhancerDefinitio
 
         @Override
         public MessageStream<?> handle(Message message, ProcessingContext context, @Nullable T target) {
+            if (!(message instanceof CommandMessage command)) {
+                return MessageStream.failed(new IllegalArgumentException(
+                        "An @AppendCriteriaBuilder only intercepts commands, but received [%s]. Violating method: %s"
+                                .formatted(message.type(), signature())
+                ));
+            }
             MessageHandlerInterceptorChain<CommandMessage> chain =
                     InterceptorChainParameterResolverFactory.currentInterceptorChain(context);
-            if (!(message instanceof CommandMessage command) || chain == null) {
+            if (chain == null) {
                 return MessageStream.failed(new IllegalStateException(
-                        "An @AppendCriteriaBuilder only intercepts commands within an interceptor chain. Violating "
-                                + "method: " + signature()
+                        "No interceptor chain found in context for @AppendCriteriaBuilder [" + signature() + "]"
                 ));
             }
             return interceptor.interceptOnHandle(command, context, chain);
@@ -155,12 +168,13 @@ public class AppendCriteriaBuilderDefinition implements HandlerEnhancerDefinitio
                 );
             }
             var entry = FutureUtils.joinAndUnwrap(result);
-            if (entry == null || !(entry.message().payload() instanceof EventCriteria criteria)) {
+            if (entry == null) {
                 throw new IllegalStateException(
                         "An @AppendCriteriaBuilder method returned null. Violating method: " + signature()
                 );
             }
-            return criteria;
+            // the constructor only accepts methods returning EventCriteria
+            return (EventCriteria) entry.message().payload();
         }
     }
 }

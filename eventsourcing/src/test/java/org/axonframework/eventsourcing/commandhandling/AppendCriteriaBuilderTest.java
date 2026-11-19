@@ -57,6 +57,7 @@ import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
+import org.axonframework.messaging.eventhandling.interception.annotation.EventHandlerInterceptor;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.messaging.eventstreaming.Tag;
 import org.axonframework.modelling.annotation.InjectEntity;
@@ -419,7 +420,7 @@ class AppendCriteriaBuilderTest {
 
             // then
             assertThatThrownBy(result::join)
-                    .hasMessageContaining("only intercepts commands within an interceptor chain");
+                    .hasMessageContaining("No interceptor chain found");
         }
 
         @Test
@@ -470,6 +471,14 @@ class AppendCriteriaBuilderTest {
             assertThatThrownBy(() -> component(new InjectedDispatcherBuilderHandler()))
                     .isInstanceOf(ComponentNotFoundException.class)
                     .hasMessageContaining(CommandDispatcher.class.getName());
+        }
+
+        @Test
+        void builderInterceptingEventsIsRejectedAtStartup() {
+            // also annotated as an event handler interceptor, the builder would never see a command
+            assertThatThrownBy(() -> component(new EventInterceptingBuilderHandler()))
+                    .isInstanceOf(AxonConfigurationException.class)
+                    .hasMessageContaining("must intercept commands");
         }
 
         @Test
@@ -828,6 +837,15 @@ class AppendCriteriaBuilderTest {
 
         @AppendCriteriaBuilder
         static EventCriteria use(UseCredits command, @MessageIdentifier String identifier) {
+            return EventCriteria.havingAnyTag();
+        }
+    }
+
+    static class EventInterceptingBuilderHandler extends CreditsHandlerWithoutBuilder {
+
+        @AppendCriteriaBuilder
+        @EventHandlerInterceptor
+        static EventCriteria use(UseCredits command) {
             return EventCriteria.havingAnyTag();
         }
     }
