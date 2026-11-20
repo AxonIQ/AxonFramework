@@ -18,6 +18,7 @@ package org.axonframework.messaging.core.unitofwork;
 
 import org.axonframework.messaging.core.ApplicationContext;
 import org.axonframework.messaging.core.Context;
+import org.axonframework.messaging.core.MessageStream;
 import org.jspecify.annotations.Nullable;
 
 import java.util.function.Supplier;
@@ -40,6 +41,20 @@ import java.util.function.UnaryOperator;
  * @since 5.0.0
  */
 public interface ProcessingContext extends ProcessingLifecycle, ApplicationContext, Context {
+
+    /**
+     * Returns whether all the work of the unit of work that this context belongs to must be done by the calling
+     * thread, which is the case when it is configured with {@link UnitOfWorkConfiguration#forcedSameThreadInvocation()}.
+     * <p>
+     * When this returns {@code true}, a {@link MessageStream} that is read from within this context must be read on the
+     * calling thread as well, for example when it is backed by a thread-bound transaction. Pass a {@code null} executor
+     * to {@link MessageStream#reduce(Object, java.util.function.BiFunction, java.util.concurrent.Executor)} to do so.
+     *
+     * @return {@code true} if all work must be done by the calling thread, {@code false} otherwise
+     */
+    default boolean requiresSameThreadInvocations() {
+        return Boolean.TRUE.equals(getResource(ProcessingContextResources.SAME_THREAD_INVOCATIONS));
+    }
 
     /**
      * Constructs a new {@link ProcessingContext}, branching off from {@code this} {@code ProcessingContext}.

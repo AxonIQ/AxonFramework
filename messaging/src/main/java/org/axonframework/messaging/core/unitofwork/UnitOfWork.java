@@ -234,6 +234,10 @@ public class UnitOfWork implements ProcessingLifecycle {
             this.resources = new ConcurrentHashMap<>();
             this.applicationContext = applicationContext;
             this.lifecycleInterceptor = lifecycleInterceptor;
+
+            if (forceSyncProcessing) {
+                this.resources.put(ProcessingContextResources.SAME_THREAD_INVOCATIONS, Boolean.TRUE);
+            }
         }
 
         @Override
