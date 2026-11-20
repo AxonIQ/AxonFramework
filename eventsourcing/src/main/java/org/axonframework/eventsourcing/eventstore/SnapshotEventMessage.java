@@ -19,6 +19,7 @@ package org.axonframework.eventsourcing.eventstore;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.eventsourcing.snapshot.api.Snapshot;
 import org.axonframework.messaging.core.MessageType;
+import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.eventhandling.GenericEventMessage;
 
 import java.util.Objects;
@@ -38,12 +39,26 @@ public class SnapshotEventMessage extends GenericEventMessage {
 
     /**
      * Constructs a new instance.
+     * <p>
+     * The {@link #type()} of this message describes the snapshot as it was stored, combining the
+     * {@link QualifiedName} it was found under with the {@link Snapshot#version() version} it carries. This is
+     * what allows a snapshot taken under an older name or version to be recognized and upcast, rather than
+     * only compared against the type an entity is currently declared with.
      *
+     * @param qualifiedName the name the snapshot was found under, cannot be {@code null}
      * @param snapshot the snapshot, cannot be {@code null}
      * @throws NullPointerException when any argument is {@code null}
+     * @throws IllegalArgumentException when the given {@code snapshot}'s version is blank or contains
+     * {@value MessageType#VERSION_DELIMITER}
      */
-    public SnapshotEventMessage(Snapshot snapshot) {
-        super(new MessageType(SnapshotEventMessage.class), Objects.requireNonNull(snapshot, "The snapshot parameter cannot be null."));
+    public SnapshotEventMessage(QualifiedName qualifiedName, Snapshot snapshot) {
+        super(
+            new MessageType(
+                Objects.requireNonNull(qualifiedName, "The qualifiedName parameter cannot be null."),
+                Objects.requireNonNull(snapshot, "The snapshot parameter cannot be null.").version()
+            ),
+            snapshot
+        );
     }
 
     @Override

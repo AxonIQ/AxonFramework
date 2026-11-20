@@ -24,6 +24,7 @@ import org.axonframework.eventsourcing.snapshot.api.Snapshot;
 import org.axonframework.eventsourcing.snapshot.inmemory.InMemorySnapshotStore;
 import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
 import org.axonframework.messaging.core.MessageStream;
+import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
@@ -128,6 +129,87 @@ class SnapshotCapableEventStorageEngineTest {
         }
     }
 
+    /*
+     * A snapshot may still be stored under a name the entity was previously known by. The strategy carries
+     * those names in order, and the engine falls back through them only when the preceding lookup found
+     * nothing, so the common case of an entity already snapshotted under its current name costs one lookup.
+     */
+    @Nested
+    class WhenSourcedWithPriorNames {
+
+        private final QualifiedName formerType = new QualifiedName("LegacyOrder");
+        private final QualifiedName evenEarlierType = new QualifiedName("AncientOrder");
+
+        private final SourcingCondition condition = SourcingCondition.conditionFor(
+            new SourcingStrategy.Snapshot(SNAPSHOT_TYPE, AGGREGATE_ID, null, List.of(formerType, evenEarlierType)),
+            CRITERIA
+        );
+
+        @Test
+        void snapshotStoredUnderAPriorNameIsUsed() {
+            appendToDelegate(createEvent(0));
+            appendToDelegate(createEvent(1));
+            appendToDelegate(createEvent(2));
+            storeSnapshot(formerType, "state-after-event-0", GlobalIndexPositions.of(1));
+
+            List<EventMessage> result = sourceMessages(engine.source(condition));
+
+            assertThat(result).hasSize(3);
+            assertThat(result.get(0).payload())
+                .isInstanceOfSatisfying(Snapshot.class, s -> assertThat(s.payload()).isEqualTo("state-after-event-0"));
+            assertThat(result.subList(1, 3)).extracting(EventMessage::payload).containsExactly(1, 2);
+        }
+
+        @Test
+        void theNameTheSnapshotWasFoundUnderIsCarriedOnTheMessage() {
+            appendToDelegate(createEvent(0));
+            appendToDelegate(createEvent(1));
+            storeSnapshot(formerType, "state-after-event-0", GlobalIndexPositions.of(1));
+
+            List<EventMessage> result = sourceMessages(engine.source(condition));
+
+            // The stored identity, not the entity's current one, is what lets a transformation recognize it.
+            assertThat(result.get(0).type()).isEqualTo(new MessageType(formerType, "1.0"));
+        }
+
+        @Test
+        void theCurrentNameTakesPrecedenceOverPriorNames() {
+            appendToDelegate(createEvent(0));
+            appendToDelegate(createEvent(1));
+            storeSnapshot(SNAPSHOT_TYPE, "current", GlobalIndexPositions.of(1));
+            storeSnapshot(formerType, "former", GlobalIndexPositions.of(1));
+
+            List<EventMessage> result = sourceMessages(engine.source(condition));
+
+            assertThat(result.get(0).payload())
+                .isInstanceOfSatisfying(Snapshot.class, s -> assertThat(s.payload()).isEqualTo("current"));
+        }
+
+        @Test
+        void priorNamesAreTriedInTheOrderGiven() {
+            appendToDelegate(createEvent(0));
+            appendToDelegate(createEvent(1));
+            storeSnapshot(evenEarlierType, "ancient", GlobalIndexPositions.of(1));
+            storeSnapshot(formerType, "former", GlobalIndexPositions.of(1));
+
+            List<EventMessage> result = sourceMessages(engine.source(condition));
+
+            assertThat(result.get(0).payload())
+                .isInstanceOfSatisfying(Snapshot.class, s -> assertThat(s.payload()).isEqualTo("former"));
+        }
+
+        @Test
+        void fullReconstructionWhenNoNameYieldsASnapshot() {
+            appendToDelegate(createEvent(0));
+            appendToDelegate(createEvent(1));
+            appendToDelegate(createEvent(2));
+
+            List<EventMessage> result = sourceMessages(engine.source(condition));
+
+            assertThat(result).extracting(EventMessage::payload).containsExactly(0, 1, 2);
+        }
+    }
+
     @Nested
     class WhenAppendingEvents {
         @Test
@@ -151,8 +233,12 @@ class SnapshotCapableEventStorageEngineTest {
     }
 
     private void storeSnapshot(Object payload, Position position) {
+        storeSnapshot(SNAPSHOT_TYPE, payload, position);
+    }
+
+    private void storeSnapshot(QualifiedName qualifiedName, Object payload, Position position) {
         snapshotStore.store(
-            SNAPSHOT_TYPE,
+            qualifiedName,
             AGGREGATE_ID,
             new Snapshot(position, "1.0", payload, Instant.now(), Map.of()),
             null

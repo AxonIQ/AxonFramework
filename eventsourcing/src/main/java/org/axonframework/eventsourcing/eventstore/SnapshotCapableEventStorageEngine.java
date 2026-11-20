@@ -23,6 +23,7 @@ import org.axonframework.eventsourcing.snapshot.api.Snapshot;
 import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
 import org.axonframework.messaging.core.DelayedMessageStream;
 import org.axonframework.messaging.core.MessageStream;
+import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
@@ -117,8 +118,8 @@ public class SnapshotCapableEventStorageEngine implements EventStorageEngine {
     public MessageStream<EventMessage> source(SourcingCondition condition, @Nullable ProcessingContext context) {
         if (condition.strategy() instanceof SourcingStrategy.Snapshot s) {
             return DelayedMessageStream.create(
-                snapshotStore.load(s.qualifiedName(), s.identifier(), context)
-                    .thenApply(snapshot -> buildStream(snapshot, condition, s.maximumPosition(), context))
+                loadFirstAvailable(s, context)
+                    .thenApply(match -> buildStream(match, condition, s.maximumPosition(), context))
                     .exceptionally(e -> {
                         LOGGER.warn("Snapshot loading failed, falling back to full reconstruction for: {} ({})", s.qualifiedName(), s.identifier(), e);
 
@@ -130,19 +131,58 @@ public class SnapshotCapableEventStorageEngine implements EventStorageEngine {
         return delegate.source(condition, context);
     }
 
+    /*
+     * Loads the snapshot stored under the strategy's primary name, falling back to each of its prior names in
+     * order until one yields a snapshot. Completes with null when none of them do.
+     *
+     * Each fallback is only attempted when the preceding lookup found nothing, so an entity that has already
+     * been snapshotted under its current name never pays for the prior-name lookups.
+     */
+    private CompletableFuture<@Nullable SnapshotMatch> loadFirstAvailable(
+        SourcingStrategy.Snapshot strategy,
+        @Nullable ProcessingContext context
+    ) {
+        CompletableFuture<@Nullable SnapshotMatch> result = load(strategy.qualifiedName(), strategy.identifier(), context);
+
+        for (QualifiedName priorName : strategy.priorNames()) {
+            result = result.thenCompose(
+                match -> match != null
+                    ? CompletableFuture.completedFuture(match)
+                    : load(priorName, strategy.identifier(), context)
+            );
+        }
+
+        return result;
+    }
+
+    private CompletableFuture<@Nullable SnapshotMatch> load(
+        QualifiedName qualifiedName,
+        Object identifier,
+        @Nullable ProcessingContext context
+    ) {
+        return snapshotStore.load(qualifiedName, identifier, context)
+            .thenApply(snapshot -> snapshot == null ? null : new SnapshotMatch(qualifiedName, snapshot));
+    }
+
     private MessageStream<EventMessage> buildStream(
-        @Nullable Snapshot snapshot,
+        @Nullable SnapshotMatch match,
         SourcingCondition condition,
         @Nullable Position maximumPosition,
         @Nullable ProcessingContext context
     ) {
-        if (snapshot == null || isAfter(snapshot.position(), maximumPosition)) {
+        if (match == null || isAfter(match.snapshot().position(), maximumPosition)) {
             return source(Position.START, condition.criteria(), context);
         }
 
-        return MessageStream.<EventMessage>just(new SnapshotEventMessage(snapshot))
-            .concatWith(source(snapshot.position(), condition.criteria(), context));
+        return MessageStream.<EventMessage>just(new SnapshotEventMessage(match.qualifiedName(), match.snapshot()))
+            .concatWith(source(match.snapshot().position(), condition.criteria(), context));
     }
+
+    /*
+     * A snapshot together with the name it was actually found under, which is not necessarily the name the
+     * entity is currently declared with.
+     */
+    private record SnapshotMatch(QualifiedName qualifiedName, Snapshot snapshot) {}
 
     private static boolean isAfter(Position position, @Nullable Position maximumPosition) {
         return maximumPosition != null && !position.min(maximumPosition).equals(position);
