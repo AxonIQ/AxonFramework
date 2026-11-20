@@ -1,0 +1,180 @@
+/*
+ * Copyright (c) 2010-2026. Axon Framework
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.axonframework.eventsourcing.commandhandling.annotation;
+
+import org.axonframework.common.AxonConfigurationException;
+import org.axonframework.common.FutureUtils;
+import org.axonframework.common.Priority;
+import org.axonframework.common.annotation.AnnotationUtils;
+import org.axonframework.common.annotation.Internal;
+import org.axonframework.eventsourcing.commandhandling.AppendCriteriaInterceptor;
+import org.axonframework.messaging.commandhandling.CommandMessage;
+import org.axonframework.messaging.core.Context.ResourceKey;
+import org.axonframework.messaging.core.Message;
+import org.axonframework.messaging.core.MessageTypeResolver;
+import org.axonframework.messaging.core.Metadata;
+import org.axonframework.messaging.core.MessageHandlerInterceptorChain;
+import org.axonframework.messaging.core.MessageStream;
+import org.axonframework.messaging.core.annotation.HandlerAttributes;
+import org.axonframework.messaging.core.annotation.HandlerEnhancerDefinition;
+import org.axonframework.messaging.core.annotation.InjectComponent;
+import org.axonframework.messaging.core.annotation.MessageHandlingMember;
+import org.axonframework.messaging.core.annotation.MetadataValue;
+import org.axonframework.messaging.core.annotation.WrappedMessageHandlingMember;
+import org.axonframework.messaging.core.interception.annotation.InterceptorChainParameterResolverFactory;
+import org.axonframework.messaging.core.interception.annotation.MessageHandlerInterceptorDefinition;
+import org.axonframework.messaging.core.interception.annotation.MessageInterceptingMember;
+import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.eventstreaming.EventCriteria;
+import org.jspecify.annotations.Nullable;
+
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.lang.reflect.Parameter;
+import java.util.Set;
+
+/**
+ * {@link HandlerEnhancerDefinition} turning {@link AppendCriteriaBuilder} methods into an
+ * {@link AppendCriteriaInterceptor} for the commands they match.
+ * <p>
+ * An {@code AppendCriteriaBuilder} is a command handler interceptor, so the regular handler inspection discovers and
+ * matches it. This definition only changes what invoking it means: instead of running the method before the handler,
+ * the interceptor registers it as the command's
+ * {@link org.axonframework.eventsourcing.commandhandling.AppendCriteriaResolver} and proceeds. The method runs when the
+ * events are appended, with the sourcing criteria available to its {@link EventCriteria} parameter through
+ * {@link SourcingCriteriaParameterResolverFactory}.
+ * <p>
+ * This definition is internal, as the framework picks it up from the classpath. Its high priority makes it wrap the
+ * builder before the {@link MessageHandlerInterceptorDefinition} does, which leaves the wrapped member as it is.
+ *
+ * @author Mateusz Nowak
+ * @since 5.5.0
+ */
+@Internal
+@Priority(Priority.HIGH)
+public class AppendCriteriaBuilderDefinition implements HandlerEnhancerDefinition {
+
+    /**
+     * The resource holding the sourcing criteria while an {@link AppendCriteriaBuilder} method is invoked.
+     */
+    static final ResourceKey<EventCriteria> SOURCING_CRITERIA = ResourceKey.withLabel("sourcingCriteria");
+
+    /**
+     * Parameter types an {@link AppendCriteriaBuilder} may declare after its payload, as they resolve without waiting.
+     */
+    private static final Set<Class<?>> IMMEDIATE_TYPES = Set.of(
+            EventCriteria.class, CommandMessage.class, Message.class, Metadata.class, ProcessingContext.class,
+            MessageTypeResolver.class
+    );
+
+    @Override
+    public <T> MessageHandlingMember<T> wrapHandler(MessageHandlingMember<T> original) {
+        // Handler enhancer lists are not de-duplicated, so this definition may see a builder it already wrapped. A
+        // second wrapper would register the builder twice for one command, which fails that command.
+        if (original.unwrap(AppendCriteriaBuilderMember.class).isPresent()) {
+            return original;
+        }
+        return original.unwrap(Method.class)
+                       .filter(method -> AnnotationUtils.isAnnotationPresent(method, AppendCriteriaBuilder.class))
+                       .<MessageHandlingMember<T>>map(method -> new AppendCriteriaBuilderMember<>(original, method))
+                       .orElse(original);
+    }
+
+    private static final class AppendCriteriaBuilderMember<T>
+            extends WrappedMessageHandlingMember<T>
+            implements MessageInterceptingMember<T> {
+
+        private final AppendCriteriaInterceptor interceptor = AppendCriteriaInterceptor.forAllCommands(this::invoke);
+
+        private AppendCriteriaBuilderMember(MessageHandlingMember<T> delegate, Method method) {
+            super(delegate);
+            Object interceptedType = delegate.attribute(HandlerAttributes.INTERCEPTOR_MESSAGE_TYPE).orElse(null);
+            if (interceptedType != CommandMessage.class) {
+                // for example a method also annotated with @EventHandlerInterceptor, which would never see a command
+                throw new AxonConfigurationException(
+                        "An @AppendCriteriaBuilder method must intercept commands, but intercepts [%s]. "
+                                .formatted(interceptedType)
+                                + "Violating method: " + delegate.signature()
+                );
+            }
+            if (!Modifier.isStatic(method.getModifiers())
+                    || !EventCriteria.class.isAssignableFrom(method.getReturnType())) {
+                throw new AxonConfigurationException(
+                        "An @AppendCriteriaBuilder method must be static and return EventCriteria. Violating method: "
+                                + delegate.signature()
+                );
+            }
+            // An allow-list: allowing more parameters later does not break anyone.
+            Parameter[] parameters = method.getParameters();
+            for (int i = 1; i < parameters.length; i++) {
+                if (!resolvesImmediately(parameters[i])) {
+                    throw new AxonConfigurationException(
+                            ("An @AppendCriteriaBuilder parameter must resolve without waiting, as the method runs "
+                                    + "while the append condition is finalized: [%s]. Use the command, its metadata, "
+                                    + "the sourcing criteria or an @InjectComponent component. Violating method: %s")
+                                    .formatted(parameters[i], delegate.signature())
+                    );
+                }
+            }
+        }
+
+        private static boolean resolvesImmediately(Parameter parameter) {
+            return IMMEDIATE_TYPES.contains(parameter.getType())
+                    || AnnotationUtils.isAnnotationPresent(parameter, MetadataValue.class)
+                    || AnnotationUtils.isAnnotationPresent(parameter, InjectComponent.class);
+        }
+
+        @Override
+        public MessageStream<?> handle(Message message, ProcessingContext context, @Nullable T target) {
+            if (!(message instanceof CommandMessage command)) {
+                return MessageStream.failed(new IllegalArgumentException(
+                        "An @AppendCriteriaBuilder only intercepts commands, but received [%s]. Violating method: %s"
+                                .formatted(message.type(), signature())
+                ));
+            }
+            MessageHandlerInterceptorChain<CommandMessage> chain =
+                    InterceptorChainParameterResolverFactory.currentInterceptorChain(context);
+            if (chain == null) {
+                return MessageStream.failed(new IllegalStateException(
+                        "No interceptor chain found in context for @AppendCriteriaBuilder [" + signature() + "]"
+                ));
+            }
+            return interceptor.interceptOnHandle(command, context, chain);
+        }
+
+        private EventCriteria invoke(CommandMessage command, EventCriteria sourcing, ProcessingContext context) {
+            var result = super.handle(command, context.withResource(SOURCING_CRITERIA, sourcing), null)
+                              .first()
+                              .asCompletableFuture();
+            if (!result.isDone()) {
+                // it runs inside the synchronous append condition override, so it cannot await a parameter
+                throw new IllegalStateException(
+                        "An @AppendCriteriaBuilder method must have parameters available without waiting. "
+                                + "Violating method: " + signature()
+                );
+            }
+            var entry = FutureUtils.joinAndUnwrap(result);
+            if (entry == null) {
+                throw new IllegalStateException(
+                        "An @AppendCriteriaBuilder method returned null. Violating method: " + signature()
+                );
+            }
+            // the constructor only accepts methods returning EventCriteria
+            return (EventCriteria) entry.message().payload();
+        }
+    }
+}
