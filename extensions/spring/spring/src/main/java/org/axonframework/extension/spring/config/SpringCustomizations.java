@@ -27,12 +27,14 @@ import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorConfiguration;
 import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorModule;
+import org.axonframework.messaging.eventhandling.processing.streaming.token.ReplayToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore;
 import org.axonframework.messaging.eventhandling.processing.subscribing.SubscribingEventProcessorConfiguration;
 import org.axonframework.messaging.eventhandling.processing.subscribing.SubscribingEventProcessorModule;
 import org.axonframework.messaging.eventstreaming.StreamableEventSource;
 import org.jspecify.annotations.Nullable;
 
+import java.time.Instant;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.function.Supplier;
@@ -178,6 +180,8 @@ interface SpringCustomizations {
                     .initialSegmentCount(settings.initialSegmentCount())
                     .unitOfWorkFactory(unitOfWorkFactory);
 
+            result = applyInitialToken(result);
+
             if (settings.coordinatorClaimExtension()) {
                 // Only applied when enabled, so a customization applied elsewhere that enables it is never undone.
                 result = result.enableCoordinatorClaimExtension();
@@ -227,6 +231,32 @@ interface SpringCustomizations {
             }
 
             return result;
+        }
+
+        /**
+         * Applies the {@link EventProcessorSettings.PooledEventProcessorSettings#initialToken() initial token} setting.
+         * <p>
+         * Leaves the configuration untouched for {@link EventProcessorSettings.InitialToken#DEFAULT}, so that
+         * customizations applied elsewhere keep deciding the initial token.
+         */
+        private PooledStreamingEventProcessorConfiguration applyInitialToken(
+                PooledStreamingEventProcessorConfiguration configuration
+        ) {
+            Instant timestamp = settings.initialTokenTimestamp();
+            return switch (settings.initialToken()) {
+                case DEFAULT -> configuration;
+                case FIRST -> configuration.initialToken(
+                        source -> source.firstToken(null).thenApply(ReplayToken::createReplayToken)
+                );
+                case LATEST -> configuration.initialToken(source -> source.latestToken(null));
+                case AT_TIMESTAMP -> {
+                    require(timestamp != null,
+                            "Could not find the mandatory initial-token-timestamp for event processor '" + name
+                                    + "', as its initial-token is " + EventProcessorSettings.InitialToken.AT_TIMESTAMP
+                                    + ".");
+                    yield configuration.initialToken(source -> source.tokenAt(timestamp, null));
+                }
+            };
         }
     }
 
