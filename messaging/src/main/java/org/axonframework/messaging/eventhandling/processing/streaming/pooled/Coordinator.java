@@ -286,6 +286,7 @@ class Coordinator {
                                            workPackages,
                                            releasesDeadlines,
                                            releasesInProgress,
+                                           this::windDown,
                                            tokenStore,
                                            unitOfWorkFactory,
                                            clock));
@@ -324,6 +325,7 @@ class Coordinator {
                                            workPackages,
                                            releasesDeadlines,
                                            releasesInProgress,
+                                           this::windDown,
                                            tokenStore,
                                            unitOfWorkFactory,
                                            clock));
@@ -1741,7 +1743,9 @@ class Coordinator {
 
     /**
      * Winds down the segment of the given aborted {@code work} package while its claim is still held: first stores the
-     * final progress of the segment, then notifies the segment release listeners, before the claim is released.
+     * final progress of the segment, then notifies the segment release listeners. Every release of a segment this
+     * coordinator processed does so before the claim is handed over, be it by releasing the claim or, on a
+     * {@link SplitTask} or {@link MergeTask}, by rewriting the segment's token.
      * <p>
      * A final store that fails does not stop the release: the stored token is then the last one stored before, from
      * which the segment's events are handled again, while the release listeners still need to wind down the work they
@@ -1786,7 +1790,8 @@ class Coordinator {
     /**
      * Invokes the {@link SegmentChangeListener#onSegmentReleased(Segment) release listeners} for the given
      * {@code segment} and waits for them to finish, giving them the chance to wind down their work before the claim
-     * is handed over.
+     * is handed over. Besides releasing the work package of a segment, this happens when a {@link SplitTask} or
+     * {@link MergeTask} gives up a segment this coordinator processed, before it rewrites the segment's token.
      * <p>
      * The wait is bounded by the
      * {@link PooledStreamingEventProcessorConfiguration#claimExtensionThreshold(long) claim extension threshold},

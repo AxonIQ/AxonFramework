@@ -45,7 +45,13 @@ import java.util.function.Function;
  * merge then.
  * <p>
  * In either approach, this operation will delete one of the segments and release the claim on the other so that another
- * thread can proceed with processing it.
+ * thread can proceed with processing it. For each segment the {@code Coordinator} was processing, its final progress is
+ * stored and the segment release listeners are notified before the segment's token is merged, as with any release of a
+ * segment.
+ * <p>
+ * The {@code Coordinator} runs this task exclusively, so it coordinates no other segment while the task winds down the
+ * segments: storing their final progress and notifying their release listeners may take up to twice the claim
+ * extension threshold.
  *
  * @author Steven van Beelen
  * @see Coordinator
@@ -62,6 +68,7 @@ class MergeTask extends CoordinatorTask {
     private final UnitOfWorkFactory unitOfWorkFactory;
     private final Map<Integer, Instant> releasesDeadlines;
     private final Map<Integer, CompletableFuture<Void>> releasesInProgress;
+    private final Function<WorkPackage, CompletableFuture<Void>> windDown;
     @Deprecated(forRemoval = true, since = "5.2.0")
     private final Clock clock;
 
@@ -79,6 +86,9 @@ class MergeTask extends CoordinatorTask {
      * @param releasesDeadlines  the map of segments that are blocked from claiming until a specified time
      * @param releasesInProgress the releases the {@link Coordinator} is running, per segment identifier; a segment
      *                           being released is only touched once its release has ended
+     * @param windDown           winds down the segment of a work package this coordinator processed and the task
+     *                           gives up, storing its final progress and notifying the segment release listeners;
+     *                           completes normally once done, also when either step failed or timed out
      * @param tokenStore        The storage solution for {@link TrackingToken}s. Used to claim the {@code segmentId} if
      *                          it is not present in the {@code workPackages}, to remove one of the segments and merge
      *                          the merged token.
@@ -92,6 +102,7 @@ class MergeTask extends CoordinatorTask {
               Map<Integer, WorkPackage> workPackages,
               Map<Integer, Instant> releasesDeadlines,
               Map<Integer, CompletableFuture<Void>> releasesInProgress,
+              Function<WorkPackage, CompletableFuture<Void>> windDown,
               TokenStore tokenStore,
               UnitOfWorkFactory unitOfWorkFactory,
               @Deprecated(forRemoval = true, since = "5.2.0")
@@ -102,6 +113,7 @@ class MergeTask extends CoordinatorTask {
         this.workPackages = workPackages;
         this.releasesDeadlines = releasesDeadlines;
         this.releasesInProgress = releasesInProgress;
+        this.windDown = windDown;
         this.unitOfWorkFactory = unitOfWorkFactory;
         this.tokenStore = tokenStore;
         this.clock = clock;
@@ -180,8 +192,12 @@ class MergeTask extends CoordinatorTask {
     private CompletableFuture<TrackingToken> fetchTokenInUnitOfWork(int segmentId, @Nullable WorkPackage workPackage) {
         // Commit the aborted package's final progress BEFORE fetching the token, so the merged segment inherits the
         // freshly-reconciled position rather than a stale stored token.
-        return releaseProgressOf(workPackage, unitOfWorkFactory)
-                .thenCompose(released -> unitOfWorkFactory.create().executeWithResult(
+        // Like any release, the release listeners wind down the work of the segment while the claim is still held.
+        CompletableFuture<Void> woundDown = workPackage == null
+                ? FutureUtils.emptyCompletedFuture()
+                : windDown.apply(workPackage);
+        return woundDown
+                .thenCompose(ignored -> unitOfWorkFactory.create().executeWithResult(
                         context -> tokenStore.fetchToken(name, segmentId, context)
                 ));
     }

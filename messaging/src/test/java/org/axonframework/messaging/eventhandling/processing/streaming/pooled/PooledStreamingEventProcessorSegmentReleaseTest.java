@@ -400,6 +400,88 @@ class PooledStreamingEventProcessorSegmentReleaseTest {
         }
     }
 
+    @Nested
+    class WhenSplit {
+
+        @BeforeEach
+        void setUp() {
+            releaseListenerGate.complete(null);
+            finalProgressGate.complete(null);
+        }
+
+        @Test
+        void splitContinuesAfterAFailedFinalStore() {
+            // given
+            firstFinalProgressFails.set(true);
+            startProcessor(1);
+
+            // when
+            assertThat(processor().splitSegment(0)).succeedsWithin(TIMEOUT).isEqualTo(true);
+
+            // then
+            assertThat(segmentChanges).contains(new SegmentChange(RELEASED, Segment.ROOT_SEGMENT));
+            await().atMost(TIMEOUT).untilAsserted(
+                    () -> assertThat(processor().processingStatus()).containsOnlyKeys(0, 1)
+            );
+        }
+
+        @Test
+        void releaseListenersLearnTheSegmentWasGivenUpBeforeItsHalvesAreClaimed() {
+            // given
+            startProcessor(1);
+
+            // when
+            assertThat(processor().splitSegment(0)).succeedsWithin(TIMEOUT).isEqualTo(true);
+
+            // then
+            Segment original = Segment.ROOT_SEGMENT;
+            Segment lowerHalf = new Segment(0, 1);
+            Segment upperHalf = new Segment(1, 1);
+            await().atMost(TIMEOUT).untilAsserted(() -> assertThat(segmentChanges).containsExactlyInAnyOrder(
+                    new SegmentChange(CLAIMED, original),
+                    new SegmentChange(RELEASED, original),
+                    new SegmentChange(CLAIMED, lowerHalf),
+                    new SegmentChange(CLAIMED, upperHalf)
+            ));
+            assertThat(segmentChanges.subList(0, 2)).containsExactly(
+                    new SegmentChange(CLAIMED, original), new SegmentChange(RELEASED, original)
+            );
+        }
+    }
+
+    @Nested
+    class WhenMerged {
+
+        @BeforeEach
+        void setUp() {
+            releaseListenerGate.complete(null);
+            finalProgressGate.complete(null);
+        }
+
+        @Test
+        void releaseListenersLearnBothSegmentsWereGivenUpBeforeTheMergedSegmentIsClaimed() {
+            // given
+            Segment lowerHalf = new Segment(0, 1);
+            Segment upperHalf = new Segment(1, 1);
+            startProcessor(2);
+            await().atMost(TIMEOUT).until(() -> processor().processingStatus().containsKey(1));
+
+            // when
+            assertThat(processor().mergeSegment(0)).succeedsWithin(TIMEOUT).isEqualTo(true);
+
+            // then
+            Segment merged = Segment.ROOT_SEGMENT;
+            await().atMost(TIMEOUT).untilAsserted(() -> assertThat(segmentChanges).containsExactlyInAnyOrder(
+                    new SegmentChange(CLAIMED, lowerHalf),
+                    new SegmentChange(CLAIMED, upperHalf),
+                    new SegmentChange(RELEASED, lowerHalf),
+                    new SegmentChange(RELEASED, upperHalf),
+                    new SegmentChange(CLAIMED, merged)
+            ));
+            assertThat(segmentChanges.getLast()).isEqualTo(new SegmentChange(CLAIMED, merged));
+        }
+    }
+
     private void startProcessor() {
         startProcessor(1);
     }

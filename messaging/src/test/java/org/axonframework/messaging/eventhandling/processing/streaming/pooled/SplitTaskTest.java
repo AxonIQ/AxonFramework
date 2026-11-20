@@ -25,6 +25,7 @@ import org.axonframework.messaging.eventhandling.processing.streaming.token.Repl
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.UnableToClaimTokenException;
+import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkTestUtils;
 import org.junit.jupiter.api.*;
 import org.mockito.InOrder;
@@ -58,6 +59,7 @@ class SplitTaskTest {
     private final WorkPackage workPackage = mock(WorkPackage.class);
     private final Map<Integer, java.time.Instant> releasesDeadlines = new HashMap<>();
     private final Map<Integer, CompletableFuture<Void>> releasesInProgress = new HashMap<>();
+    private final List<Segment> notifiedReleases = new ArrayList<>();
     private CompletableFuture<Boolean> result;
     private SplitTask testSubject;
 
@@ -72,10 +74,20 @@ class SplitTaskTest {
                 workPackages,
                 releasesDeadlines,
                 releasesInProgress,
+                this::windDown,
                 tokenStore,
                 UnitOfWorkTestUtils.SIMPLE_FACTORY,
                 ClockUtils.get()
         );
+    }
+
+    /**
+     * Winds down the given work package like the {@link Coordinator} does: storing its final progress, then notifying
+     * the release listeners, recorded in {@link #notifiedReleases}.
+     */
+    private CompletableFuture<Void> windDown(WorkPackage workPackage) {
+        return workPackage.onSegmentReleased(new StubProcessingContext())
+                          .thenRun(() -> notifiedReleases.add(workPackage.segment()));
     }
 
     @Test
@@ -125,6 +137,28 @@ class SplitTaskTest {
     }
 
     @Test
+    void runNotifiesTheReleaseListenersOfTheSplitSegmentBeforeReadingItsToken() {
+        // given
+        when(workPackage.segment()).thenReturn(Segment.ROOT_SEGMENT);
+        when(workPackage.abort(null)).thenReturn(emptyCompletedFuture());
+        when(workPackage.onSegmentReleased(any())).thenReturn(emptyCompletedFuture());
+        when(tokenStore.fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any())).thenAnswer(invocation -> {
+            assertThat(notifiedReleases).containsExactly(Segment.ROOT_SEGMENT);
+            return completedFuture(new GlobalSequenceTrackingToken(0));
+        });
+        when(tokenStore.initializeSegment(any(), eq(PROCESSOR_NAME), any(), any())).thenReturn(emptyCompletedFuture());
+        when(tokenStore.deleteToken(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any())).thenReturn(emptyCompletedFuture());
+        workPackages.put(SEGMENT_ID, workPackage);
+
+        // when
+        runUntilDone(testSubject);
+
+        // then
+        assertThat(result).isCompletedWithValue(true);
+        assertThat(notifiedReleases).containsExactly(Segment.ROOT_SEGMENT);
+    }
+
+    @Test
     void runSplitsSegmentAfterClaiming() throws ExecutionException, InterruptedException {
         Segment testSegmentToSplit = Segment.ROOT_SEGMENT;
         TrackingToken testTokenToSplit = new GlobalSequenceTrackingToken(0);
@@ -161,6 +195,7 @@ class SplitTaskTest {
         verify(tokenStore, never()).releaseClaim(any(), anyInt(), any());
         // the segment was claimed from the token store, so there is no local work package progress to release
         verify(workPackage, never()).onSegmentReleased(any());
+        assertThat(notifiedReleases).isEmpty();
         assertTrue(result.isDone());
         assertTrue(result.get());
     }
