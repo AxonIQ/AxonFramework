@@ -29,6 +29,7 @@ import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -93,9 +94,8 @@ class AxonTimeLimitedTaskTest {
         );
 
         testSubject.start();
-        Thread.sleep(150);
 
-        assertTrue(testSubject.isInterrupted());
+        await().atMost(1, TimeUnit.SECONDS).until(testSubject::isInterrupted);
         assertFalse(Thread.currentThread().isInterrupted());
         verify(logger, atLeastOnce()).warn(
                 anyString(), eq("My test task"), any(), eq("Will time out in"), any(),
