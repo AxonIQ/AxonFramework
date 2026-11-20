@@ -30,9 +30,13 @@ import org.axonframework.integrationtests.testsuite.administration.commands.Revo
 import org.axonframework.integrationtests.testsuite.administration.commands.SuspendEmployeeCommand;
 import org.axonframework.integrationtests.testsuite.administration.common.PersonIdentifier;
 import org.axonframework.integrationtests.testsuite.administration.common.PersonType;
+import org.axonframework.integrationtests.testsuite.administration.events.CertificationWithdrawnExternally;
 import org.axonframework.integrationtests.testsuite.administration.events.EmployeeSuspended;
+import org.axonframework.integrationtests.testsuite.administration.events.TaskClosedExternally;
 import org.axonframework.messaging.commandhandling.GenericCommandMessage;
 import org.axonframework.messaging.core.MessageType;
+import org.axonframework.messaging.eventhandling.EventSink;
+import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.junit.jupiter.api.*;
 
@@ -202,6 +206,37 @@ public abstract class AbstractAdministrationIT extends AbstractIT {
                 .containsExactly(new EmployeeSuspended(CREATE_EMPLOYEE_1_COMMAND.identifier(), "policy violation"));
     }
 
+    @Test
+    void eventNameRegisteredHandlerEvolvesListChild() {
+        sendCommand(CREATE_EMPLOYEE_1_COMMAND);
+        PersonIdentifier employee = CREATE_EMPLOYEE_1_COMMAND.identifier();
+        sendCommand(new AssignTaskCommand(employee, "task-0", "Task 0"));
+        sendCommand(new AssignTaskCommand(employee, "task-1", "Task 1"));
+
+        publishEvent(TaskClosedExternally.EVENT_NAME, new TaskClosedExternally(employee, "task-0"));
+
+        assertThrowsExceptionWithText("Task is already completed",
+                                      () -> sendCommand(new CompleteTaskCommand(employee, "task-0")));
+        // The other task did not match the routing key, so it can still be completed
+        sendCommand(new CompleteTaskCommand(employee, "task-1"));
+    }
+
+    @Test
+    void eventNameRegisteredHandlerEvolvesMapChild() {
+        sendCommand(CREATE_EMPLOYEE_1_COMMAND);
+        PersonIdentifier employee = CREATE_EMPLOYEE_1_COMMAND.identifier();
+        sendCommand(new GrantCertificationCommand(employee, "AWS-SAA", "Amazon"));
+        sendCommand(new GrantCertificationCommand(employee, "Axon Pro", "Axoniq"));
+
+        publishEvent(CertificationWithdrawnExternally.EVENT_NAME,
+                     new CertificationWithdrawnExternally(employee, "AWS-SAA"));
+
+        assertThrowsExceptionWithText("Certification is already revoked",
+                                      () -> sendCommand(new RevokeCertificationCommand(employee, "AWS-SAA")));
+        // The other certification did not match the routing key, so it can still be revoked
+        sendCommand(new RevokeCertificationCommand(employee, "Axon Pro"));
+    }
+
     private void assertThrowsExceptionWithText(String expectedMessage, Runnable runnable) {
         try {
             runnable.run();
@@ -228,6 +263,14 @@ public abstract class AbstractAdministrationIT extends AbstractIT {
                       .getResultMessage()
                       .orTimeout(2, TimeUnit.SECONDS)
                       .join();
+    }
+
+    /** Publishes the given payload under an explicit name, as another application publishing that event would. */
+    private void publishEvent(String eventName, Object payload) {
+        startedConfiguration.getComponent(EventSink.class)
+                            .publish(null, new GenericEventMessage(new MessageType(eventName), payload))
+                            .orTimeout(2, TimeUnit.SECONDS)
+                            .join();
     }
 
     @SuppressWarnings("unused")
