@@ -17,7 +17,6 @@
 package org.axonframework.messaging.eventhandling.processing.streaming.pooled;
 
 import org.axonframework.common.FutureUtils;
-import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,6 +24,8 @@ import org.slf4j.LoggerFactory;
 import java.lang.invoke.MethodHandles;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 
 /**
  * A task to be consumed by a {@link Coordinator} during its main coordination task.
@@ -55,6 +56,7 @@ abstract class CoordinatorTask {
 
     private final CompletableFuture<Boolean> result;
     private final String name;
+    private final AtomicReference<@Nullable CompletableFuture<Void>> awaitedRelease = new AtomicReference<>();
 
     /**
      * Construct a {@link CoordinatorTask}. The given {@code result} will be completed exceptionally or successfully
@@ -70,18 +72,32 @@ abstract class CoordinatorTask {
 
     /**
      * Runs the {@link #task()} of this {@link CoordinatorTask}. Ensures the outcome is correctly reflected through
-     * invoking the {@link #complete(Boolean, Throwable)}.
+     * invoking the {@link #complete(Boolean, Throwable)}, unless the task has to
+     * {@link #awaitRelease(CompletableFuture) await a release} first. Such a run ends right away, without completing the
+     * result, so the {@link Coordinator} can keep coordinating segments while the release runs. The task is to be run
+     * again once that release has ended.
+     * <p>
+     * The returned {@link CompletableFuture} completes once this run has ended: with the release to await before
+     * running the task again, or with {@code null} once the task is done, exceptionally when it failed.
      *
-     * @return the {@link CompletableFuture} provided in the constructor, to attach tasks to be performed after
-     * completion
+     * @return a {@link CompletableFuture} completing once this run of the task has ended, with the release to await
+     * before running it again, if any
      */
-    CompletableFuture<Boolean> run() {
-        try {
-            task().whenComplete(this::complete);
-        } catch (Exception e) {
-            complete(null, e);
-        }
-        return result;
+    CompletableFuture<@Nullable CompletableFuture<Void>> run() {
+        return FutureUtils.runFailing(this::task)
+                          .handle((outcome, throwable) -> {
+                              CompletableFuture<Void> release = awaitedRelease.getAndSet(null);
+                              if (release != null && throwable == null) {
+                                  logger.debug("Processor [{}] awaits a release before instruction - {}.",
+                                               name, getDescription());
+                                  return CompletableFuture.completedFuture(release);
+                              }
+                              complete(outcome, throwable);
+                              return throwable == null
+                                      ? CompletableFuture.<@Nullable CompletableFuture<Void>>completedFuture(null)
+                                      : CompletableFuture.<@Nullable CompletableFuture<Void>>failedFuture(throwable);
+                          })
+                          .thenCompose(Function.identity());
     }
 
     /**
@@ -112,24 +128,20 @@ abstract class CoordinatorTask {
     }
 
     /**
-     * Persists the final progress of the given {@code workPackage} in its own <em>committed</em> transaction, before
-     * the task reads the segment's
-     * {@link org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken}, so the segment(s) the
-     * task produces start from the freshly-reconciled token. The dedicated transaction is essential: a
-     * {@link org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore} may only apply
-     * stores on commit, so a fetch sharing the flush's transaction would not observe it. A {@code null}
-     * {@code workPackage} (the segment was claimed from the token store rather than processed locally, so there is no
-     * local progress to release) is a no-op.
+     * Has this task await the given {@code release} before it runs again. A task touching the claim or token of a
+     * segment the {@link Coordinator} is still releasing awaits that release, so the remainder of the release does not
+     * act on the segment while the task does. The {@code Coordinator} does not wait for the release while running the
+     * task, which would keep it from coordinating any other segment for as long as the release takes. Instead, it runs
+     * the task again once the release has ended, whether it succeeded or not, and performs no other task until then.
+     * <p>
+     * Invoke this from {@link #task()} before it changes anything, and return its result from {@link #task()}.
      *
-     * @param workPackage       the locally-aborted work package whose final progress to persist, or {@code null} if none
-     * @param unitOfWorkFactory the factory creating the transaction the final store commits in
-     * @return a {@link CompletableFuture} completing when the final persistence (if any) has been committed
+     * @param release the release of a segment this task touches
+     * @return the {@link CompletableFuture} for {@link #task()} to return
      */
-    protected static CompletableFuture<Void> releaseProgressOf(@Nullable WorkPackage workPackage,
-                                                               UnitOfWorkFactory unitOfWorkFactory) {
-        return workPackage == null
-                ? FutureUtils.emptyCompletedFuture()
-                : unitOfWorkFactory.create().executeWithResult(workPackage::onSegmentReleased);
+    protected CompletableFuture<Boolean> awaitRelease(CompletableFuture<Void> release) {
+        awaitedRelease.set(release);
+        return CompletableFuture.completedFuture(false);
     }
 
     /**

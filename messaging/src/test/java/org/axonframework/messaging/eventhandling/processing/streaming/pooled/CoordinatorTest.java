@@ -26,11 +26,14 @@ import static org.mockito.Mockito.*;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -577,6 +580,144 @@ class CoordinatorTest {
                 assertTrue(startFuture.isCompletedExceptionally());
                 assertTrue(shutdownInvoked.get());
             });
+        }
+    }
+
+    /**
+     * Tests for the release of the segment of an aborted {@link WorkPackage}.
+     */
+    @Nested
+    class AbortWorkPackage {
+
+        private static final long FIRST_BACK_OFF_MILLIS = 1000;
+
+        private final List<Long> claimTimes = new CopyOnWriteArrayList<>();
+        private final AtomicLong abortTime = new AtomicLong();
+        private Coordinator coordinator;
+
+        @BeforeEach
+        void setUp() {
+            coordinator = buildCoordinatorWith(builder -> builder.tokenClaimInterval(20).claimExtensionThreshold(20));
+            doReturn(completedFuture(SEGMENTS)).when(tokenStore).fetchSegments(eq(PROCESSOR_NAME), any());
+            doReturn(completedFuture(List.of(SEGMENT_ZERO))).when(tokenStore)
+                                                            .fetchAvailableSegments(eq(PROCESSOR_NAME), any());
+            doAnswer(invocation -> {
+                claimTimes.add(System.nanoTime());
+                return completedFuture(new GlobalSequenceTrackingToken(0));
+            }).when(tokenStore).fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_ZERO), any());
+            doReturn(emptyCompletedFuture()).when(tokenStore).releaseClaim(eq(PROCESSOR_NAME), anyInt(), any());
+            doReturn(SEGMENT_ZERO).when(workPackage).segment();
+            doReturn(true).when(workPackage).isAbortTriggered();
+            doReturn(true).when(workPackage).hasRemainingCapacity();
+            doReturn(emptyCompletedFuture()).when(workPackage).onSegmentReleased(any());
+            doAnswer(invocation -> openStreamWithoutEvents())
+                    .when(messageSource).open(any(StreamingCondition.class), isNull());
+            doAnswer(runTaskSync()).when(executorService).submit(any(Runnable.class));
+            doAnswer(runExecutedTaskSync()).when(executorService).execute(any(Runnable.class));
+            doAnswer(scheduleTask()).when(executorService)
+                                    .schedule(any(Runnable.class), anyLong(), any(TimeUnit.class));
+        }
+
+        @AfterEach
+        void tearDown() {
+            coordinator.stop();
+        }
+
+        @Test
+        void aRepeatedAbortJoinsTheRunningRelease() {
+            // given - a work package that takes its time to abort, while the coordinator keeps coordinating
+            CompletableFuture<Throwable> aborted = new CompletableFuture<>();
+            whenAborted(() -> aborted);
+
+            // when
+            awaitStart(coordinator);
+
+            // then - the coordination runs meanwhile do not abort the work package again
+            await().atMost(1, TimeUnit.SECONDS).untilAsserted(() -> verify(workPackage).abort(any()));
+            await().during(300, TimeUnit.MILLISECONDS)
+                   .atMost(1, TimeUnit.SECONDS)
+                   .untilAsserted(() -> verify(workPackage, times(1)).abort(any()));
+            verify(workPackage, never()).onSegmentReleased(any());
+
+            // when
+            aborted.complete(null);
+
+            // then - the release runs once
+            await().atMost(1, TimeUnit.SECONDS).untilAsserted(
+                    () -> verify(tokenStore).releaseClaim(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any())
+            );
+            verify(workPackage, times(1)).onSegmentReleased(any());
+        }
+
+        @Test
+        void aRepeatedAbortAdvancesTheReleaseDeadlineOnce() {
+            // given - a work package that takes its time to abort, while the coordinator keeps coordinating
+            CompletableFuture<Throwable> aborted = new CompletableFuture<>();
+            whenAborted(() -> aborted);
+            awaitStart(coordinator);
+            await().during(300, TimeUnit.MILLISECONDS)
+                   .atMost(1, TimeUnit.SECONDS)
+                   .untilAsserted(() -> verify(workPackage, times(1)).abort(any()));
+
+            // when
+            aborted.complete(null);
+
+            // then - the segment is claimed again after the first back-off, rather than a back-off advanced per run
+            assertSegmentIsClaimedAgainOnceTheFirstBackOffPassed();
+        }
+
+        @Test
+        void aSynchronousAbortFailureEndsTheReleaseOnce() {
+            // given - a work package whose abort is rejected right away, e.g. by a saturated worker executor
+            whenAborted(() -> {
+                throw new RejectedExecutionException("saturated");
+            });
+
+            // when
+            awaitStart(coordinator);
+
+            // then - the work package is not aborted again on every coordination run
+            await().atMost(1, TimeUnit.SECONDS).untilAsserted(() -> verify(workPackage).abort(any()));
+            await().during(300, TimeUnit.MILLISECONDS)
+                   .atMost(1, TimeUnit.SECONDS)
+                   .untilAsserted(() -> verify(workPackage, times(1)).abort(any()));
+            assertSegmentIsClaimedAgainOnceTheFirstBackOffPassed();
+        }
+
+        @Test
+        void aSynchronousAbortErrorEndsTheRelease() {
+            // given
+            whenAborted(() -> {
+                throw new Error("abort crashed");
+            });
+
+            // when
+            awaitStart(coordinator);
+
+            // then
+            await().atMost(1, TimeUnit.SECONDS).untilAsserted(() -> verify(workPackage).abort(any()));
+            assertSegmentIsClaimedAgainOnceTheFirstBackOffPassed();
+        }
+
+        private void whenAborted(Supplier<CompletableFuture<Throwable>> abort) {
+            doAnswer(invocation -> {
+                abortTime.compareAndSet(0, System.nanoTime());
+                return abort.get();
+            }).when(workPackage).abort(any());
+        }
+
+        /**
+         * Asserts the segment is claimed a second time after the first back-off of a second, rather than right away or
+         * after a back-off that advanced on every coordination run, which would take two seconds or more.
+         */
+        private void assertSegmentIsClaimedAgainOnceTheFirstBackOffPassed() {
+            await().atMost(3, TimeUnit.SECONDS).until(() -> claimTimes.size() >= 2);
+            // The coordinator measures the back-off on its own clock, so the bounds leave room for timing on a busy
+            // machine, while still telling the first back-off apart from no back-off and from a longer one.
+            long sinceFirstClaimMillis = TimeUnit.NANOSECONDS.toMillis(claimTimes.get(1) - claimTimes.get(0));
+            long sinceAbortMillis = TimeUnit.NANOSECONDS.toMillis(claimTimes.get(1) - abortTime.get());
+            assertThat(sinceFirstClaimMillis).isGreaterThanOrEqualTo(FIRST_BACK_OFF_MILLIS / 2);
+            assertThat(sinceAbortMillis).isLessThan(2 * FIRST_BACK_OFF_MILLIS);
         }
     }
 

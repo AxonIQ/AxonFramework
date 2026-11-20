@@ -25,6 +25,7 @@ import org.axonframework.messaging.eventhandling.processing.streaming.token.Trac
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.UnableToClaimTokenException;
 import org.axonframework.messaging.core.EmptyApplicationContext;
+import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.core.unitofwork.SimpleUnitOfWorkFactory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
@@ -79,6 +80,8 @@ class MergeTaskTest {
     private MergeTask testSubject;
 
     private final Map<Integer, java.time.Instant> releasesDeadlines = new HashMap<>();
+    private final Map<Integer, CompletableFuture<Void>> releasesInProgress = new HashMap<>();
+    private final List<Segment> notifiedReleases = new ArrayList<>();
 
     @BeforeEach
     void setUp() {
@@ -92,7 +95,8 @@ class MergeTaskTest {
         releasesDeadlines.clear();
 
         testSubject = new MergeTask(
-                result, PROCESSOR_NAME, SEGMENT_TO_MERGE, workPackages, releasesDeadlines, tokenStore,
+                result, PROCESSOR_NAME, SEGMENT_TO_MERGE, workPackages, releasesDeadlines, releasesInProgress,
+                this::windDown, tokenStore,
                 new SimpleUnitOfWorkFactory(EmptyApplicationContext.INSTANCE), ClockUtils.get()
         );
     }
@@ -102,7 +106,7 @@ class MergeTaskTest {
         when(tokenStore.fetchSegment(eq(PROCESSOR_NAME), eq(Segment.ROOT_SEGMENT.getSegmentId()), any()))
             .thenReturn(completedFuture(Segment.ROOT_SEGMENT));
 
-        testSubject.run();
+        runUntilDone(testSubject);
 
         verify(tokenStore).fetchSegment(eq(PROCESSOR_NAME), eq(Segment.ROOT_SEGMENT.getSegmentId()), any());
         assertTrue(result.isDone());
@@ -117,15 +121,21 @@ class MergeTaskTest {
         when(workPackageOne.segment()).thenReturn(SEGMENT_ZERO);
         when(workPackageOne.abort(null)).thenReturn(FutureUtils.emptyCompletedFuture());
         when(workPackageOne.onSegmentReleased(any())).thenReturn(FutureUtils.emptyCompletedFuture());
-        when(tokenStore.fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_TO_MERGE), any()))
-                .thenReturn(completedFuture(testTokenToMerge));
+        List<Segment> notifiedBeforeFetchOfSegmentZero = new ArrayList<>();
+        when(tokenStore.fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_TO_MERGE), any())).thenAnswer(invocation -> {
+            notifiedBeforeFetchOfSegmentZero.addAll(notifiedReleases);
+            return completedFuture(testTokenToMerge);
+        });
         workPackages.put(SEGMENT_TO_MERGE, workPackageOne);
         when(workPackageTwo.segment()).thenReturn(SEGMENT_ONE);
         when(workPackageTwo.abort(null)).thenReturn(FutureUtils.emptyCompletedFuture());
         when(workPackageTwo.onSegmentReleased(any())).thenReturn(FutureUtils.emptyCompletedFuture());
         when(tokenStore.deleteToken(anyString(), anyInt(), any())).thenReturn(FutureUtils.emptyCompletedFuture());
-        when(tokenStore.fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_TO_BE_MERGED), any()))
-                .thenReturn(completedFuture(testTokenToBeMerged));
+        List<Segment> notifiedBeforeFetchOfSegmentOne = new ArrayList<>();
+        when(tokenStore.fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_TO_BE_MERGED), any())).thenAnswer(invocation -> {
+            notifiedBeforeFetchOfSegmentOne.addAll(notifiedReleases);
+            return completedFuture(testTokenToBeMerged);
+        });
         when(tokenStore.initializeSegment(any(), eq(PROCESSOR_NAME), eq(new Segment(0, 0)), any()))
                 .thenReturn(FutureUtils.emptyCompletedFuture());
 
@@ -133,7 +143,7 @@ class MergeTaskTest {
 
         ArgumentCaptor<TrackingToken> mergedTokenCaptor = ArgumentCaptor.forClass(TrackingToken.class);
 
-        testSubject.run();
+        runUntilDone(testSubject);
 
         verify(tokenStore).fetchSegment(eq(PROCESSOR_NAME), eq(SEGMENT_ZERO.getSegmentId()), any());
         verify(tokenStore).fetchSegment(eq(PROCESSOR_NAME), eq(SEGMENT_ONE.getSegmentId()), any());
@@ -155,9 +165,22 @@ class MergeTaskTest {
         InOrder releaseBeforeFetchTwo = inOrder(workPackageTwo, tokenStore);
         releaseBeforeFetchTwo.verify(workPackageTwo).onSegmentReleased(any());
         releaseBeforeFetchTwo.verify(tokenStore).fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_TO_BE_MERGED), any());
+        // the release listeners learn both segments were given up, before their tokens are read
+        assertThat(notifiedReleases).containsExactlyInAnyOrder(SEGMENT_ZERO, SEGMENT_ONE);
+        assertThat(notifiedBeforeFetchOfSegmentZero).contains(SEGMENT_ZERO);
+        assertThat(notifiedBeforeFetchOfSegmentOne).contains(SEGMENT_ONE);
 
         assertTrue(result.isDone());
         assertTrue(result.get());
+    }
+
+    /**
+     * Winds down the given work package like the {@link Coordinator} does: storing its final progress, then notifying
+     * the release listeners, recorded in {@link #notifiedReleases}.
+     */
+    private CompletableFuture<Void> windDown(WorkPackage workPackage) {
+        return workPackage.onSegmentReleased(new StubProcessingContext())
+                          .thenRun(() -> notifiedReleases.add(workPackage.segment()));
     }
 
     @Test
@@ -174,7 +197,7 @@ class MergeTaskTest {
 
         ArgumentCaptor<TrackingToken> mergedTokenCaptor = ArgumentCaptor.forClass(TrackingToken.class);
 
-        testSubject.run();
+        runUntilDone(testSubject);
 
         verify(tokenStore).fetchSegment(eq(PROCESSOR_NAME), eq(SEGMENT_ZERO.getSegmentId()), any());
         verify(tokenStore).fetchSegment(eq(PROCESSOR_NAME), eq(SEGMENT_ONE.getSegmentId()), any());
@@ -189,6 +212,8 @@ class MergeTaskTest {
         assertEquals(testTokenToMerge, ((MergedTrackingToken) resultToken).lowerSegmentToken());
         assertEquals(testTokenToBeMerged, ((MergedTrackingToken) resultToken).upperSegmentToken());
         verify(tokenStore, never()).releaseClaim(any(), anyInt(), any());
+        // neither segment was processed here, so there is no release to notify the listeners of
+        assertThat(notifiedReleases).isEmpty();
 
         assertTrue(result.isDone());
         assertTrue(result.get());
@@ -212,7 +237,7 @@ class MergeTaskTest {
 
         ArgumentCaptor<TrackingToken> mergedTokenCaptor = ArgumentCaptor.forClass(TrackingToken.class);
 
-        testSubject.run();
+        runUntilDone(testSubject);
 
         verify(tokenStore).fetchSegment(eq(PROCESSOR_NAME), eq(SEGMENT_ZERO.getSegmentId()), any());
         verify(tokenStore).fetchSegment(eq(PROCESSOR_NAME), eq(SEGMENT_ONE.getSegmentId()), any());
@@ -237,7 +262,7 @@ class MergeTaskTest {
         when(tokenStore.fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_TO_MERGE), any()))
                 .thenReturn(CompletableFuture.failedFuture(new UnableToClaimTokenException("some exception")));
 
-        testSubject.run();
+        runUntilDone(testSubject);
 
         assertTrue(result.isDone());
         assertTrue(result.isCompletedExceptionally());
@@ -266,7 +291,7 @@ class MergeTaskTest {
         when(tokenStore.deleteToken(eq(PROCESSOR_NAME), eq(SEGMENT_TO_BE_MERGED), any()))
                 .thenReturn(CompletableFuture.failedFuture(new UnableToClaimTokenException("some exception")));
 
-        testSubject.run();
+        runUntilDone(testSubject);
 
         assertTrue(result.isDone());
         assertTrue(result.isCompletedExceptionally());
@@ -294,7 +319,7 @@ class MergeTaskTest {
         when(tokenStore.deleteToken(eq(PROCESSOR_NAME), eq(SEGMENT_TO_BE_MERGED), any()))
                 .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("some exception")));
 
-        testSubject.run();
+        runUntilDone(testSubject);
 
         assertTrue(result.isDone());
         assertTrue(result.isCompletedExceptionally());
@@ -313,7 +338,8 @@ class MergeTaskTest {
 
         MergeTask mergeFromSegmentOne = new MergeTask(
                 new CompletableFuture<>(), PROCESSOR_NAME, SEGMENT_TO_BE_MERGED, workPackages,
-                releasesDeadlines, tokenStore, new SimpleUnitOfWorkFactory(EmptyApplicationContext.INSTANCE),
+                releasesDeadlines, releasesInProgress, this::windDown, tokenStore,
+                new SimpleUnitOfWorkFactory(EmptyApplicationContext.INSTANCE),
                 ClockUtils.get()
         );
         when(tokenStore.fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_TO_MERGE), any()))
@@ -328,7 +354,7 @@ class MergeTaskTest {
         ArgumentCaptor<TrackingToken> mergedTokenCaptor = ArgumentCaptor.forClass(TrackingToken.class);
 
         // when
-        mergeFromSegmentOne.run();
+        runUntilDone(mergeFromSegmentOne);
 
         // then - lower-ID segment token is always placed first, regardless of which segment initiated the merge
         verify(tokenStore).initializeSegment(mergedTokenCaptor.capture(), eq(PROCESSOR_NAME), eq(new Segment(0, 0)), any());
@@ -336,6 +362,61 @@ class MergeTaskTest {
         assertThat(resultToken).isInstanceOf(MergedTrackingToken.class);
         assertThat(((MergedTrackingToken) resultToken).lowerSegmentToken()).isEqualTo(tokenForSegment0);
         assertThat(((MergedTrackingToken) resultToken).upperSegmentToken()).isEqualTo(tokenForSegment1);
+    }
+
+    @Nested
+    class WhenSegmentIsBeingReleased {
+
+        @Test
+        void runLeavesBothSegmentsAloneWhileTheSegmentToMergeWithIsBeingReleased() {
+            // given - this coordinator processes the segment to merge, and is releasing the one to merge it with
+            releasesInProgress.put(SEGMENT_TO_BE_MERGED, new CompletableFuture<>());
+            workPackages.put(SEGMENT_TO_MERGE, workPackageOne);
+
+            // when
+            runUntilDone(testSubject);
+
+            // then
+            assertThat(result).isNotDone();
+            assertThat(workPackages).containsKey(SEGMENT_TO_MERGE);
+            verify(workPackageOne, never()).abort(any());
+            verify(tokenStore, never()).fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_TO_MERGE), any());
+        }
+
+        @Test
+        void runLeavesTheWorkPackageToTheReleaseAndMergesOnceTheReleaseEnded() {
+            // given - the coordinator is releasing the segment of an aborted work package
+            CompletableFuture<Void> release = new CompletableFuture<>();
+            releasesInProgress.put(SEGMENT_TO_MERGE, release);
+            workPackages.put(SEGMENT_TO_MERGE, workPackageOne);
+            when(tokenStore.fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_TO_MERGE), any()))
+                    .thenReturn(completedFuture(new GlobalSequenceTrackingToken(0)));
+            when(tokenStore.fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_TO_BE_MERGED), any()))
+                    .thenReturn(completedFuture(new GlobalSequenceTrackingToken(1)));
+            when(tokenStore.deleteToken(anyString(), anyInt(), any())).thenReturn(FutureUtils.emptyCompletedFuture());
+            when(tokenStore.initializeSegment(any(), eq(PROCESSOR_NAME), eq(new Segment(0, 0)), any()))
+                    .thenReturn(FutureUtils.emptyCompletedFuture());
+
+            // when
+            runUntilDone(testSubject);
+
+            // then - neither segment is touched while one of them is being released
+            assertThat(result).isNotDone();
+            assertThat(releasesDeadlines).isEmpty();
+            verify(tokenStore, never()).fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_TO_MERGE), any());
+            verify(tokenStore, never()).fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_TO_BE_MERGED), any());
+            verify(workPackageOne, never()).abort(any());
+
+            // when - the release removed the work package and ended
+            workPackages.remove(SEGMENT_TO_MERGE);
+            releasesInProgress.remove(SEGMENT_TO_MERGE);
+            release.complete(null);
+
+            // then
+            assertThat(result).isCompletedWithValue(true);
+            verify(workPackageOne, never()).onSegmentReleased(any());
+            verify(tokenStore).initializeSegment(any(), eq(PROCESSOR_NAME), eq(new Segment(0, 0)), any());
+        }
     }
 
     @Nested
@@ -353,7 +434,7 @@ class MergeTaskTest {
                     .thenReturn(completedFuture(new GlobalSequenceTrackingToken(1)));
 
             // when
-            testSubject.run();
+            runUntilDone(testSubject);
 
             // then - the result is exceptionally completed, and both release deadlines are removed
             assertThat(result).isDone();
@@ -370,7 +451,7 @@ class MergeTaskTest {
                     .thenReturn(CompletableFuture.failedFuture(new UnableToClaimTokenException("owned elsewhere")));
 
             // when
-            testSubject.run();
+            runUntilDone(testSubject);
 
             // then - a merge that never happened must not keep either half unclaimable
             assertThat(result).isCompletedExceptionally();
@@ -388,7 +469,7 @@ class MergeTaskTest {
                     .thenReturn(completedFuture(new GlobalSequenceTrackingToken(1)));
 
             // when
-            testSubject.run();
+            runUntilDone(testSubject);
 
             // then
             assertThat(result).isCompletedExceptionally();
@@ -411,7 +492,7 @@ class MergeTaskTest {
                     .thenReturn(FutureUtils.emptyCompletedFuture());
 
             // when
-            testSubject.run();
+            runUntilDone(testSubject);
 
             // then
             assertThat(result).isCompletedWithValue(true);
@@ -436,7 +517,7 @@ class MergeTaskTest {
                     .thenAnswer(recordBlockedSegments);
 
             // when
-            testSubject.run();
+            runUntilDone(testSubject);
 
             // then - three writes (delete both halves, initialize the merged segment), each with both halves blocked
             assertThat(result).isCompletedWithValue(true);
@@ -453,5 +534,16 @@ class MergeTaskTest {
         String result = testSubject.getDescription();
         assertNotNull(result);
         assertTrue(result.contains("Merge"));
+    }
+
+    /**
+     * Runs the given task again once a release it awaits has ended, as the {@link Coordinator} does.
+     */
+    private static void runUntilDone(CoordinatorTask task) {
+        task.run().thenAccept(release -> {
+            if (release != null) {
+                release.whenComplete((ignored, failure) -> runUntilDone(task));
+            }
+        });
     }
 }
