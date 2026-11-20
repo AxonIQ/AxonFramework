@@ -18,8 +18,10 @@ package org.axonframework.integrationtests.testsuite.administration.state.immuta
 
 import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
 import org.axonframework.integrationtests.testsuite.administration.commands.CompleteTaskCommand;
+import org.axonframework.integrationtests.testsuite.administration.events.TaskClosedExternally;
 import org.axonframework.integrationtests.testsuite.administration.events.TaskCompleted;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
+import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 
 public record ImmutableTask(
@@ -37,6 +39,12 @@ public record ImmutableTask(
 
     @EventSourcingHandler
     public ImmutableTask on(TaskCompleted event) {
+        return new ImmutableTask(event.taskId(), true);
+    }
+
+    /** Reads another application's event by its published name {@link TaskClosedExternally#EVENT_NAME}. */
+    @EventHandler(eventName = TaskClosedExternally.EVENT_NAME)
+    public ImmutableTask on(TaskClosedExternally event) {
         return new ImmutableTask(event.taskId(), true);
     }
 
