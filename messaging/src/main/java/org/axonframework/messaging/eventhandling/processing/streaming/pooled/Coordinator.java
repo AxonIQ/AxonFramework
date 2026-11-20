@@ -17,6 +17,7 @@
 package org.axonframework.messaging.eventhandling.processing.streaming.pooled;
 
 import org.axonframework.common.ClockUtils;
+import org.axonframework.common.FutureUtils;
 import org.axonframework.common.ProcessUtils;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
@@ -113,7 +114,10 @@ class Coordinator {
     private final AtomicReference<RunState> runState;
     private final Map<Integer, Instant> releasesDeadlines = new ConcurrentHashMap<>();
     private final Map<Integer, Integer> releasesLastBackOffSeconds = new ConcurrentHashMap<>();
+    private final Map<Integer, CompletableFuture<Void>> releasesInProgress = new ConcurrentHashMap<>();
     private final Queue<CoordinatorTask> coordinatorTasks = new ConcurrentLinkedQueue<>();
+    private final AtomicReference<CompletableFuture<Void>> releaseAwaitedByTask =
+            new AtomicReference<>(emptyCompletedFuture());
     private final AtomicReference<@Nullable CoordinationTask> coordinationTask = new AtomicReference<>();
     private final AtomicLong coordinationTaskGeneration = new AtomicLong(-1);
 
@@ -234,7 +238,8 @@ class Coordinator {
 
     /**
      * Instructs this coordinator to release the segment with the given {@code segmentId}. Furthermore, it will be
-     * ignored for "re-claiming" for the specified {@code releaseDuration}.
+     * ignored for "re-claiming" for the specified {@code releaseDuration}, or until the release of the segment has
+     * completed, whichever comes last.
      * <p>
      * If the coordinator is not actively processing {@code segmentId}, it will be disregarded for processing for the
      * given timeframe nonetheless.
@@ -259,6 +264,16 @@ class Coordinator {
      * <p>
      * In either way, the segment's claim (if present) will be released, so that another thread can proceed with
      * processing it.
+     * <p>
+     * Claim, split and merge instructions are performed one at a time, in the order they were given. An instruction
+     * touching a segment this coordinator is still releasing waits until that release has ended, and the instructions
+     * given after it, also those for unrelated segments, wait behind it. Event processing continues meanwhile. Of a
+     * release, only storing the final progress and notifying the segment release listeners are bounded by the
+     * {@link PooledStreamingEventProcessorConfiguration#claimExtensionThreshold(long) claim extension threshold}.
+     * Aborting the work package, which waits for the batch it is handling, and releasing the claim are not, so a
+     * release that never ends holds up later instructions and a shutdown. For the same reason, a segment release
+     * listener must not wait for a claim, split or merge instruction it gives: that instruction waits for the release
+     * the listener is part of, until the listener's wait times out.
      *
      * @param segmentId the identifier of the segment to split
      * @return a {@link CompletableFuture} providing the result of the split operation
@@ -270,6 +285,7 @@ class Coordinator {
                                            segmentId,
                                            workPackages,
                                            releasesDeadlines,
+                                           releasesInProgress,
                                            tokenStore,
                                            unitOfWorkFactory,
                                            clock));
@@ -286,6 +302,16 @@ class Coordinator {
      * <p>
      * In either approach, this operation will delete one of the segments and release the claim on the other, so that
      * another thread can proceed with processing it.
+     * <p>
+     * Claim, split and merge instructions are performed one at a time, in the order they were given. An instruction
+     * touching a segment this coordinator is still releasing waits until that release has ended, and the instructions
+     * given after it, also those for unrelated segments, wait behind it. Event processing continues meanwhile. Of a
+     * release, only storing the final progress and notifying the segment release listeners are bounded by the
+     * {@link PooledStreamingEventProcessorConfiguration#claimExtensionThreshold(long) claim extension threshold}.
+     * Aborting the work package, which waits for the batch it is handling, and releasing the claim are not, so a
+     * release that never ends holds up later instructions and a shutdown. For the same reason, a segment release
+     * listener must not wait for a claim, split or merge instruction it gives: that instruction waits for the release
+     * the listener is part of, until the listener's wait times out.
      *
      * @param segmentId the identifier of the segment to merge
      * @return a {@link CompletableFuture} indicating whether the merge was executed successfully
@@ -297,6 +323,7 @@ class Coordinator {
                                            segmentId,
                                            workPackages,
                                            releasesDeadlines,
+                                           releasesInProgress,
                                            tokenStore,
                                            unitOfWorkFactory,
                                            clock));
@@ -313,6 +340,16 @@ class Coordinator {
      * The token will immediately be claimed, but processing of the token will start after the invocation of this
      * instruction has been completed successfully by scheduling the coordinator. This will see the claimed token and
      * start a {@link WorkPackage} for it.
+     * <p>
+     * Claim, split and merge instructions are performed one at a time, in the order they were given. An instruction
+     * touching a segment this coordinator is still releasing waits until that release has ended, and the instructions
+     * given after it, also those for unrelated segments, wait behind it. Event processing continues meanwhile. Of a
+     * release, only storing the final progress and notifying the segment release listeners are bounded by the
+     * {@link PooledStreamingEventProcessorConfiguration#claimExtensionThreshold(long) claim extension threshold}.
+     * Aborting the work package, which waits for the batch it is handling, and releasing the claim are not, so a
+     * release that never ends holds up later instructions and a shutdown. For the same reason, a segment release
+     * listener must not wait for a claim, split or merge instruction it gives: that instruction waits for the release
+     * the listener is part of, until the listener's wait times out.
      *
      * @param segmentId the identifier of the segment to claim
      * @return a {@link CompletableFuture} indicating whether the claim was executed successfully
@@ -324,6 +361,7 @@ class Coordinator {
                                            segmentId,
                                            workPackages,
                                            releasesDeadlines,
+                                           releasesInProgress,
                                            tokenStore,
                                            unitOfWorkFactory));
         scheduleCoordinator();
@@ -756,7 +794,8 @@ class Coordinator {
      *     <li>{@link WorkPackage#extendClaimIfThresholdIsMet() Extend the claims} of all {@code WorkPackages} with an
      *     outstanding worker, to relieve them of this effort.
      *     This is an optimization activated through {@link Builder#coordinatorClaimExtension(boolean)}.</li>
-     *     <li>Validating if there are {@link CoordinatorTask CoordinatorTasks} to run, and run a single one if there are any.</li>
+     *     <li>Running the {@link CoordinatorTask} at the head of the queue, if any, unless it awaits a release that has
+     *     not ended yet. Tasks are performed one at a time, in the order they were given.</li>
      *     <li>Periodically checking for unclaimed segments, claim these and start a {@code WorkPackage} per claim.</li>
      *     <li>(Re)Opening an Event stream based on the lower bound token of all active {@code WorkPackages}.</li>
      *     <li>Reading events from the stream.</li>
@@ -799,7 +838,17 @@ class Coordinator {
                         "Processor [{}] (Coordination Task [{}]). Stopped processing. Runnable flag is false. Releasing claims and closing the event stream.",
                         name,
                         generation);
-                abortWorkPackages(null).thenRun(() -> runState.get().shutdownHandle().complete(null));
+                // Releases started before the shutdown, e.g. of a work package that aborted on an error, are no
+                // longer tracked as work packages. Shutdown only completes once those are done as well.
+                // Shutdown completes however the releases end, as a failed one has nothing left to wait for.
+                abortWorkPackages(null)
+                        .exceptionally(failure -> {
+                            logger.warn("Processor [{}] (Coordination Task [{}]). Releasing the claims failed.",
+                                        name, generation, failure);
+                            return null;
+                        })
+                        .thenCompose(ignored -> awaitReleasesInProgress())
+                        .whenComplete((ignored, failure) -> runState.get().shutdownHandle().complete(null));
                 closeStreamQuietly();
                 return;
             }
@@ -848,18 +897,34 @@ class Coordinator {
                                                                }));
             }
 
-            if (!coordinatorTasks.isEmpty()) {
-                // Process any available coordinator tasks.
-                CoordinatorTask task = coordinatorTasks.remove();
+            // Tasks are performed one at a time, in the order they were given. A task awaiting a release stays at the
+            // head of the queue, holding up the tasks after it, but not the coordination of segments.
+            if (!coordinatorTasks.isEmpty() && releaseAwaitedByTask.get().isDone()) {
+                CoordinatorTask task = coordinatorTasks.element();
                 logger.debug("Processor [{}] (Coordination Task [{}]) found task [{}] to run.",
                              name,
                              generation,
                              task.getDescription());
                 task.run()
-                    .thenRun(() -> unclaimedSegmentValidationThreshold = 0)
-                    .whenComplete((result, exception) -> {
+                    .whenComplete((awaitedRelease, exception) -> {
+                        if (awaitedRelease != null) {
+                            holdUpTasksUntil(task, awaitedRelease);
+                        } else {
+                            // Only this coordinator removes tasks, so the task that ran is still at the head.
+                            coordinatorTasks.remove(task);
+                            if (exception == null) {
+                                unclaimedSegmentValidationThreshold = 0;
+                            }
+                        }
                         processingGate.set(false);
-                        if (exception != null) {
+                        if (awaitedRelease != null) {
+                            logger.debug(
+                                    "Processor [{}] (Coordination Task [{}]). Task [{}] awaits a release. "
+                                            + "Scheduling immediate coordination task (itself).",
+                                    name,
+                                    generation,
+                                    task.getDescription());
+                        } else if (exception != null) {
                             logger.warn(
                                     "Processor [{}] (Coordination Task [{}]). Task [{}] completed with error. "
                                             + "Scheduling immediate coordination task (itself).",
@@ -938,6 +1003,22 @@ class Coordinator {
                 } else {
                     coordinateEvents();
                 }
+            });
+        }
+
+        /**
+         * Holds up the tasks until the given {@code release}, which the given {@code task} at the head of the queue
+         * awaits, has ended. The coordinator is scheduled once it has, to run the task again.
+         *
+         * @param task    the task awaiting the release
+         * @param release the release the task awaits
+         */
+        private void holdUpTasksUntil(CoordinatorTask task, CompletableFuture<Void> release) {
+            releaseAwaitedByTask.set(release);
+            release.whenComplete((ignored, failure) -> {
+                logger.debug("Processor [{}]. Release awaited by task [{}] ended. Scheduling coordination task.",
+                             name, task.getDescription());
+                scheduleCoordinator();
             });
         }
 
@@ -1097,7 +1178,7 @@ class Coordinator {
                                .map(wp -> abortWorkPackage(wp, cause))
                                .reduce(CompletableFuture::allOf)
                                .orElse(emptyCompletedFuture())
-                               .thenRun(workPackages::clear);
+                               .whenComplete((ignored, failure) -> workPackages.clear());
         }
 
         /**
@@ -1161,7 +1242,14 @@ class Coordinator {
                 if (workPackages.containsKey(segmentId)) {
                     continue;
                 }
-                if (isSegmentBlockedFromClaim(segmentId)) {
+                if (releasesInProgress.containsKey(segmentId)) {
+                    logger.debug(
+                            "Processor [{}] (Coordination Task [{}]). Segment {} is still being released.",
+                            name,
+                            generation,
+                            segmentId);
+                    processingStatusUpdater.accept(segmentId, ignored -> null);
+                } else if (isSegmentBlockedFromClaim(segmentId)) {
                     logger.debug(
                             "Processor [{}] (Coordination Task [{}]). Segment {} is still marked to not be claimed till [{}].",
                             name,
@@ -1400,8 +1488,10 @@ class Coordinator {
             }
 
             // If a work package has been aborted by something else than the Coordinator. We should abandon it.
+            // A release only starts once per work package, so its release deadline is only advanced once as well.
             workPackages.values().stream()
                         .filter(WorkPackage::isAbortTriggered)
+                        .filter(workPackage -> !releasesInProgress.containsKey(workPackage.segment().getSegmentId()))
                         .forEach(workPackage -> {
                             advanceReleaseDeadlineFor(workPackage.segment().getSegmentId());
                             abortWorkPackage(workPackage, null);
@@ -1525,20 +1615,44 @@ class Coordinator {
             closeStreamQuietly();
         }
 
+        /**
+         * Aborts the given {@code work} package and releases its segment: the final progress is persisted, the release
+         * listeners are notified and the claim is released, in that order.
+         * <p>
+         * The segment counts as being released until this entire chain has ended, whether it succeeded or not. Until
+         * then, this coordinator does not claim the segment again, regardless of its release deadline. Otherwise, the
+         * remainder of the old release would run against the new claim: its release listeners would wind down the
+         * work of the new claim and its claim release would clear the claim the new work package processes under.
+         * Aborting a work package whose segment is already being released does not start a second release.
+         *
+         * @param work  the work package to abort
+         * @param cause the reason to abort the work package, may be {@code null}
+         * @return a {@link CompletableFuture} completing once the release of the segment has ended
+         */
         private CompletableFuture<Void> abortWorkPackage(WorkPackage work, @Nullable Throwable cause) {
             int segmentId = work.segment().getSegmentId();
-            return work.abort(cause)
-                       .thenRun(() -> {
+            CompletableFuture<Void> release = new CompletableFuture<>();
+            CompletableFuture<Void> ongoingRelease = releasesInProgress.putIfAbsent(segmentId, release);
+            if (ongoingRelease != null) {
+                // The work package was aborted already when the ongoing release started.
+                return ongoingRelease;
+            }
+            // The work package goes however its abort ends: a package that failed to abort cannot be relied upon to
+            // process, and keeping it would have it aborted again on every coordination run.
+            abortQuietly(work, cause)
+                       .whenComplete((ignored, abortFailure) -> {
                            if (workPackages.remove(segmentId, work)) {
-                               logger.debug("Processor [{}] (Coordination Task [{}]) released claim on {}.",
-                                            name, generation, work.segment());
+                               logger.debug("Processor [{}] (Coordination Task [{}]) {} the work package of {}.",
+                                            name,
+                                            generation,
+                                            abortFailure == null ? "aborted" : "failed to abort",
+                                            work.segment());
                            }
                        })
                        // Persist the final safe token (strategy onSegmentReleased -> store) and let the release
                        // listeners wind down WHILE the claim is still held, then release the claim LAST so no
                        // other node can resume past durable progress or pick up work still running here.
-                       .thenCompose(unused -> unitOfWorkFactory.create().executeWithResult(work::onSegmentReleased))
-                       .thenCompose(r -> notifyReleaseListeners(work.segment()))
+                       .thenCompose(unused -> windDown(work))
                        .thenComposeAsync(r -> unitOfWorkFactory.create().executeWithResult(
                                context -> tokenStore.releaseClaim(name, segmentId, context)
                        ), executorService)
@@ -1554,43 +1668,49 @@ class Coordinator {
                                    segmentId,
                                    unwrapped);
                            return null;
+                       })
+                       .whenComplete((ignored, throwable) -> {
+                           releasesInProgress.remove(segmentId, release);
+                           if (throwable != null) {
+                               release.completeExceptionally(throwable);
+                           } else {
+                               release.complete(null);
+                           }
                        });
+            return release;
         }
 
         /**
-         * Invokes the {@link SegmentChangeListener#onSegmentReleased(Segment) release listeners} for the given
-         * {@code segment} and waits for them to finish, giving them the chance to wind down their work before the claim
-         * is handed over.
-         * <p>
-         * The wait is bounded by the
-         * {@link PooledStreamingEventProcessorConfiguration#claimExtensionThreshold(long) claim extension threshold},
-         * since the claim of an aborted work package is no longer extended and would go stale beyond it anyhow.
-         * Listeners that time out or fail do not keep the claim held: the returned {@link CompletableFuture} completes
-         * normally regardless, so the claim is always released afterwards.
+         * Aborts the given {@code work} package, turning anything its abort throws, an {@link Error} included, into a
+         * failed {@link CompletableFuture}, so the release registered for it always ends.
          *
-         * @param segment the released {@link Segment} to notify the listeners of
-         * @return a {@link CompletableFuture} completing once the listeners are done, timed out, or failed
+         * @param work  the work package to abort
+         * @param cause the reason to abort the work package, may be {@code null}
+         * @return a {@link CompletableFuture} completing once the work package aborted, or failed to
          */
-        private CompletableFuture<Void> notifyReleaseListeners(Segment segment) {
-            return segmentChangeListener.onSegmentReleased(segment)
-                                        // Copied, as orTimeout completes the future it is invoked on.
-                                        .copy()
-                                        .orTimeout(claimExtensionThreshold, TimeUnit.MILLISECONDS)
-                                        .exceptionally(throwable -> {
-                                            Throwable unwrapped = throwable instanceof CompletionException ce
-                                                    ? ce.getCause() : throwable;
-                                            if (unwrapped instanceof Error error) {
-                                                throw error;
-                                            }
-                                            logger.warn(
-                                                    "Processor [{}] (Coordination Task [{}]). Release listeners for [{}] failed or exceeded the claim extension threshold of [{}]ms; releasing the claim regardless.",
-                                                    name,
-                                                    generation,
-                                                    segment,
-                                                    claimExtensionThreshold,
-                                                    unwrapped);
-                                            return null;
-                                        });
+        private CompletableFuture<Throwable> abortQuietly(WorkPackage work, @Nullable Throwable cause) {
+            try {
+                return work.abort(cause);
+            } catch (Throwable failure) {
+                // Logged here, as nothing may observe the failed release that ends with it.
+                logger.error("Processor [{}] (Coordination Task [{}]). Aborting the work package of {} failed.",
+                             name, generation, work.segment(), failure);
+                return CompletableFuture.failedFuture(failure);
+            }
+        }
+
+        /**
+         * Returns a {@link CompletableFuture} completing once all releases running at the time of invocation have
+         * ended, whether they succeeded or not. Storing the final progress and notifying the release listeners are each
+         * bounded by the claim extension threshold; aborting a work package and releasing a claim are not.
+         *
+         * @return a {@link CompletableFuture} completing once the running releases have ended
+         */
+        private CompletableFuture<Void> awaitReleasesInProgress() {
+            return CompletableFuture.allOf(releasesInProgress.values()
+                                                             .stream()
+                                                             .map(release -> release.exceptionally(failure -> null))
+                                                             .toArray(CompletableFuture[]::new));
         }
 
         private void advanceReleaseDeadlineFor(int segmentId) {
@@ -1617,6 +1737,86 @@ class Coordinator {
                     }
             );
         }
+    }
+
+    /**
+     * Winds down the segment of the given aborted {@code work} package while its claim is still held: first stores the
+     * final progress of the segment, then notifies the segment release listeners, before the claim is released.
+     * <p>
+     * A final store that fails does not stop the release: the stored token is then the last one stored before, from
+     * which the segment's events are handled again, while the release listeners still need to wind down the work they
+     * run for the segment. The returned {@link CompletableFuture} therefore completes normally once both steps ended,
+     * whether they succeeded or not.
+     * <p>
+     * Both steps are bounded by the
+     * {@link PooledStreamingEventProcessorConfiguration#claimExtensionThreshold(long) claim extension threshold}, since
+     * the claim of an aborted work package is no longer extended and would go stale beyond it anyhow. A final store
+     * exceeding it counts as failed. The other steps of a release, aborting the work package and releasing the claim,
+     * are not bounded here.
+     *
+     * @param work the aborted work package whose segment to wind down
+     * @return a {@link CompletableFuture} completing once the final progress is stored and the listeners are notified
+     */
+    private CompletableFuture<Void> windDown(WorkPackage work) {
+        return storeFinalProgress(work).thenCompose(ignored -> notifyReleaseListeners(work.segment()));
+    }
+
+    private CompletableFuture<Void> storeFinalProgress(WorkPackage work) {
+        return FutureUtils.runFailing(() -> unitOfWorkFactory.create().executeWithResult(work::onSegmentReleased))
+                          // Copied, as orTimeout completes the future it is invoked on.
+                          .copy()
+                          .orTimeout(claimExtensionThreshold, TimeUnit.MILLISECONDS)
+                          .exceptionally(throwable -> {
+                              Throwable unwrapped = throwable instanceof CompletionException ce
+                                      ? ce.getCause() : throwable;
+                              if (unwrapped instanceof Error error) {
+                                  throw error;
+                              }
+                              logger.warn(
+                                      "Processor [{}] (Coordination Task [{}]). Storing the final progress of [{}] failed or exceeded the claim extension threshold of [{}]ms; releasing the segment regardless.",
+                                      name,
+                                      coordinationTaskGeneration.get(),
+                                      work.segment(),
+                                      claimExtensionThreshold,
+                                      unwrapped);
+                              return null;
+                          });
+    }
+
+    /**
+     * Invokes the {@link SegmentChangeListener#onSegmentReleased(Segment) release listeners} for the given
+     * {@code segment} and waits for them to finish, giving them the chance to wind down their work before the claim
+     * is handed over.
+     * <p>
+     * The wait is bounded by the
+     * {@link PooledStreamingEventProcessorConfiguration#claimExtensionThreshold(long) claim extension threshold},
+     * since the claim of an aborted work package is no longer extended and would go stale beyond it anyhow.
+     * Listeners that time out or fail do not keep the claim held: the returned {@link CompletableFuture} completes
+     * normally regardless, so the claim is always released afterwards.
+     *
+     * @param segment the released {@link Segment} to notify the listeners of
+     * @return a {@link CompletableFuture} completing once the listeners are done, timed out, or failed
+     */
+    private CompletableFuture<Void> notifyReleaseListeners(Segment segment) {
+        return segmentChangeListener.onSegmentReleased(segment)
+                                    // Copied, as orTimeout completes the future it is invoked on.
+                                    .copy()
+                                    .orTimeout(claimExtensionThreshold, TimeUnit.MILLISECONDS)
+                                    .exceptionally(throwable -> {
+                                        Throwable unwrapped = throwable instanceof CompletionException ce
+                                                ? ce.getCause() : throwable;
+                                        if (unwrapped instanceof Error error) {
+                                            throw error;
+                                        }
+                                        logger.warn(
+                                                "Processor [{}] (Coordination Task [{}]). Release listeners for [{}] failed or exceeded the claim extension threshold of [{}]ms; releasing the claim regardless.",
+                                                name,
+                                                coordinationTaskGeneration.get(),
+                                                segment,
+                                                claimExtensionThreshold,
+                                                unwrapped);
+                                        return null;
+                                    });
     }
 
     /**

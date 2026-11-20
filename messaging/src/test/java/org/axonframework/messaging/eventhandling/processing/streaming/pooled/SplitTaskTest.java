@@ -57,6 +57,7 @@ class SplitTaskTest {
     private final TokenStore tokenStore = mock(TokenStore.class);
     private final WorkPackage workPackage = mock(WorkPackage.class);
     private final Map<Integer, java.time.Instant> releasesDeadlines = new HashMap<>();
+    private final Map<Integer, CompletableFuture<Void>> releasesInProgress = new HashMap<>();
     private CompletableFuture<Boolean> result;
     private SplitTask testSubject;
 
@@ -70,6 +71,7 @@ class SplitTaskTest {
                 SEGMENT_ID,
                 workPackages,
                 releasesDeadlines,
+                releasesInProgress,
                 tokenStore,
                 UnitOfWorkTestUtils.SIMPLE_FACTORY,
                 ClockUtils.get()
@@ -99,7 +101,7 @@ class SplitTaskTest {
 
         workPackages.put(SEGMENT_ID, workPackage);
 
-        testSubject.run();
+        runUntilDone(testSubject);
 
         // original token must be reinitialized (due to mask change):
         verify(tokenStore).initializeSegment(eq(expectedOriginal.getTrackingToken()),
@@ -142,7 +144,7 @@ class SplitTaskTest {
         when(tokenStore.deleteToken(eq(PROCESSOR_NAME), eq(Segment.ROOT_SEGMENT.getSegmentId()), any()))
                 .thenReturn(emptyCompletedFuture());
 
-        testSubject.run();
+        runUntilDone(testSubject);
 
         // original token must be reinitialized (due to mask change):
         verify(tokenStore).initializeSegment(eq(expectedOriginal.getTrackingToken()),
@@ -170,7 +172,7 @@ class SplitTaskTest {
         when(tokenStore.fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any()))
                 .thenThrow(new UnableToClaimTokenException("some exception"));
 
-        testSubject.run();
+        runUntilDone(testSubject);
 
         assertTrue(result.isDone());
         assertTrue(result.isCompletedExceptionally());
@@ -185,7 +187,7 @@ class SplitTaskTest {
         when(tokenStore.fetchSegment(eq(PROCESSOR_NAME), eq(Segment.ROOT_SEGMENT.getSegmentId()), any()))
                 .thenThrow(new IllegalStateException("some exception"));
 
-        testSubject.run();
+        runUntilDone(testSubject);
 
         assertTrue(result.isDone());
         assertTrue(result.isCompletedExceptionally());
@@ -193,6 +195,46 @@ class SplitTaskTest {
             .isInstanceOf(ExecutionException.class)
             .cause()
             .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Nested
+    class WhenSegmentIsBeingReleased {
+
+        @Test
+        void runLeavesTheWorkPackageToTheReleaseAndSplitsOnceTheReleaseEnded() {
+            // given - the coordinator is releasing the segment of an aborted work package
+            CompletableFuture<Void> release = new CompletableFuture<>();
+            releasesInProgress.put(SEGMENT_ID, release);
+            workPackages.put(SEGMENT_ID, workPackage);
+            when(tokenStore.fetchSegment(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any()))
+                    .thenReturn(completedFuture(Segment.ROOT_SEGMENT));
+            when(tokenStore.fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any()))
+                    .thenReturn(completedFuture(new GlobalSequenceTrackingToken(0)));
+            when(tokenStore.initializeSegment(any(), eq(PROCESSOR_NAME), any(), any()))
+                    .thenReturn(emptyCompletedFuture());
+            when(tokenStore.deleteToken(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any()))
+                    .thenReturn(emptyCompletedFuture());
+
+            // when
+            runUntilDone(testSubject);
+
+            // then - the work package and token are left to the release
+            assertThat(result).isNotDone();
+            assertThat(workPackages).containsKey(SEGMENT_ID);
+            assertThat(releasesDeadlines).doesNotContainKey(SEGMENT_ID);
+            verify(tokenStore, never()).fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any());
+            verify(workPackage, never()).abort(any());
+
+            // when - the release removed the work package and ended
+            workPackages.remove(SEGMENT_ID);
+            releasesInProgress.remove(SEGMENT_ID);
+            release.complete(null);
+
+            // then
+            assertThat(result).isCompletedWithValue(true);
+            verify(workPackage, never()).onSegmentReleased(any());
+            verify(tokenStore).deleteToken(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any());
+        }
     }
 
     @Nested
@@ -211,7 +253,7 @@ class SplitTaskTest {
                     .thenReturn(emptyCompletedFuture());
 
             // when
-            testSubject.run();
+            runUntilDone(testSubject);
 
             // then
             assertThat(result).isCompletedWithValue(true);
@@ -237,7 +279,7 @@ class SplitTaskTest {
                     .thenAnswer(recordBlockedSegments);
 
             // when
-            testSubject.run();
+            runUntilDone(testSubject);
 
             // then - three writes (initialize new half, delete original, re-initialize original), block held on each
             assertThat(result).isCompletedWithValue(true);
@@ -252,7 +294,7 @@ class SplitTaskTest {
                     .thenReturn(CompletableFuture.failedFuture(new UnableToClaimTokenException("owned elsewhere")));
 
             // when
-            testSubject.run();
+            runUntilDone(testSubject);
 
             // then - a split that never happened must not keep the segment unclaimable
             assertThat(result).isCompletedExceptionally();
@@ -268,7 +310,7 @@ class SplitTaskTest {
                     .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("abort failed")));
 
             // when
-            testSubject.run();
+            runUntilDone(testSubject);
 
             // then
             assertThat(result).isCompletedExceptionally();
@@ -305,7 +347,7 @@ class SplitTaskTest {
                     .thenReturn(completedFuture(replayingToken));
 
             // when
-            testSubject.run();
+            runUntilDone(testSubject);
 
             // then
             assertThat(result).isCompletedWithValue(true);
@@ -323,7 +365,7 @@ class SplitTaskTest {
                     .thenReturn(completedFuture(replayingMergeToken));
 
             // when
-            testSubject.run();
+            runUntilDone(testSubject);
 
             // then
             assertThat(result).isCompletedWithValue(true);
@@ -341,7 +383,7 @@ class SplitTaskTest {
                     .thenReturn(completedFuture(mergeOfReplayingTokens));
 
             // when
-            testSubject.run();
+            runUntilDone(testSubject);
 
             // then
             assertThat(result).isCompletedWithValue(true);
@@ -389,7 +431,7 @@ class SplitTaskTest {
 
         workPackages.put(SEGMENT_ID, workPackage);
 
-        testSubject.run();
+        runUntilDone(testSubject);
 
         verify(tokenStore, never()).releaseClaim(any(), anyInt(), any());
         verify(tokenStore).deleteToken(eq(PROCESSOR_NAME),
@@ -406,5 +448,16 @@ class SplitTaskTest {
 
         assertTrue(result.isDone());
         assertTrue(result.get());
+    }
+
+    /**
+     * Runs the given task again once a release it awaits has ended, as the {@link Coordinator} does.
+     */
+    private static void runUntilDone(CoordinatorTask task) {
+        task.run().thenAccept(release -> {
+            if (release != null) {
+                release.whenComplete((ignored, failure) -> runUntilDone(task));
+            }
+        });
     }
 }

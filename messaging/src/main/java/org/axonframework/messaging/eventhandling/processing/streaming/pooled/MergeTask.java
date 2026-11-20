@@ -61,6 +61,7 @@ class MergeTask extends CoordinatorTask {
     private final TokenStore tokenStore;
     private final UnitOfWorkFactory unitOfWorkFactory;
     private final Map<Integer, Instant> releasesDeadlines;
+    private final Map<Integer, CompletableFuture<Void>> releasesInProgress;
     @Deprecated(forRemoval = true, since = "5.2.0")
     private final Clock clock;
 
@@ -76,6 +77,8 @@ class MergeTask extends CoordinatorTask {
      *                          queried for the presence of the given {@code segmentId} and the segment to merge it
      *                          with.
      * @param releasesDeadlines  the map of segments that are blocked from claiming until a specified time
+     * @param releasesInProgress the releases the {@link Coordinator} is running, per segment identifier; a segment
+     *                           being released is only touched once its release has ended
      * @param tokenStore        The storage solution for {@link TrackingToken}s. Used to claim the {@code segmentId} if
      *                          it is not present in the {@code workPackages}, to remove one of the segments and merge
      *                          the merged token.
@@ -88,6 +91,7 @@ class MergeTask extends CoordinatorTask {
               int segmentId,
               Map<Integer, WorkPackage> workPackages,
               Map<Integer, Instant> releasesDeadlines,
+              Map<Integer, CompletableFuture<Void>> releasesInProgress,
               TokenStore tokenStore,
               UnitOfWorkFactory unitOfWorkFactory,
               @Deprecated(forRemoval = true, since = "5.2.0")
@@ -97,6 +101,7 @@ class MergeTask extends CoordinatorTask {
         this.segmentId = segmentId;
         this.workPackages = workPackages;
         this.releasesDeadlines = releasesDeadlines;
+        this.releasesInProgress = releasesInProgress;
         this.unitOfWorkFactory = unitOfWorkFactory;
         this.tokenStore = tokenStore;
         this.clock = clock;
@@ -125,24 +130,37 @@ class MergeTask extends CoordinatorTask {
 
             return unitOfWorkFactory.create().executeWithResult(
                     context -> tokenStore.fetchSegment(name, thisSegment.mergeableSegmentId(), context)
-            ).thenCompose(thatSegment -> FutureUtils.runFailing(() -> {
-                // runFailing turns a synchronous throw (an abort rejected by a saturated worker executor, for
-                // instance) into a failed future, so the handler below observes it too rather than being skipped along
-                // with the rest of the chain -- leaking whichever blocks tokenFor already installed.
-                CompletableFuture<TrackingToken> thisTokenFuture = tokenFor(thisSegment.getSegmentId());
-                CompletableFuture<TrackingToken> thatTokenFuture = tokenFor(thatSegment.getSegmentId());
-                return thisTokenFuture
-                        .thenCombine(thatTokenFuture,
-                                     (thisToken, thatToken) -> mergeSegments(thisSegment, thisToken, thatSegment, thatToken))
-                        .thenCompose(Function.identity());
-            })
-            // Lift the block on both segments however the merge ends. Clearing it only on the paths that reach the
-            // token rewrite would leave a failed abort or a failed token fetch of either half blocking re-claim of
-            // both until the ceiling expires.
-            .whenComplete((result, throwable) -> {
-                releasesDeadlines.remove(thisSegment.getSegmentId());
-                releasesDeadlines.remove(thatSegment.getSegmentId());
-            }));
+            ).thenCompose(thatSegment -> {
+                // The merge takes place once the Coordinator released both segments, rather than racing a release.
+                CompletableFuture<Void> release = releaseOfEither(thisSegment, thatSegment);
+                return release != null ? awaitRelease(release) : merge(thisSegment, thatSegment);
+            });
+        });
+    }
+
+    private @Nullable CompletableFuture<Void> releaseOfEither(Segment thisSegment, Segment thatSegment) {
+        CompletableFuture<Void> release = releasesInProgress.get(thisSegment.getSegmentId());
+        return release != null ? release : releasesInProgress.get(thatSegment.getSegmentId());
+    }
+
+    private CompletableFuture<Boolean> merge(Segment thisSegment, Segment thatSegment) {
+        return FutureUtils.runFailing(() -> {
+            // runFailing turns a synchronous throw (an abort rejected by a saturated worker executor, for
+            // instance) into a failed future, so the handler below observes it too rather than being skipped along
+            // with the rest of the chain -- leaking whichever blocks tokenFor already installed.
+            CompletableFuture<TrackingToken> thisTokenFuture = tokenFor(thisSegment.getSegmentId());
+            CompletableFuture<TrackingToken> thatTokenFuture = tokenFor(thatSegment.getSegmentId());
+            return thisTokenFuture
+                    .thenCombine(thatTokenFuture,
+                                 (thisToken, thatToken) -> mergeSegments(thisSegment, thisToken, thatSegment, thatToken))
+                    .thenCompose(Function.identity());
+        })
+        // Lift the block on both segments however the merge ends. Clearing it only on the paths that reach the
+        // token rewrite would leave a failed abort or a failed token fetch of either half blocking re-claim of
+        // both until the ceiling expires.
+        .whenComplete((result, throwable) -> {
+            releasesDeadlines.remove(thisSegment.getSegmentId());
+            releasesDeadlines.remove(thatSegment.getSegmentId());
         });
     }
 
