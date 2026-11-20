@@ -103,6 +103,42 @@ class AnnotatedQueryHandlingComponentTest {
     }
 
     @Test
+    void subscribesQueryHandlerWithVersionRange() {
+        Object annotatedQueryHandler = new Object() {
+            @SuppressWarnings("unused")
+            @QueryHandler(queryName = "myQueryName", versionRange = "1.0-2.0")
+            public String handle(String query) {
+                return "something";
+            }
+        };
+        MessageTypeResolver messageTypeResolver = spy(new AnnotationMessageTypeResolver());
+        AnnotatedQueryHandlingComponent<Object> annotatedComponent = new AnnotatedQueryHandlingComponent<>(
+                annotatedQueryHandler,
+                ClasspathParameterResolverFactory.forClass(annotatedQueryHandler.getClass()),
+                ClasspathHandlerDefinition.forClass(annotatedQueryHandler.getClass()),
+                messageTypeResolver,
+                new DelegatingMessageConverter(PassThroughConverter.INSTANCE)
+        );
+
+        org.axonframework.messaging.queryhandling.QueryMessage testQuery = 
+                new org.axonframework.messaging.queryhandling.GenericQueryMessage(new MessageType("myQueryName", "1.5"), "payload");
+        MessageStream<org.axonframework.messaging.queryhandling.QueryResponseMessage> resultStream =
+                annotatedComponent.handle(testQuery, org.axonframework.messaging.core.unitofwork.StubProcessingContext.forMessage(testQuery));
+
+        org.junit.jupiter.api.Assertions.assertTrue(resultStream.hasNextAvailable());
+        org.junit.jupiter.api.Assertions.assertFalse(resultStream.error().isPresent());
+        
+        org.axonframework.messaging.queryhandling.QueryMessage outOfRangeQuery = 
+                new org.axonframework.messaging.queryhandling.GenericQueryMessage(new MessageType("myQueryName", "2.5"), "payload");
+        MessageStream<org.axonframework.messaging.queryhandling.QueryResponseMessage> outOfRangeStream =
+                annotatedComponent.handle(outOfRangeQuery, org.axonframework.messaging.core.unitofwork.StubProcessingContext.forMessage(outOfRangeQuery));
+        
+        org.junit.jupiter.api.Assertions.assertFalse(outOfRangeStream.hasNextAvailable());
+        org.junit.jupiter.api.Assertions.assertTrue(outOfRangeStream.error().isPresent());
+        org.junit.jupiter.api.Assertions.assertTrue(outOfRangeStream.error().get() instanceof org.axonframework.messaging.queryhandling.NoHandlerForQueryException);
+    }
+
+    @Test
     void subscribesQueryHandlerThroughMessageTypeResolverWhenQueryNameIsEmpty() {
         QualifiedName expectedName = new QualifiedName("defaultName");
 
