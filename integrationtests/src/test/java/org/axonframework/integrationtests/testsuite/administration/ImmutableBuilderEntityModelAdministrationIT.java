@@ -31,8 +31,10 @@ import org.axonframework.integrationtests.testsuite.administration.commands.Revo
 import org.axonframework.integrationtests.testsuite.administration.commands.SuspendEmployeeCommand;
 import org.axonframework.integrationtests.testsuite.administration.common.PersonIdentifier;
 import org.axonframework.integrationtests.testsuite.administration.events.CertificationRevoked;
+import org.axonframework.integrationtests.testsuite.administration.events.CertificationWithdrawnExternally;
 import org.axonframework.integrationtests.testsuite.administration.events.CustomerCreated;
 import org.axonframework.integrationtests.testsuite.administration.events.EmployeeCreated;
+import org.axonframework.integrationtests.testsuite.administration.events.TaskClosedExternally;
 import org.axonframework.integrationtests.testsuite.administration.events.TaskCompleted;
 import org.axonframework.integrationtests.testsuite.administration.state.immutable.ImmutableCertification;
 import org.axonframework.integrationtests.testsuite.administration.state.immutable.ImmutableCustomer;
@@ -191,9 +193,7 @@ public abstract class ImmutableBuilderEntityModelAdministrationIT extends Abstra
                                       return null;
                                   })
                                   .eventTargetMatcher((o, eventMessage, ctx) -> {
-                                      String eventName = eventMessage.type().name();
-                                      if (eventName.equals(CertificationRevoked.class.getName())
-                                              || eventName.equals(CertificationRevoked.EVENT_NAME)) {
+                                      if (eventMessage.type().name().equals(CertificationRevoked.class.getName())) {
                                           CertificationRevoked certificationRevoked = eventConverter.convertPayload(
                                                   eventMessage, CertificationRevoked.class
                                           );
@@ -202,6 +202,14 @@ public abstract class ImmutableBuilderEntityModelAdministrationIT extends Abstra
                                                   "CertificationRevoked event payload cannot be null"
                                           );
                                           return o.getCertificationName().equals(certificationRevoked.certificationName());
+                                      }
+                                      if (eventMessage.type().name()
+                                                      .equals(CertificationWithdrawnExternally.EVENT_NAME)) {
+                                          CertificationWithdrawnExternally withdrawn =
+                                                  eventConverter.convertPayload(eventMessage,
+                                                                                CertificationWithdrawnExternally.class);
+                                          return withdrawn != null
+                                                  && o.getCertificationName().equals(withdrawn.certificationName());
                                       }
                                       return false;
                                   })
@@ -225,9 +233,7 @@ public abstract class ImmutableBuilderEntityModelAdministrationIT extends Abstra
                                       return null;
                                   })
                                   .eventTargetMatcher((o, eventMessage, ctx) -> {
-                                      String eventName = eventMessage.type().name();
-                                      if (eventName.equals(TaskCompleted.class.getName())
-                                              || eventName.equals(TaskCompleted.EVENT_NAME)) {
+                                      if (eventMessage.type().name().equals(TaskCompleted.class.getName())) {
                                           TaskCompleted taskCompleted = eventConverter.convertPayload(
                                                   eventMessage, TaskCompleted.class
                                           );
@@ -236,6 +242,12 @@ public abstract class ImmutableBuilderEntityModelAdministrationIT extends Abstra
                                                   "TaskCompleted event payload cannot be null"
                                           );
                                           return o.getTaskId().equals(taskCompleted.taskId());
+                                      }
+                                      if (eventMessage.type().name().equals(TaskClosedExternally.EVENT_NAME)) {
+                                          TaskClosedExternally closed =
+                                                  eventConverter.convertPayload(eventMessage,
+                                                                                TaskClosedExternally.class);
+                                          return closed != null && o.getTaskId().equals(closed.taskId());
                                       }
                                       return false;
                                   })

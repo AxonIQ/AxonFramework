@@ -30,9 +30,9 @@ import org.axonframework.integrationtests.testsuite.administration.commands.Revo
 import org.axonframework.integrationtests.testsuite.administration.commands.SuspendEmployeeCommand;
 import org.axonframework.integrationtests.testsuite.administration.common.PersonIdentifier;
 import org.axonframework.integrationtests.testsuite.administration.common.PersonType;
-import org.axonframework.integrationtests.testsuite.administration.events.CertificationRevoked;
+import org.axonframework.integrationtests.testsuite.administration.events.CertificationWithdrawnExternally;
 import org.axonframework.integrationtests.testsuite.administration.events.EmployeeSuspended;
-import org.axonframework.integrationtests.testsuite.administration.events.TaskCompleted;
+import org.axonframework.integrationtests.testsuite.administration.events.TaskClosedExternally;
 import org.axonframework.messaging.commandhandling.GenericCommandMessage;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.eventhandling.EventSink;
@@ -213,7 +213,7 @@ public abstract class AbstractAdministrationIT extends AbstractIT {
         sendCommand(new AssignTaskCommand(employee, "task-0", "Task 0"));
         sendCommand(new AssignTaskCommand(employee, "task-1", "Task 1"));
 
-        publishEvent(TaskCompleted.EVENT_NAME, new TaskCompleted(employee, "task-0"));
+        publishEvent(TaskClosedExternally.EVENT_NAME, new TaskClosedExternally(employee, "task-0"));
 
         assertThrowsExceptionWithText("Task is already completed",
                                       () -> sendCommand(new CompleteTaskCommand(employee, "task-0")));
@@ -226,11 +226,15 @@ public abstract class AbstractAdministrationIT extends AbstractIT {
         sendCommand(CREATE_EMPLOYEE_1_COMMAND);
         PersonIdentifier employee = CREATE_EMPLOYEE_1_COMMAND.identifier();
         sendCommand(new GrantCertificationCommand(employee, "AWS-SAA", "Amazon"));
+        sendCommand(new GrantCertificationCommand(employee, "Axon Pro", "Axoniq"));
 
-        publishEvent(CertificationRevoked.EVENT_NAME, new CertificationRevoked(employee, "AWS-SAA"));
+        publishEvent(CertificationWithdrawnExternally.EVENT_NAME,
+                     new CertificationWithdrawnExternally(employee, "AWS-SAA"));
 
         assertThrowsExceptionWithText("Certification is already revoked",
                                       () -> sendCommand(new RevokeCertificationCommand(employee, "AWS-SAA")));
+        // The other certification did not match the routing key, so it can still be revoked
+        sendCommand(new RevokeCertificationCommand(employee, "Axon Pro"));
     }
 
     private void assertThrowsExceptionWithText(String expectedMessage, Runnable runnable) {
