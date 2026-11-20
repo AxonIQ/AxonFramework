@@ -19,6 +19,7 @@ package org.axonframework.messaging.eventhandling.configuration;
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.common.configuration.ConfigurationEnhancer;
+import org.axonframework.common.configuration.DecoratorOrder;
 import org.axonframework.messaging.core.MessageDispatchInterceptor;
 import org.axonframework.messaging.core.configuration.MessagingConfigurationDefaults;
 import org.axonframework.messaging.core.interception.DispatchInterceptorRegistry;
@@ -77,7 +78,7 @@ public class EventBusConfigurationDefaults implements ConfigurationEnhancer {
     private static void registerDecorators(ComponentRegistry registry) {
         registry.registerDecorator(
                 EventBus.class,
-                InterceptingEventBus.DECORATION_ORDER,
+                DecoratorOrder.INTERCEPTING,
                 (config, name, delegate) -> {
                     List<MessageDispatchInterceptor<? super EventMessage>> dispatchInterceptors =
                             config.getComponent(DispatchInterceptorRegistry.class)

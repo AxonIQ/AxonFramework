@@ -16,6 +16,7 @@
 
 package org.axonframework.modelling.tracing.configuration;
 
+import org.axonframework.common.configuration.DecoratorOrder;
 import org.axonframework.messaging.tracing.SpanFactory;
 import org.axonframework.messaging.tracing.configuration.TracingConfigurationOrder;
 import org.axonframework.modelling.repository.tracing.TracingRepository;
@@ -51,8 +52,11 @@ public final class ModellingTracingConfigurationEnhancer implements Configuratio
      * an outermost {@code instanceof} check (see {@link TracingStateManager#register(Repository)}). Same value and
      * rationale as {@link
      * org.axonframework.messaging.tracing.configuration.MessagingTracingConfigurationEnhancer#TRACING_DECORATOR_ORDER}.
+     *
+     * @deprecated in favor of {@link DecoratorOrder#TRACING}
      */
-    public static final int TRACING_DECORATOR_ORDER = TracingConfigurationOrder.TRACING_DECORATOR_ORDER;
+    @Deprecated(since = "5.5.0")
+    public static final int TRACING_DECORATOR_ORDER = DecoratorOrder.TRACING;
 
     @Override
     @SuppressWarnings({"rawtypes", "unchecked"})
@@ -61,7 +65,7 @@ public final class ModellingTracingConfigurationEnhancer implements Configuratio
                                       c -> ModellingTracingSettings.enabledByDefault());
         registry.registerDecorator(
                 Repository.class,
-                TRACING_DECORATOR_ORDER,
+                DecoratorOrder.TRACING,
                 (config, name, delegate) -> {
                     // Repository is sealed; only LifecycleManagement implementations are registered.
                     if (!(delegate instanceof Repository.LifecycleManagement<?, ?> lifecycle)) {
@@ -76,7 +80,7 @@ public final class ModellingTracingConfigurationEnhancer implements Configuratio
         );
         registry.registerDecorator(
                 StateManager.class,
-                TRACING_DECORATOR_ORDER,
+                DecoratorOrder.TRACING,
                 (config, name, delegate) -> {
                     SpanFactory spanFactory = spanFactory(config);
                     if (spanFactory == null || !settings(config).stateManagerEnabled()) {

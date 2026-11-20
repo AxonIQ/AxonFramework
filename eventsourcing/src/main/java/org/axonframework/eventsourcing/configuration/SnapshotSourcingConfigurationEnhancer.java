@@ -19,6 +19,7 @@ package org.axonframework.eventsourcing.configuration;
 import org.axonframework.common.annotation.RegistrationScope;
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.ConfigurationEnhancer;
+import org.axonframework.common.configuration.DecoratorOrder;
 import org.axonframework.eventsourcing.eventstore.EventStorageEngine;
 import org.axonframework.eventsourcing.eventstore.SnapshotCapableEventStorageEngine;
 import org.axonframework.eventsourcing.eventstore.SourcingStrategy;
@@ -80,7 +81,7 @@ public class SnapshotSourcingConfigurationEnhancer implements ConfigurationEnhan
     public void enhance(ComponentRegistry registry) {
         registry.registerDecorator(
                 EventStorageEngine.class,
-                SnapshotCapableEventStorageEngine.DECORATION_ORDER,
+                DecoratorOrder.DEFAULT,
                 (config, name, engine) -> config
                         .getOptionalComponent(SnapshotStore.class)
                         .map(snapshotStore -> SnapshotCapableEventStorageEngine.decorate(engine, snapshotStore))

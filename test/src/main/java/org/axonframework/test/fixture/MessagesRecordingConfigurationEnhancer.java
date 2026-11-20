@@ -19,9 +19,9 @@ package org.axonframework.test.fixture;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.ConfigurationEnhancer;
+import org.axonframework.common.configuration.DecoratorOrder;
 import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.messaging.commandhandling.CommandBus;
-import org.axonframework.messaging.commandhandling.interception.InterceptingCommandBus;
 import org.axonframework.messaging.eventhandling.EventBus;
 
 import java.util.Objects;
@@ -45,15 +45,10 @@ import java.util.Objects;
 public class MessagesRecordingConfigurationEnhancer implements ConfigurationEnhancer {
 
     /**
-     * Innermost position: recording sees the message after all other decorators (interceptors) have processed it.
-     */
-    private static final int EVENTS_RECORDER_DECORATION_ORDER = Integer.MIN_VALUE;
-
-    /**
      * Decoration order for the command bus recorder. Placed just outside the {@code DistributedCommandBus} so that
      * commands are recorded with their original, non-serialized payloads before they reach the distributed bus.
      */
-    private static final int COMMANDS_RECORDER_DECORATION_ORDER = InterceptingCommandBus.DECORATION_ORDER - 49;
+    private static final int COMMANDS_RECORDER_DECORATION_ORDER = DecoratorOrder.INTERCEPTING - 49;
 
     @Override
     public void enhance(ComponentRegistry registry) {
@@ -72,7 +67,7 @@ public class MessagesRecordingConfigurationEnhancer implements ConfigurationEnha
 
         if (registry.hasComponent(EventStore.class)) {
             registry.registerDecorator(EventStore.class,
-                                       EVENTS_RECORDER_DECORATION_ORDER,
+                                       DecoratorOrder.INNERMOST,
                                        (config, name, delegate) -> {
                                            var recording = new RecordingEventStore(delegate);
                                            recordings.registerEventSink(recording);
@@ -80,7 +75,7 @@ public class MessagesRecordingConfigurationEnhancer implements ConfigurationEnha
                                        });
         } else {
             registry.registerDecorator(EventBus.class,
-                                       EVENTS_RECORDER_DECORATION_ORDER,
+                                       DecoratorOrder.INNERMOST,
                                        (config, name, delegate) -> {
                                            var recording = new RecordingEventBus(delegate);
                                            recordings.registerEventSink(recording);

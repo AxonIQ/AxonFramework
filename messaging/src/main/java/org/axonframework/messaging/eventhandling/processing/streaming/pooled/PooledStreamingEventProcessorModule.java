@@ -22,6 +22,7 @@ import org.axonframework.common.configuration.BaseModule;
 import org.axonframework.common.configuration.ComponentBuilder;
 import org.axonframework.common.configuration.ComponentDefinition;
 import org.axonframework.common.configuration.Configuration;
+import org.axonframework.common.configuration.DecoratorOrder;
 import org.axonframework.common.configuration.ModuleBuilder;
 import org.axonframework.common.lifecycle.Phase;
 import org.axonframework.messaging.core.sequencing.SequencingPolicy;
@@ -188,7 +189,7 @@ public class PooledStreamingEventProcessorModule extends BaseModule<PooledStream
                         }
                 );
                 cr.registerDecorator(EventHandlingComponent.class, componentName,
-                                     InterceptingEventHandlingComponent.DECORATION_ORDER,
+                                     DecoratorOrder.INTERCEPTING,
                                      (config, name, delegate) -> {
                                          var configuration =
                                                  config.getComponent(PooledStreamingEventProcessorConfiguration.class);

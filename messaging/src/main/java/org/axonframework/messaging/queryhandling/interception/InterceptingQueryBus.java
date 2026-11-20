@@ -16,6 +16,7 @@
 
 package org.axonframework.messaging.queryhandling.interception;
 
+import org.axonframework.common.configuration.DecoratorOrder;
 import org.jspecify.annotations.Nullable;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.common.configuration.ComponentRegistry;
@@ -71,8 +72,11 @@ public class InterceptingQueryBus implements QueryBus {
      * <p>
      * The order of the {@code InterceptingQueryBus} is set to {@code Integer.MIN_VALUE + 100} to ensure it is applied
      * very early in the configuration process, but not the earliest to allow for other decorators to be applied.
+     *
+     * @deprecated in favor of {@link DecoratorOrder#INTERCEPTING}
      */
-    public static final int DECORATION_ORDER = Integer.MIN_VALUE + 100;
+    @Deprecated(since = "5.5.0")
+    public static final int DECORATION_ORDER = DecoratorOrder.INTERCEPTING;
 
     private final QueryBus delegate;
     private final List<MessageHandlerInterceptor<? super QueryMessage>> handlerInterceptors;

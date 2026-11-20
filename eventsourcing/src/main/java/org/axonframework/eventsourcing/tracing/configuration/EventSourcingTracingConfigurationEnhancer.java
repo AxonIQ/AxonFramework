@@ -16,6 +16,7 @@
 
 package org.axonframework.eventsourcing.tracing.configuration;
 
+import org.axonframework.common.configuration.DecoratorOrder;
 import org.axonframework.messaging.tracing.SpanFactory;
 import org.axonframework.messaging.tracing.configuration.TracingConfigurationOrder;
 import org.axonframework.eventsourcing.eventstore.tracing.TracingEventStore;
@@ -54,8 +55,11 @@ public final class EventSourcingTracingConfigurationEnhancer implements Configur
      * an outermost {@code instanceof} check. Same value and rationale as
      * {@link
      * org.axonframework.messaging.tracing.configuration.MessagingTracingConfigurationEnhancer#TRACING_DECORATOR_ORDER}.
+     *
+     * @deprecated in favor of {@link DecoratorOrder#TRACING}
      */
-    public static final int TRACING_DECORATOR_ORDER = TracingConfigurationOrder.TRACING_DECORATOR_ORDER;
+    @Deprecated(since = "5.5.0")
+    public static final int TRACING_DECORATOR_ORDER = DecoratorOrder.TRACING;
 
     @Override
     public void enhance(ComponentRegistry registry) {
@@ -63,7 +67,7 @@ public final class EventSourcingTracingConfigurationEnhancer implements Configur
                                       c -> EventSourcingTracingSettings.enabledByDefault());
         registry.registerDecorator(
                 EventStorageEngine.class,
-                TRACING_DECORATOR_ORDER,
+                DecoratorOrder.TRACING,
                 (config, name, delegate) -> {
                     SpanFactory spanFactory = spanFactory(config);
                     if (spanFactory == null || !settings(config).eventStoreEnabled()) {
@@ -74,7 +78,7 @@ public final class EventSourcingTracingConfigurationEnhancer implements Configur
         );
         registry.registerDecorator(
                 SnapshotStore.class,
-                TRACING_DECORATOR_ORDER,
+                DecoratorOrder.TRACING,
                 (config, name, delegate) -> {
                     SpanFactory spanFactory = spanFactory(config);
                     if (spanFactory == null || !settings(config).snapshotStoreEnabled()) {
@@ -89,7 +93,7 @@ public final class EventSourcingTracingConfigurationEnhancer implements Configur
         // assignment check.
         registry.registerDecorator(
                 EventStore.class,
-                TRACING_DECORATOR_ORDER,
+                DecoratorOrder.TRACING,
                 (config, name, delegate) -> {
                     SpanFactory spanFactory = spanFactory(config);
                     // Gated on the same event-sink.enabled toggle as the messaging-side EventSink wrappers: they
