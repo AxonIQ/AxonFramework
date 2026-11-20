@@ -19,6 +19,7 @@ package org.axonframework.messaging.commandhandling;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.conversion.Converter;
 import org.axonframework.messaging.core.HandlerExecutionException;
+import org.axonframework.messaging.core.VersionedType;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -71,6 +72,22 @@ public class CommandExecutionException extends HandlerExecutionException {
                                      @Nullable Object details,
                                      boolean writableStackTrace) {
         super(message, cause, details, writableStackTrace);
+    }
+
+    /**
+     * Initializes the exception with given {@code message}, {@code cause}, an object providing application-specific
+     * {@code details}, and its {@code detailsType}.
+     *
+     * @param message     the message describing the exception
+     * @param cause       the cause of the exception
+     * @param details     an object providing more error details (might be {@code null})
+     * @param detailsType the {@link VersionedType} describing the type and version of the details
+     */
+    public CommandExecutionException(String message,
+                                     Throwable cause,
+                                     @Nullable Object details,
+                                     @Nullable VersionedType detailsType) {
+        super(message, cause, details, detailsType);
     }
 
     /**
