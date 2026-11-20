@@ -19,6 +19,7 @@ import org.axonframework.common.BuilderUtils;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -352,11 +353,12 @@ class AxonTimeLimitedTask {
      */
     private void scheduleWarningOrInterrupt() {
         long takenTime = System.currentTimeMillis() - startTimeMs;
-        String outcome = activeThreads.isEmpty() ? "Will time out in" : "Will be interrupted in";
+        List<Thread> threads = List.copyOf(activeThreads);
+        String outcome = threads.isEmpty() ? "Will time out in" : "Will be interrupted in";
         logger.warn("""
                             {} is taking a long time to process. Current time: [{}ms]. {} [{}ms].
                             {}""",
-                    taskName, takenTime, outcome, timeout - takenTime, describeActiveThreads());
+                    taskName, takenTime, outcome, timeout - takenTime, describeThreads(threads));
         if (takenTime + warningInterval < timeout) {
             scheduleWarning(warningInterval);
         } else {
@@ -378,14 +380,15 @@ class AxonTimeLimitedTask {
             currentScheduledFuture = scheduledExecutorService.schedule(() -> {
                 synchronized (lock) {
                     if (!completed && !interrupted) {
-                        if (activeThreads.isEmpty()) {
+                        List<Thread> threads = List.copyOf(activeThreads);
+                        if (threads.isEmpty()) {
                             logger.error("{} has exceeded its timeout of [{}ms]. No thread is processing it, as it "
                                                  + "is waiting for an asynchronous result. It will fail with a "
                                                  + "timeout once that result completes.",
                                          taskName, timeout);
                         } else {
                             logger.error("{} has exceeded its timeout of [{}ms]. Interrupting thread(s).\n{}",
-                                         taskName, timeout, describeActiveThreads());
+                                         taskName, timeout, describeThreads(threads));
                         }
                         interrupted = true;
                         activeThreads.forEach(Thread::interrupt);
@@ -398,14 +401,14 @@ class AxonTimeLimitedTask {
         }
     }
 
-    private String describeActiveThreads() {
-        if (activeThreads.isEmpty()) {
+    private String describeThreads(List<Thread> threads) {
+        if (threads.isEmpty()) {
             return "No thread is processing it, as it is waiting for an asynchronous result.";
         }
         StringBuilder sb = new StringBuilder();
-        for (Thread activeThread : activeThreads) {
-            sb.append("Stacktrace of thread [").append(activeThread.getName()).append("]:\n");
-            for (StackTraceElement element : activeThread.getStackTrace()) {
+        for (Thread thread : threads) {
+            sb.append("Stacktrace of thread [").append(thread.getName()).append("]:\n");
+            for (StackTraceElement element : thread.getStackTrace()) {
                 sb.append(element).append("\n");
                 if (element.getClassName().equals(callerClassName)) {
                     break;
