@@ -23,4 +23,5 @@ public record CertificationRevoked(
         String certificationName
 ) implements PersonEvent {
 
+    public static final String EVENT_NAME = "certificationRevoked";
 }

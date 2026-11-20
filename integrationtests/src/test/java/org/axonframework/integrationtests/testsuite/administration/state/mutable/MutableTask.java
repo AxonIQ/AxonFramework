@@ -20,6 +20,7 @@ import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
 import org.axonframework.integrationtests.testsuite.administration.commands.CompleteTaskCommand;
 import org.axonframework.integrationtests.testsuite.administration.events.TaskCompleted;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
+import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 
 public class MutableTask {
@@ -43,6 +44,12 @@ public class MutableTask {
 
     @EventSourcingHandler
     public void on(TaskCompleted event) {
+        this.completed = true;
+    }
+
+    /** Uses {@link TaskCompleted#EVENT_NAME}, not the class name, to prove a List child honours eventName. */
+    @EventHandler(eventName = TaskCompleted.EVENT_NAME)
+    public void onNamed(TaskCompleted event) {
         this.completed = true;
     }
 

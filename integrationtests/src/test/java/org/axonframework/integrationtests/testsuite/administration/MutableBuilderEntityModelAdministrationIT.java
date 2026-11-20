@@ -195,7 +195,9 @@ public abstract class MutableBuilderEntityModelAdministrationIT extends Abstract
                                       return null;
                                   })
                                   .eventTargetMatcher((o, eventMessage, ctx) -> {
-                                      if (eventMessage.type().name().equals(CertificationRevoked.class.getName())) {
+                                      String eventName = eventMessage.type().name();
+                                      if (eventName.equals(CertificationRevoked.class.getName())
+                                              || eventName.equals(CertificationRevoked.EVENT_NAME)) {
                                           CertificationRevoked certificationRevoked =
                                                   eventConverter.convertPayload(eventMessage, CertificationRevoked.class);
                                           Objects.requireNonNull(certificationRevoked,
@@ -226,7 +228,9 @@ public abstract class MutableBuilderEntityModelAdministrationIT extends Abstract
                                       return null;
                                   })
                                   .eventTargetMatcher((o, eventMessage, ctx) -> {
-                                      if (eventMessage.type().name().equals(TaskCompleted.class.getName())) {
+                                      String eventName = eventMessage.type().name();
+                                      if (eventName.equals(TaskCompleted.class.getName())
+                                              || eventName.equals(TaskCompleted.EVENT_NAME)) {
                                           TaskCompleted taskCompleted =
                                                   eventConverter.convertPayload(eventMessage, TaskCompleted.class);
                                           Objects.requireNonNull(taskCompleted,

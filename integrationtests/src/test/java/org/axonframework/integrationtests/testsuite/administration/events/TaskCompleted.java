@@ -23,4 +23,5 @@ public record TaskCompleted(
         String taskId
 ) implements PersonEvent {
 
+    public static final String EVENT_NAME = "taskCompleted";
 }
