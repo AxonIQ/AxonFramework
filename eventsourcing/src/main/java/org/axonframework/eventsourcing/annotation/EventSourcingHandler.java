@@ -75,6 +75,28 @@ import java.lang.annotation.Target;
 public @interface EventSourcingHandler {
 
     /**
+     * The name of the event this method handles, matching the
+     * {@link org.axonframework.messaging.core.MessageType#name()} of the {@link EventMessage#type()}.
+     * <p>
+     * Use it when the event is published under a name that differs from the name of the handler's payload type. For
+     * example, an event another module publishes as {@code billing.EnrollmentPaid}, read here through a local class:
+     * <pre>{@code
+     * @EventSourcingHandler(eventName = "billing.EnrollmentPaid")
+     * void on(PaymentReceived event) {
+     *     this.paid = true;
+     * }
+     * }</pre>
+     * The payload is converted to the type of the first parameter before the handler is invoked.
+     * <p>
+     * Optional. If unspecified, the {@link org.axonframework.messaging.core.MessageTypeResolver} derives the name from
+     * the payload type, thus the first parameter of the method. Mirrors {@link EventHandler#eventName()}.
+     *
+     * @return the name of the event this method handles, or an empty {@code String} to derive it from the payload type
+     * @since 5.5.0
+     */
+    String eventName() default "";
+
+    /**
      * The type of event this method handles. If specified, this handler will only be invoked for message that have a
      * payload assignable to the given payload type.
      * <p>
