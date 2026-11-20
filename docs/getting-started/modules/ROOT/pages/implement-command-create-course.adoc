@@ -488,7 +488,7 @@ In the next section, we'll tackle a more complex feature: allowing students to s
 
 If you prefer not to use annotations in your domain model, we have you covered.
 You can skip annotations like `@EventSourcingHandler` on the state class and snip up everything in the configuration using plain Java code!
-To see how to implement this slice differently, you can check the GitHub repository link:https://github.com/AxonIQ/university-demo/tree/master/src/main/java/io/axoniq/demo/university/faculty/write/createcourseplain/[University Demo (Create Course in plain Java),role=external,window=_blank].
+To see how to implement this slice differently, you can check the GitHub repository link:https://github.com/AxonIQ/AxonFramework/tree/main/examples/university-demo/src/main/java/org/axonframework/examples/demo/university/faculty/write/createcourseplain[University Demo (Create Course in plain Java),role=external,window=_blank].
 
 == Next steps
 

@@ -542,8 +542,8 @@ But in this case, you load more than needed, and it's possible to clash with oth
 Let's summarize what we have done so far.
 We've implemented the whole `SubscribeStudentToCourse` command handler using the DCB concept in practice.
 It was easier than you expected, right?
-If you're not sure if you followed the tutorial correctly, you can always check the code in the repository. The command handler code is here link:https://github.com/AxonIQ/university-demo/blob/master/src/main/java/io/axoniq/demo/university/faculty/write/subscribestudent/SubscribeStudentToCourseCommandHandler.java[SubscribeStudentToCourseCommandHandler].
-If you prefer to use a different style (with multiple state classes - like `Course` and `Student` instead of just one) you may also compare it with the solution we have done in the link:https://github.com/AxonIQ/university-demo/tree/master/src/main/java/io/axoniq/demo/university/faculty/write/subscribestudentmulti[subscribestudentmulti] package.
+If you're not sure if you followed the tutorial correctly, you can always check the code in the repository. The command handler code is here link:https://github.com/AxonIQ/AxonFramework/blob/main/examples/university-demo/src/main/java/org/axonframework/examples/demo/university/faculty/write/subscribestudent/SubscribeStudentToCourseCommandHandler.java[SubscribeStudentToCourseCommandHandler].
+If you prefer to use a different style (with multiple state classes - like `Course` and `Student` instead of just one) you may also compare it with the solution we have done in the link:https://github.com/AxonIQ/AxonFramework/tree/main/examples/university-demo/src/main/java/org/axonframework/examples/demo/university/faculty/write/subscribestudentmulti[subscribestudentmulti] package.
 
 == Configuration
 Same as before, to make our tests green, the last thing to do is to configure the required infrastructure for the command handler.
