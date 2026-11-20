@@ -287,6 +287,34 @@ class TimeoutUnitOfWorkFactoryTest {
         }
     }
 
+    @Test
+    void doesNotInterruptUnrelatedWorkOnTheThreadThatReturnedAPendingResult() throws Exception {
+        try (ExecutorService callerThread = Executors.newSingleThreadExecutor();
+             ExecutorService remoteThread = Executors.newSingleThreadExecutor()) {
+            UnitOfWork uow = createTimeoutFactory(100).create(UUID.randomUUID().toString());
+            CompletableFuture<Void> pendingWork = new CompletableFuture<>();
+            AtomicBoolean unrelatedWorkInterrupted = new AtomicBoolean(false);
+            uow.onInvocation(context -> pendingWork);
+
+            CompletableFuture<Void> result = callerThread.submit(uow::execute).get(2, TimeUnit.SECONDS);
+            CompletableFuture<Void> unrelatedWork = CompletableFuture.runAsync(() -> {
+                try {
+                    Thread.sleep(300);
+                } catch (InterruptedException e) {
+                    unrelatedWorkInterrupted.set(true);
+                }
+            }, callerThread);
+            unrelatedWork.get(2, TimeUnit.SECONDS);
+            remoteThread.submit(() -> pendingWork.complete(null));
+            await().atMost(2, TimeUnit.SECONDS).until(result::isDone);
+
+            assertFalse(unrelatedWorkInterrupted.get(),
+                        "Unrelated work on the thread that returned the pending result must not be interrupted");
+            assertTrue(result.isCompletedExceptionally());
+            assertInstanceOf(AxonTimeoutException.class, result.exceptionNow());
+        }
+    }
+
     private CompletableFuture<?> execute(TimeoutUnitOfWorkFactory factory, EventHandler terminalHandler) {
         EventMessageHandlerInterceptorChain chain =
                 new EventMessageHandlerInterceptorChain(List.of(), terminalHandler);
