@@ -80,6 +80,26 @@ class DefaultStreamingConditionTest {
     }
 
     @Test
+    void withPositionReplacesTheExistingPositionPreservingCriteria() {
+        // given a replacement position distinct from the existing one
+        GlobalSequenceTrackingToken replacement = new GlobalSequenceTrackingToken(42);
+
+        // when the position is replaced
+        StreamingCondition result = testSubject.withPosition(replacement);
+
+        // then the criteria is preserved and only the replacement position remains
+        assertEquals(replacement, result.position());
+        assertEquals(Set.of(TEST_CRITERIA), result.criteria().flatten());
+    }
+
+    @Test
+    void withPositionThrowsExceptionForNullPosition() {
+        // when replacing with a null position, then a NullPointerException is raised
+        //noinspection DataFlowIssue
+        assertThrows(NullPointerException.class, () -> testSubject.withPosition(null));
+    }
+
+    @Test
     void orCombinesGivenWithExistingCriteria() {
         // given a criteria targeting a different tag and a type
         EventCriteria testCriteria = EventCriteria.havingTags(new Tag("other-key", "other-value"))
