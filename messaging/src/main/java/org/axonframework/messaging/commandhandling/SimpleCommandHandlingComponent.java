@@ -23,8 +23,10 @@ import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -47,7 +49,7 @@ public class SimpleCommandHandlingComponent implements CommandHandlingComponent,
         CommandHandlerRegistry<SimpleCommandHandlingComponent> {
 
     private final String name;
-    private final Map<QualifiedName, CommandHandler> commandHandlers = new HashMap<>();
+    private final Map<QualifiedName, List<CommandHandler>> commandHandlers = new HashMap<>();
     private final Set<CommandHandlingComponent> subComponents = new HashSet<>();
 
     /**
@@ -72,11 +74,21 @@ public class SimpleCommandHandlingComponent implements CommandHandlingComponent,
             return subscribe(component);
         }
 
-        CommandHandler existingHandler = commandHandlers.computeIfAbsent(name, k -> commandHandler);
-
-        if (existingHandler != commandHandler) {
-            throw new DuplicateCommandHandlerSubscriptionException(name, existingHandler, commandHandler);
-        }
+        commandHandlers.compute(name, (key, existingHandlers) -> {
+            if (existingHandlers == null) {
+                existingHandlers = new ArrayList<>();
+            }
+            for (CommandHandler existing : existingHandlers) {
+                if (existing == commandHandler) {
+                    return existingHandlers;
+                }
+                if (existing.supportedVersions().overlaps(commandHandler.supportedVersions())) {
+                    throw new DuplicateCommandHandlerSubscriptionException(name, existing, commandHandler);
+                }
+            }
+            existingHandlers.add(commandHandler);
+            return existingHandlers;
+        });
 
         return this;
     }
@@ -106,17 +118,35 @@ public class SimpleCommandHandlingComponent implements CommandHandlingComponent,
             }
         }
 
-        if (commandHandlers.containsKey(qualifiedName)) {
-            try {
-                return commandHandlers.get(qualifiedName).handle(command, context);
-            } catch (Throwable e) {
-                return MessageStream.failed(e);
+        String version = command.type().version();
+        List<CommandHandler> handlers = commandHandlers.get(qualifiedName);
+        if (handlers != null) {
+            Optional<MessageStream.Single<CommandResultMessage>> result = handleWithVersionMatch(handlers, version, command, context);
+            if (result.isPresent()) {
+                return result.get();
             }
         }
 
         String message = "No handler was subscribed for command with qualified name [%s] on component [%s]. Registered handlers: [%s]"
                 .formatted(qualifiedName.fullName(), this.getClass().getName(), supportedCommands());
         return MessageStream.failed(new NoHandlerForCommandException(message));
+    }
+
+    private Optional<MessageStream.Single<CommandResultMessage>> handleWithVersionMatch(
+            List<CommandHandler> handlers,
+            String version,
+            CommandMessage command,
+            ProcessingContext context) {
+        for (CommandHandler handler : handlers) {
+            if (handler.supportedVersions().matches(version)) {
+                try {
+                    return Optional.of(handler.handle(command, context));
+                } catch (Throwable e) {
+                    return Optional.of(MessageStream.failed(e));
+                }
+            }
+        }
+        return Optional.empty();
     }
 
     @Override
