@@ -74,7 +74,7 @@ The guide includes these main sections:
 - Test tutorial steps with actual Axon Framework 5.0.0
 
 ### Repository References
-- Main tutorial GitHub repo: https://github.com/AxonIQ/university-demo/
+- Main tutorial GitHub repo: https://github.com/AxonIQ/AxonFramework/tree/main/examples/university-demo
 - Feedback collection: https://discuss.axoniq.io/t/feedback-template/6034
 
 ## Writing Guidelines

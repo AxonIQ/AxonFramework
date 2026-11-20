@@ -181,7 +181,7 @@ This is invaluable for debugging, auditing, and understanding the behavior of yo
 == Switching between event store implementations
 
 Sometimes you might want to switch back to the in-memory Event Store for development or testing purposes.
-To do that, you may use configuration properties as shown in the link:https://github.com/AxonIQ/university-demo/[Axon University Demo repository on GitHub,role=external,window=_blank].
+To do that, you may use configuration properties as shown in the link:https://github.com/AxonIQ/AxonFramework/tree/main/examples/university-demo[Axon University Demo on GitHub,role=external,window=_blank].
 
 This flexibility allows you to:
 
