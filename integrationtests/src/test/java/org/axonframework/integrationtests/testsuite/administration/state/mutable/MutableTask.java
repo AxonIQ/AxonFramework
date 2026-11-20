@@ -18,6 +18,7 @@ package org.axonframework.integrationtests.testsuite.administration.state.mutabl
 
 import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
 import org.axonframework.integrationtests.testsuite.administration.commands.CompleteTaskCommand;
+import org.axonframework.integrationtests.testsuite.administration.events.TaskClosedExternally;
 import org.axonframework.integrationtests.testsuite.administration.events.TaskCompleted;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
@@ -47,9 +48,9 @@ public class MutableTask {
         this.completed = true;
     }
 
-    /** Uses {@link TaskCompleted#EVENT_NAME}, not the class name, to prove a List child honours eventName. */
-    @EventHandler(eventName = TaskCompleted.EVENT_NAME)
-    public void onNamed(TaskCompleted event) {
+    /** Reads another application's event by its published name {@link TaskClosedExternally#EVENT_NAME}. */
+    @EventHandler(eventName = TaskClosedExternally.EVENT_NAME)
+    public void on(TaskClosedExternally event) {
         this.completed = true;
     }
 
