@@ -20,6 +20,7 @@ import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
 import org.axonframework.integrationtests.testsuite.administration.commands.RevokeCertificationCommand;
 import org.axonframework.integrationtests.testsuite.administration.events.CertificationRevoked;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
+import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 
 public class MutableCertification {
@@ -45,6 +46,12 @@ public class MutableCertification {
 
     @EventSourcingHandler
     public void on(CertificationRevoked event) {
+        this.revoked = true;
+    }
+
+    /** Uses {@link CertificationRevoked#EVENT_NAME}, not the class name, to prove a Map child honours eventName. */
+    @EventHandler(eventName = CertificationRevoked.EVENT_NAME)
+    public void onNamed(CertificationRevoked event) {
         this.revoked = true;
     }
 
