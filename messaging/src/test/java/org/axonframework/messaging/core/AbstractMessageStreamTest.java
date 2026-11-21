@@ -1547,6 +1547,26 @@ class AbstractMessageStreamTest {
         }
 
         @Test
+        void threeStackedStreamsCallBackWhenAnEntryArrivedDuringTheInnerRead() {
+            // given
+            RacingSource source = new RacingSource(1);
+            MessageStream<Message> stacked = source.filter(e -> true).filter(e -> true).filter(e -> true);
+            AtomicInteger callbackCount = new AtomicInteger();
+            stacked.setCallback(callbackCount::incrementAndGet);
+            assertThat(stacked.next()).map(e -> e.message().payload()).contains("first");
+            callbackCount.set(0);
+
+            // when
+            Optional<Entry<Message>> missed = stacked.next(); // "last" arrives after the source was found empty
+
+            // then
+            assertThat(source.raced()).isTrue();
+            assertThat(missed).isEmpty();
+            assertThat(callbackCount).hasPositiveValue();
+            assertThat(stacked.next()).map(e -> e.message().payload()).contains("last");
+        }
+
+        @Test
         void sourcingChainCallsBackWhenAnEntryArrivedDuringTheInnerRead() {
             // given
             RacingSource source = new RacingSource(1);
@@ -1613,6 +1633,81 @@ class AbstractMessageStreamTest {
             // then
             assertThat(result).contains(entry);
             assertThat(callbackCount).hasValue(0);
+        }
+        @Test
+        void signalRaisedByAFetchThatReturnsNotReadyInvokesTheCallbackOnce() {
+            // given
+            SignalingOnceStream stream = new SignalingOnceStream();
+            AtomicInteger callbackCount = new AtomicInteger();
+            stream.setCallback(callbackCount::incrementAndGet);
+            callbackCount.set(0);
+            stream.signalOnNextFetch();
+
+            // when
+            Optional<Entry<Message>> result = stream.next();
+
+            // then
+            assertThat(result).isEmpty();
+            assertThat(callbackCount).hasValue(1);
+        }
+
+        @Test
+        void consumerCalledBackForASignalRaisedByAFetchThatReturnsNotReadyReadsTheNextValueWithoutLooping() {
+            // given
+            Entry<Message> entry = entryOf("value");
+            SignalingOnceStream stream = new SignalingOnceStream();
+            AtomicInteger callbackCount = new AtomicInteger();
+            List<Optional<Entry<Message>>> readByCallback = new CopyOnWriteArrayList<>();
+            stream.setCallback(() -> {
+                callbackCount.incrementAndGet();
+                readByCallback.add(stream.next());
+            });
+            callbackCount.set(0);
+            readByCallback.clear();
+            int fetchesBefore = stream.fetchCount();
+            stream.enqueue(FetchResult.of(entry)); // returned by the fetch after the signaling one
+            stream.signalOnNextFetch();
+
+            // when
+            Optional<Entry<Message>> result = stream.next();
+
+            // then
+            assertThat(result).isEmpty();
+            assertThat(callbackCount).hasValue(1);
+            assertThat(readByCallback).containsExactly(Optional.of(entry));
+            assertThat(stream.fetchCount() - fetchesBefore).isEqualTo(2);
+        }
+    }
+
+    /**
+     * A {@link ControllableStream} whose next fetch, once armed, signals progress from within the fetch and then
+     * returns {@link FetchResult.NotReady} without consuming any enqueued result.
+     */
+    private static class SignalingOnceStream extends ControllableStream {
+
+        private boolean signalOnNextFetch;
+        private int fetchCount;
+
+        void signalOnNextFetch() {
+            this.signalOnNextFetch = true;
+        }
+
+        int fetchCount() {
+            return fetchCount;
+        }
+
+        @NonNull
+        @Override
+        protected FetchResult<Entry<Message>> fetchNext() {
+            fetchCount++;
+
+            if (signalOnNextFetch) {
+                signalOnNextFetch = false;
+                triggerSignalProgress();
+                return FetchResult.notReady();
+            }
+
+            return super.fetchNext();
         }
     }
 
