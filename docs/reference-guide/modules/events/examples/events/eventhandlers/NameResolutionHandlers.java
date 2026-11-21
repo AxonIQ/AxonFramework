@@ -29,10 +29,34 @@ class NameResolutionHandlers {
     // end::event-handler-implicit-name[]
 
     // tag::event-handler-explicit-name[]
-    @EventHandler(eventName = "orders.OrderPlaced")
+    @EventHandler(namespace = "orders", name = "OrderPlaced")
     public void handleOrderPlaced(Map<String, Object> eventData) {
         // Handles events with qualified name "orders.OrderPlaced"
         // Payload is converted to Map at handling time
     }
     // end::event-handler-explicit-name[]
+
+    // tag::event-handler-partial-name[]
+    @EventHandler(namespace = "legacy")
+    public void onLegacyOrderPlaced(OrderPlacedEvent event) {
+        // Handles events with qualified name "legacy.OrderPlaced"
+        // The local name "OrderPlaced" is taken from the @Event annotation on OrderPlacedEvent
+    }
+    // end::event-handler-partial-name[]
+
+    // tag::event-handler-repeated[]
+    @EventHandler(namespace = "orders", name = "OrderPlaced")
+    @EventHandler(namespace = "orders", name = "OrderCreated")
+    public void onOrderPlacedOrCreated(OrderPlacedEvent event) {
+        // Handles events with qualified name "orders.OrderPlaced" and "orders.OrderCreated"
+        // Both are converted to OrderPlacedEvent at handling time
+    }
+    // end::event-handler-repeated[]
+
+    // tag::event-handler-composed[]
+    @OrderPlacedHandler
+    public void onOrderPlaced(OrderPlacedEvent event) {
+        // Handles events with qualified name "orders.OrderPlaced" and "orders.OrderCreated"
+    }
+    // end::event-handler-composed[]
 }
