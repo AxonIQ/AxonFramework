@@ -308,7 +308,9 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
      * - a read by another caller does not fetch, but returns empty and sets recheckAfterFetch, so
      *   the consumer is called back once the fetch returns;
      * - signalProgress() from another thread sets recheckAfterFetch for the same reason; a signal
-     *   from the fetching thread itself is caused by that fetch, so its result reflects it;
+     *   from the fetching thread itself is raised during that fetch, so a result with an entry or
+     *   completion reflects it, but NotReady may not: a delegate passes on a signal it received
+     *   during its own fetch only after returning no entry, so the consumer is called back then;
      * - terminalState(), onCompleted() and the describe hooks are not invoked, as they use the
      *   same subclass state as fetchNext(). Completing the stream meanwhile, as close() does,
      *   leaves onCompleted() to the fetching thread, which runs it once its fetch returns, and
@@ -441,6 +443,15 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
     private boolean recheckAfterFetch;
 
     /**
+     * Indicates that, while a fetch was in progress, the thread making it signaled progress, typically because a
+     * delegate it read delivered a signal. When that fetch returns {@link FetchResult.NotReady}, the signal may announce
+     * an entry the fetch did not see, so a callback is owed then.
+     * <p>
+     * Only access while synchronized on this class.
+     */
+    private boolean signaledByFetchingThread;
+
+    /**
      * Indicates that this stream completed while a fetch was in progress, so {@link #onCompleted()} still has to run.
      * The thread that made the fetch runs it once its fetch returns.
      * <p>
@@ -562,7 +573,9 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
      * <p>
      * This method does not wait for a {@link #fetchNext()} call that is in progress. A signal from
      * another thread during such a call is remembered instead, and the registered callback is
-     * invoked once the call returns, as the fetch may have missed what the signal announces.
+     * invoked once the call returns, as the fetch may have missed what the signal announces. A
+     * signal from the thread making that call, such as one a delegate passes on while being read,
+     * has the same effect when the call returns {@link FetchResult.NotReady}.
      *
      * <h3>Ordering requirement</h3>
      * Implementations <b>must ensure that any state changes that make progress observable
@@ -606,13 +619,19 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
             if (fetchingThread != null) {
 
                 /*
-                 * A signal from the fetching thread itself is raised by that fetch, so its result
-                 * reflects it already. A signal from elsewhere may announce state the fetch missed,
-                 * so the consumer is told to look again once the fetch returns.
+                 * A signal from elsewhere may announce state the fetch missed, so the consumer is
+                 * told to look again once the fetch returns. A signal from the fetching thread itself
+                 * is raised during that fetch, usually by a delegate it reads. A fetch that returns
+                 * an entry or completes reflects it. A fetch that returns NotReady may not: a delegate
+                 * delivers a signal it received from another thread during its own fetch only after
+                 * returning no entry to this fetch, so the consumer must look again then too.
                  */
 
                 if (Thread.currentThread() != fetchingThread) {
                     this.recheckAfterFetch = true;
+                }
+                else {
+                    this.signaledByFetchingThread = true;
                 }
 
                 return;
@@ -925,7 +944,8 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
      * @return the fetched entry, or an empty {@link Optional} if there is none
      */
     private synchronized Optional<Entry<M>> applyFetchResult(FetchResult<Entry<M>> result, boolean peek) {
-        boolean recheck = recheckAfterFetch;
+        boolean recheck = recheckAfterFetch
+                || (signaledByFetchingThread && result instanceof FetchResult.NotReady);
         boolean completedDuringFetch = completed;
 
         endFetch();
@@ -970,6 +990,7 @@ public abstract class AbstractMessageStream<M extends Message> implements Messag
     private synchronized void endFetch() {
         this.fetchingThread = null;
         this.recheckAfterFetch = false;
+        this.signaledByFetchingThread = false;
 
         if (onCompletedPending) {
             this.onCompletedPending = false;
