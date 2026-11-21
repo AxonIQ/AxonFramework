@@ -378,14 +378,15 @@ public class AnnotatedEntityMetamodel<E> implements EntityMetamodel<E>, Describa
     }
 
     private QualifiedName qualifiedNameFor(MessageHandlingMember<? super E> handler) {
-        return handler.unwrap(CommandHandlingMember.class)
-                      .map(CommandHandlingMember::commandName)
-                      .or(() -> handler.unwrap(EventHandlingMember.class).map(EventHandlingMember::eventName))
-                      // Filter empty Strings to fall back to the MessageTypeResolver.
-                      .filter(StringUtils::nonEmpty)
-                      .map(QualifiedName::new)
-                      .orElseGet(() -> messageTypeResolver.resolveOrThrow(handler.payloadType())
-                                                          .qualifiedName());
+        Optional<String> commandName = handler.unwrap(CommandHandlingMember.class)
+                                              .map(CommandHandlingMember::commandName);
+        if (commandName.isEmpty()) {
+            return EventHandlingMember.qualifiedNameOf(handler, messageTypeResolver);
+        }
+        return commandName.filter(StringUtils::nonEmpty) // Empty to fall back to the MessageTypeResolver.
+                          .map(QualifiedName::new)
+                          .orElseGet(() -> messageTypeResolver.resolveOrThrow(handler.payloadType())
+                                                              .qualifiedName());
     }
 
     private boolean isCreationalCommandHandler(MessageHandlingMember<? super E> handler) {

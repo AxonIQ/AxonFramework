@@ -768,6 +768,105 @@ class AnnotationUtilsTest {
     }
 
     @Nested
+    class ContainerAnnotationLookupTest {
+
+        @Test
+        void findsAttributesOfTheFirstRepeatedAnnotationOnTheElement() throws NoSuchMethodException {
+            // given
+            Method method = ContainerAnnotationLookupTest.class.getDeclaredMethod("repeatedlyLabeled");
+
+            // when
+            Optional<Map<String, Object>> result = findAnnotationAttributes(method, Label.class);
+
+            // then
+            assertThat(result).contains(Map.of("text", "first"));
+        }
+
+        @Test
+        void findsAttributesOfAnAnnotationRepeatedOnAMetaAnnotation() throws NoSuchMethodException {
+            // given
+            Method method = ContainerAnnotationLookupTest.class.getDeclaredMethod("composedLabeled");
+
+            // when
+            Optional<Map<String, Object>> result =
+                    findAnnotationAttributes(method, Label.class, AnnotationUtils.OVERRIDE_ONLY);
+
+            // then
+            assertThat(result).contains(Map.of("text", "metaFirst"));
+        }
+
+        @Test
+        void detectsAnAnnotationRepeatedOnAMetaAnnotation() throws NoSuchMethodException {
+            // given
+            Method method = ContainerAnnotationLookupTest.class.getDeclaredMethod("composedLabeled");
+
+            // when
+            boolean result = AnnotationUtils.isAnnotationPresent(method, Label.class);
+
+            // then
+            assertThat(result).isTrue();
+        }
+
+        @Test
+        void detectsAMetaAnnotationTypeCarryingAContainerAnnotation() {
+            // given
+            Set<Class<? extends Annotation>> annotatedWithLabel = new HashSet<>();
+
+            // when
+            boolean result = AnnotationUtils.isAnnotatedWith(ComposedLabel.class, Label.class,
+                                                             annotatedWithLabel, new HashSet<>());
+
+            // then
+            assertThat(result).isTrue();
+            assertThat(annotatedWithLabel).contains(ComposedLabel.class);
+        }
+
+        @Test
+        void stillFindsTheContainerAnnotationItself() throws NoSuchMethodException {
+            // given
+            Method method = ContainerAnnotationLookupTest.class.getDeclaredMethod("repeatedlyLabeled");
+
+            // when
+            boolean result = AnnotationUtils.isAnnotationPresent(method, Labels.class);
+
+            // then
+            assertThat(result).isTrue();
+        }
+
+        @Label(text = "first")
+        @Label(text = "second")
+        void repeatedlyLabeled() {
+        }
+
+        @ComposedLabel
+        void composedLabeled() {
+        }
+
+        @Retention(RetentionPolicy.RUNTIME)
+        @Target({ElementType.METHOD, ElementType.ANNOTATION_TYPE})
+        @Repeatable(Labels.class)
+        @interface Label {
+
+            String text();
+        }
+
+        @Retention(RetentionPolicy.RUNTIME)
+        @Target({ElementType.METHOD, ElementType.ANNOTATION_TYPE})
+        @interface Labels {
+
+            Label[] value();
+        }
+
+        @Retention(RetentionPolicy.RUNTIME)
+        @Target(ElementType.METHOD)
+        @Label(text = "metaFirst")
+        @Label(text = "metaSecond")
+        @interface ComposedLabel {
+
+        }
+    }
+
+    @Nested
     class HasAnnotationNamedTest {
 
         @Test

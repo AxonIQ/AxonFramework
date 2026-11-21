@@ -16,7 +16,7 @@
 
 package org.axonframework.messaging.eventhandling.annotation;
 
-import org.axonframework.common.annotation.AnnotationUtils;
+import org.axonframework.common.StringUtils;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.annotation.HandlerAttributes;
@@ -30,13 +30,15 @@ import org.axonframework.messaging.eventhandling.EventMessage;
 import java.lang.reflect.Member;
 import java.lang.reflect.Method;
 import java.util.Optional;
+import java.util.stream.Stream;
 
 /**
  * Implementation of a {@link HandlerEnhancerDefinition} used for {@link EventHandler} annotated methods to wrap a
  * {@link MessageHandlingMember} in a {@link EventHandlingMember} instance.
  * <p>
  * The {@link EventHandler#eventName()} is used to define the {@link EventHandlingMember#eventName()} without any fall
- * back.
+ * back. Defining the {@link EventHandler#eventName()} together with the {@link EventHandler#namespace()} or
+ * {@link EventHandler#name()} is rejected with an {@link UnsupportedHandlerException}.
  *
  * @author Mateusz Nowak
  * @since 5.0.0
@@ -45,17 +47,36 @@ public class MethodEventHandlerDefinition implements HandlerEnhancerDefinition {
 
     @Override
     public <T> MessageHandlingMember<T> wrapHandler(MessageHandlingMember<T> original) {
+        // The attribute is only present for members described by an @EventHandler annotation. Checking the method for
+        // the annotation instead would miss annotations grouped in the container of a repeated @EventHandler.
         Optional<String> optionalEventName = original.attribute(HandlerAttributes.EVENT_NAME);
         return original.unwrap(Method.class)
-                       .filter(method -> AnnotationUtils.isAnnotationPresent(method, EventHandler.class))
                        .filter(method -> optionalEventName.isPresent())
-                       .map(method -> (MessageHandlingMember<T>)
-                               new MethodEventHandlerDefinition.MethodEventMessageHandlingMember<>(
-                                       original,
-                                       optionalEventName.get()
-                               )
-                       )
+                       .map(method -> {
+                           assertNoConflictingNameAttributes(original, optionalEventName.get(), method);
+                           return (MessageHandlingMember<T>)
+                                   new MethodEventHandlerDefinition.MethodEventMessageHandlingMember<>(
+                                           original,
+                                           optionalEventName.get()
+                                   );
+                       })
                        .orElse(original);
+    }
+
+    private static void assertNoConflictingNameAttributes(MessageHandlingMember<?> handler,
+                                                          String eventName,
+                                                          Method method) {
+        boolean namespaceOrNameDefined = Stream.of(HandlerAttributes.EVENT_NAMESPACE,
+                                                   HandlerAttributes.EVENT_LOCAL_NAME)
+                                               .map(handler::<String>attribute)
+                                               .anyMatch(value -> value.filter(StringUtils::nonEmpty).isPresent());
+        if (!eventName.isEmpty() && namespaceOrNameDefined) {
+            throw new UnsupportedHandlerException(
+                    "The event handler " + method.toGenericString() + " defines both an eventName and a namespace "
+                            + "or name. Define either the fully qualified eventName, or the namespace and name.",
+                    method
+            );
+        }
     }
 
     /**

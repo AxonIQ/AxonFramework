@@ -63,6 +63,18 @@ public interface HandlerAttributes {
      */
     String EVENT_NAME = "EventHandler.eventName";
     /**
+     * Attribute key referencing the namespace of the {@link EventMessage} the handler can handle.
+     *
+     * @since 5.5.0
+     */
+    String EVENT_NAMESPACE = "EventHandler.namespace";
+    /**
+     * Attribute key referencing the local name of the {@link EventMessage} the handler can handle.
+     *
+     * @since 5.5.0
+     */
+    String EVENT_LOCAL_NAME = "EventHandler.name";
+    /**
      * Attribute key referencing the result type the handler can handle.
      */
     String RESULT_TYPE = "ResultHandler.resultType";

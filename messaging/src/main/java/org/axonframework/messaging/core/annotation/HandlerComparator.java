@@ -29,7 +29,9 @@ import java.util.function.ToIntFunction;
  * <li>The {@link MessageHandlingMember#priority()}, favoring the largest number</li>
  * <li>The class hierarchy of the {@link MessageHandlingMember#payloadType()}, favoring the most specific handler.</li>
  * <li>The parameter count on the actual message handling function, favoring the highest number as the most specific handler.</li>
- * <li>As a final tiebreaker, the {@link Executable#toGenericString()} of the actual message handling function</li>
+ * <li>The {@link Executable#toGenericString()} of the actual message handling function</li>
+ * <li>As a final tiebreaker, the declaration order of the message handler annotations, for a function that repeats
+ * its message handler annotation (see {@link HandlerAnnotationOccurrence#index()})</li>
  * </ol>
  * If the given {@code MessageHandlingMembers} both act on results rather, steps 2 through 4 are reversed.
  *
@@ -44,7 +46,9 @@ public final class HandlerComparator {
                 HandlerComparator::compareHierarchy
         )
         .thenComparing(Comparator.comparingInt(HandlerComparator::parameterCount).reversed())
-        .thenComparing(HandlerComparator::executableSignature);
+        .thenComparing(HandlerComparator::executableSignature)
+        // Occurrences of a repeated handler annotation share their method, so keep them apart in declaration order
+        .thenComparingInt(HandlerComparator::occurrenceIndex);
 
     private static final Comparator<MessageHandlingMember<?>> HANDLER_COMPARATOR_REVERSED = HANDLER_COMPARATOR.reversed();
 
@@ -107,6 +111,12 @@ public final class HandlerComparator {
         return handler.unwrap(Executable.class)
                       .map(Executable::getParameterCount)
                       .orElse(1);
+    }
+
+    private static int occurrenceIndex(MessageHandlingMember<?> handler) {
+        return handler.unwrap(HandlerAnnotationOccurrence.class)
+                      .map(HandlerAnnotationOccurrence::index)
+                      .orElse(0);
     }
 
     private static String executableSignature(MessageHandlingMember<?> handler) {

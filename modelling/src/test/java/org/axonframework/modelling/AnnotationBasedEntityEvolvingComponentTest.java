@@ -19,6 +19,7 @@ package org.axonframework.modelling;
 import org.axonframework.common.ClockUtils;
 import org.axonframework.conversion.jackson.JacksonConverter;
 import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
+import org.axonframework.messaging.core.GenericMessage;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.Metadata;
@@ -265,6 +266,66 @@ class AnnotationBasedEntityEvolvingComponentTest {
             assertEquals("null-0", state.handledPayloads);
             assertFalse(state.objectHandlerInvoked);
             assertEquals(1, state.handledCount);
+        }
+    }
+
+    @Nested
+    class RepeatedEventHandlers {
+
+        private static final EntityEvolver<RenamedEventState> EVOLVER = new AnnotationBasedEntityEvolvingComponent<>(
+                RenamedEventState.class,
+                converter,
+                new AnnotationMessageTypeResolver(),
+                ClasspathParameterResolverFactory.forClass(RenamedEventState.class),
+                ClasspathHandlerDefinition.forClass(RenamedEventState.class)
+        );
+
+        @Event(namespace = "orders", name = "OrderPlaced")
+        record OrderPlaced(String orderId) {
+
+        }
+
+        static class RenamedEventState {
+
+            private final List<String> appliedOrders = new ArrayList<>();
+
+            @EventHandler(namespace = "orders", name = "OrderPlaced")
+            @EventHandler(namespace = "legacy", name = "OrderPlaced")
+            void on(OrderPlaced event) {
+                appliedOrders.add(event.orderId());
+            }
+        }
+
+        @Test
+        void evolvesTheEntityForAnEventOfEitherName() {
+            // given
+            var state = new RenamedEventState();
+            var current = orderPlaced("orders.OrderPlaced", "order-1");
+            var legacy = orderPlaced("legacy.OrderPlaced", "order-2");
+
+            // when
+            state = EVOLVER.evolve(state, current, StubProcessingContext.forMessage(current));
+            state = EVOLVER.evolve(state, legacy, StubProcessingContext.forMessage(legacy));
+
+            // then
+            assertThat(state.appliedOrders).containsExactly("order-1", "order-2");
+        }
+
+        @Test
+        void ignoresAnEventOfAnUndeclaredName() {
+            // given
+            var state = new RenamedEventState();
+            var event = orderPlaced("other.OrderPlaced", "order-1");
+
+            // when
+            state = EVOLVER.evolve(state, event, StubProcessingContext.forMessage(event));
+
+            // then
+            assertThat(state.appliedOrders).isEmpty();
+        }
+
+        private static EventMessage orderPlaced(String name, String orderId) {
+            return asEventMessage(new GenericMessage(new MessageType(name), new OrderPlaced(orderId)));
         }
     }
 

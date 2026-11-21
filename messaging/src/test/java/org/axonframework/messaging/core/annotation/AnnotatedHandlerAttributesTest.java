@@ -78,6 +78,8 @@ class AnnotatedHandlerAttributesTest {
 
         Map<String, Object> expected = new HashMap<>();
         expected.put(HandlerAttributes.EVENT_NAME, "custom-event-name");
+        expected.put(HandlerAttributes.EVENT_NAMESPACE, "");
+        expected.put(HandlerAttributes.EVENT_LOCAL_NAME, "");
         expected.put(HandlerAttributes.ALLOW_REPLAY, true);
         expected.put(HandlerAttributes.MESSAGE_TYPE, EventMessage.class);
         expected.put(HandlerAttributes.PAYLOAD_TYPE, Boolean.class);

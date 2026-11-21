@@ -16,7 +16,6 @@
 
 package org.axonframework.modelling.annotation;
 
-import org.axonframework.common.StringUtils;
 import org.axonframework.common.ReflectionUtils;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageTypeResolver;
@@ -238,7 +237,9 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
     ) {
         return handlers.stream()
                        .filter(handler -> handler.canHandleMessageType(EventMessage.class))
-                       .collect(Collectors.groupingBy(handler -> eventName(handler, messageTypeResolver)))
+                       .collect(Collectors.groupingBy(
+                               handler -> EventHandlingMember.qualifiedNameOf(handler, messageTypeResolver)
+                       ))
                        .entrySet().stream()
                        .collect(Collectors.toUnmodifiableMap(
                                Map.Entry::getKey,
@@ -293,15 +294,6 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
         return handler.unwrap(Method.class)
                       .map(method -> method.getDeclaringClass().getSimpleName() + "." + method.getName())
                       .orElseGet(handler::signature);
-    }
-
-    private QualifiedName eventName(MessageHandlingMember<? super E> handler,
-                                    MessageTypeResolver messageTypeResolver) {
-        return handler.unwrap(EventHandlingMember.class)
-                      .map(EventHandlingMember::eventName)
-                      .filter(StringUtils::nonEmpty)
-                      .map(QualifiedName::new)
-                      .orElseGet(() -> messageTypeResolver.resolveOrThrow(handler.payloadType()).qualifiedName());
     }
 
     private E entityFromStreamResultOrUpdatedExisting(MessageStream.Entry<?> potentialEntityFromStream,

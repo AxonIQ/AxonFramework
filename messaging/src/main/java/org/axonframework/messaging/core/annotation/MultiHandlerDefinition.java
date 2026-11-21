@@ -188,4 +188,25 @@ public class MultiHandlerDefinition implements HandlerDefinition {
         }
         return handler;
     }
+
+    @Override
+    public <T> List<MessageHandlingMember<T>> createHandlers(
+            Class<T> declaringType,
+            Method method,
+            ParameterResolverFactory parameterResolverFactory,
+            Function<Object, MessageStream<?>> messageStreamResolver
+    ) {
+        for (HandlerDefinition handlerDefinition : handlerDefinitions) {
+            List<MessageHandlingMember<T>> handlers = handlerDefinition.createHandlers(declaringType,
+                                                                                       method,
+                                                                                       parameterResolverFactory,
+                                                                                       messageStreamResolver);
+            if (!handlers.isEmpty()) {
+                return handlers.stream()
+                               .map(handlerEnhancerDefinition::wrapHandler)
+                               .toList();
+            }
+        }
+        return List.of();
+    }
 }

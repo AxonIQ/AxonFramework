@@ -59,7 +59,12 @@ public class AnnotatedHandlerAttributes implements HandlerAttributes {
      */
     public AnnotatedHandlerAttributes(AnnotatedElement annotatedElement) {
         this.annotatedElement = annotatedElement;
-        this.simpleHandlerAttributes = new SimpleHandlerAttributes(constructHandlerAttributesFor(annotatedElement));
+        this.simpleHandlerAttributes = new SimpleHandlerAttributes(
+                // An occurrence of a repeated handler annotation knows which of the repeated annotations it describes
+                annotatedElement instanceof HandlerAnnotationOccurrence occurrence
+                        ? occurrence.handlerAttributes()
+                        : constructHandlerAttributesFor(annotatedElement)
+        );
     }
 
     private static Map<String, Object> constructHandlerAttributesFor(AnnotatedElement element) {
