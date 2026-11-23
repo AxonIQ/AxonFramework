@@ -21,10 +21,12 @@ import org.axonframework.messaging.commandhandling.GenericCommandMessage;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
 import org.axonframework.messaging.core.MessageType;
+import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
 import org.axonframework.messaging.core.annotation.ClasspathParameterResolverFactory;
 import org.axonframework.messaging.core.conversion.DelegatingMessageConverter;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
+import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.axonframework.messaging.eventhandling.conversion.DelegatingEventConverter;
 import org.junit.jupiter.api.*;
@@ -539,6 +541,45 @@ class PolymorphicEntityEventApplicationTest {
 
             // then
             assertThat(result.label.names).containsExactly("fiction");
+        }
+    }
+    @Nested
+    class RepeatedHandlerAnnotations {
+
+        abstract static class Account {
+
+            int balance;
+
+            @EventHandler(namespace = "current", name = "Deposited")
+            @EventHandler(namespace = "legacy", name = "Deposited")
+            void on(Deposited event) {
+                balance += event.amount();
+            }
+        }
+
+        static class SavingsAccount extends Account {
+
+        }
+
+        @Test
+        void appliesRepeatedHandlerDeclaredOnTheSuperTypeOncePerName() {
+            // given
+            var metamodel = polymorphic(Account.class, Set.of(SavingsAccount.class));
+
+            // when
+            var current = evolveNamed(metamodel, new SavingsAccount(), new QualifiedName("current", "Deposited"));
+            var legacy = evolveNamed(metamodel, new SavingsAccount(), new QualifiedName("legacy", "Deposited"));
+
+            // then
+            assertThat(current.balance).isEqualTo(10);
+            assertThat(legacy.balance).isEqualTo(10);
+        }
+
+        private static Account evolveNamed(AnnotatedEntityMetamodel<Account> metamodel,
+                                           Account account,
+                                           QualifiedName name) {
+            var event = new GenericEventMessage(new MessageType(name), new Deposited(10));
+            return metamodel.evolve(account, event, StubProcessingContext.forMessage(event));
         }
     }
 }
