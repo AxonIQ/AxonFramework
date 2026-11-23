@@ -485,14 +485,14 @@ class AppendCriteriaBuilderTest {
         void nonStaticBuilderIsRejectedAtStartup() {
             assertThatThrownBy(() -> component(new NonStaticBuilderHandler()))
                     .isInstanceOf(AxonConfigurationException.class)
-                    .hasMessageContaining("must be static and return EventCriteria");
+                    .hasMessageContaining("must be static.");
         }
 
         @Test
         void builderNotReturningEventCriteriaIsRejectedAtStartup() {
             assertThatThrownBy(() -> component(new StringBuilderHandler()))
                     .isInstanceOf(AxonConfigurationException.class)
-                    .hasMessageContaining("must be static and return EventCriteria");
+                    .hasMessageContaining("must return EventCriteria");
         }
     }
 

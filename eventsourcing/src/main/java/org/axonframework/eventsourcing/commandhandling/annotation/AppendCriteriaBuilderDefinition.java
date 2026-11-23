@@ -76,7 +76,7 @@ public class AppendCriteriaBuilderDefinition implements HandlerEnhancerDefinitio
     /**
      * Parameter types an {@link AppendCriteriaBuilder} may declare after its payload, as they resolve without waiting.
      */
-    private static final Set<Class<?>> IMMEDIATE_TYPES = Set.of(
+    private static final Set<Class<?>> ALLOWED_PARAMETER_TYPES = Set.of(
             EventCriteria.class, CommandMessage.class, Message.class, Metadata.class, ProcessingContext.class,
             MessageTypeResolver.class
     );
@@ -111,17 +111,21 @@ public class AppendCriteriaBuilderDefinition implements HandlerEnhancerDefinitio
                                 + "Violating method: " + delegate.signature()
                 );
             }
-            if (!Modifier.isStatic(method.getModifiers())
-                    || !EventCriteria.class.isAssignableFrom(method.getReturnType())) {
+            if (!Modifier.isStatic(method.getModifiers())) {
                 throw new AxonConfigurationException(
-                        "An @AppendCriteriaBuilder method must be static and return EventCriteria. Violating method: "
+                        "An @AppendCriteriaBuilder method must be static. Violating method: " + delegate.signature()
+                );
+            }
+            if (!EventCriteria.class.isAssignableFrom(method.getReturnType())) {
+                throw new AxonConfigurationException(
+                        "An @AppendCriteriaBuilder method must return EventCriteria. Violating method: "
                                 + delegate.signature()
                 );
             }
             // An allow-list: allowing more parameters later does not break anyone.
             Parameter[] parameters = method.getParameters();
             for (int i = 1; i < parameters.length; i++) {
-                if (!resolvesImmediately(parameters[i])) {
+                if (!isAllowedParameter(parameters[i])) {
                     throw new AxonConfigurationException(
                             ("An @AppendCriteriaBuilder parameter must resolve without waiting, as the method runs "
                                     + "while the append condition is finalized: [%s]. Use the command, its metadata, "
@@ -132,8 +136,8 @@ public class AppendCriteriaBuilderDefinition implements HandlerEnhancerDefinitio
             }
         }
 
-        private static boolean resolvesImmediately(Parameter parameter) {
-            return IMMEDIATE_TYPES.contains(parameter.getType())
+        private static boolean isAllowedParameter(Parameter parameter) {
+            return ALLOWED_PARAMETER_TYPES.contains(parameter.getType())
                     || AnnotationUtils.isAnnotationPresent(parameter, MetadataValue.class)
                     || AnnotationUtils.isAnnotationPresent(parameter, InjectComponent.class);
         }
