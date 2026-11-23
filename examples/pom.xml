@@ -44,12 +44,23 @@
         stay in sync with the parent's <version>. axoniq-framework-bom ships on its own release line, so
         reusing ${revision} here let a Dependabot bump of this dependency overwrite the reactor's own
         version instead.
+        It is a snapshot on purpose: the Axoniq-only artifacts must be built against the same framework line
+        as this reactor. Do not "bump" it to a release; Dependabot is told to ignore it.
         -->
-        <axoniq-framework.version>5.4.1</axoniq-framework.version>
+        <axoniq-framework.version>5.5.0-SNAPSHOT</axoniq-framework.version>
     </properties>
 
     <dependencyManagement>
         <dependencies>
+            <!-- This reactor's own BOM comes first, so its entries win over the ones the axoniq-framework-bom
+                 brings. The examples then build against the framework code under development, not a release. -->
+            <dependency>
+                <groupId>org.axonframework</groupId>
+                <artifactId>axon-framework-bom</artifactId>
+                <version>${project.version}</version>
+                <scope>import</scope>
+                <type>pom</type>
+            </dependency>
             <!-- The axoniq-bom provides the framework-bom plus -->
             <!-- additional components needed to run examples against axon-server -->
             <dependency>
