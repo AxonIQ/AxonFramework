@@ -75,6 +75,8 @@ public class AnnotatedMessageHandlingMemberDefinition implements HandlerDefiniti
      * {@link HandlerAttributes#EVENT_NAME event name} nor a {@link HandlerAttributes#EVENT_LOCAL_NAME local name},
      * yields one handler per concrete subtype of that sealed type, each with the subtype as its payload type. Every
      * occurrence of a repeated handler annotation is expanded on its own. An enum parameter is not expanded.
+     * Event handler interceptors are not expanded, as they match payloads by type when invoked and subscribe to no
+     * name.
      *
      * @throws UnsupportedHandlerException when the sealed type permits a subtype that is neither sealed, final nor an
      *                                     enum
@@ -115,6 +117,7 @@ public class AnnotatedMessageHandlingMemberDefinition implements HandlerDefiniti
                 && attributes.getOrDefault("payloadType", Object.class) == Object.class
                 && payloadType.isSealed()
                 && !payloadType.isEnum()
+                && member.attribute(HandlerAttributes.EVENT_NAME).isPresent()
                 && Stream.of(HandlerAttributes.EVENT_NAME, HandlerAttributes.EVENT_LOCAL_NAME)
                          .map(member::<String>attribute)
                          .noneMatch(value -> value.filter(StringUtils::nonEmpty).isPresent());

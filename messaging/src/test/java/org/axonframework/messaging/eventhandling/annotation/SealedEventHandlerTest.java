@@ -31,6 +31,7 @@ import org.axonframework.messaging.core.conversion.DelegatingMessageConverter;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.conversion.DelegatingEventConverter;
+import org.axonframework.messaging.eventhandling.interception.annotation.EventHandlerInterceptor;
 import org.junit.jupiter.api.*;
 
 import java.util.ArrayList;
@@ -343,6 +344,54 @@ class SealedEventHandlerTest {
 
             // then
             assertThat(component.supportedCommands()).containsExactly(nameOf(AccountEvent.class));
+        }
+    }
+
+    @Nested
+    class GivenAnInterceptor {
+
+        @Test
+        void buildsForAnOpenHierarchy() {
+            // given
+            var handler = new Object() {
+                @SuppressWarnings("unused")
+                @EventHandlerInterceptor
+                void audit(OpenEvent event) {
+                    // Unimportant
+                }
+            };
+
+            // when
+            var component = componentFor(handler);
+
+            // then
+            assertThat(component.supportedEvents()).isEmpty();
+        }
+
+        @Test
+        void runsOncePerEventNextToASealedHandler() {
+            // given
+            var log = new ArrayList<String>();
+            var handler = new Object() {
+                @SuppressWarnings("unused")
+                @EventHandlerInterceptor
+                void audit(AccountEvent event) {
+                    log.add("audit");
+                }
+
+                @SuppressWarnings("unused")
+                @EventHandler
+                void on(AccountEvent event) {
+                    log.add("handler");
+                }
+            };
+            var component = componentFor(handler);
+
+            // when
+            handle(component, event(ACCOUNT_OPENED, Map.of("id", "a1")));
+
+            // then
+            assertThat(log).containsExactly("audit", "handler");
         }
     }
 
