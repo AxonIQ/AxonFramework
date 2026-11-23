@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
@@ -355,10 +356,19 @@ public interface MessageStream<M extends Message> {
      * <p>
      * Any previously registered callback is replaced with the given {@code callback}.
      * <p>
-     * The callback is called on an arbitrary thread, and it should keep work performed on this thread to a minimum
-     * as this may interfere with other callbacks handled by the same thread. Any exception thrown by the callback
-     * will result in the stream completing with this exception as the error, unless the callback was called to
-     * indicate completion.
+     * The callback is invoked on the thread that reported the progress. That thread is typically shared with other
+     * streams, for example one that notifies all streams of a data source at once. The callback must therefore only
+     * signal that the stream should be read, and complete within microseconds. It must not read from this stream or
+     * any other stream, and must not block or perform I/O; any such work is to be done on a thread of the consumer's
+     * choosing, to which the callback hands off.
+     * <p>
+     * Streams based on {@link AbstractMessageStream} enforce this: calling {@link #next()}, {@link #peek()} or
+     * {@link #hasNextAvailable()} on any such stream, on a thread that is running a callback, throws an
+     * {@link IllegalStateException}.
+     * <p>
+     * After a callback was made, no further callback is made until the stream has been read, so the consumer must read
+     * what is available after each signal. Any exception thrown by the callback results in the stream completing with
+     * that exception as the error, unless the callback was called to indicate completion.
      *
      * @param callback The callback to invoke when {@link Entry entries} are available for reading, or the stream
      *                 completes.
@@ -522,6 +532,46 @@ public interface MessageStream<M extends Message> {
     default <R> CompletableFuture<@Nullable R> reduce(@Nullable R identity,
                                                       BiFunction<@Nullable R, ? super Entry<M>, @Nullable R> accumulator) {
         return MessageStreamUtils.reduce(this, identity, accumulator);
+    }
+
+    /**
+     * Reduces this stream as {@link #reduce(Object, BiFunction)} does, but reading the {@link Entry entries} that
+     * become available after this method returned on a thread of the given {@code executor}.
+     * <p>
+     * The thread that reports that entries are available is usually shared with other streams, so the given
+     * {@code executor} must not run tasks on the thread that submits them. With an executor that does, such as the
+     * {@link org.axonframework.common.DirectExecutor}, the read fails, as reading is rejected on that thread. Use this
+     * method for a stream that must be read from a specific thread, such as one backed by a thread-bound transaction,
+     * by passing an executor that runs its tasks on that thread.
+     * <p>
+     * When the given {@code executor} is {@code null}, all entries are read on the thread calling this method, which
+     * blocks until the stream reports progress or completes. The returned {@link CompletableFuture} is then complete
+     * when this method returns. When the stream reports no progress for 30 seconds, or the calling thread is
+     * interrupted, the stream is closed and the future completes exceptionally with a
+     * {@link java.util.concurrent.TimeoutException} or an {@link InterruptedException}, the latter after restoring
+     * the interrupt status of the calling thread.
+     * <p>
+     * Note that parallel processing <b>is not</b> supported!
+     *
+     * @param identity    the initial value given to the {@code accumulator}
+     * @param accumulator the {@link BiFunction} accumulating all {@link Entry entries} from this stream into a return
+     *                    value of type {@code R}
+     * @param executor    the {@link Executor} on which to read entries that become available after this method
+     *                    returned, or {@code null} to read all entries on the calling thread
+     * @param <R>         the result of the {@code accumulator} after reducing all {@link Entry entries} from this
+     *                    stream
+     * @return a {@link CompletableFuture} carrying the result of the given {@code accumulator} that reduced the entire
+     * stream
+     * @throws NullPointerException          if {@code accumulator} is {@code null}
+     * @throws IllegalStateException         if the {@code executor} is {@code null}, and the calling thread is
+     *                                       handling a progress signal of a stream, as that thread must not block
+     * @throws UnsupportedOperationException if this stream is unbounded
+     * @see #reduce(Object, BiFunction)
+     */
+    default <R> CompletableFuture<@Nullable R> reduce(@Nullable R identity,
+                                                      BiFunction<@Nullable R, ? super Entry<M>, @Nullable R> accumulator,
+                                                      @Nullable Executor executor) {
+        return MessageStreamUtils.reduce(this, identity, accumulator, executor);
     }
 
     /**

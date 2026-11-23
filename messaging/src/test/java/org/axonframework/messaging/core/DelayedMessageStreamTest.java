@@ -109,13 +109,11 @@ class DelayedMessageStreamTest extends MessageStreamTest<Message> {
             Message expected = createRandomMessage();
             CompletableFuture<MessageStream<Message>> testFuture = new CompletableFuture<>();
 
-            MessageStream<Message> testSubject = DelayedMessageStream.create(testFuture)
-                                                                             .onComplete(() -> invoked.set(true));
+            MessageStream<Message> testSubject = DelayedMessageStream.create(testFuture);
 
             StepVerifier.create(FluxUtils.of(testSubject))
                         .verifyTimeout(Duration.ofMillis(250));
-            // Verify timeout cancels the Flux, so we need to create the test subject again after this.
-            assertFalse(invoked.get());
+            // Verify timeout cancels the Flux, which closes the test subject, so we need to create it again after this.
 
             testFuture.complete(MessageStream.just(expected));
             testSubject = DelayedMessageStream.create(testFuture)
@@ -269,13 +267,11 @@ class DelayedMessageStreamTest extends MessageStreamTest<Message> {
             Message expected = createRandomMessage();
             CompletableFuture<MessageStream.Single<Message>> testFuture = new CompletableFuture<>();
 
-            MessageStream<Message> testSubject = DelayedMessageStream.createSingle(testFuture)
-                                                                             .onComplete(() -> invoked.set(true));
+            MessageStream<Message> testSubject = DelayedMessageStream.createSingle(testFuture);
 
             StepVerifier.create(FluxUtils.of(testSubject))
                         .verifyTimeout(Duration.ofMillis(250));
-            // Verify timeout cancels the Flux, so we need to create the test subject again after this.
-            assertFalse(invoked.get());
+            // Verify timeout cancels the Flux, which closes the test subject, so we need to create it again after this.
 
             testFuture.complete(MessageStream.just(expected));
             testSubject = DelayedMessageStream.createSingle(testFuture)
