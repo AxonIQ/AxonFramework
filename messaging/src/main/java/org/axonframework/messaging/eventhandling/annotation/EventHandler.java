@@ -74,6 +74,14 @@ import java.lang.annotation.Target;
  * }</pre>
  * The payload of each handled event is converted to the payload type of the method before it is invoked.
  * <p>
+ * Declared names replace the name the payload type resolves to, instead of adding to it. To handle that name as well,
+ * add an {@code @EventHandler} without attributes:
+ * <pre>{@code
+ * @EventHandler                        // the name of OrderPlaced, for example orders.OrderPlaced
+ * @EventHandler(namespace = "legacy")  // legacy.OrderPlaced
+ * void on(OrderPlaced event) { ... }
+ * }</pre>
+ * <p>
  * The annotation may also be placed, once or repeatedly, on a custom annotation. Each {@code @EventHandler} on that
  * annotation registers the annotated method as a separate event handler. Attributes of the custom annotation override
  * the same-named attributes of each {@code @EventHandler} on it.

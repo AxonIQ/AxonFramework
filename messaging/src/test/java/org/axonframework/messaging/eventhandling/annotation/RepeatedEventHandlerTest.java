@@ -247,6 +247,27 @@ class RepeatedEventHandlerTest {
         }
 
         @Test
+        void addsTheNameOfThePayloadTypeThroughAnEventHandlerWithoutAttributes() {
+            // given
+            var handler = new Object() {
+                @SuppressWarnings("unused")
+                @EventHandler
+                @EventHandler(namespace = "legacy")
+                void on(OrderPlaced event) {
+                    // Unimportant
+                }
+            };
+
+            // when
+            var component = componentFor(handler);
+
+            // then
+            // declared names replace the payload type's name, so only the bare annotation keeps it
+            assertThat(component.supportedEvents()).containsExactlyInAnyOrder(ORDERS_ORDER_PLACED,
+                                                                               LEGACY_ORDER_PLACED);
+        }
+
+        @Test
         void usesTheEventNameAsIs() {
             // given
             var handler = new Object() {

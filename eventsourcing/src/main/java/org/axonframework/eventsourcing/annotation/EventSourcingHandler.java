@@ -75,6 +75,8 @@ import java.lang.annotation.Target;
  *     this.paid = true;
  * }
  * }</pre>
+ * Declared names replace the name the payload type resolves to, instead of adding to it. To source that name as well,
+ * add an {@code @EventSourcingHandler} without attributes.
  *
  * @author Allard Buijze
  * @since 2.1.0

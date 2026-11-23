@@ -53,6 +53,15 @@ class NameResolutionHandlers {
     }
     // end::event-handler-repeated[]
 
+    // tag::event-handler-payload-and-legacy[]
+    @EventHandler
+    @EventHandler(namespace = "legacy")
+    public void onCurrentOrLegacyOrderPlaced(OrderPlacedEvent event) {
+        // Handles "orders.OrderPlaced", the name of the payload type, and "legacy.OrderPlaced"
+        // Without the first annotation, only "legacy.OrderPlaced" is handled
+    }
+    // end::event-handler-payload-and-legacy[]
+
     // tag::event-handler-composed[]
     @OrderPlacedHandler
     public void onOrderPlaced(OrderPlacedEvent event) {

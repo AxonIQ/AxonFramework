@@ -157,6 +157,16 @@ Each occurrence registers the method as a separate event handler, for example to
 include::example$events/eventhandlers/NameResolutionHandlers.java[tag=event-handler-repeated,indent=0]
 ----
 
+Names declared on `@EventHandler` replace the name of the payload type instead of adding to it.
+`@Event` sets the name an event is published under, and `@EventHandler` sets the names a handler consumes.
+For example, `@EventHandler(namespace = "legacy")` on a method handling `OrderPlacedEvent` handles `legacy.OrderPlaced` only, not `orders.OrderPlaced`.
+To also handle the name of the payload type, add an `@EventHandler` without attributes:
+
+[source,java]
+----
+include::example$events/eventhandlers/NameResolutionHandlers.java[tag=event-handler-payload-and-legacy,indent=0]
+----
+
 To reuse a set of names across handlers, place the `@EventHandler` annotations on an annotation of your own.
 Each `@EventHandler` on that annotation registers the annotated method as a separate event handler:
 
