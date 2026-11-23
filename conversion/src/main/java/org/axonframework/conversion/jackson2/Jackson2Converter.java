@@ -91,10 +91,13 @@ public class Jackson2Converter implements Converter {
     public <T> T convert(@Nullable Object input,
                          Type targetType) {
         if (input == null) {
-            if (logger.isTraceEnabled()) {
-                logger.trace("Input to convert is null, so returning null immediately.");
+            try {
+                return objectMapper.convertValue(null, objectMapper.constructType(targetType));
+            } catch (IllegalArgumentException e) {
+                throw new ConversionException(
+                        "Exception when trying to convert null to '" + targetType.getTypeName() + "'", e
+                );
             }
-            return null;
         }
 
         Class<?> sourceType = input.getClass();
