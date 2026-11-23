@@ -21,6 +21,7 @@ import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
 import org.axonframework.messaging.core.MessageHandlerInterceptorChain;
+import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.interception.annotation.MessageHandlerInterceptor;
 import org.axonframework.messaging.core.interception.annotation.MessageHandlerInterceptorMemberChain;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
@@ -28,12 +29,14 @@ import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.junit.jupiter.api.*;
 
+import java.lang.reflect.Method;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.SortedSet;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -263,6 +266,90 @@ class AnnotatedHandlerInspectorTest {
         @Override
         public String handleAbstractly(String command) {
             return "Some result";
+        }
+    }
+    @Nested
+    class GivenAHandlerDefinitionCreatingSeveralMembersForOneMethod {
+
+        @Test
+        void registersEveryMemberWithADistinctPayloadType() {
+            // given
+            var definition = new PayloadTypeExpandingDefinition(FirstPayload.class, SecondPayload.class);
+
+            // when
+            var testSubject = AnnotatedHandlerInspector.inspectType(
+                    GeneratedHandlers.class, new AnnotationMessageTypeResolver(), parameterResolverFactory, definition
+            );
+
+            // then
+            // both payload types have the same class hierarchy depth, so only their names tell the members apart
+            assertThat(testSubject.getHandlers(GeneratedHandlers.class))
+                    .extracting(MessageHandlingMember::payloadType)
+                    .containsExactlyInAnyOrder(FirstPayload.class, SecondPayload.class);
+        }
+    }
+
+    record FirstPayload(String value) {
+
+    }
+
+    record SecondPayload(String value) {
+
+    }
+
+    @SuppressWarnings("unused")
+    private static class GeneratedHandlers {
+
+        @EventHandler
+        public void on(Object payload) {
+        }
+    }
+
+    /**
+     * Test {@link HandlerDefinition} creating one member per given payload type for every handler method, the way a
+     * definition expanding a method to several handled types would.
+     */
+    private record PayloadTypeExpandingDefinition(Class<?>... payloadTypes) implements HandlerDefinition {
+
+        private static final HandlerDefinition DELEGATE = ClasspathHandlerDefinition.forClass(GeneratedHandlers.class);
+
+        @Override
+        public <T> Optional<MessageHandlingMember<T>> createHandler(
+                Class<T> declaringType, Method method,
+                ParameterResolverFactory parameterResolverFactory,
+                Function<Object, MessageStream<?>> resolver
+        ) {
+            return DELEGATE.createHandler(declaringType, method, parameterResolverFactory, resolver);
+        }
+
+        @Override
+        public <T> List<MessageHandlingMember<T>> createHandlers(
+                Class<T> declaringType, Method method,
+                ParameterResolverFactory parameterResolverFactory,
+                Function<Object, MessageStream<?>> resolver
+        ) {
+            return DELEGATE.createHandler(declaringType, method, parameterResolverFactory, resolver)
+                           .map(member -> Stream.of(payloadTypes)
+                                                .<MessageHandlingMember<T>>map(
+                                                        type -> new PayloadTypeMember<>(member, type)
+                                                )
+                                                .toList())
+                           .orElseGet(List::of);
+        }
+    }
+
+    private static class PayloadTypeMember<T> extends WrappedMessageHandlingMember<T> {
+
+        private final Class<?> payloadType;
+
+        private PayloadTypeMember(MessageHandlingMember<T> delegate, Class<?> payloadType) {
+            super(delegate);
+            this.payloadType = payloadType;
+        }
+
+        @Override
+        public Class<?> payloadType() {
+            return payloadType;
         }
     }
 }

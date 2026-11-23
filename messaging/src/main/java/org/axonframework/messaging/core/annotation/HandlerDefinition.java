@@ -61,6 +61,10 @@ public interface HandlerDefinition {
      * repeating {@link org.axonframework.messaging.eventhandling.annotation.EventHandler @EventHandler}. Each member
      * then describes one of those annotations.
      * <p>
+     * Members created for one method that do not stem from separate handler annotations must differ in their
+     * {@link MessageHandlingMember#payloadType() payload type}. Members of one method that share both their payload
+     * type and their annotation are considered the same handler, and only one of them is registered.
+     * <p>
      * Defaults to the result of
      * {@link #createHandler(Class, Method, ParameterResolverFactory, Function) createHandler(...)}, thus at most one
      * member per method.
