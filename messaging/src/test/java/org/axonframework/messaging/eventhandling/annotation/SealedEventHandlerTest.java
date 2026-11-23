@@ -32,6 +32,8 @@ import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.conversion.DelegatingEventConverter;
 import org.axonframework.messaging.eventhandling.interception.annotation.EventHandlerInterceptor;
+import org.axonframework.messaging.queryhandling.annotation.AnnotatedQueryHandlingComponent;
+import org.axonframework.messaging.queryhandling.annotation.QueryHandler;
 import org.junit.jupiter.api.*;
 
 import java.util.ArrayList;
@@ -395,6 +397,83 @@ class SealedEventHandlerTest {
         }
     }
 
+    @Nested
+    class GivenAQueryHandler {
+
+        @Test
+        void keepsTodaysBehaviourForASealedParameter() {
+            // given
+            var handler = new Object() {
+                @SuppressWarnings("unused")
+                @QueryHandler
+                String handle(AccountEvent query) {
+                    return "";
+                }
+            };
+
+            // when
+            var component = new AnnotatedQueryHandlingComponent<>(
+                    handler,
+                    ClasspathParameterResolverFactory.forClass(handler.getClass()),
+                    ClasspathHandlerDefinition.forClass(handler.getClass()),
+                    TYPE_RESOLVER,
+                    new DelegatingMessageConverter(PassThroughConverter.INSTANCE)
+            );
+
+            // then
+            assertThat(component.supportedQueries()).containsExactly(nameOf(AccountEvent.class));
+        }
+    }
+
+    @Nested
+    class GivenAConcreteSealedClass {
+
+        @Test
+        void subscribesToItsOwnNameAndItsSubclassesNames() {
+            // given
+            var handler = new Object() {
+                @SuppressWarnings("unused")
+                @EventHandler
+                void on(Base event) {
+                    // Unimportant
+                }
+            };
+
+            // when
+            var component = componentFor(handler);
+
+            // then
+            assertThat(component.supportedEvents()).containsExactlyInAnyOrder(
+                    nameOf(Base.class), nameOf(Derived.class)
+            );
+        }
+    }
+
+    @Nested
+    class GivenAnEventNameNextToTheExpansion {
+
+        @Test
+        void subscribesToTheSubtypeNamesPlusTheDeclaredEventName() {
+            // given
+            var handler = new Object() {
+                @SuppressWarnings("unused")
+                @EventHandler
+                @EventHandler(eventName = "x.Old")
+                void on(PaymentEvent event) {
+                    // Unimportant
+                }
+            };
+
+            // when
+            var component = componentFor(handler);
+
+            // then
+            assertThat(component.supportedEvents()).containsExactlyInAnyOrder(
+                    nameOf(PaymentAuthorized.class), nameOf(PaymentCaptured.class), new QualifiedName("x.Old")
+            );
+        }
+    }
+
     private static QualifiedName nameOf(Class<?> type) {
         return TYPE_RESOLVER.resolveOrThrow(type).qualifiedName();
     }
@@ -519,6 +598,14 @@ class SealedEventHandlerTest {
     enum Level implements Status {
         LOW,
         HIGH
+    }
+
+    sealed static class Base permits Derived {
+
+    }
+
+    static final class Derived extends Base {
+
     }
 
     static class AccountHandler {
