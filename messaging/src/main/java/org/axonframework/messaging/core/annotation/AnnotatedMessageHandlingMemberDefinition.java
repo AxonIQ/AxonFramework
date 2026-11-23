@@ -16,11 +16,14 @@
 
 package org.axonframework.messaging.core.annotation;
 
+import org.axonframework.common.ReflectionUtils;
+import org.axonframework.common.StringUtils;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
+import org.jspecify.annotations.Nullable;
 
 import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Method;
@@ -29,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
+import java.util.stream.Stream;
 
 import static org.axonframework.common.annotation.AnnotationUtils.findAnnotationAttributes;
 
@@ -64,6 +68,17 @@ public class AnnotatedMessageHandlingMemberDefinition implements HandlerDefiniti
                 .findFirst();
     }
 
+    /**
+     * {@inheritDoc}
+     * <p>
+     * An event handler whose payload parameter is a sealed type, and that declares neither an
+     * {@link HandlerAttributes#EVENT_NAME event name} nor a {@link HandlerAttributes#EVENT_LOCAL_NAME local name},
+     * yields one handler per concrete subtype of that sealed type, each with the subtype as its payload type. Every
+     * occurrence of a repeated handler annotation is expanded on its own. An enum parameter is not expanded.
+     *
+     * @throws UnsupportedHandlerException when the sealed type permits a subtype that is neither sealed, final nor an
+     *                                     enum
+     */
     @SuppressWarnings("unchecked")
     @Override
     public <T> List<MessageHandlingMember<T>> createHandlers(
@@ -74,12 +89,47 @@ public class AnnotatedMessageHandlingMemberDefinition implements HandlerDefiniti
     ) {
         List<MessageHandlingMember<T>> handlers = new ArrayList<>();
         for (AnnotatedElement occurrence : HandlerAnnotationOccurrence.of(method)) {
-            messageHandlerAttributesOf(occurrence)
-                    .map(attr -> createMember(method, occurrence, attr, parameterResolverFactory,
-                                              messageStreamResolver))
-                    .ifPresent(member -> handlers.add((MessageHandlingMember<T>) member));
+            messageHandlerAttributesOf(occurrence).ifPresent(attr -> {
+                MessageHandlingMember<?> member = createMember(method, occurrence, attr, null,
+                                                               parameterResolverFactory, messageStreamResolver);
+                List<Class<?>> subtypes = sealedEventSubtypesOf(method, attr, member);
+                if (subtypes.isEmpty()) {
+                    handlers.add((MessageHandlingMember<T>) member);
+                }
+                for (Class<?> subtype : subtypes) {
+                    handlers.add((MessageHandlingMember<T>) createMember(method, occurrence, attr, subtype,
+                                                                         parameterResolverFactory,
+                                                                         messageStreamResolver));
+                }
+            });
         }
         return handlers;
+    }
+
+    private static List<Class<?>> sealedEventSubtypesOf(Method method,
+                                                        Map<String, Object> attributes,
+                                                        MessageHandlingMember<?> member) {
+        Class<?> payloadType = member.payloadType();
+        boolean expandable = EventMessage.class.isAssignableFrom(
+                (Class<?>) attributes.getOrDefault("messageType", Message.class))
+                && attributes.getOrDefault("payloadType", Object.class) == Object.class
+                && payloadType.isSealed()
+                && !payloadType.isEnum()
+                && Stream.of(HandlerAttributes.EVENT_NAME, HandlerAttributes.EVENT_LOCAL_NAME)
+                         .map(member::<String>attribute)
+                         .noneMatch(value -> value.filter(StringUtils::nonEmpty).isPresent());
+        if (!expandable) {
+            return List.of();
+        }
+        try {
+            return ReflectionUtils.collectSealedLeaves(payloadType);
+        } catch (IllegalArgumentException e) {
+            throw new UnsupportedHandlerException(
+                    "The event handler " + method.toGenericString() + " cannot handle the sealed type "
+                            + payloadType.getName() + ": " + e.getMessage(),
+                    method
+            );
+        }
     }
 
     private static Optional<Map<String, Object>> messageHandlerAttributesOf(AnnotatedElement element) {
@@ -93,13 +143,14 @@ public class AnnotatedMessageHandlingMemberDefinition implements HandlerDefiniti
     private static MessageHandlingMember<?> createMember(Method method,
                                                          AnnotatedElement occurrence,
                                                          Map<String, Object> attributes,
+                                                         @Nullable Class<?> payloadType,
                                                          ParameterResolverFactory parameterResolverFactory,
                                                          Function<Object, MessageStream<?>> messageStreamResolver) {
         return new MethodInvokingMessageHandlingMember<>(
                 method,
                 occurrence,
                 (Class<? extends Message>) attributes.getOrDefault("messageType", Message.class),
-                (Class<?>) attributes.getOrDefault("payloadType", Object.class),
+                payloadType != null ? payloadType : (Class<?>) attributes.getOrDefault("payloadType", Object.class),
                 parameterResolverFactory,
                 messageStreamResolver
         );
