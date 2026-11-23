@@ -16,17 +16,23 @@
 
 package org.axonframework.modelling;
 
+import org.axonframework.common.ReflectionUtils;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.common.infra.DescribableComponent;
-import org.axonframework.messaging.eventhandling.EventMessage;
+import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.QualifiedName;
+import org.axonframework.messaging.eventhandling.EventMessage;
+import org.axonframework.messaging.eventhandling.conversion.EventConverter;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.invoke.MethodHandles;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.BiFunction;
 
 import static java.util.Objects.requireNonNull;
 
@@ -59,6 +65,73 @@ public class SimpleEntityEvolvingComponent<E> implements EntityEvolvingComponent
                 requireNonNull(entityEvolvers, "The entity evolvers cannot be null.")
         );
         this.supportedEvents = Set.copyOf(this.entityEvolvers.keySet());
+    }
+
+    /**
+     * Creates a {@code SimpleEntityEvolvingComponent} that evolves an entity of type {@code E} for every concrete
+     * subtype of the given sealed type {@code S}.
+     * <p>
+     * The component registers one {@link EntityEvolver} per concrete subtype, under the name the given
+     * {@code messageTypeResolver} resolves for that subtype. An event is routed by its name alone: its payload,
+     * for example a JSON map, is converted to the subtype registered for that name through the given
+     * {@code eventConverter} before the {@code evolver} is invoked. The hierarchy is read from the Java type once, when
+     * this method is called.
+     * <p>
+     * Example usage:
+     * <pre>{@code
+     * EventSourcedEntityModule
+     *         .declarative(String.class, Account.class)
+     *         .messagingModel((configuration, model) -> model
+     *                 .entityEvolver(SimpleEntityEvolvingComponent.forSealedType(
+     *                         AccountEvent.class,
+     *                         Account::evolve,
+     *                         configuration.getComponent(MessageTypeResolver.class),
+     *                         configuration.getComponent(EventConverter.class)
+     *                 ))
+     *                 .build());
+     * }</pre>
+     *
+     * @param sealedType          the sealed type whose concrete subtypes the {@code evolver} handles
+     * @param evolver             the function evolving the entity for an event of one of the subtypes, typically
+     *                            switching over them
+     * @param messageTypeResolver the resolver naming each subtype
+     * @param eventConverter      the converter turning an event payload into the subtype registered for its name
+     * @param <E>                 the entity type to evolve
+     * @param <S>                 the sealed event type
+     * @return a component evolving the entity for every concrete subtype of {@code sealedType}
+     * @throws IllegalArgumentException when {@code sealedType} is not sealed, permits a subtype that is neither
+     *                                  sealed, final nor an enum, or has two subtypes resolving to the same name
+     */
+    public static <E, S> SimpleEntityEvolvingComponent<E> forSealedType(
+            Class<S> sealedType,
+            BiFunction<E, ? super S, E> evolver,
+            MessageTypeResolver messageTypeResolver,
+            EventConverter eventConverter
+    ) {
+        requireNonNull(sealedType, "The sealed type cannot be null.");
+        requireNonNull(evolver, "The evolver cannot be null.");
+        requireNonNull(messageTypeResolver, "The message type resolver cannot be null.");
+        requireNonNull(eventConverter, "The event converter cannot be null.");
+        List<Class<?>> subtypes = ReflectionUtils.collectSealedLeaves(sealedType);
+        if (subtypes.isEmpty()) {
+            throw new IllegalArgumentException("The type [" + sealedType.getName() + "] is not a sealed type.");
+        }
+        Map<QualifiedName, EntityEvolver<E>> evolvers = new HashMap<>();
+        Map<QualifiedName, Class<?>> subtypeByName = new HashMap<>();
+        for (Class<?> subtype : subtypes) {
+            QualifiedName name = messageTypeResolver.resolveOrThrow(subtype).qualifiedName();
+            Class<?> clashing = subtypeByName.put(name, subtype);
+            if (clashing != null) {
+                throw new IllegalArgumentException(
+                        "The subtypes [" + clashing.getName() + "] and [" + subtype.getName() + "] of the sealed type ["
+                                + sealedType.getName() + "] both resolve to the name [" + name.fullName() + "]."
+                );
+            }
+            evolvers.put(name, (entity, event, context) -> evolver.apply(
+                    entity, sealedType.cast(event.payloadAs(subtype, eventConverter))
+            ));
+        }
+        return new SimpleEntityEvolvingComponent<>(evolvers);
     }
 
     @Override
