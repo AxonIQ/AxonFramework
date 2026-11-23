@@ -47,7 +47,7 @@
         <atomikos.version>6.0.1</atomikos.version>
         <hikari.version>7.1.0</hikari.version>
         <hsqldb.version>2.7.4</hsqldb.version>
-        <hibernate-core.version>7.4.15.Final</hibernate-core.version>
+        <hibernate-core.version>7.4.16.Final</hibernate-core.version>
         <mongo.driver.version>5.14.0</mongo.driver.version>
         <mysql-connector-java.version>26.10.0</mysql-connector-java.version>
         <postgresql.version>42.7.14</postgresql.version>
