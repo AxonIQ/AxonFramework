@@ -36,6 +36,13 @@ import java.lang.annotation.Target;
  * You can define any component from the {@link Configuration} as a parameter to the
  * method to be able to resolve the {@link EventCriteria}. You can also inject the entire configuration as a parameter
  * by declaring it as such. Note that the first parameter must be the identifier, and cannot be a component.
+ * <p>
+ * When no builder accepts the identifier, the criteria fall back to a tag derived from the identifier, see
+ * {@link EventSourcedEntity#tagKey()}.
+ * <p>
+ * These builders decide what an entity loads. To decide what may conflict with a command's decision instead, use an
+ * {@link org.axonframework.eventsourcing.commandhandling.annotation.AppendCriteriaBuilder}. Commands no such builder
+ * matches keep the criteria they were sourced with.
  *
  * @author Mitchell Herrijgers
  * @see TargetEntityId

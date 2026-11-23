@@ -79,6 +79,14 @@ sealed class OrEventCriteria implements EventCriteria permits EventTypeRestricta
     }
 
     @Override
+    public EventCriteria withEventTypes(Set<QualifiedName> types) {
+        // A branch without criteria matches every tag, which flattening cannot express, so keep the union tag-free.
+        return criteria.stream().anyMatch(criterion -> !criterion.hasCriteria())
+                ? EventCriteria.havingAnyTag().withEventTypes(types)
+                : EventCriteria.super.withEventTypes(types);
+    }
+
+    @Override
     public boolean hasCriteria() {
         return criteria.stream().anyMatch(EventCriteria::hasCriteria);
     }
