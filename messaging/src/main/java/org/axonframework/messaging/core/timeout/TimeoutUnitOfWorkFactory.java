@@ -39,8 +39,10 @@ import java.util.function.Supplier;
  * If the timeout is reached, every thread currently processing the {@code UnitOfWork} is interrupted. A
  * {@code UnitOfWork} may run more than one phase action for the same phase concurrently, each on a different thread
  * (for example, dispatched through a configured {@code Executor}). The interceptor installed by this factory registers
- * and unregisters each such thread with the {@link AxonTimeLimitedTask} as its phase actions start and complete, so a
- * fired timeout reaches every thread genuinely still executing guarded work, not only the most recently started one.
+ * each such thread with the {@link AxonTimeLimitedTask} while its phase action runs, and unregisters it as soon as the
+ * action returns, so a fired timeout reaches every thread genuinely still executing guarded work, not only the most
+ * recently started one. A thread whose action returned a result that is still pending is not interrupted: it may be
+ * running unrelated work by then.
  * <p>
  * The timeout starts counting from the moment the first phase action of the created {@code UnitOfWork} begins
  * executing, not from the moment {@link #create(String, Function)} itself is called, so time spent between creation and
@@ -159,7 +161,15 @@ public class TimeoutUnitOfWorkFactory implements UnitOfWorkFactory {
             Thread activeThread = Thread.currentThread();
             task.bindToCurrentThread();
             task.startIfNotStarted();
-            return detectSwallowedInterruption(action.get(), activeThread);
+            CompletableFuture<?> result;
+            try {
+                result = action.get();
+            } finally {
+                // An asynchronous action returns before its result completes. Unbinding only on completion would leave
+                // this thread bound while it is back in its pool running unrelated work.
+                task.unbind(activeThread);
+            }
+            return detectSwallowedInterruption(result, activeThread);
         }
 
         @Override
@@ -186,7 +196,7 @@ public class TimeoutUnitOfWorkFactory implements UnitOfWorkFactory {
          *
          * @param result       the {@link CompletableFuture} to check
          * @param activeThread the thread that was {@link AxonTimeLimitedTask#bindToCurrentThread() bound} to run the
-         *                     phase action producing the given {@code result}, unregistered once it completes
+         *                     phase action producing the given {@code result}
          * @param <R>          the type of the result
          * @return a {@link CompletableFuture} that fails with an {@link AxonTimeoutException} when the given
          * {@code task} was interrupted, or otherwise completes exactly as the given {@code result} did
@@ -194,13 +204,14 @@ public class TimeoutUnitOfWorkFactory implements UnitOfWorkFactory {
         private <R> CompletableFuture<R> detectSwallowedInterruption(CompletableFuture<R> result, Thread activeThread) {
             CompletableFuture<R> converted = new CompletableFuture<>();
             result.whenComplete((value, error) -> {
-                task.unbind(activeThread);
                 if (task.isInterrupted()) {
-                    // The interrupt already served its purpose of unblocking the thread; clear its transient status so
-                    // it doesn't cause a spurious InterruptedException in unrelated code running on this same thread
-                    // afterward (for example, this thread being returned to a pool and reused for other work).
-                    //noinspection ResultOfMethodCallIgnored
-                    Thread.interrupted();
+                    if (Thread.currentThread() == activeThread) {
+                        // The interrupt already served its purpose of unblocking the thread; clear its transient status
+                        // so it doesn't cause a spurious InterruptedException in unrelated code running on this same
+                        // thread afterward. Another thread completing the result was never interrupted by this task.
+                        //noinspection ResultOfMethodCallIgnored
+                        Thread.interrupted();
+                    }
                     converted.completeExceptionally(new AxonTimeoutException(task.getTaskName() + " has timed out."));
                 } else if (error != null) {
                     converted.completeExceptionally(error);
