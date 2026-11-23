@@ -26,6 +26,8 @@ import org.axonframework.messaging.core.AbstractMessageStream.FetchResult;
 import org.axonframework.messaging.core.MessageStream.Entry;
 import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.*;
+import org.junit.jupiter.params.*;
+import org.junit.jupiter.params.provider.*;
 
 import java.time.Duration;
 import java.util.ArrayDeque;
@@ -1512,6 +1514,284 @@ class AbstractMessageStreamTest {
         private static void awaitReturnedOrBlocked(List<Thread> threads) {
             await().until(() -> threads.stream()
                                        .allMatch(t -> !t.isAlive() || t.getState() == Thread.State.BLOCKED));
+        }
+    }
+
+    /*
+     * When streams are stacked, the outer stream reads the inner one from its own fetchNext(). A signal
+     * that reaches the inner stream from another thread during that read is delivered once the inner
+     * fetch returns, on the reading thread, and so reaches the outer stream while its fetch is still in
+     * progress. The outer fetch saw no entry, so it must not drop that signal.
+     */
+    @Nested
+    class WhenStacked {
+
+        @Test
+        void twoStackedStreamsCallBackWhenAnEntryArrivedDuringTheInnerRead() {
+            // given
+            RacingSource source = new RacingSource(1);
+            MessageStream<Message> stacked = source.filter(e -> true).filter(e -> true);
+            AtomicInteger callbackCount = new AtomicInteger();
+            stacked.setCallback(callbackCount::incrementAndGet);
+            assertThat(stacked.next()).map(e -> e.message().payload()).contains("first");
+            callbackCount.set(0);
+
+            // when
+            Optional<Entry<Message>> missed = stacked.next(); // "last" arrives after the source was found empty
+
+            // then
+            assertThat(source.raced()).isTrue();
+            assertThat(missed).isEmpty();
+            assertThat(callbackCount).hasPositiveValue();
+            assertThat(stacked.next()).map(e -> e.message().payload()).contains("last");
+        }
+
+        @Test
+        void threeStackedStreamsCallBackWhenAnEntryArrivedDuringTheInnerRead() {
+            // given
+            RacingSource source = new RacingSource(1);
+            MessageStream<Message> stacked = source.filter(e -> true).filter(e -> true).filter(e -> true);
+            AtomicInteger callbackCount = new AtomicInteger();
+            stacked.setCallback(callbackCount::incrementAndGet);
+            assertThat(stacked.next()).map(e -> e.message().payload()).contains("first");
+            callbackCount.set(0);
+
+            // when
+            Optional<Entry<Message>> missed = stacked.next(); // "last" arrives after the source was found empty
+
+            // then
+            assertThat(source.raced()).isTrue();
+            assertThat(missed).isEmpty();
+            assertThat(callbackCount).hasPositiveValue();
+            assertThat(stacked.next()).map(e -> e.message().payload()).contains("last");
+        }
+
+        @Test
+        void sourcingChainCallsBackWhenAnEntryArrivedDuringTheInnerRead() {
+            // given
+            RacingSource source = new RacingSource(1);
+            MessageStream<Message> chain = sourcingChainOf(source);
+            AtomicInteger callbackCount = new AtomicInteger();
+            chain.setCallback(callbackCount::incrementAndGet);
+            assertThat(chain.next()).map(e -> e.message().payload()).contains("first");
+            callbackCount.set(0);
+
+            // when
+            Optional<Entry<Message>> missed = chain.next(); // "last" arrives after the source was found empty
+
+            // then
+            assertThat(source.raced()).isTrue();
+            assertThat(missed).isEmpty();
+            assertThat(callbackCount).hasPositiveValue();
+            assertThat(chain.next()).map(e -> e.message().payload()).contains("last");
+        }
+
+        @ParameterizedTest
+        @ValueSource(ints = {1, 2, 3})
+        void sourcingChainIsReducedCompletelyWhicheverEmptyReadTheEntryArrivesDuring(int racingRead) {
+            // given
+            RacingSource source = new RacingSource(racingRead);
+            MessageStream<Message> chain = sourcingChainOf(source);
+
+            // when
+            var reduced = chain.reduce(0, (count, entry) -> count + 1);
+
+            // then
+            assertThat(reduced).succeedsWithin(Duration.ofSeconds(5)).isEqualTo(2);
+        }
+
+        /**
+         * Composes the given {@code source} as an event store composes a sourcing stream, which an entity
+         * lifecycle handler then reduces.
+         */
+        private static MessageStream<Message> sourcingChainOf(MessageStream<Message> source) {
+            return source.onNext(e -> {
+            }).filter(e -> true).onComplete(() -> {
+            });
+        }
+
+        @Test
+        void signalRaisedByAFetchThatReturnsAValueDoesNotInvokeTheCallback() {
+            // given
+            Entry<Message> entry = entryOf("value");
+            AtomicInteger callbackCount = new AtomicInteger();
+            ControllableStream stream = new ControllableStream() {
+                @NonNull
+                @Override
+                protected FetchResult<Entry<Message>> fetchNext() {
+                    triggerSignalProgress(); // raised by the fetch itself, which then returns what it announced
+                    return FetchResult.of(entry);
+                }
+            };
+            stream.setCallback(callbackCount::incrementAndGet);
+            stream.next(); // consume the entry the probe of setCallback peeked
+            callbackCount.set(0);
+
+            // when
+            Optional<Entry<Message>> result = stream.next();
+
+            // then
+            assertThat(result).contains(entry);
+            assertThat(callbackCount).hasValue(0);
+        }
+        @Test
+        void signalRaisedByAFetchThatReturnsNotReadyInvokesTheCallbackOnce() {
+            // given
+            SignalingOnceStream stream = new SignalingOnceStream();
+            AtomicInteger callbackCount = new AtomicInteger();
+            stream.setCallback(callbackCount::incrementAndGet);
+            callbackCount.set(0);
+            stream.signalOnNextFetch();
+
+            // when
+            Optional<Entry<Message>> result = stream.next();
+
+            // then
+            assertThat(result).isEmpty();
+            assertThat(callbackCount).hasValue(1);
+        }
+
+        @Test
+        void consumerCalledBackForASignalRaisedByAFetchThatReturnsNotReadyReadsTheNextValueWithoutLooping() {
+            // given
+            Entry<Message> entry = entryOf("value");
+            SignalingOnceStream stream = new SignalingOnceStream();
+            AtomicInteger callbackCount = new AtomicInteger();
+            List<Optional<Entry<Message>>> readByCallback = new CopyOnWriteArrayList<>();
+            stream.setCallback(() -> {
+                callbackCount.incrementAndGet();
+                readByCallback.add(stream.next());
+            });
+            callbackCount.set(0);
+            readByCallback.clear();
+            int fetchesBefore = stream.fetchCount();
+            stream.enqueue(FetchResult.of(entry)); // returned by the fetch after the signaling one
+            stream.signalOnNextFetch();
+
+            // when
+            Optional<Entry<Message>> result = stream.next();
+
+            // then
+            assertThat(result).isEmpty();
+            assertThat(callbackCount).hasValue(1);
+            assertThat(readByCallback).containsExactly(Optional.of(entry));
+            assertThat(stream.fetchCount() - fetchesBefore).isEqualTo(2);
+        }
+    }
+
+    /**
+     * A {@link ControllableStream} whose next fetch, once armed, signals progress from within the fetch and then
+     * returns {@link FetchResult.NotReady} without consuming any enqueued result.
+     */
+    private static class SignalingOnceStream extends ControllableStream {
+
+        private boolean signalOnNextFetch;
+        private int fetchCount;
+
+        void signalOnNextFetch() {
+            this.signalOnNextFetch = true;
+        }
+
+        int fetchCount() {
+            return fetchCount;
+        }
+
+        @NonNull
+        @Override
+        protected FetchResult<Entry<Message>> fetchNext() {
+            fetchCount++;
+
+            if (signalOnNextFetch) {
+                signalOnNextFetch = false;
+                triggerSignalProgress();
+                return FetchResult.notReady();
+            }
+
+            return super.fetchNext();
+        }
+    }
+
+    /**
+     * A {@link MessageStream} that does not extend {@link AbstractMessageStream}, like a source fed by a
+     * connection, holding one entry initially. On the given read that finds it empty, a producer thread adds a
+     * second entry and invokes the callback while that read is still in progress, after which the source completes.
+     */
+    private static final class RacingSource implements MessageStream<Message> {
+
+        private final Queue<Entry<Message>> buffer = new ConcurrentLinkedQueue<>(List.of(entryOf("first")));
+        private final AtomicBoolean raced = new AtomicBoolean();
+        private final AtomicInteger emptyReads = new AtomicInteger();
+        private final int racingRead;
+        private volatile boolean producerDone;
+        private volatile Runnable callback = () -> {
+        };
+
+        /**
+         * @param racingRead the number of the read that finds the source empty during which the entry arrives,
+         *                   starting at 1
+         */
+        RacingSource(int racingRead) {
+            this.racingRead = racingRead;
+        }
+
+        boolean raced() {
+            return raced.get();
+        }
+
+        @Override
+        public Optional<Entry<Message>> next() {
+            Entry<Message> entry = buffer.poll();
+
+            if (entry == null && emptyReads.incrementAndGet() == racingRead && raced.compareAndSet(false, true)) {
+                Thread producer = Thread.ofPlatform().start(() -> {
+                    buffer.add(entryOf("last"));
+                    producerDone = true;
+                    callback.run();
+                });
+
+                try {
+                    assertThat(producer.join(Duration.ofSeconds(5))).as("producer finished").isTrue();
+                }
+                catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException(e);
+                }
+            }
+
+            return Optional.ofNullable(entry);
+        }
+
+        @Override
+        public Optional<Entry<Message>> peek() {
+            return Optional.ofNullable(buffer.peek());
+        }
+
+        @Override
+        public void setCallback(@NonNull Runnable callback) {
+            this.callback = callback;
+
+            if (hasNextAvailable() || isCompleted()) {
+                callback.run();
+            }
+        }
+
+        @Override
+        public Optional<Throwable> error() {
+            return Optional.empty();
+        }
+
+        @Override
+        public boolean isCompleted() {
+            return producerDone && buffer.isEmpty();
+        }
+
+        @Override
+        public boolean hasNextAvailable() {
+            return !buffer.isEmpty();
+        }
+
+        @Override
+        public void close() {
         }
     }
 
