@@ -26,10 +26,12 @@ import tools.jackson.databind.JavaType;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.NullNode;
 import tools.jackson.databind.node.ObjectNode;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -183,6 +185,43 @@ class JacksonConverterTest extends ConverterTestSuite<JacksonConverter> {
 
             // then
             assertThat(result).isNull();
+        }
+
+        @Test
+        void convertToJsonNodeReturnsNullNode() {
+            // given
+            JacksonConverter testSubject = buildConverter();
+
+            // when
+            JsonNode result = testSubject.convert(null, JsonNode.class);
+
+            // then
+            assertThat(result).isInstanceOf(NullNode.class);
+        }
+
+        @Test
+        void convertToOptionalReturnsEmptyOptional() {
+            // given
+            JacksonConverter testSubject = buildConverter();
+
+            // when
+            Optional<?> result = testSubject.convert(null, Optional.class);
+
+            // then
+            assertThat(result).isEmpty();
+        }
+
+        @Test
+        void convertToPrimitiveThrowsConversionException() {
+            // given
+            JacksonConverter testSubject = buildConverter();
+
+            // when / then
+            assertThatThrownBy(() -> testSubject.convert(null, int.class))
+                    .isExactlyInstanceOf(ConversionException.class)
+                    .hasMessageContaining("null")
+                    .hasMessageContaining(int.class.getTypeName())
+                    .hasCauseInstanceOf(JacksonException.class);
         }
     }
 }
