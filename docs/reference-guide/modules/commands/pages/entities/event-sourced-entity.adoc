@@ -180,6 +180,24 @@ In Spring Boot, annotate the entity with `@EventSourced` instead of `@EventSourc
 Axon's auto-configuration detects and registers it automatically; no explicit configuration class is required.
 The entity class structure is otherwise identical to the <<_autodetected,autodetected>> approach.
 
+== Evolving from a sealed event type
+
+An `@EventSourcingHandler` whose parameter is a sealed type evolves the entity from every concrete subtype, following the rules in xref:events:event-handlers.adoc#sealed-event-types[Handling a sealed event type].
+The handler can return the evolved entity:
+
+[source,java]
+----
+include::example$commands/entities/eventsourcedentity/sealed/Account.java[tag=sealed-entity,indent=0]
+----
+
+For a declarative entity, `SimpleEntityEvolvingComponent.forSealedType` builds an evolver for every subtype.
+Pass it to `entityEvolver` of the messaging model:
+
+[source,java]
+----
+include::example$commands/entities/eventsourcedentity/sealed/AccountEvolverConfiguration.java[tag=sealed-declarative-evolver,indent=0]
+----
+
 == Placing handlers on the entity vs. a separate component
 
 Command handlers can be placed directly on the entity class (as shown above) or kept in a separate component that receives the entity as a parameter via `@InjectEntity`.
