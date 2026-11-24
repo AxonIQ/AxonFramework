@@ -186,6 +186,100 @@ For example, a `name` attribute on your annotation sets the local name, while th
 `@EventSourcingHandler` has the same `namespace`, `name`, and `eventName` attributes, and can be repeated as well.
 Use them when an entity evolves from an event published under a name that differs from its payload class, for example an event from another module that the entity reads through its own class.
 
+[[sealed-event-types]]
+== Handling a sealed event type
+
+An `@EventHandler` whose payload parameter is a sealed type handles every concrete subtype.
+Axon Framework subscribes the handler to the name of each subtype and converts the payload to the subtype registered for that name, so a `switch` on the parameter receives the subtype:
+
+[source,java]
+----
+include::example$events/eventhandlers/sealed/SealedEventHandlers.java[tag=sealed-events,indent=0]
+----
+
+[source,java]
+----
+include::example$events/eventhandlers/sealed/SealedEventHandlers.java[tag=sealed-handler,indent=0]
+----
+
+The attributes of the handler decide which names it handles:
+
+[cols="2,3",options="header"]
+|===
+|Handler
+|Names handled
+
+|`@EventHandler`
+|The name of each subtype.
+
+|`@EventHandler(namespace = "legacy")`
+|The local name of each subtype, in the `legacy` namespace.
+
+|`@EventHandler` and `@EventHandler(namespace = "legacy")`
+|Both sets of names.
+
+|`@EventHandler(name = "...")` or `@EventHandler(eventName = "...")`
+|Only that name. The payload is converted to the sealed type itself, so the configured converter must be able to produce that type, for example from a payload that already is a subtype instance.
+|===
+
+[source,java]
+----
+include::example$events/eventhandlers/sealed/SealedEventHandlers.java[tag=sealed-handler-forms,indent=0]
+----
+
+Subtypes are named like any other event (see <<annotated_event_handler_name_resolution,Annotated event handler name resolution>>):
+
+* `@Event` on the subtype sets its name.
+* Without `@Event`, the name is the class name, with the package as namespace.
+* `@Namespace` on the package applies to every subtype in it.
+* `@Namespace` on the sealed interface applies to nested subtypes that have `@Event`.
+* `@Event` on the sealed interface is not inherited.
+
+[source,java]
+----
+include::example$events/eventhandlers/sealed/SealedEventHandlers.java[tag=sealed-nested-events,indent=0]
+----
+
+[WARNING]
+====
+A nested subtype without `@Event` gets a class-based name without its enclosing type.
+`AccountEvent.Created` and `OrderEvent.Created` in one package both resolve to `<package>.Created`.
+Give such subtypes an `@Event` with distinct names.
+====
+
+[cols="3,2",options="header"]
+|===
+|Case
+|Result
+
+|A permitted subtype is neither sealed nor final, for example a `non-sealed` interface
+|Startup fails, because its subclasses cannot be listed.
+
+|Two subtypes of one handler resolve to the same name
+|Startup fails.
+
+|The sealed type is a concrete class
+|The class is handled under its own name, next to its subclasses.
+
+|The parameter is an enum
+|Handled under the name of the enum itself, as before.
+
+|Command handlers, query handlers and event handler interceptors
+|Not expanded. Interceptors match payloads by type when invoked, so they cover open branches as well.
+|===
+
+Events stored under the old local name of a subtype do not reach the sealed handler.
+Add a method that takes the concrete subtype, declares the old name with `eventName`, and calls the sealed handler:
+
+[source,java]
+----
+include::example$events/eventhandlers/sealed/SealedEventHandlers.java[tag=sealed-renamed-event,indent=0]
+----
+
+ifdef::advanced-framework[]
+In Axoniq Framework, a rename in xref:message-transformation:index.adoc[event transformation] does the same without the extra method.
+endif::[]
+
 [[handler-resolution]]
 == Handler resolution - How a published event reaches an event handler
 

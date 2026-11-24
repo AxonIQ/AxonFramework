@@ -33,6 +33,7 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.axonframework.common.ReflectionUtils.*;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -975,6 +976,143 @@ class ReflectionUtilsTest {
             // then
             assertThat(supertypes).containsExactlyInAnyOrder(Base.class, Object.class, Leaf.class, Root.class,
                                                              Other.class);
+        }
+    }
+
+    @Nested
+    class CollectConcreteSealedTypes {
+
+        sealed interface Shape permits Circle, Polygon, Unit {
+
+        }
+
+        record Circle() implements Shape {
+
+        }
+
+        sealed interface Polygon extends Shape permits Square, Triangle {
+
+        }
+
+        record Square() implements Polygon {
+
+        }
+
+        record Triangle() implements Polygon {
+
+        }
+
+        enum Unit implements Shape {
+            CM,
+            INCH {
+                @Override
+                public String toString() {
+                    return "inch";
+                }
+            }
+        }
+
+        sealed interface Open permits Closed, Loose {
+
+        }
+
+        record Closed() implements Open {
+
+        }
+
+        non-sealed interface Loose extends Open {
+
+        }
+
+        sealed interface Fleet permits Vehicle, Bike {
+
+        }
+
+        sealed static class Vehicle implements Fleet permits Car {
+
+        }
+
+        static final class Car extends Vehicle {
+
+        }
+
+        record Bike() implements Fleet {
+
+        }
+
+        abstract static sealed class Figure permits Round, Angular {
+
+        }
+
+        static final class Round extends Figure {
+
+        }
+
+        static final class Angular extends Figure {
+
+        }
+
+        @Test
+        void returnsConcreteTypesInPermittedOrderRecursingThroughSealedSubtypesAndKeepingEnumsWhole() {
+            // when
+            var result = collectConcreteSealedTypes(Shape.class);
+
+            // then
+            assertThat(result).containsExactly(Circle.class, Square.class, Triangle.class, Unit.class);
+        }
+
+        @Test
+        void includesAConcreteSealedClassNextToItsSubclasses() {
+            // when
+            var result = collectConcreteSealedTypes(Fleet.class);
+
+            // then
+            // Vehicle is sealed but concrete, so its own instances need a name as well
+            assertThat(result).containsExactly(Vehicle.class, Car.class, Bike.class);
+        }
+
+        @Test
+        void skipsAnAbstractSealedClassButKeepsItsSubclasses() {
+            // when
+            var result = collectConcreteSealedTypes(Figure.class);
+
+            // then
+            assertThat(result).containsExactly(Round.class, Angular.class);
+        }
+
+        @Test
+        void emptyWhenTypeIsNotSealed() {
+            // when
+            var result = collectConcreteSealedTypes(Object.class);
+
+            // then
+            assertThat(result).isEmpty();
+        }
+
+        @Test
+        void emptyForAnEnumRootWithConstantBodies() {
+            // when
+            var result = collectConcreteSealedTypes(Unit.class);
+
+            // then
+            assertThat(result).isEmpty();
+        }
+
+        @Test
+        void rejectsANullRootType() {
+            // when / then
+            assertThatThrownBy(() -> collectConcreteSealedTypes(null))
+                    .isInstanceOf(NullPointerException.class)
+                    .hasMessage("The root type cannot be null.");
+        }
+
+        @Test
+        void rejectsAPermittedSubtypeThatIsNeitherSealedNorFinal() {
+            // when / then
+            assertThatThrownBy(() -> collectConcreteSealedTypes(Open.class))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining(Loose.class.getName())
+                    .hasMessageContaining("Make it sealed or final");
         }
     }
 }

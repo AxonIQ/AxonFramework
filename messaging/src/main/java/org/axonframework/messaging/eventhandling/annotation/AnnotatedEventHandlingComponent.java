@@ -26,6 +26,7 @@ import org.axonframework.messaging.core.annotation.HandlerAttributes;
 import org.axonframework.messaging.core.annotation.HandlerDefinition;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
+import org.axonframework.messaging.core.annotation.UnsupportedHandlerException;
 import org.axonframework.messaging.core.interception.annotation.MessageHandlerInterceptorMemberChain;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventHandler;
@@ -40,8 +41,10 @@ import org.axonframework.messaging.eventhandling.replay.ResetContext;
 import org.axonframework.messaging.eventhandling.replay.ResetHandler;
 import org.axonframework.messaging.core.sequencing.SequencingPolicy;
 
+import java.lang.reflect.Member;
 import java.util.Collection;
-import java.util.HashSet;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -65,7 +68,7 @@ public class AnnotatedEventHandlingComponent<T> implements EventHandlingComponen
     private final AnnotatedHandlerInspector<T> model;
     private final MessageTypeResolver messageTypeResolver;
     private final EventConverter converter;
-    private final Set<RegisteredHandler> registeredHandlers = new HashSet<>();
+    private final Map<RegisteredHandler, Class<?>> payloadTypeByHandler = new HashMap<>();
 
     /**
      * Wraps the given {@code annotatedEventHandler}, allowing it to be subscribed to an {@link EventSink} as an
@@ -118,9 +121,19 @@ public class AnnotatedEventHandlingComponent<T> implements EventHandlingComponen
 
     private void registerHandler(MessageHandlingMember<? super T> handler) {
         QualifiedName qualifiedName = EventHandlingMember.qualifiedNameOf(handler, messageTypeResolver);
-        // Occurrences of a repeated @EventHandler that resolve to the same name describe one and the same handler
-        if (registeredHandlers.add(new RegisteredHandler(handler.signature(), qualifiedName))) {
+        Class<?> registeredPayloadType = payloadTypeByHandler.putIfAbsent(
+                new RegisteredHandler(handler.signature(), qualifiedName), handler.payloadType()
+        );
+        if (registeredPayloadType == null) {
             handlingComponent.subscribe(qualifiedName, constructEventHandlerFor(qualifiedName, handler));
+        } else if (registeredPayloadType != handler.payloadType()) {
+            throw new UnsupportedHandlerException(
+                    "The event handler " + handler.signature() + " would receive events named [" + qualifiedName
+                            + "] as both " + registeredPayloadType.getName() + " and " + handler.payloadType().getName()
+                            + ", so it cannot tell which type to convert them to. Give each type a distinct name, for"
+                            + " example with @Event(name = ...).",
+                    handler.unwrap(Member.class).orElseThrow()
+            );
         }
     }
 

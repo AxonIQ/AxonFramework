@@ -16,7 +16,13 @@
 
 package org.axonframework.modelling;
 
+import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.infra.MockComponentDescriptor;
+import org.axonframework.conversion.jackson.JacksonConverter;
+import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
+import org.axonframework.messaging.core.GenericMessage;
+import org.axonframework.messaging.eventhandling.conversion.DelegatingEventConverter;
+import org.axonframework.messaging.eventhandling.conversion.EventConverter;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.messaging.core.MessageType;
@@ -29,6 +35,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.axonframework.messaging.eventhandling.EventTestUtils.asEventMessage;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -154,5 +163,187 @@ class SimpleEntityEvolvingComponentTest {
         Set<QualifiedName> resultKeys = result.keySet();
         assertTrue(resultKeys.contains(STRING_EVENT.type().qualifiedName()));
         assertTrue(resultKeys.contains(INT_EVENT.type().qualifiedName()));
+    }
+
+    @Nested
+    class ForSealedType {
+
+        private static final ClassBasedMessageTypeResolver RESOLVER = new ClassBasedMessageTypeResolver();
+        private static final EventConverter CONVERTER = new DelegatingEventConverter(new JacksonConverter());
+
+        sealed interface AccountEvent permits AccountOpened, MoneyDeposited {
+
+        }
+
+        record AccountOpened(String owner) implements AccountEvent {
+
+        }
+
+        record MoneyDeposited(int amount) implements AccountEvent {
+
+        }
+
+        record Account(String owner, int balance) {
+
+            Account evolve(AccountEvent event) {
+                return switch (event) {
+                    case AccountOpened opened -> new Account(opened.owner(), balance);
+                    case MoneyDeposited deposited -> new Account(owner, balance + deposited.amount());
+                };
+            }
+        }
+
+        private static QualifiedName nameOf(Class<?> type) {
+            return RESOLVER.resolveOrThrow(type).qualifiedName();
+        }
+
+        private static EventMessage jsonEvent(Class<?> type, Map<String, Object> payload) {
+            return asEventMessage(new GenericMessage(new MessageType(nameOf(type)), payload));
+        }
+
+        @Nested
+        class Evolving {
+
+            private final SimpleEntityEvolvingComponent<Account> testSubject = SimpleEntityEvolvingComponent.forSealedType(
+                    AccountEvent.class, Account::evolve, RESOLVER, CONVERTER
+            );
+
+            @Test
+            void evolvesForEachSubtypeByNameFromAJsonPayload() {
+                // given
+                EventMessage opened = jsonEvent(AccountOpened.class, Map.of("owner", "alice"));
+                EventMessage deposited = jsonEvent(MoneyDeposited.class, Map.of("amount", 40));
+
+                // when
+                Account account = testSubject.evolve(
+                        new Account(null, 0), opened, StubProcessingContext.forMessage(opened)
+                );
+                account = testSubject.evolve(account, deposited, StubProcessingContext.forMessage(deposited));
+
+                // then
+                assertThat(account).isEqualTo(new Account("alice", 40));
+            }
+
+            @Test
+            void supportedEventsAreTheNamesOfTheSubtypes() {
+                // then
+                assertThat(testSubject.supportedEvents())
+                        .containsExactlyInAnyOrder(nameOf(AccountOpened.class), nameOf(MoneyDeposited.class));
+            }
+        }
+
+        @Nested
+        class Rejecting {
+
+            sealed interface Clashing permits First.Created, Second.Created {
+
+            }
+
+            static final class First {
+
+                record Created() implements Clashing {
+
+                }
+            }
+
+            static final class Second {
+
+                record Created() implements Clashing {
+
+                }
+            }
+
+            sealed interface Open permits Closed, Wide {
+
+            }
+
+            record Closed() implements Open {
+
+            }
+
+            non-sealed interface Wide extends Open {
+
+            }
+
+            @Test
+            void aTypeThatIsNotSealed() {
+                // when / then
+                assertThatThrownBy(() -> SimpleEntityEvolvingComponent.<Account, MoneyDeposited>forSealedType(
+                        MoneyDeposited.class, (account, event) -> account, RESOLVER, CONVERTER
+                )).isInstanceOf(IllegalArgumentException.class)
+                  .hasMessageContaining(MoneyDeposited.class.getName());
+            }
+
+            enum Color {
+                RED,
+                GREEN {
+                    @Override
+                    public String toString() {
+                        return "green";
+                    }
+                }
+            }
+
+            @Test
+            void anEnumWithConstantBodies() {
+                // when / then
+                assertThatThrownBy(() -> SimpleEntityEvolvingComponent.<Account, Color>forSealedType(
+                        Color.class, (account, event) -> account, RESOLVER, CONVERTER
+                )).isInstanceOf(IllegalArgumentException.class)
+                  .hasMessageContaining("not a sealed type");
+            }
+
+            @Test
+            void aHierarchyWithAnOpenBranch() {
+                // when / then
+                assertThatThrownBy(() -> SimpleEntityEvolvingComponent.<Account, Open>forSealedType(
+                        Open.class, (account, event) -> account, RESOLVER, CONVERTER
+                )).isInstanceOf(IllegalArgumentException.class)
+                  .hasMessageContaining(Wide.class.getName())
+                  .hasMessageContaining("Make it sealed or final");
+            }
+
+            @Test
+            void twoSubtypesResolvingToTheSameName() {
+                // when / then
+                assertThatThrownBy(() -> SimpleEntityEvolvingComponent.<Account, Clashing>forSealedType(
+                        Clashing.class, (account, event) -> account, RESOLVER, CONVERTER
+                )).isInstanceOf(AxonConfigurationException.class)
+                  .hasMessageContaining(nameOf(First.Created.class).fullName())
+                  .hasMessageContaining("@Event(name = ...)");
+            }
+
+            @Test
+            void nullSealedType() {
+                // when / then
+                assertThatThrownBy(() -> SimpleEntityEvolvingComponent.<Account, AccountEvent>forSealedType(
+                        null, Account::evolve, RESOLVER, CONVERTER
+                )).isInstanceOf(NullPointerException.class);
+            }
+
+            @Test
+            void nullEvolver() {
+                // when / then
+                assertThatThrownBy(() -> SimpleEntityEvolvingComponent.<Account, AccountEvent>forSealedType(
+                        AccountEvent.class, null, RESOLVER, CONVERTER
+                )).isInstanceOf(NullPointerException.class);
+            }
+
+            @Test
+            void nullMessageTypeResolver() {
+                // when / then
+                assertThatThrownBy(() -> SimpleEntityEvolvingComponent.<Account, AccountEvent>forSealedType(
+                        AccountEvent.class, Account::evolve, null, CONVERTER
+                )).isInstanceOf(NullPointerException.class);
+            }
+
+            @Test
+            void nullEventConverter() {
+                // when / then
+                assertThatThrownBy(() -> SimpleEntityEvolvingComponent.<Account, AccountEvent>forSealedType(
+                        AccountEvent.class, Account::evolve, RESOLVER, null
+                )).isInstanceOf(NullPointerException.class);
+            }
+        }
     }
 }
