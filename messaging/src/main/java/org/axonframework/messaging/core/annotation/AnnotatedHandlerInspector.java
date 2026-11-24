@@ -16,6 +16,7 @@
 
 package org.axonframework.messaging.core.annotation;
 
+import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.core.Message;
@@ -300,7 +301,14 @@ public class AnnotatedHandlerInspector<T> {
         Map<ExecutableSignature, MessageHandlingMember<? super T>> uniqueBySignature = set.stream()
             .filter(member -> member.canHandleMessageType(messageType))
             .collect(Collectors.toMap(
-                member -> member.unwrap(Executable.class).map(ExecutableSignature::of).orElseThrow(),  // there is always an executable
+                member -> member.unwrap(Executable.class).map(ExecutableSignature::of).orElseThrow(
+                        () -> new AxonConfigurationException(
+                                "The handler [" + member.getClass().getName() + "] does not expose the method or"
+                                        + " constructor it wraps through unwrap(Executable.class). A wrapper must pass"
+                                        + " unwrap on to the handler it wraps, for example by extending"
+                                        + " WrappedMessageHandlingMember."
+                        )
+                ),
                 member -> member,
                 (existing, replacement) ->
                     existing.declaringClass().isAssignableFrom(replacement.declaringClass()) ? replacement : existing,
