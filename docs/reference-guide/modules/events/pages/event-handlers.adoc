@@ -219,7 +219,7 @@ The attributes of the handler decide which names it handles:
 |Both sets of names.
 
 |`@EventHandler(name = "...")` or `@EventHandler(eventName = "...")`
-|Only that name. The payload is converted to the sealed type itself, which works only when the payload already is a subtype instance.
+|Only that name. The payload is converted to the sealed type itself, so the configured converter must be able to produce that type, for example from a payload that already is a subtype instance.
 |===
 
 [source,java]
@@ -262,7 +262,7 @@ Give such subtypes an `@Event` with distinct names.
 |The class is handled under its own name, next to its subclasses.
 
 |The parameter is an enum
-|Not expanded.
+|Handled under the name of the enum itself, as before.
 
 |Command handlers, query handlers and event handler interceptors
 |Not expanded. Interceptors match payloads by type when invoked, so they cover open branches as well.
@@ -276,7 +276,9 @@ Add a method that takes the concrete subtype, declares the old name with `eventN
 include::example$events/eventhandlers/sealed/SealedEventHandlers.java[tag=sealed-renamed-event,indent=0]
 ----
 
-In Axoniq Framework, a rename transformation in the event transformer chain does the same without the extra method.
+ifdef::advanced-framework[]
+In Axoniq Framework, a rename in xref:message-transformation:index.adoc[event transformation] does the same without the extra method.
+endif::[]
 
 [[handler-resolution]]
 == Handler resolution - How a published event reaches an event handler
