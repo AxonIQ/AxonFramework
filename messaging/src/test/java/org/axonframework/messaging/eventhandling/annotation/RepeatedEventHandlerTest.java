@@ -19,6 +19,7 @@ package org.axonframework.messaging.eventhandling.annotation;
 import org.axonframework.conversion.PassThroughConverter;
 import org.axonframework.messaging.core.GenericMessage;
 import org.axonframework.messaging.core.MessageType;
+import org.axonframework.messaging.core.NamespaceMessageTypeResolver;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.annotation.AnnotationMessageTypeResolver;
 import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
@@ -300,6 +301,96 @@ class RepeatedEventHandlerTest {
             assertThatThrownBy(() -> componentFor(handler))
                     .isInstanceOf(UnsupportedHandlerException.class)
                     .hasMessageContaining("eventName");
+        }
+    }
+
+    @Nested
+    class GivenANameWithoutANamespace {
+
+        private static final QualifiedName BARE_ORDER_PLACED = new QualifiedName("OrderPlaced");
+
+        @Test
+        void subscribesToTheNameAsIsThroughTheEventName() {
+            // given
+            var handler = new Object() {
+                @SuppressWarnings("unused")
+                @EventHandler(eventName = "OrderPlaced")
+                void on(OrderPlaced event) {
+                    // Unimportant
+                }
+            };
+
+            // when
+            var component = componentFor(handler);
+
+            // then
+            assertThat(component.supportedEvents()).containsExactly(BARE_ORDER_PLACED);
+        }
+
+        @Test
+        void invokesTheMethodForAnEventStoredUnderTheNameThroughTheEventName() {
+            // given
+            List<String> handled = new ArrayList<>();
+            var handler = new Object() {
+                @SuppressWarnings("unused")
+                @EventHandler(eventName = "OrderPlaced")
+                void on(OrderPlaced event) {
+                    handled.add(event.orderId());
+                }
+            };
+            var component = componentFor(handler);
+
+            // when
+            handle(component, orderPlaced(BARE_ORDER_PLACED, "order-1"));
+
+            // then
+            assertThat(handled).containsExactly("order-1");
+        }
+
+        @Test
+        void cannotExpressItThroughAnEmptyNamespace() {
+            // given
+            var handler = new Object() {
+                @SuppressWarnings("unused")
+                @EventHandler(namespace = "", name = "OrderPlaced")
+                void on(OrderPlaced event) {
+                    // Unimportant
+                }
+            };
+
+            // when
+            var component = componentFor(handler);
+
+            // then
+            // an empty namespace is the attribute's default, so the namespace of the payload type applies
+            assertThat(component.supportedEvents()).containsExactly(ORDERS_ORDER_PLACED);
+        }
+
+        @Test
+        void subscribesAHandlerWithoutAttributesWhenTheResolverMapsThePayloadTypeToIt() {
+            // given
+            var handler = new Object() {
+                @SuppressWarnings("unused")
+                @EventHandler
+                void on(OrderPlaced event) {
+                    // Unimportant
+                }
+            };
+            var resolver = NamespaceMessageTypeResolver.namespace("")
+                                                       .message(OrderPlaced.class, "OrderPlaced", "0.0.1")
+                                                       .fallback(new AnnotationMessageTypeResolver());
+
+            // when
+            var component = new AnnotatedEventHandlingComponent<>(
+                    handler,
+                    ClasspathParameterResolverFactory.forClass(handler.getClass()),
+                    ClasspathHandlerDefinition.forClass(handler.getClass()),
+                    resolver,
+                    new DelegatingEventConverter(PassThroughConverter.INSTANCE)
+            );
+
+            // then
+            assertThat(component.supportedEvents()).containsExactly(BARE_ORDER_PLACED);
         }
     }
 
