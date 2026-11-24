@@ -129,7 +129,8 @@ public class AnnotatedMessageHandlingMemberDefinition implements HandlerDefiniti
         } catch (IllegalArgumentException e) {
             throw new UnsupportedHandlerException(
                     "The event handler " + method.toGenericString() + " cannot handle the sealed type "
-                            + payloadType.getName() + ": " + e.getMessage(),
+                            + payloadType.getName() + ": " + e.getMessage()
+                            + " Alternatively, handle the types of this family in separate handlers.",
                     method
             );
         }

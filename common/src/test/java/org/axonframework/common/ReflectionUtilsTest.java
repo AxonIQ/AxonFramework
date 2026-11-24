@@ -1082,7 +1082,8 @@ class ReflectionUtilsTest {
             // when / then
             assertThatThrownBy(() -> collectSealedLeaves(Open.class))
                     .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining(Loose.class.getName());
+                    .hasMessageContaining(Loose.class.getName())
+                    .hasMessageContaining("Make it sealed or final");
         }
     }
 }

@@ -171,7 +171,8 @@ class SealedTypeEntityEvolvingComponentTest {
             assertThatThrownBy(() -> SimpleEntityEvolvingComponent.<Account, Open>forSealedType(
                     Open.class, (account, event) -> account, RESOLVER, CONVERTER
             )).isInstanceOf(IllegalArgumentException.class)
-              .hasMessageContaining(Wide.class.getName());
+              .hasMessageContaining(Wide.class.getName())
+              .hasMessageContaining("Make it sealed or final");
         }
 
         @Test
@@ -180,7 +181,8 @@ class SealedTypeEntityEvolvingComponentTest {
             assertThatThrownBy(() -> SimpleEntityEvolvingComponent.<Account, Clashing>forSealedType(
                     Clashing.class, (account, event) -> account, RESOLVER, CONVERTER
             )).isInstanceOf(IllegalArgumentException.class)
-              .hasMessageContaining(nameOf(First.Created.class).fullName());
+              .hasMessageContaining(nameOf(First.Created.class).fullName())
+              .hasMessageContaining("@Event(name = ...)");
         }
 
         @Test

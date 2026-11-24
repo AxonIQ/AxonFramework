@@ -719,6 +719,7 @@ public final class ReflectionUtils {
                 throw new IllegalArgumentException(
                         "The type [" + subtype.getName() + "] permitted by the sealed type [" + sealedType.getName()
                                 + "] is neither sealed nor final, so its subclasses cannot be listed."
+                                + " Make it sealed or final."
                 );
             }
         }

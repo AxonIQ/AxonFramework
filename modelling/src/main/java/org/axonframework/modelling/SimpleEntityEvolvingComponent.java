@@ -125,6 +125,7 @@ public class SimpleEntityEvolvingComponent<E> implements EntityEvolvingComponent
                 throw new IllegalArgumentException(
                         "The subtypes [" + clashing.getName() + "] and [" + subtype.getName() + "] of the sealed type ["
                                 + sealedType.getName() + "] both resolve to the name [" + name.fullName() + "]."
+                                + " Give each type a distinct name, for example with @Event(name = ...)."
                 );
             }
             evolvers.put(name, (entity, event, context) -> evolver.apply(

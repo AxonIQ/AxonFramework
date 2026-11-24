@@ -218,7 +218,9 @@ class SealedEventHandlerTest {
             // when / then
             assertThatThrownBy(() -> componentFor(handler))
                     .isInstanceOf(UnsupportedHandlerException.class)
-                    .hasMessageContaining(LooseEvent.class.getName());
+                    .hasMessageContaining(LooseEvent.class.getName())
+                    .hasMessageContaining("Make it sealed or final")
+                    .hasMessageContaining("separate handlers");
         }
     }
 
