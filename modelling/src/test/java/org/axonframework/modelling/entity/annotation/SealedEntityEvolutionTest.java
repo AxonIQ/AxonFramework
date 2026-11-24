@@ -19,6 +19,7 @@ package org.axonframework.modelling.entity.annotation;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.conversion.jackson.JacksonConverter;
 import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
+import org.axonframework.messaging.core.GenericMessage;
 import org.axonframework.messaging.core.MessageType;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
@@ -26,7 +27,6 @@ import org.axonframework.messaging.core.annotation.ClasspathParameterResolverFac
 import org.axonframework.messaging.core.conversion.DelegatingMessageConverter;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
-import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.axonframework.messaging.eventhandling.conversion.DelegatingEventConverter;
 import org.junit.jupiter.api.*;
@@ -35,6 +35,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.axonframework.messaging.eventhandling.EventTestUtils.asEventMessage;
 
 /**
  * Tests that an entity's {@code @EventHandler} taking a sealed event type evolves the entity for every permitted
@@ -58,7 +59,7 @@ class SealedEntityEvolutionTest {
     }
 
     private static EventMessage jsonEvent(String name, Map<String, Object> payload) {
-        return new GenericEventMessage(new MessageType(new QualifiedName(name)), payload);
+        return asEventMessage(new GenericMessage(new MessageType(new QualifiedName(name)), payload));
     }
 
     private static <E> E evolve(AnnotatedEntityMetamodel<E> metamodel, E entity, EventMessage event) {

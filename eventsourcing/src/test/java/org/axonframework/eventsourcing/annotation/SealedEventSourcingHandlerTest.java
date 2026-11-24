@@ -41,47 +41,53 @@ import static org.axonframework.messaging.eventhandling.EventTestUtils.asEventMe
 /**
  * Test class validating that an {@link EventSourcingHandler @EventSourcingHandler} with a sealed parameter evolves the
  * entity for every concrete subtype, under the name of that subtype, converting the payload to the subtype.
+ *
+ * @author Mateusz Nowak
  */
 class SealedEventSourcingHandlerTest {
 
     private static final AnnotationMessageTypeResolver TYPE_RESOLVER = new AnnotationMessageTypeResolver();
 
-    private static final EntityEvolver<Account> EVOLVER = new AnnotationBasedEntityEvolvingComponent<>(
-            Account.class,
-            new DelegatingEventConverter(new JacksonConverter()),
-            TYPE_RESOLVER,
-            ClasspathParameterResolverFactory.forClass(Account.class),
-            ClasspathHandlerDefinition.forClass(Account.class)
-    );
+    @Nested
+    class GivenAnEventSourcingHandlerWithASealedParameter {
 
-    @Test
-    void evolvesTheEntityForEverySubtypeUnderItsNameFromAJsonPayload() {
-        // given
-        var account = new Account();
-        var opened = event(nameOf(AccountOpened.class), Map.of("id", "a1"));
-        var deposited = event(nameOf(MoneyDeposited.class), Map.of("id", "a1", "amount", 5));
+        private final EntityEvolver<Account> testSubject = new AnnotationBasedEntityEvolvingComponent<>(
+                Account.class,
+                new DelegatingEventConverter(new JacksonConverter()),
+                TYPE_RESOLVER,
+                ClasspathParameterResolverFactory.forClass(Account.class),
+                ClasspathHandlerDefinition.forClass(Account.class)
+        );
 
-        // when
-        account = EVOLVER.evolve(account, opened, StubProcessingContext.forMessage(opened));
-        account = EVOLVER.evolve(account, deposited, StubProcessingContext.forMessage(deposited));
+        @Test
+        void evolvesTheEntityForEverySubtypeUnderItsNameFromAJsonPayload() {
+            // given
+            var account = new Account();
+            var opened = event(nameOf(AccountOpened.class), Map.of("id", "a1"));
+            var deposited = event(nameOf(MoneyDeposited.class), Map.of("id", "a1", "amount", 5));
 
-        // then
-        assertThat(account.seen).containsExactly(new AccountOpened("a1"), new MoneyDeposited("a1", 5));
-    }
+            // when
+            account = testSubject.evolve(account, opened, StubProcessingContext.forMessage(opened));
+            account = testSubject.evolve(account, deposited, StubProcessingContext.forMessage(deposited));
 
-    @Test
-    void evolvesTheEntityForEverySubtypeUnderTheNamesOfARepeatedHandler() {
-        // given
-        var account = new Account();
-        var opened = event(new QualifiedName("legacy", nameOf(AccountOpened.class).localName()), Map.of("id", "a1"));
-        var deposited = event(nameOf(MoneyDeposited.class), Map.of("id", "a1", "amount", 5));
+            // then
+            assertThat(account.seen).containsExactly(new AccountOpened("a1"), new MoneyDeposited("a1", 5));
+        }
 
-        // when
-        account = EVOLVER.evolve(account, opened, StubProcessingContext.forMessage(opened));
-        account = EVOLVER.evolve(account, deposited, StubProcessingContext.forMessage(deposited));
+        @Test
+        void evolvesTheEntityForEverySubtypeUnderTheNamesOfARepeatedHandler() {
+            // given
+            var account = new Account();
+            var opened = event(new QualifiedName("legacy", nameOf(AccountOpened.class).localName()), Map.of("id", "a1"));
+            var deposited = event(nameOf(MoneyDeposited.class), Map.of("id", "a1", "amount", 5));
 
-        // then
-        assertThat(account.seen).containsExactly(new AccountOpened("a1"), new MoneyDeposited("a1", 5));
+            // when
+            account = testSubject.evolve(account, opened, StubProcessingContext.forMessage(opened));
+            account = testSubject.evolve(account, deposited, StubProcessingContext.forMessage(deposited));
+
+            // then
+            assertThat(account.seen).containsExactly(new AccountOpened("a1"), new MoneyDeposited("a1", 5));
+        }
     }
 
     private static QualifiedName nameOf(Class<?> type) {

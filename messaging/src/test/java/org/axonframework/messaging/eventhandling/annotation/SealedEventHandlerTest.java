@@ -52,6 +52,8 @@ import static org.axonframework.messaging.eventhandling.EventTestUtils.asEventMe
 /**
  * Test class validating that an event handler with a sealed parameter type is subscribed to the name of every concrete
  * permitted subtype, and receives the payload converted to the subtype registered for the name of the event.
+ *
+ * @author Mateusz Nowak
  */
 class SealedEventHandlerTest {
 
@@ -293,7 +295,7 @@ class SealedEventHandlerTest {
     class GivenEnums {
 
         @Test
-        void keepsTodaysBehaviourForAnEnumParameter() {
+        void doesNotExpandAnEnumParameter() {
             // given
             var handler = new Object() {
                 @SuppressWarnings("unused")
@@ -333,7 +335,7 @@ class SealedEventHandlerTest {
     class GivenACommandHandler {
 
         @Test
-        void keepsTodaysBehaviourForASealedParameter() {
+        void doesNotExpandASealedCommandParameter() {
             // given
             var handler = new Object() {
                 @SuppressWarnings("unused")
@@ -452,7 +454,7 @@ class SealedEventHandlerTest {
     class GivenAQueryHandler {
 
         @Test
-        void keepsTodaysBehaviourForASealedParameter() {
+        void doesNotExpandASealedQueryParameter() {
             // given
             var handler = new Object() {
                 @SuppressWarnings("unused")
