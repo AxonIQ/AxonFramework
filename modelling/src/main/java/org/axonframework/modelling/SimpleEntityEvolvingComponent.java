@@ -112,13 +112,13 @@ public class SimpleEntityEvolvingComponent<E> implements EntityEvolvingComponent
         requireNonNull(evolver, "The evolver cannot be null.");
         requireNonNull(messageTypeResolver, "The message type resolver cannot be null.");
         requireNonNull(eventConverter, "The event converter cannot be null.");
-        List<Class<?>> subtypes = ReflectionUtils.collectSealedLeaves(sealedType);
+        List<Class<? extends S>> subtypes = ReflectionUtils.collectConcreteSealedTypes(sealedType);
         if (subtypes.isEmpty()) {
             throw new IllegalArgumentException("The type [" + sealedType.getName() + "] is not a sealed type.");
         }
         Map<QualifiedName, EntityEvolver<E>> evolvers = new HashMap<>();
         Map<QualifiedName, Class<?>> subtypeByName = new HashMap<>();
-        for (Class<?> subtype : subtypes) {
+        for (Class<? extends S> subtype : subtypes) {
             QualifiedName name = messageTypeResolver.resolveOrThrow(subtype).qualifiedName();
             Class<?> clashing = subtypeByName.put(name, subtype);
             if (clashing != null) {
@@ -129,7 +129,7 @@ public class SimpleEntityEvolvingComponent<E> implements EntityEvolvingComponent
                 );
             }
             evolvers.put(name, (entity, event, context) -> evolver.apply(
-                    entity, sealedType.cast(event.payloadAs(subtype, eventConverter))
+                    entity, event.payloadAs(subtype, eventConverter)
             ));
         }
         return new SimpleEntityEvolvingComponent<>(evolvers);

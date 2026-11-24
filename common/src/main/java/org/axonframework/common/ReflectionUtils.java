@@ -638,6 +638,9 @@ public final class ReflectionUtils {
     /**
      * Collects all concrete types from a sealed hierarchy if the given type is sealed. Returns an empty set if the type
      * is not sealed.
+     * <p>
+     * Unlike {@link #collectConcreteSealedTypes(Class)}, this method accepts open subtypes and does not keep the
+     * permitted order.
      *
      * @param rootType The root type to scan for sealed hierarchy.
      * @param <T>      The type parameter.
@@ -665,15 +668,15 @@ public final class ReflectionUtils {
      * record MoneyOut(int amount) implements Transfer {}
      * enum Status implements AccountEvent { ACTIVE, CLOSED }                       // included as a whole
      *
-     * collectSealedLeaves(AccountEvent.class);  // [AccountOpened, MoneyIn, MoneyOut, Status]
-     * collectSealedLeaves(String.class);        // [] - not sealed
+     * collectConcreteSealedTypes(AccountEvent.class);  // [AccountOpened, MoneyIn, MoneyOut, Status]
+     * collectConcreteSealedTypes(String.class);        // [] - not sealed
      * }</pre>
      * A sealed class that is not abstract has instances of its own, so it is included next to its subclasses:
      * <pre>{@code
      * sealed class Vehicle permits Car {}
      * final class Car extends Vehicle {}
      *
-     * collectSealedLeaves(Vehicle.class);       // [Vehicle, Car]
+     * collectConcreteSealedTypes(Vehicle.class);       // [Vehicle, Car]
      * }</pre>
      * An enum is never a family of its own: as a {@code rootType} it yields an empty list, even when constant bodies
      * make it implicitly sealed, and as a permitted subtype it is one type, without its constant classes.
@@ -684,37 +687,51 @@ public final class ReflectionUtils {
      * sealed interface PaymentEvent permits PaymentReceived, CustomPayment {}
      * non-sealed interface CustomPayment extends PaymentEvent {}
      *
-     * collectSealedLeaves(PaymentEvent.class);  // throws IllegalArgumentException naming CustomPayment
+     * collectConcreteSealedTypes(PaymentEvent.class);  // throws IllegalArgumentException naming CustomPayment
      * }</pre>
+     * Unlike {@link #collectSealedHierarchyIfSealed(Class)}, which accepts open subtypes and returns them in no
+     * particular order, this method rejects open subtypes, skips abstract sealed types, keeps enums whole and keeps the
+     * permitted order.
      *
      * @param rootType the sealed type to collect the concrete types of
+     * @param <T>      the type of the {@code rootType}
      * @return the concrete types of the hierarchy, empty when the {@code rootType} is not sealed or is an enum
      * @throws IllegalArgumentException when a permitted subtype is neither sealed, final nor an enum
+     * @since 5.5.0
      */
-    public static List<Class<?>> collectSealedLeaves(Class<?> rootType) {
-        List<Class<?>> leaves = new ArrayList<>();
+    public static <T> List<Class<? extends T>> collectConcreteSealedTypes(Class<T> rootType) {
+        List<Class<? extends T>> concreteTypes = new ArrayList<>();
         if (rootType.isSealed() && !rootType.isEnum()) {
-            addIfConcrete(rootType, leaves);
-            collectSealedLeaves(rootType, leaves);
+            addIfConcrete(rootType, rootType, concreteTypes);
+            collectConcreteSealedTypes(rootType, rootType, concreteTypes);
         }
-        return leaves;
+        return concreteTypes;
     }
 
-    private static void addIfConcrete(Class<?> type, List<Class<?>> leaves) {
+    /**
+     * Adds the given {@code type} to the {@code concreteTypes} when it is neither an interface nor abstract.
+     */
+    private static <T> void addIfConcrete(Class<?> type, Class<T> rootType, List<Class<? extends T>> concreteTypes) {
         if (!type.isInterface() && !Modifier.isAbstract(type.getModifiers())) {
-            leaves.add(type);
+            concreteTypes.add(type.asSubclass(rootType));
         }
     }
 
-    private static void collectSealedLeaves(Class<?> sealedType, List<Class<?>> leaves) {
+    /**
+     * Adds the concrete types permitted by the given {@code sealedType} to the {@code concreteTypes}, walking through
+     * nested sealed types and rejecting a permitted subtype that is neither sealed, final nor an enum.
+     */
+    private static <T> void collectConcreteSealedTypes(Class<?> sealedType,
+                                                       Class<T> rootType,
+                                                       List<Class<? extends T>> concreteTypes) {
         for (Class<?> subtype : sealedType.getPermittedSubclasses()) {
             if (subtype.isEnum()) {
-                leaves.add(subtype);
+                concreteTypes.add(subtype.asSubclass(rootType));
             } else if (subtype.isSealed()) {
-                addIfConcrete(subtype, leaves);
-                collectSealedLeaves(subtype, leaves);
+                addIfConcrete(subtype, rootType, concreteTypes);
+                collectConcreteSealedTypes(subtype, rootType, concreteTypes);
             } else if (Modifier.isFinal(subtype.getModifiers())) {
-                leaves.add(subtype);
+                concreteTypes.add(subtype.asSubclass(rootType));
             } else {
                 throw new IllegalArgumentException(
                         "The type [" + subtype.getName() + "] permitted by the sealed type [" + sealedType.getName()

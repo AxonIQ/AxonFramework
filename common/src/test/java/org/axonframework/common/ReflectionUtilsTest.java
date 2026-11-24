@@ -980,7 +980,7 @@ class ReflectionUtilsTest {
     }
 
     @Nested
-    class CollectSealedLeaves {
+    class CollectConcreteSealedTypes {
 
         sealed interface Shape permits Circle, Polygon, Unit {
 
@@ -1041,9 +1041,9 @@ class ReflectionUtilsTest {
         }
 
         @Test
-        void returnsLeavesInPermittedOrderRecursingThroughSealedSubtypesAndKeepingEnumsWhole() {
+        void returnsConcreteTypesInPermittedOrderRecursingThroughSealedSubtypesAndKeepingEnumsWhole() {
             // when
-            var result = collectSealedLeaves(Shape.class);
+            var result = collectConcreteSealedTypes(Shape.class);
 
             // then
             assertThat(result).containsExactly(Circle.class, Square.class, Triangle.class, Unit.class);
@@ -1052,7 +1052,7 @@ class ReflectionUtilsTest {
         @Test
         void includesAConcreteSealedClassNextToItsSubclasses() {
             // when
-            var result = collectSealedLeaves(Fleet.class);
+            var result = collectConcreteSealedTypes(Fleet.class);
 
             // then
             // Vehicle is sealed but concrete, so its own instances need a name as well
@@ -1062,7 +1062,7 @@ class ReflectionUtilsTest {
         @Test
         void emptyWhenTypeIsNotSealed() {
             // when
-            var result = collectSealedLeaves(Object.class);
+            var result = collectConcreteSealedTypes(Object.class);
 
             // then
             assertThat(result).isEmpty();
@@ -1071,7 +1071,7 @@ class ReflectionUtilsTest {
         @Test
         void emptyForAnEnumRootWithConstantBodies() {
             // when
-            var result = collectSealedLeaves(Unit.class);
+            var result = collectConcreteSealedTypes(Unit.class);
 
             // then
             assertThat(result).isEmpty();
@@ -1080,7 +1080,7 @@ class ReflectionUtilsTest {
         @Test
         void rejectsAPermittedSubtypeThatIsNeitherSealedNorFinal() {
             // when / then
-            assertThatThrownBy(() -> collectSealedLeaves(Open.class))
+            assertThatThrownBy(() -> collectConcreteSealedTypes(Open.class))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining(Loose.class.getName())
                     .hasMessageContaining("Make it sealed or final");

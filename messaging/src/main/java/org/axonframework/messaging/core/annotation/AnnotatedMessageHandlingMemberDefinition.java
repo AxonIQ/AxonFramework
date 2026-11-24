@@ -94,7 +94,7 @@ public class AnnotatedMessageHandlingMemberDefinition implements HandlerDefiniti
             messageHandlerAttributesOf(occurrence).ifPresent(attr -> {
                 MessageHandlingMember<?> member = createMember(method, occurrence, attr, null,
                                                                parameterResolverFactory, messageStreamResolver);
-                List<Class<?>> subtypes = sealedEventSubtypesOf(method, attr, member);
+                List<? extends Class<?>> subtypes = sealedEventSubtypesOf(method, attr, member);
                 if (subtypes.isEmpty()) {
                     handlers.add((MessageHandlingMember<T>) member);
                 }
@@ -108,7 +108,7 @@ public class AnnotatedMessageHandlingMemberDefinition implements HandlerDefiniti
         return handlers;
     }
 
-    private static List<Class<?>> sealedEventSubtypesOf(Method method,
+    private static List<? extends Class<?>> sealedEventSubtypesOf(Method method,
                                                         Map<String, Object> attributes,
                                                         MessageHandlingMember<?> member) {
         Class<?> payloadType = member.payloadType();
@@ -125,7 +125,7 @@ public class AnnotatedMessageHandlingMemberDefinition implements HandlerDefiniti
             return List.of();
         }
         try {
-            return ReflectionUtils.collectSealedLeaves(payloadType);
+            return ReflectionUtils.collectConcreteSealedTypes(payloadType);
         } catch (IllegalArgumentException e) {
             throw new UnsupportedHandlerException(
                     "The event handler " + method.toGenericString() + " cannot handle the sealed type "
