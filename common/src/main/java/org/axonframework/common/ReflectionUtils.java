@@ -700,6 +700,7 @@ public final class ReflectionUtils {
      * @since 5.5.0
      */
     public static <T> List<Class<? extends T>> collectConcreteSealedTypes(Class<T> rootType) {
+        Objects.requireNonNull(rootType, "The root type cannot be null.");
         List<Class<? extends T>> concreteTypes = new ArrayList<>();
         if (rootType.isSealed() && !rootType.isEnum()) {
             addIfConcrete(rootType, rootType, concreteTypes);

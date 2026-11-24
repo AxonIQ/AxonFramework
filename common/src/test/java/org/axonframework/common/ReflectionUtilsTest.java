@@ -1040,6 +1040,18 @@ class ReflectionUtilsTest {
 
         }
 
+        abstract static sealed class Figure permits Round, Angular {
+
+        }
+
+        static final class Round extends Figure {
+
+        }
+
+        static final class Angular extends Figure {
+
+        }
+
         @Test
         void returnsConcreteTypesInPermittedOrderRecursingThroughSealedSubtypesAndKeepingEnumsWhole() {
             // when
@@ -1060,6 +1072,15 @@ class ReflectionUtilsTest {
         }
 
         @Test
+        void skipsAnAbstractSealedClassButKeepsItsSubclasses() {
+            // when
+            var result = collectConcreteSealedTypes(Figure.class);
+
+            // then
+            assertThat(result).containsExactly(Round.class, Angular.class);
+        }
+
+        @Test
         void emptyWhenTypeIsNotSealed() {
             // when
             var result = collectConcreteSealedTypes(Object.class);
@@ -1075,6 +1096,14 @@ class ReflectionUtilsTest {
 
             // then
             assertThat(result).isEmpty();
+        }
+
+        @Test
+        void rejectsANullRootType() {
+            // when / then
+            assertThatThrownBy(() -> collectConcreteSealedTypes(null))
+                    .isInstanceOf(NullPointerException.class)
+                    .hasMessage("The root type cannot be null.");
         }
 
         @Test
