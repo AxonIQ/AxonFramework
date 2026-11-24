@@ -128,9 +128,10 @@ public class AnnotatedEventHandlingComponent<T> implements EventHandlingComponen
             handlingComponent.subscribe(qualifiedName, constructEventHandlerFor(qualifiedName, handler));
         } else if (registeredPayloadType != handler.payloadType()) {
             throw new UnsupportedHandlerException(
-                    "The event handler " + handler.signature() + " handles the event name [" + qualifiedName
-                            + "] for both " + registeredPayloadType.getName() + " and "
-                            + handler.payloadType().getName() + ". Give these types distinct names.",
+                    "The event handler " + handler.signature() + " would receive events named [" + qualifiedName
+                            + "] as both " + registeredPayloadType.getName() + " and " + handler.payloadType().getName()
+                            + ", so it cannot tell which type to convert them to. Give each type a distinct name, for"
+                            + " example with @Event(name = ...).",
                     handler.unwrap(Member.class).orElse(null)
             );
         }

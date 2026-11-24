@@ -240,7 +240,8 @@ class SealedEventHandlerTest {
             assertThatThrownBy(() -> componentFor(handler))
                     .isInstanceOf(UnsupportedHandlerException.class)
                     .hasMessageContaining("x.Same")
-                    .hasMessageContaining(SameNameOne.class.getName());
+                    .hasMessageContaining(SameNameOne.class.getName())
+                    .hasMessageContaining("@Event(name = ...)");
         }
 
         @Test
