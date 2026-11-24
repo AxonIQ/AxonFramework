@@ -16,14 +16,15 @@
 
 package org.axonframework.modelling;
 
+import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.ReflectionUtils;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.common.infra.DescribableComponent;
 import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.QualifiedName;
+import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.conversion.EventConverter;
-import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -99,8 +100,10 @@ public class SimpleEntityEvolvingComponent<E> implements EntityEvolvingComponent
      * @param <E>                 the entity type to evolve
      * @param <S>                 the sealed event type
      * @return a component evolving the entity for every concrete subtype of {@code sealedType}
-     * @throws IllegalArgumentException when {@code sealedType} is not sealed, permits a subtype that is neither
-     *                                  sealed, final nor an enum, or has two subtypes resolving to the same name
+     * @throws IllegalArgumentException   when {@code sealedType} is not sealed, or permits a subtype that is
+     *                                    neither sealed, final nor an enum
+     * @throws AxonConfigurationException when two subtypes resolve to the same name
+     * @since 5.5.0
      */
     public static <E, S> SimpleEntityEvolvingComponent<E> forSealedType(
             Class<S> sealedType,
@@ -122,7 +125,7 @@ public class SimpleEntityEvolvingComponent<E> implements EntityEvolvingComponent
             QualifiedName name = messageTypeResolver.resolveOrThrow(subtype).qualifiedName();
             Class<?> clashing = subtypeByName.put(name, subtype);
             if (clashing != null) {
-                throw new IllegalArgumentException(
+                throw new AxonConfigurationException(
                         "The subtypes [" + clashing.getName() + "] and [" + subtype.getName() + "] of the sealed type ["
                                 + sealedType.getName() + "] both resolve to the name [" + name.fullName() + "]."
                                 + " Give each type a distinct name, for example with @Event(name = ...)."

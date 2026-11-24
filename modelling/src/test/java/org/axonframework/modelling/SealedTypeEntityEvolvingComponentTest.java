@@ -16,6 +16,7 @@
 
 package org.axonframework.modelling;
 
+import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.conversion.jackson.JacksonConverter;
 import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
 import org.axonframework.messaging.core.MessageType;
@@ -180,7 +181,7 @@ class SealedTypeEntityEvolvingComponentTest {
             // when / then
             assertThatThrownBy(() -> SimpleEntityEvolvingComponent.<Account, Clashing>forSealedType(
                     Clashing.class, (account, event) -> account, RESOLVER, CONVERTER
-            )).isInstanceOf(IllegalArgumentException.class)
+            )).isInstanceOf(AxonConfigurationException.class)
               .hasMessageContaining(nameOf(First.Created.class).fullName())
               .hasMessageContaining("@Event(name = ...)");
         }
