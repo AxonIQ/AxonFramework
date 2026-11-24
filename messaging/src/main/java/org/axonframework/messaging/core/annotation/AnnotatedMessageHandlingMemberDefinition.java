@@ -108,13 +108,21 @@ public class AnnotatedMessageHandlingMemberDefinition implements HandlerDefiniti
         return handlers;
     }
 
+    /**
+     * Returns the concrete subtypes the given {@code member} expands into, or an empty list when it stays one member.
+     * <p>
+     * Only a member of an annotation built on {@link EventHandler} expands, recognized by its
+     * {@link HandlerAttributes#EVENT_NAME event name} attribute, as only those members are subscribed by name. Event
+     * handler interceptors, and handlers of other {@link EventMessage} types such as deadline handlers, match payloads
+     * by type and stay one member. A member also stays one when its payload type is not sealed or is an enum, when its
+     * annotation declares a {@code payloadType}, or when it declares an event name or local name, which fixes one name.
+     */
     private static List<? extends Class<?>> sealedEventSubtypesOf(Method method,
-                                                        Map<String, Object> attributes,
-                                                        MessageHandlingMember<?> member) {
+                                                                  Map<String, Object> attributes,
+                                                                  MessageHandlingMember<?> member) {
         Class<?> payloadType = member.payloadType();
-        boolean expandable = EventMessage.class.isAssignableFrom(
-                (Class<?>) attributes.getOrDefault("messageType", Message.class))
-                && attributes.getOrDefault("payloadType", Object.class) == Object.class
+        boolean expandable = EventMessage.class.isAssignableFrom(messageTypeOf(attributes))
+                && declaredPayloadTypeOf(attributes) == Object.class
                 && payloadType.isSealed()
                 && !payloadType.isEnum()
                 && member.attribute(HandlerAttributes.EVENT_NAME).isPresent()
@@ -143,7 +151,6 @@ public class AnnotatedMessageHandlingMemberDefinition implements HandlerDefiniti
         return findAnnotationAttributes(element, MessageHandler.class);
     }
 
-    @SuppressWarnings("unchecked")
     private static MessageHandlingMember<?> createMember(Method method,
                                                          AnnotatedElement occurrence,
                                                          Map<String, Object> attributes,
@@ -153,10 +160,25 @@ public class AnnotatedMessageHandlingMemberDefinition implements HandlerDefiniti
         return new MethodInvokingMessageHandlingMember<>(
                 method,
                 occurrence,
-                (Class<? extends Message>) attributes.getOrDefault("messageType", Message.class),
-                payloadType != null ? payloadType : (Class<?>) attributes.getOrDefault("payloadType", Object.class),
+                messageTypeOf(attributes),
+                payloadType != null ? payloadType : declaredPayloadTypeOf(attributes),
                 parameterResolverFactory,
                 messageStreamResolver
         );
+    }
+
+    /**
+     * Returns the message type the handler annotation declares, or {@link Message} when it declares none.
+     */
+    @SuppressWarnings("unchecked")
+    private static Class<? extends Message> messageTypeOf(Map<String, Object> attributes) {
+        return (Class<? extends Message>) attributes.getOrDefault("messageType", Message.class);
+    }
+
+    /**
+     * Returns the payload type the handler annotation declares, or {@link Object} when it declares none.
+     */
+    private static Class<?> declaredPayloadTypeOf(Map<String, Object> attributes) {
+        return (Class<?>) attributes.getOrDefault("payloadType", Object.class);
     }
 }

@@ -26,6 +26,7 @@ import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.annotation.AnnotationMessageTypeResolver;
 import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
 import org.axonframework.messaging.core.annotation.ClasspathParameterResolverFactory;
+import org.axonframework.messaging.core.annotation.MessageHandler;
 import org.axonframework.messaging.core.annotation.UnsupportedHandlerException;
 import org.axonframework.messaging.core.conversion.DelegatingMessageConverter;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
@@ -36,6 +37,10 @@ import org.axonframework.messaging.queryhandling.annotation.AnnotatedQueryHandli
 import org.axonframework.messaging.queryhandling.annotation.QueryHandler;
 import org.junit.jupiter.api.*;
 
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -401,6 +406,49 @@ class SealedEventHandlerTest {
     }
 
     @Nested
+    class GivenACustomHandlerAnnotation {
+
+        @Test
+        void expandsAnAnnotationBuiltOnEventHandler() {
+            // given
+            var handler = new Object() {
+                @SuppressWarnings("unused")
+                @AccountEventHandler
+                void on(AccountEvent event) {
+                    // Unimportant
+                }
+            };
+
+            // when
+            var component = componentFor(handler);
+
+            // then
+            assertThat(component.supportedEvents()).containsExactlyInAnyOrder(
+                    ACCOUNT_OPENED, MONEY_DEPOSITED, FEE_CHARGED, INTEREST_PAID
+            );
+        }
+
+        @Test
+        void doesNotExpandAMessageHandlerAnnotationNotBuiltOnEventHandler() {
+            // given
+            var handler = new Object() {
+                @SuppressWarnings("unused")
+                @EventMessageHandler
+                void on(AccountEvent event) {
+                    // Unimportant
+                }
+            };
+
+            // when
+            var component = componentFor(handler);
+
+            // then
+            // only annotations built on @EventHandler are subscribed by name, so this one keeps the sealed type's name
+            assertThat(component.supportedEvents()).containsExactly(nameOf(AccountEvent.class));
+        }
+    }
+
+    @Nested
     class GivenAQueryHandler {
 
         @Test
@@ -498,6 +546,20 @@ class SealedEventHandlerTest {
 
     private static EventMessage event(QualifiedName name, Map<String, Object> payload) {
         return asEventMessage(new GenericMessage(new MessageType(name), payload));
+    }
+
+    @Retention(RetentionPolicy.RUNTIME)
+    @Target(ElementType.METHOD)
+    @EventHandler
+    @interface AccountEventHandler {
+
+    }
+
+    @Retention(RetentionPolicy.RUNTIME)
+    @Target(ElementType.METHOD)
+    @MessageHandler(messageType = EventMessage.class)
+    @interface EventMessageHandler {
+
     }
 
     sealed interface AccountEvent permits AccountOpened, MoneyDeposited, Adjustment {
