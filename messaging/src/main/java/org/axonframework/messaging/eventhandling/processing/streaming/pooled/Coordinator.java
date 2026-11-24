@@ -17,6 +17,7 @@
 package org.axonframework.messaging.eventhandling.processing.streaming.pooled;
 
 import org.axonframework.common.ClockUtils;
+import org.axonframework.common.FutureUtils;
 import org.axonframework.common.ProcessUtils;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
@@ -113,6 +114,7 @@ class Coordinator {
     private final AtomicReference<RunState> runState;
     private final Map<Integer, Instant> releasesDeadlines = new ConcurrentHashMap<>();
     private final Map<Integer, Integer> releasesLastBackOffSeconds = new ConcurrentHashMap<>();
+    private final Map<Integer, CompletableFuture<Void>> releasesInProgress = new ConcurrentHashMap<>();
     private final Queue<CoordinatorTask> coordinatorTasks = new ConcurrentLinkedQueue<>();
     private final AtomicReference<@Nullable CoordinationTask> coordinationTask = new AtomicReference<>();
     private final AtomicLong coordinationTaskGeneration = new AtomicLong(-1);
@@ -265,14 +267,14 @@ class Coordinator {
      */
     public CompletableFuture<Boolean> splitSegment(int segmentId) {
         CompletableFuture<Boolean> result = new CompletableFuture<>();
-        coordinatorTasks.add(new SplitTask(result,
+        coordinatorTasks.add(afterRelease(segmentId, new SplitTask(result,
                                            name,
                                            segmentId,
                                            workPackages,
                                            releasesDeadlines,
                                            tokenStore,
                                            unitOfWorkFactory,
-                                           clock));
+                                           clock)));
         scheduleCoordinator();
         return result;
     }
@@ -292,14 +294,14 @@ class Coordinator {
      */
     public CompletableFuture<Boolean> mergeSegment(int segmentId) {
         CompletableFuture<Boolean> result = new CompletableFuture<>();
-        coordinatorTasks.add(new MergeTask(result,
+        coordinatorTasks.add(afterRelease(null, new MergeTask(result,
                                            name,
                                            segmentId,
                                            workPackages,
                                            releasesDeadlines,
                                            tokenStore,
                                            unitOfWorkFactory,
-                                           clock));
+                                           clock)));
         scheduleCoordinator();
         return result;
     }
@@ -319,15 +321,38 @@ class Coordinator {
      */
     public CompletableFuture<Boolean> claimSegment(int segmentId) {
         CompletableFuture<Boolean> result = new CompletableFuture<>();
-        coordinatorTasks.add(new ClaimTask(result,
+        coordinatorTasks.add(afterRelease(segmentId, new ClaimTask(result,
                                            name,
                                            segmentId,
                                            workPackages,
                                            releasesDeadlines,
                                            tokenStore,
-                                           unitOfWorkFactory));
+                                           unitOfWorkFactory)));
         scheduleCoordinator();
         return result;
+    }
+
+    /** Runs the given task once the release of the segment (or of every segment, for null) has ended. */
+    private CoordinatorTask afterRelease(@Nullable Integer segmentId, CoordinatorTask task) {
+        return new CoordinatorTask(new CompletableFuture<>(), name) {
+            @Override
+            CompletableFuture<Boolean> run() {
+                CompletableFuture<Void> release = segmentId == null
+                        ? CompletableFuture.allOf(releasesInProgress.values().toArray(CompletableFuture[]::new))
+                        : releasesInProgress.getOrDefault(segmentId, emptyCompletedFuture());
+                return release.exceptionally(e -> null).thenCompose(ignored -> task.run());
+            }
+
+            @Override
+            protected CompletableFuture<Boolean> task() {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            String getDescription() {
+                return task.getDescription();
+            }
+        };
     }
 
     private CompletableFuture<Boolean> initializeTokenStore() {
@@ -799,7 +824,11 @@ class Coordinator {
                         "Processor [{}] (Coordination Task [{}]). Stopped processing. Runnable flag is false. Releasing claims and closing the event stream.",
                         name,
                         generation);
-                abortWorkPackages(null).thenRun(() -> runState.get().shutdownHandle().complete(null));
+                abortWorkPackages(null)
+                        .exceptionally(e -> null)
+                        .thenCompose(ignored -> CompletableFuture.allOf(
+                                releasesInProgress.values().toArray(CompletableFuture[]::new)))
+                        .whenComplete((r, e) -> runState.get().shutdownHandle().complete(null));
                 closeStreamQuietly();
                 return;
             }
@@ -1158,7 +1187,7 @@ class Coordinator {
             List<Segment> candidates = new ArrayList<>();
             for (Segment segment : segments) {
                 int segmentId = segment.getSegmentId();
-                if (workPackages.containsKey(segmentId)) {
+                if (workPackages.containsKey(segmentId) || releasesInProgress.containsKey(segmentId)) {
                     continue;
                 }
                 if (isSegmentBlockedFromClaim(segmentId)) {
@@ -1527,7 +1556,12 @@ class Coordinator {
 
         private CompletableFuture<Void> abortWorkPackage(WorkPackage work, @Nullable Throwable cause) {
             int segmentId = work.segment().getSegmentId();
-            return work.abort(cause)
+            CompletableFuture<Void> release = new CompletableFuture<>();
+            CompletableFuture<Void> ongoing = releasesInProgress.putIfAbsent(segmentId, release);
+            if (ongoing != null) {
+                return ongoing;
+            }
+            FutureUtils.runFailing(() -> work.abort(cause))
                        .thenRun(() -> {
                            if (workPackages.remove(segmentId, work)) {
                                logger.debug("Processor [{}] (Coordination Task [{}]) released claim on {}.",
@@ -1554,7 +1588,10 @@ class Coordinator {
                                    segmentId,
                                    unwrapped);
                            return null;
-                       });
+                       })
+                       .whenComplete((ignored, t) -> releasesInProgress.remove(segmentId, release))
+                       .whenComplete(FutureUtils.alsoComplete(release));
+            return release;
         }
 
         /**
