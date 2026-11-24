@@ -68,7 +68,7 @@ public class AnnotatedEventHandlingComponent<T> implements EventHandlingComponen
     private final AnnotatedHandlerInspector<T> model;
     private final MessageTypeResolver messageTypeResolver;
     private final EventConverter converter;
-    private final Map<RegisteredHandler, Class<?>> registeredHandlers = new HashMap<>();
+    private final Map<RegisteredHandler, Class<?>> payloadTypeByHandler = new HashMap<>();
 
     /**
      * Wraps the given {@code annotatedEventHandler}, allowing it to be subscribed to an {@link EventSink} as an
@@ -121,7 +121,7 @@ public class AnnotatedEventHandlingComponent<T> implements EventHandlingComponen
 
     private void registerHandler(MessageHandlingMember<? super T> handler) {
         QualifiedName qualifiedName = EventHandlingMember.qualifiedNameOf(handler, messageTypeResolver);
-        Class<?> registeredPayloadType = registeredHandlers.putIfAbsent(
+        Class<?> registeredPayloadType = payloadTypeByHandler.putIfAbsent(
                 new RegisteredHandler(handler.signature(), qualifiedName), handler.payloadType()
         );
         if (registeredPayloadType == null) {
@@ -132,7 +132,7 @@ public class AnnotatedEventHandlingComponent<T> implements EventHandlingComponen
                             + "] as both " + registeredPayloadType.getName() + " and " + handler.payloadType().getName()
                             + ", so it cannot tell which type to convert them to. Give each type a distinct name, for"
                             + " example with @Event(name = ...).",
-                    handler.unwrap(Member.class).orElse(null)
+                    handler.unwrap(Member.class).orElseThrow()
             );
         }
     }
