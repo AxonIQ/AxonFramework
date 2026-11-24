@@ -16,7 +16,6 @@
 
 package org.axonframework.common.jdbc;
 
-import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.function.ThrowingFunction;
 import org.axonframework.common.tx.MaterializationAware;
 import org.axonframework.common.tx.MaterializingResource;
@@ -31,12 +30,19 @@ import java.util.function.Function;
  * A {@link TransactionalExecutor} implementation for JDBC {@link Connection Connections}.
  * <p>
  * The connection is obtained from the given {@link ConnectionProvider} at most once, the first time
- * {@link #apply} is called, and reused for the remainder of this instance's lifetime.
+ * {@link #apply} is called, and reused for the remainder of this instance's lifetime. Concurrent
+ * {@link #apply} calls are serialized, since a single {@link Connection} is not safe for concurrent
+ * use.
+ * <p>
+ * This executor never commits, rolls back, or closes the connection itself; that remains the
+ * responsibility of whoever supplied it through {@link ConnectionProvider}. This is deliberate: a
+ * connection reached through this class is typically an ambient one bound to an externally-managed
+ * unit of work (e.g. published by a container's transaction manager), whose commit, rollback, and
+ * close lifecycle is controlled by that external owner, not this executor.
  *
  * @author John Hendrikx
  * @since 5.0.2
  */
-@Internal
 public class ConnectionExecutor implements TransactionalExecutor<Connection>, MaterializationAware {
     private final MaterializingResource<Connection> delegate;
 

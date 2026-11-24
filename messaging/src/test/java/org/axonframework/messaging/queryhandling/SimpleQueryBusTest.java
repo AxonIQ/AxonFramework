@@ -45,6 +45,7 @@ import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -179,8 +180,10 @@ class SimpleQueryBusTest {
             Optional<MessageStream.Entry<QueryResponseMessage>> nextResponse = result.next();
             assertThat(nextResponse).isPresent();
             assertThat(nextResponse.get().message().payload()).isEqualTo("query1234");
-            assertThat(result.isCompleted()).isFalse();  // not yet fully consumed, so not completed
-            assertThat(result.hasNextAvailable()).isFalse();  // results in full consumption
+
+            // the single response was handed out, so the stream is completed
+            assertThat(result.isCompleted()).isTrue();
+            assertThat(result.hasNextAvailable()).isFalse();
             assertThat(result.isCompleted()).isTrue();
         }
 
@@ -567,7 +570,7 @@ class SimpleQueryBusTest {
             // when emitting on invocation...
             uow.onInvocation(context -> testSubject.emitUpdate(queryFilter, () -> updateMessage, context));
             // then before the after commit phase validate the filter was not invoked yet...
-            List<String> updateList = new ArrayList<>();
+            List<String> updateList = new CopyOnWriteArrayList<>();
             FluxUtils.of(result).map(MessageStream.Entry::message).mapNotNull(m -> m.payloadAs(String.class)).subscribe(
                     updateList::add);
             assertThat(filterInvoked).isFalse();
@@ -576,8 +579,10 @@ class SimpleQueryBusTest {
             uow.execute().join();
             // then we expect the update to be emitted, validated by the filter being invoked...
             assertThat(filterInvoked).isTrue();
-            assertThat(updateList).isNotEmpty();
-            assertThat(updateList).containsExactlyInAnyOrder(UPDATE_PAYLOAD);
+            // the flux reads the update on a thread of its own, once the update was signaled
+            await().atMost(Duration.ofSeconds(2)).untilAsserted(
+                    () -> assertThat(updateList).containsExactlyInAnyOrder(UPDATE_PAYLOAD)
+            );
         }
 
         @Test

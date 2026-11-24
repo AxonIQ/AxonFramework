@@ -31,6 +31,7 @@ import org.openrewrite.java.tree.J;
 import org.openrewrite.java.tree.JavaType;
 import org.openrewrite.java.tree.Space;
 import org.openrewrite.java.tree.Statement;
+import org.openrewrite.java.tree.TextComment;
 import org.openrewrite.java.tree.TypeUtils;
 import org.openrewrite.kotlin.marker.PrimaryConstructor;
 import org.openrewrite.kotlin.tree.K;
@@ -40,8 +41,11 @@ import org.jspecify.annotations.Nullable;
 import java.util.Collections;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Adds {@code @EventTag(key = "<EntitySimpleName>")} to the aggregate-identifier field of every
@@ -49,7 +53,7 @@ import java.util.Map;
  * <p>
  * The recipe runs in two phases:
  * <ol>
- *   <li><b>Scan</b> – visits entity classes (annotated with {@code @Aggregate},
+ *   <li><b>Scan</b> - visits entity classes (annotated with {@code @Aggregate},
  *       {@code @EventSourced}, or {@code @EventSourcedEntity}) and records the event payload type
  *       for every event used in the entity, together with the entity's identifier field name and
  *       the entity's simple class name. Events are discovered from two sources:
@@ -58,27 +62,39 @@ import java.util.Map;
  *       entity body. The second source catches events that are published but never re-sourced in
  *       this entity (a valid AF4 pattern that would otherwise miss the {@code @EventTag}
  *       treatment).</li>
- *   <li><b>Edit</b> – for every event class recorded in the scan, locates the field whose name
- *       matches the entity's identifier field name and annotates it with
- *       {@code @EventTag(key = "<EntitySimpleName>")}. If no field with that exact name is found,
- *       the recipe falls back to the first declared field and emits a
- *       {@code // TODO(axon4to5):} comment so a human reviewer can verify the choice.</li>
+ *   <li><b>Edit</b> - for every event class recorded in the scan, picks the field that should carry
+ *       {@code @EventTag(key = "<EntitySimpleName>")}, trying each of the following until one
+ *       matches:
+ *       <ol>
+ *         <li>a field named exactly the entity's identifier field name;</li>
+ *         <li>a field whose declared type matches the identifier's type (when known) and whose name
+ *         is a case-insensitive suffix relationship of the identifier field name - e.g. entity id
+ *         {@code giftCardId} against an event field named {@code id} or {@code cardId}, annotated
+ *         with a {@code // TODO(axon4to5):} comment asking a human reviewer to verify the choice;</li>
+ *         <li>a field whose name matches (case-insensitively) a {@code @TargetAggregateIdentifier}/
+ *         {@code @TargetEntityId} field found on some other class in the same package - typically a
+ *         command routing to this entity - with the same type-compatibility check, annotated with
+ *         the same {@code // TODO(axon4to5):} comment;</li>
+ *         <li>otherwise, the first declared field, annotated anyway (so the event isn't left without
+ *         a tag) with the same {@code // TODO(axon4to5):} comment.</li>
+ *       </ol>
+ *       Only an exact name match is certain, so every weaker match is flagged for review.</li>
  * </ol>
  *
  * <p>Child entities declared on a parent via {@code @AggregateMember}/{@code @EntityMember} are
  * followed as well: each event used in a child entity's {@code @EventSourcingHandler} (or
  * {@code apply(...)} call) is tagged with the <b>parent</b> entity's tag, so it is sourced into the
  * parent's stream. This preserves the single event stream an Axon Framework 4 aggregate shared with
- * its members. When the child event carries the parent identifier under the parent's field name it
- * is tagged directly; otherwise the same first-field fallback and {@code // TODO(axon4to5):} comment
- * apply.
+ * its members. The same field-matching priority (exact name, then type-plus-name-similarity, then
+ * sibling command alias, then first field, the last three with a {@code // TODO(axon4to5):} comment)
+ * applies to child events.
  *
  * <p><b>Must run before {@code @AggregateIdentifier} is removed</b> (i.e. before the
  * {@link org.openrewrite.java.RemoveAnnotation} step inside {@code Axon4ToAxon5Modelling}), so
  * that the annotation is still present for the scan.
  *
  * <p><b>What the LLM must still do</b>: verify the selected field is truly the aggregate
- * identifier (especially when the fallback path fires), and adjust {@code key} if the entity
+ * identifier wherever a {@code // TODO(axon4to5):} comment was added, and adjust {@code key} if the entity
  * simple name differs from the intended tag name.
  *
  * @author Mateusz Nowak
@@ -89,7 +105,7 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
     // AF4 FQN (before ChangePackage in Axon4ToAxon5Modelling)
     private static final String AGGREGATE_IDENTIFIER_AF4 =
             "org.axonframework.modelling.command.AggregateIdentifier";
-    // AF5 FQN (after ChangePackage in Axon4ToAxon5Modelling — same recipe, prior step)
+    // AF5 FQN (after ChangePackage in Axon4ToAxon5Modelling - same recipe, prior step)
     private static final String AGGREGATE_IDENTIFIER_AF5 =
             "org.axonframework.modelling.entity.AggregateIdentifier";
 
@@ -104,6 +120,17 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
 
     private static final String EVENT_TAG_FQN =
             "org.axonframework.eventsourcing.annotation.EventTag";
+
+    // Used only as an additional signal (see Accumulator#packageTargetEntityIdFieldNames) for the
+    // matching heuristic below: a command class in the same package as an event class may carry a
+    // @TargetAggregateIdentifier/@TargetEntityId field whose name is a better guess for the event's
+    // identifier field than the entity's own @AggregateIdentifier field name.
+    private static final String TARGET_AGGREGATE_ID_AF4 =
+            "org.axonframework.modelling.command.TargetAggregateIdentifier";
+    private static final String TARGET_AGGREGATE_ID_AF5_INTERMEDIATE =
+            "org.axonframework.modelling.entity.TargetAggregateIdentifier";
+    private static final String TARGET_ENTITY_ID_AF5 =
+            "org.axonframework.modelling.annotation.TargetEntityId";
 
     // AF4 @AggregateMember / AF5 @EntityMember, used to follow a parent entity to its child
     // entities so their events are tagged with the PARENT's boundary as well.
@@ -130,21 +157,39 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
     static final String SHARED_ID_TYPES_KEY =
             "axon.migration.aggregateIdentifierFieldTypes";
 
-    /** Maps event-class FQN → scan result needed to place {@code @EventTag}. */
+    /** Maps event-class FQN -> scan result needed to place {@code @EventTag}. */
     public static class Accumulator {
 
         /** Holds everything needed to annotate a single event class's field. */
         static class EventTagTarget {
             final String idFieldName;
             final String tagKey;
+            /**
+             * FQN of the entity's {@code @AggregateIdentifier} field type, or {@code null} when it
+             * could not be resolved. Used by the type-plus-name-similarity matching heuristic to
+             * avoid false positives when falling back from an exact field-name match.
+             */
+            final @Nullable String idFieldTypeFqn;
 
-            EventTagTarget(String idFieldName, String tagKey) {
+            EventTagTarget(String idFieldName, String tagKey, @Nullable String idFieldTypeFqn) {
                 this.idFieldName = idFieldName;
                 this.tagKey = tagKey;
+                this.idFieldTypeFqn = idFieldTypeFqn;
             }
         }
 
         final Map<String, EventTagTarget> targets = new HashMap<>();
+
+        /**
+         * Maps a package name to the simple names of fields annotated with
+         * {@code @TargetAggregateIdentifier}/{@code @TargetEntityId} on any class found in that
+         * package (typically a command class). Used as an additional, lower-priority matching
+         * signal: when an event class has no field matching the entity's identifier field by exact
+         * name or by type-plus-name-similarity, a field whose name matches a sibling command's
+         * routing-identifier field (and whose type still matches the entity's identifier type) is
+         * preferred over the "first field" fallback.
+         */
+        final Map<String, Set<String>> packageTargetEntityIdFieldNames = new HashMap<>();
 
         /**
          * Maps a child-entity class FQN (declared via {@code @AggregateMember}/{@code @EntityMember}
@@ -201,6 +246,21 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
                     }
                 }
 
+                // Record the simple names of any @TargetAggregateIdentifier/@TargetEntityId fields
+                // on THIS class (typically a command class), keyed by package. This is a weaker,
+                // additional signal the edit phase consults when an event's identifier field can't
+                // be matched by exact name or by type-plus-name-similarity against the entity's own
+                // @AggregateIdentifier field name.
+                if (classDecl.getType() != null) {
+                    List<String> targetIdFieldNames = findTargetEntityIdFieldNames(classDecl);
+                    if (!targetIdFieldNames.isEmpty()) {
+                        String pkg = packageOf(classDecl.getType().getFullyQualifiedName());
+                        acc.packageTargetEntityIdFieldNames
+                           .computeIfAbsent(pkg, k -> new HashSet<>())
+                           .addAll(targetIdFieldNames);
+                    }
+                }
+
                 if (!isEntityClass(classDecl)) {
                     return super.visitClassDeclaration(classDecl, ctx);
                 }
@@ -210,22 +270,20 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
                 if (idFieldName == null) {
                     return super.visitClassDeclaration(classDecl, ctx);
                 }
+                String idFieldTypeFqn = findAggregateIdFieldTypeFqn(classDecl);
 
                 // Publish the @AggregateIdentifier field's declared type so
                 // ConfigureEventSourcedAnnotation can populate @EventSourced(idType=...)
                 // even when it runs after RemoveAnnotation has stripped @AggregateIdentifier.
-                if (classDecl.getType() != null) {
-                    String idTypeFqn = findAggregateIdFieldTypeFqn(classDecl);
-                    if (idTypeFqn != null) {
-                        @SuppressWarnings("unchecked")
-                        Map<String, String> shared =
-                                (Map<String, String>) ctx.getMessage(SHARED_ID_TYPES_KEY);
-                        if (shared == null) {
-                            shared = new HashMap<>();
-                            ctx.putMessage(SHARED_ID_TYPES_KEY, shared);
-                        }
-                        shared.put(classDecl.getType().getFullyQualifiedName(), idTypeFqn);
+                if (classDecl.getType() != null && idFieldTypeFqn != null) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, String> shared =
+                            (Map<String, String>) ctx.getMessage(SHARED_ID_TYPES_KEY);
+                    if (shared == null) {
+                        shared = new HashMap<>();
+                        ctx.putMessage(SHARED_ID_TYPES_KEY, shared);
                     }
+                    shared.put(classDecl.getType().getFullyQualifiedName(), idFieldTypeFqn);
                 }
 
                 // Collect event types from all @EventSourcingHandler methods
@@ -252,15 +310,17 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
                         continue;
                     }
                     acc.targets.put(eventType.getFullyQualifiedName(),
-                                    new Accumulator.EventTagTarget(idFieldName, entitySimpleName));
+                                    new Accumulator.EventTagTarget(
+                                            idFieldName, entitySimpleName, idFieldTypeFqn));
                 }
 
                 // Also collect event types from `AggregateLifecycle.apply(...)` call sites
                 // anywhere in the entity body. Catches events that are published but not
-                // re-sourced in this entity (no matching @EventSourcingHandler) — a valid
+                // re-sourced in this entity (no matching @EventSourcingHandler) - a valid
                 // AF4 pattern that would otherwise miss the @EventTag treatment.
                 final String capturedIdFieldName = idFieldName;
                 final String capturedEntitySimpleName = entitySimpleName;
+                final String capturedIdFieldTypeFqn = idFieldTypeFqn;
                 new JavaIsoVisitor<ExecutionContext>() {
                     @Override
                     public J.MethodInvocation visitMethodInvocation(J.MethodInvocation mi,
@@ -283,7 +343,8 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
                         acc.targets.putIfAbsent(eventType.getFullyQualifiedName(),
                                                 new Accumulator.EventTagTarget(
                                                         capturedIdFieldName,
-                                                        capturedEntitySimpleName));
+                                                        capturedEntitySimpleName,
+                                                        capturedIdFieldTypeFqn));
                         return invocation;
                     }
                 }.visit(classDecl, ctx);
@@ -296,7 +357,7 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
                 for (String childFqn : findMemberChildFqns(classDecl)) {
                     acc.memberChildBoundary.putIfAbsent(
                             childFqn,
-                            new Accumulator.EventTagTarget(idFieldName, entitySimpleName));
+                            new Accumulator.EventTagTarget(idFieldName, entitySimpleName, idFieldTypeFqn));
                 }
 
                 return super.visitClassDeclaration(classDecl, ctx);
@@ -329,7 +390,7 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
                                                                      ExecutionContext ctx) {
                 J.VariableDeclarations vd = super.visitVariableDeclarations(multiVar, ctx);
 
-                // Only act on fields and record components of event classes — never on regular
+                // Only act on fields and record components of event classes - never on regular
                 // method parameters or local variables. The check has two carve-outs:
                 // - Java records: a method parameter inside a static factory (e.g.
                 //   `event(Id id)`) shares the enclosing class with the record header, so a
@@ -337,7 +398,7 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
                 //   components handled correctly because they live directly under the class.
                 // - Kotlin data classes: primary-constructor parameters surface as
                 //   J.VariableDeclarations whose enclosing J.MethodDeclaration carries a
-                //   {@link PrimaryConstructor} marker. Those ARE the class's properties — they
+                //   {@link PrimaryConstructor} marker. Those ARE the class's properties - they
                 //   need the @EventTag treatment, so we explicitly let them through.
                 J.MethodDeclaration enclosingMethod =
                         getCursor().firstEnclosing(J.MethodDeclaration.class);
@@ -359,34 +420,145 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
                     return vd;
                 }
 
-                // Determine whether this field is the aggregate-id field.
-                boolean isIdField = !vd.getVariables().isEmpty()
-                        && target.idFieldName.equals(vd.getVariables().get(0).getSimpleName());
-                if (!isIdField) {
-                    // Check if we should use this as the fallback (first field in the class body).
-                    boolean isFirstField = isFirstFieldInClass(enclosingClass, vd);
-                    if (!isFirstField) {
-                        return vd;
-                    }
-                    // Fallback — first field; mark for LLM review.
-                    // We still annotate it because leaving an event without @EventTag would cause
-                    // a runtime failure; the LLM must verify the field choice.
-                    if (!hasExactFieldByName(enclosingClass, target.idFieldName)) {
-                        // Annotate and add a TODO comment via the JavaTemplate approach.
-                        return annotateWithEventTag(vd, target.tagKey,
-                                                    " // TODO(axon4to5): verify this is the aggregate-id field");
-                    }
+                // Resolve, once per class, which field is the best match for the entity's
+                // identifier - trying an exact name match first, then a type-plus-name-similarity
+                // heuristic, then a sibling command's @TargetEntityId field name, and only then
+                // falling back to the first field (flagged for human review). See
+                // #resolveIdField for the full priority order.
+                ResolvedIdField resolved = resolveIdField(enclosingClass, target, acc, classFqn);
+                if (resolved == null || !resolved.field.getId().equals(vd.getId())) {
                     return vd;
                 }
-
+                if (resolved.needsReview) {
+                    // Anything weaker than an exact name match; mark for LLM review. We still
+                    // annotate it because leaving an event without @EventTag would cause a runtime
+                    // failure; the LLM must verify the field choice.
+                    return annotateWithEventTag(vd, target.tagKey,
+                                                " TODO(axon4to5): verify this is the aggregate-id field");
+                }
                 return annotateWithEventTag(vd, target.tagKey, null);
+            }
+
+            /** The field chosen by {@link #resolveIdField}, and whether that choice needs review. */
+            private final class ResolvedIdField {
+                final J.VariableDeclarations field;
+                final boolean needsReview;
+
+                ResolvedIdField(J.VariableDeclarations field, boolean needsReview) {
+                    this.field = field;
+                    this.needsReview = needsReview;
+                }
+            }
+
+            /**
+             * Picks the field in {@code enclosingClass} that should carry the {@code @EventTag},
+             * trying each of the following in order and returning the first match. Only the exact
+             * name match is certain, so every other match is flagged {@code needsReview}:
+             * <ol>
+             *   <li><b>Exact name match</b> - a field named exactly {@code target.idFieldName}.</li>
+             *   <li><b>Type + name-similarity match</b> - a field whose declared type matches the
+             *   entity identifier's type (when known) and whose name is a case-insensitive suffix
+             *   relationship of {@code target.idFieldName} (e.g. entity id {@code giftCardId} and
+             *   event field {@code id}, or event field {@code cardId}). Flagged {@code needsReview}.</li>
+             *   <li><b>Sibling command alias match</b> - a field whose name matches (case-insensitive)
+             *   the name of a {@code @TargetAggregateIdentifier}/{@code @TargetEntityId} field found
+             *   on some other class in the same package (typically a command class routing to this
+             *   entity), and whose type still matches the entity identifier's type when known. Flagged
+             *   {@code needsReview}.</li>
+             *   <li><b>Fallback</b> - the first declared field, flagged {@code needsReview}.</li>
+             * </ol>
+             * Returns {@code null} when the class has no fields at all.
+             */
+            private @Nullable ResolvedIdField resolveIdField(J.ClassDeclaration enclosingClass,
+                                                              Accumulator.EventTagTarget target,
+                                                              Accumulator acc,
+                                                              String classFqn) {
+                List<J.VariableDeclarations> fields = classFields(enclosingClass);
+                if (fields.isEmpty()) {
+                    return null;
+                }
+                for (J.VariableDeclarations field : fields) {
+                    if (target.idFieldName.equals(fieldSimpleName(field))) {
+                        return new ResolvedIdField(field, false);
+                    }
+                }
+                for (J.VariableDeclarations field : fields) {
+                    if (isTypeAndNameSimilarMatch(field, target)) {
+                        return new ResolvedIdField(field, true);
+                    }
+                }
+                Set<String> aliases = acc.packageTargetEntityIdFieldNames.get(packageOf(classFqn));
+                if (aliases != null) {
+                    for (J.VariableDeclarations field : fields) {
+                        String name = fieldSimpleName(field);
+                        if (name != null && containsIgnoreCase(aliases, name)
+                                && typeCompatible(field, target)) {
+                            return new ResolvedIdField(field, true);
+                        }
+                    }
+                }
+                return new ResolvedIdField(fields.get(0), true);
+            }
+
+            private boolean isTypeAndNameSimilarMatch(J.VariableDeclarations field,
+                                                      Accumulator.EventTagTarget target) {
+                String name = fieldSimpleName(field);
+                return name != null
+                        && nameIsSimilar(name, target.idFieldName)
+                        && typeCompatible(field, target);
+            }
+
+            /**
+             * A candidate field name is "similar" to the entity's identifier field name when the
+             * identifier field name ends with it, case-insensitively - e.g. entity id
+             * {@code giftCardId} and event field {@code id} or {@code cardId}. Intentionally
+             * one-directional: an event field like {@code transactionId} should not match an entity
+             * identifier simply named {@code id}, since that would tag an unrelated identifier.
+             */
+            private boolean nameIsSimilar(String candidateFieldName, String idFieldName) {
+                return idFieldName.toLowerCase(Locale.ROOT)
+                                  .endsWith(candidateFieldName.toLowerCase(Locale.ROOT));
+            }
+
+            /**
+             * Returns {@code true} when {@code field}'s declared type cannot be compared (unresolved,
+             * or the entity identifier's type is unknown) or matches {@code target.idFieldTypeFqn}.
+             * Unresolved types are treated as compatible so the heuristic still fires on synthetic
+             * test sources without a full classpath.
+             */
+            private boolean typeCompatible(J.VariableDeclarations field, Accumulator.EventTagTarget target) {
+                if (target.idFieldTypeFqn == null || field.getTypeExpression() == null) {
+                    return true;
+                }
+                JavaType fieldRawType = field.getTypeExpression().getType();
+                if (fieldRawType instanceof JavaType.Primitive) {
+                    // The entity identifier resolved to a reference type (idFieldTypeFqn is set),
+                    // so a primitive-typed field can never be a match - treat unconditionally as
+                    // incompatible instead of the permissive "can't verify" default below.
+                    return false;
+                }
+                JavaType.FullyQualified fieldType = TypeUtils.asFullyQualified(fieldRawType);
+                return fieldType == null || target.idFieldTypeFqn.equals(fieldType.getFullyQualifiedName());
+            }
+
+            private boolean containsIgnoreCase(Set<String> names, String name) {
+                for (String candidate : names) {
+                    if (candidate.equalsIgnoreCase(name)) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+
+            private @Nullable String fieldSimpleName(J.VariableDeclarations field) {
+                return field.getVariables().isEmpty() ? null : field.getVariables().get(0).getSimpleName();
             }
 
             private J.VariableDeclarations annotateWithEventTag(J.VariableDeclarations vd,
                                                                  String tagKey,
-                                                                 @SuppressWarnings("unused") String todoComment) {
+                                                                 @Nullable String todoComment) {
                 if (isKotlinSource()) {
-                    // Kotlin path — JavaTemplate.addAnnotation produces inconsistent layout on
+                    // Kotlin path - JavaTemplate.addAnnotation produces inconsistent layout on
                     // data class primary-constructor params (annotation lost or pushed to a
                     // weird indent). Build the J.Annotation directly from LST primitives and
                     // prepend it to the leading-annotation list, with an explicit newline+indent
@@ -395,7 +567,7 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
                     J.Annotation tag = buildEventTagAnnotation(tagKey);
                     J.VariableDeclarations annotated = prependAnnotationOnNewLine(vd, tag);
                     maybeAddImport(EVENT_TAG_FQN, null, false);
-                    return annotated;
+                    return todoComment == null ? annotated : appendTrailingComment(annotated, todoComment);
                 }
                 J.VariableDeclarations annotated = JavaTemplate.builder(
                                 "@EventTag(key = \"" + tagKey + "\")")
@@ -404,7 +576,42 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
                         .build()
                         .apply(getCursor(), vd.getCoordinates().addAnnotation((a, b) -> 0));
                 maybeAddImport(EVENT_TAG_FQN, null, false);
-                return forceAnnotationOnOwnLine(annotated);
+                J.VariableDeclarations onOwnLine = forceAnnotationOnOwnLine(annotated);
+                return todoComment == null ? onOwnLine : appendTrailingComment(onOwnLine, todoComment);
+            }
+
+            /**
+             * Appends {@code commentText} as a trailing {@code //} comment (a block comment when the
+             * declaration continues on the same line) right after {@code vd}'s
+             * last leading annotation, on the same line, by converting the newline+indent prefix of
+             * whatever node follows the annotation (a modifier, or the type expression) into
+             * {@code " " + comment + <original newline+indent>}.
+             */
+            private J.VariableDeclarations appendTrailingComment(J.VariableDeclarations vd, String commentText) {
+                if (!vd.getModifiers().isEmpty()) {
+                    return vd.withModifiers(ListUtils.mapFirst(vd.getModifiers(),
+                            m -> m.withPrefix(withTrailingComment(m.getPrefix(), commentText))));
+                }
+                if (vd.getTypeExpression() != null) {
+                    return vd.withTypeExpression(vd.getTypeExpression().withPrefix(
+                            withTrailingComment(vd.getTypeExpression().getPrefix(), commentText)));
+                }
+                return vd;
+            }
+
+            private Space withTrailingComment(Space prefix, String commentText) {
+                String whitespace = prefix.getWhitespace();
+                if (!whitespace.isEmpty() && !whitespace.contains("\n")) {
+                    // The declaration continues on this line (for example, a record component list on one
+                    // line), so a line comment would comment out the rest of it. Use a block comment instead.
+                    TextComment blockComment = new TextComment(true, commentText + " ", " ", Markers.EMPTY);
+                    return prefix.withWhitespace(" ")
+                                 .withComments(ListUtils.concat(prefix.getComments(), blockComment));
+                }
+                String suffix = whitespace.isEmpty() ? "\n" : whitespace;
+                TextComment comment = new TextComment(false, commentText, suffix, Markers.EMPTY);
+                return prefix.withWhitespace(" ")
+                             .withComments(ListUtils.concat(prefix.getComments(), comment));
             }
 
             private boolean isKotlinSource() {
@@ -414,7 +621,7 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
             /**
              * Construct an {@code @EventTag(key = "...")} annotation as a synthetic
              * {@link J.Annotation}. Building the annotation through LST primitives skips
-             * {@link JavaTemplate}'s parsing pipeline entirely — that pipeline cannot render
+             * {@link JavaTemplate}'s parsing pipeline entirely - that pipeline cannot render
              * Kotlin's {@code val}/{@code var}-shaped {@link J.VariableDeclarations} nodes
              * back through a Java placeholder, which is why the template-driven path produces
              * lopsided output on data class primary-constructor params.
@@ -436,7 +643,7 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
                         "key",
                         null,
                         null);
-                // The value's leading space renders between `=` and the literal — pairing it
+                // The value's leading space renders between `=` and the literal - pairing it
                 // with the JLeftPadded's `before` (which renders BEFORE `=`) yields the
                 // canonical `key = "value"` shape.
                 J.Literal keyValue = new J.Literal(
@@ -486,7 +693,7 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
                 J.VariableDeclarations withAnnotation = vd.withLeadingAnnotations(
                         ListUtils.concat(annotation, vd.getLeadingAnnotations()));
                 if (vd.getLeadingAnnotations().isEmpty()) {
-                    // First annotation — re-flow the declaration's downstream nodes so the
+                    // First annotation - re-flow the declaration's downstream nodes so the
                     // annotation block sits on its own line above the val/var keyword.
                     if (!withAnnotation.getModifiers().isEmpty()) {
                         return withAnnotation.withModifiers(
@@ -557,7 +764,7 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
             }
 
             /**
-             * Resolve a newline + indent {@link Space} for {@code vd}, checking — in order — the
+             * Resolve a newline + indent {@link Space} for {@code vd}, checking - in order - the
              * trailing annotation, the variable declaration itself, and any sibling record
              * component / class field. The first record component's indent often lives on the
              * enclosing {@code JContainer} (so its own prefix is just {@code "\n"} with no
@@ -627,12 +834,12 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
              * Returns the {@link J.VariableDeclarations} fields that belong to {@code classDecl}
              * in source-declaration order, walking three places:
              * <ol>
-             *   <li>{@link J.ClassDeclaration#getPrimaryConstructor()} — Java records and
+             *   <li>{@link J.ClassDeclaration#getPrimaryConstructor()} - Java records and
              *   anything else that exposes its primary-constructor params explicitly;</li>
              *   <li>any {@link J.MethodDeclaration} in the body marked with the Kotlin
-             *   {@link PrimaryConstructor} marker — Kotlin data classes embed primary-constructor
+             *   {@link PrimaryConstructor} marker - Kotlin data classes embed primary-constructor
              *   params here rather than in {@code getPrimaryConstructor()};</li>
-             *   <li>the class body itself — regular Java fields and Kotlin {@code val}/{@code var}
+             *   <li>the class body itself - regular Java fields and Kotlin {@code val}/{@code var}
              *   class members (the latter wrapped in {@link K.Property}).</li>
              * </ol>
              */
@@ -667,35 +874,13 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
                 return fields;
             }
 
-            /**
-             * Compare LST ids rather than references — {@code super.visitVariableDeclarations}
-             * can return a new wrapper even when nothing changed semantically, so the visitor's
-             * {@code vd} and the class declaration's stored field may diverge by reference
-             * while pointing at the same source-level declaration.
-             */
-            private boolean isFirstFieldInClass(J.ClassDeclaration classDecl,
-                                                J.VariableDeclarations vd) {
-                List<J.VariableDeclarations> fields = classFields(classDecl);
-                return !fields.isEmpty() && fields.get(0).getId().equals(vd.getId());
-            }
-
-            private boolean hasExactFieldByName(J.ClassDeclaration classDecl, String fieldName) {
-                for (J.VariableDeclarations field : classFields(classDecl)) {
-                    if (!field.getVariables().isEmpty()
-                            && fieldName.equals(field.getVariables().get(0).getSimpleName())) {
-                        return true;
-                    }
-                }
-                return false;
-            }
-
             private boolean isKotlinPrimaryConstructor(J.MethodDeclaration md) {
                 return md.getMarkers().findFirst(PrimaryConstructor.class).isPresent();
             }
         };
     }
 
-    // ── Static helpers ────────────────────────────────────────────────────────
+    // -- Static helpers --------------------------------------------------------
 
     private static boolean isEntityClass(J.ClassDeclaration cd) {
         for (J.Annotation ann : cd.getLeadingAnnotations()) {
@@ -816,6 +1001,65 @@ public class AddEventTagAnnotation extends ScanningRecipe<AddEventTagAnnotation.
             }
         }
         return null;
+    }
+
+    /**
+     * Returns the simple names of any fields, Java record components, or Kotlin primary-constructor
+     * parameters on {@code cd} annotated with {@code @TargetAggregateIdentifier} (AF4) or its AF5
+     * successors {@code @TargetAggregateIdentifier} (post-{@code ChangePackage}) /
+     * {@code @TargetEntityId} (post-rename). Used to populate
+     * {@link Accumulator#packageTargetEntityIdFieldNames}: a command class routing to an entity by
+     * one of these fields is a useful, package-scoped hint for the entity's identifier field name
+     * on the entity's own events, when that name doesn't match the entity's
+     * {@code @AggregateIdentifier} field directly.
+     */
+    private static List<String> findTargetEntityIdFieldNames(J.ClassDeclaration cd) {
+        List<String> names = new java.util.ArrayList<>();
+        if (cd.getPrimaryConstructor() != null) {
+            for (Statement stmt : cd.getPrimaryConstructor()) {
+                addIfTargetEntityIdField(unwrapVariableDeclarations(stmt), names);
+            }
+        }
+        if (cd.getBody() != null) {
+            for (Statement stmt : cd.getBody().getStatements()) {
+                if (stmt instanceof J.MethodDeclaration
+                        && ((J.MethodDeclaration) stmt).getMarkers()
+                                                        .findFirst(PrimaryConstructor.class)
+                                                        .isPresent()) {
+                    for (Statement param : ((J.MethodDeclaration) stmt).getParameters()) {
+                        addIfTargetEntityIdField(unwrapVariableDeclarations(param), names);
+                    }
+                    continue;
+                }
+                addIfTargetEntityIdField(unwrapVariableDeclarations(stmt), names);
+            }
+        }
+        return names;
+    }
+
+    private static void addIfTargetEntityIdField(J.@Nullable VariableDeclarations vd, List<String> out) {
+        if (vd == null || vd.getVariables().isEmpty()) {
+            return;
+        }
+        for (J.Annotation ann : vd.getLeadingAnnotations()) {
+            if (TypeUtils.isOfClassType(ann.getType(), TARGET_AGGREGATE_ID_AF4)
+                    || TypeUtils.isOfClassType(ann.getType(), TARGET_AGGREGATE_ID_AF5_INTERMEDIATE)
+                    || TypeUtils.isOfClassType(ann.getType(), TARGET_ENTITY_ID_AF5)
+                    || (ann.getAnnotationType() instanceof J.Identifier
+                            && ("TargetAggregateIdentifier".equals(
+                                        ((J.Identifier) ann.getAnnotationType()).getSimpleName())
+                                    || "TargetEntityId".equals(
+                                        ((J.Identifier) ann.getAnnotationType()).getSimpleName())))) {
+                out.add(vd.getVariables().get(0).getSimpleName());
+                return;
+            }
+        }
+    }
+
+    /** Returns the package portion of a fully-qualified class name, or {@code ""} for the default package. */
+    private static String packageOf(String fqn) {
+        int idx = fqn.lastIndexOf('.');
+        return idx < 0 ? "" : fqn.substring(0, idx);
     }
 
     /**

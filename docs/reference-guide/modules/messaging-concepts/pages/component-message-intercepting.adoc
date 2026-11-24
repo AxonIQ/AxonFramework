@@ -195,8 +195,10 @@ include::example$messagingconcepts/componentmessageintercepting/exceptionproject
 An xref:commands:entities/index.adoc[entity's] own `@CommandHandler` methods can be intercepted the same way as any other component, both by an annotated method on the entity class and by a declarative interceptor registered on its `EntityMetamodelBuilder`.
 An interceptor registered on a parent entity runs before an interceptor registered on a child entity added through `@EntityMember` or `EntityMetamodelBuilder.addChild(...)`, and before the parent's own command handlers.
 
-For a xref:commands:entities/entity-polymorphism.adoc[polymorphic entity], a concrete type's own interceptor runs before an interceptor declared on the super type, for every command reaching that concrete type's instance, whether the command is declared on the concrete type or on the super type itself.
-This is the opposite order from the `@EntityMember`/`addChild(...)` parent-before-child rule above; the two are unrelated mechanisms.
+For a xref:commands:entities/entity-polymorphism.adoc[polymorphic entity], an interceptor declared on the super type wraps every command of the entity, whether the command is declared on a concrete type or on the super type itself.
+It runs before the concrete type's own interceptors, exactly once per command.
+This holds for both the annotated and the declarative configuration.
+For the declarative configuration, that means an interceptor registered on the `PolymorphicEntityMetamodelBuilder` also covers commands handled by the concrete types added through `addConcreteType(...)`.
 
 Only command handling is covered: there is no interceptor support for `@EventSourcingHandler` methods.
 

@@ -108,7 +108,9 @@ class WorkPackage implements SegmentProgressContext {
     private final SegmentProgressStrategy progressStrategy;
 
     private @Nullable TrackingToken lastDeliveredToken; // For use only by event delivery threads, like Coordinator
-    private @Nullable TrackingToken lastStoredToken;
+    private volatile @Nullable TrackingToken lastStoredToken;
+    private final Context.ResourceKey<Boolean> storedTokenRestoreKey =
+            Context.ResourceKey.withLabel("storedTokenRestore");
     private final AtomicLong nextClaimExtension;
 
     private final Queue<ProcessingEntry> processingQueue = new ConcurrentLinkedQueue<>();
@@ -117,6 +119,7 @@ class WorkPackage implements SegmentProgressContext {
     private final AtomicReference<@Nullable Throwable> abortException = new AtomicReference<>();
     private @Nullable Runnable batchProcessedCallback;
     private volatile @Nullable TrackingToken lastConsumedToken;
+    private volatile @Nullable TrackingToken lastHandledToken;
 
     /**
      * Instantiate a Builder to be able to create a {@code WorkPackage}. This builder <b>does not</b> validate the
@@ -142,6 +145,7 @@ class WorkPackage implements SegmentProgressContext {
         this.segmentStatusUpdater = builder.segmentStatusUpdater;
         this.clock = builder.clock;
         this.lastConsumedToken = builder.initialToken;
+        this.lastHandledToken = builder.initialToken;
         // The claimed token is by definition the last position the token store accepted for this segment, so it is the
         // reference the monotonicity guard in storeIfAdvanced must start from. Leaving it null would skip the guard on
         // the first store of every claim cycle.
@@ -413,7 +417,9 @@ class WorkPackage implements SegmentProgressContext {
         while (!isAbortTriggered() && eventBatch.size() < batchSize && !processingQueue.isEmpty()) {
             ProcessingEntry entry = processingQueue.poll();
             lastConsumedToken = WrappedToken.advance(lastConsumedToken, entry.trackingToken());
-            entry.addToBatch(eventBatch, lastConsumedToken);
+            if (entry.addToBatch(eventBatch, lastConsumedToken)) {
+                lastHandledToken = lastConsumedToken;
+            }
         }
 
         // Make sure all subsequent events with the same token (if non-null) as the last are added as well.
@@ -438,8 +444,10 @@ class WorkPackage implements SegmentProgressContext {
             progressStrategy.contributeBatchResources(ctx);
         });
         unitOfWork.onInvocation(ctx -> batchProcessor.process(eventBatch, ctx).asCompletableFuture());
-        // One transaction handles the batch AND persists this cycle's progress (if any).
-        unitOfWork.onPrepareCommit(progressStrategy::onBatchCommit);
+        // One transaction handles the batch, persists this cycle's progress (if any) AND extends the claim when the
+        // threshold is met and that progress did not refresh it.
+        unitOfWork.onPrepareCommit(ctx -> progressStrategy.onBatchCommit(ctx)
+                                                          .thenCompose(unused -> extendClaimIfThresholdIsMet(ctx)));
         unitOfWork.runOnAfterCommit(ctx -> {
             segmentStatusUpdater.accept(status -> status.advancedTo(lastConsumedToken));
             if (batchProcessedCallback != null) {
@@ -549,6 +557,16 @@ class WorkPackage implements SegmentProgressContext {
     }
 
     @Override
+    public @Nullable TrackingToken lastHandledToken() {
+        return lastHandledToken;
+    }
+
+    @Override
+    public @Nullable TrackingToken lastStoredToken() {
+        return lastStoredToken;
+    }
+
+    @Override
     public CompletableFuture<Void> persistProgress(@Nullable TrackingToken candidate, ProcessingContext context) {
         return storeIfAdvanced(candidate, context);
     }
@@ -578,11 +596,26 @@ class WorkPackage implements SegmentProgressContext {
 
     private CompletableFuture<Void> storeToken(TrackingToken token, ProcessingContext processingContext) {
         logger.debug("Work Package [{}]-[{}] will store token [{}].", name, segment.getSegmentId(), token);
+        restoreStoredTokenOnError(processingContext);
         return tokenStore.storeToken(token, name, segment.getSegmentId(), processingContext)
                          .thenRun(() -> {
                              lastStoredToken = token;
                              nextClaimExtension.set(now() + claimExtensionThreshold);
                          });
+    }
+
+    /**
+     * Sets the {@code lastStoredToken} back when the given {@code processingContext} fails, as the store completes
+     * before the transaction commits. Registered on the first store in a context only, so the token from before that
+     * store comes back.
+     */
+    private void restoreStoredTokenOnError(ProcessingContext processingContext) {
+        if (processingContext.containsResource(storedTokenRestoreKey)) {
+            return;
+        }
+        processingContext.putResource(storedTokenRestoreKey, Boolean.TRUE);
+        TrackingToken previous = lastStoredToken;
+        processingContext.onError((ctx, phase, error) -> lastStoredToken = previous);
     }
 
     /**
@@ -994,8 +1027,10 @@ class WorkPackage implements SegmentProgressContext {
          * @param eventBatch   the list of events to add this entry's events to
          * @param wrappedToken the result of {@link WrappedToken#advance} for this specific event; replaces the raw
          *                     stream token in each event's context
+         * @return {@code true} if at least one event of this entry was added to the batch, {@code false} if this
+         * package skips all of them
          */
-        void addToBatch(List<MessageStream.Entry<? extends EventMessage>> eventBatch, TrackingToken wrappedToken);
+        boolean addToBatch(List<MessageStream.Entry<? extends EventMessage>> eventBatch, TrackingToken wrappedToken);
     }
 
     /**
@@ -1019,7 +1054,7 @@ class WorkPackage implements SegmentProgressContext {
         }
 
         @Override
-        public void addToBatch(
+        public boolean addToBatch(
                 List<MessageStream.Entry<? extends EventMessage>> eventBatch,
                 TrackingToken wrappedToken
         ) {
@@ -1027,6 +1062,7 @@ class WorkPackage implements SegmentProgressContext {
                 eventBatch.add(eventEntry.withResource(TrackingToken.RESOURCE_KEY, wrappedToken)
                                          .withResource(Segment.RESOURCE_KEY, handlingSegment));
             }
+            return canHandle;
         }
     }
 
@@ -1052,11 +1088,15 @@ class WorkPackage implements SegmentProgressContext {
         }
 
         @Override
-        public void addToBatch(
+        public boolean addToBatch(
                 List<MessageStream.Entry<? extends EventMessage>> eventBatch,
                 TrackingToken wrappedToken
         ) {
-            processingEntries.forEach(entry -> entry.addToBatch(eventBatch, wrappedToken));
+            boolean added = false;
+            for (ProcessingEntry entry : processingEntries) {
+                added |= entry.addToBatch(eventBatch, wrappedToken);
+            }
+            return added;
         }
     }
 }

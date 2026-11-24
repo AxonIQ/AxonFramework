@@ -29,12 +29,12 @@ this tutorial will help you understand these new concepts through practical exam
 == About this tutorial
 This tutorial will guide you through creating a "Axon University Registration Application" using Axon Framework 5.
 We will implement features using Vertical Slice Architecture using "Test First" approach.
-You will also see the DCB in action along with persisting the events in the Axon Server 2025.
+You will also see the DCB in action along with persisting the events in Axon Server.
 
 You can either:
 
 * Follow the steps in the tutorial to build the project from scratch
-* Check out our link:https://github.com/AxonIQ/university-demo/[Axon University Demo repository on GitHub,role=external,window=_blank] for the complete code
+* Check out our link:https://github.com/AxonIQ/AxonFramework/tree/main/examples/university-demo[Axon University Demo on GitHub,role=external,window=_blank] for the complete code
 
 
 [TIP]
@@ -43,6 +43,13 @@ You can either:
 Looking for more examples?
 Axon Framework includes several example projects in its repository that demonstrate different patterns, features, and use cases.
 Browse the link:https://github.com/AxonFramework/AxonFramework/tree/main/examples[examples directory on GitHub,role=external,window=_blank] to explore these projects and see Axon Framework in action.
+
+The same Axon University domain is also implemented with other approaches:
+
+* link:https://github.com/AxonIQ/AxonFramework/tree/main/examples/university-demo-kotlin[University Demo in Kotlin,role=external,window=_blank]
+* link:https://github.com/AxonIQ/AxonFramework/tree/main/examples/university-java[University in plain Java,role=external,window=_blank]
+* link:https://github.com/AxonIQ/AxonFramework/tree/main/examples/university-java-springboot-3[University with Spring Boot 3,role=external,window=_blank]
+* link:https://github.com/AxonIQ/AxonFramework/tree/main/examples/university-java-springboot-4[University with Spring Boot 4,role=external,window=_blank]
 ====
 
 == Your feedback matters!

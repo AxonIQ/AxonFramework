@@ -277,6 +277,34 @@ class EventCriteriaTest {
         }
 
         @Test
+        void combiningOrCriteriaWithItselfReturnsExistingInstance() {
+            // given
+            EventCriteria first = havingTags("key1", "value1");
+            EventCriteria second = havingTags("key2", "value2");
+            EventCriteria combined = first.or(second);
+
+            // when
+            EventCriteria result = combined.or(combined);
+
+            // then
+            assertSame(combined, result);
+        }
+
+        @Test
+        void combiningOrCriteriaWithAnExistingBranchReturnsExistingInstance() {
+            // given
+            EventCriteria first = havingTags("key1", "value1");
+            EventCriteria second = havingTags("key2", "value2");
+            EventCriteria combined = first.or(second);
+
+            // when
+            EventCriteria result = combined.or(first);
+
+            // then
+            assertSame(combined, result);
+        }
+
+        @Test
         void flatteningFilteredCriteriaWithNoTagsOrTypesLeadsToEmptySet() {
             EventCriteria testSubject = EventCriteria.havingAnyTag().andBeingOfAnyType();
 

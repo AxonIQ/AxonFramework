@@ -36,6 +36,9 @@ import java.lang.annotation.Target;
  * This annotation can be applied either directly to event handler methods or to the declaring class.
  * When applied to a class, all event handler methods in that class will inherit the sequencing policy.
  * Method-level annotations take precedence over class-level annotations.
+ * <p>
+ * On both methods and classes, this annotation may also be used as a meta-annotation on a custom annotation, for
+ * example to give a commonly used sequencing policy a meaningful name.
  *
  * <h3>Sequencing Policy Implementation Requirements</h3>
  * <p>

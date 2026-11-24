@@ -20,6 +20,7 @@ import io.micrometer.core.instrument.Meter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.axonframework.common.configuration.Configuration;
+import org.axonframework.common.configuration.ConfigurationEnhancer;
 import org.axonframework.common.configuration.DefaultComponentRegistry;
 import org.axonframework.common.configuration.StubLifecycleRegistry;
 import org.axonframework.messaging.commandhandling.CommandBus;
@@ -286,17 +287,23 @@ class MetricsConfigurationEnhancerTest {
     }
 
     private Configuration buildDefaultConfig() {
-        return buildForEnhancer(new MetricsConfigurationEnhancer());
+        return buildForEnhancer(new MicrometerMetricsConfigurationEnhancer());
     }
 
     private Configuration buildConfig(MeterRegistry meterRegistry) {
-        return buildForEnhancer(new MetricsConfigurationEnhancer(meterRegistry));
+        return buildForEnhancer(
+                registry -> registry.registerComponent(
+                        MicrometerMetricsConfiguration.class,
+                        c -> new MicrometerMetricsConfiguration(meterRegistry, true)
+                )
+        );
     }
 
-    private static Configuration buildForEnhancer(MetricsConfigurationEnhancer testSubject) {
+    private static Configuration buildForEnhancer(ConfigurationEnhancer configurationEnhancer) {
         DefaultComponentRegistry registry = new DefaultComponentRegistry();
         registry.disableEnhancerScanning();
-        registry.registerEnhancer(testSubject);
+        registry.registerEnhancer(new MetricsConfigurationEnhancer());
+        registry.registerEnhancer(configurationEnhancer);
         registry.registerComponent(MessageMonitorRegistry.class, c -> new DefaultMessageMonitorRegistry());
         return registry.build(new StubLifecycleRegistry());
     }

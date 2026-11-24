@@ -159,7 +159,7 @@ class MigrateSnapshotTriggerDefinitionToAnnotationKotlinTest implements RewriteT
 
                         @Configuration
                         class MyConfig {
-                            // TODO(axon4to5): Custom SnapshotTriggerDefinition bean "customTrigger" — remove this bean manually.
+                            // TODO(axon4to5): Custom SnapshotTriggerDefinition bean "customTrigger". Remove this bean manually.
                             @Bean
                             fun customTrigger(): SnapshotTriggerDefinition {
                                 return CustomSnapshotTriggerDefinition()

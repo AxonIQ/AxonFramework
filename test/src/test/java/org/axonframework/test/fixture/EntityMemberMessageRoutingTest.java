@@ -24,6 +24,8 @@ import org.axonframework.eventsourcing.annotation.reflection.EntityCreator;
 import org.axonframework.eventsourcing.configuration.EventSourcedEntityModule;
 import org.axonframework.eventsourcing.configuration.EventSourcingConfigurer;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
+import org.axonframework.messaging.eventhandling.annotation.Event;
+import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 import org.axonframework.modelling.annotation.TargetEntityId;
 import org.axonframework.modelling.entity.annotation.AnnotatedEntityMetamodel;
@@ -34,7 +36,9 @@ import org.junit.jupiter.api.*;
 
 import java.lang.reflect.Member;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -356,6 +360,165 @@ class EntityMemberMessageRoutingTest {
                      .command(new ConfirmEnrollment(COURSE_ID, STUDENT_TWO))
                      .then()
                      .exception(IllegalStateException.class);
+        }
+    }
+
+    @Nested
+    class CollectionChildWithExplicitEventName {
+
+        private static final String BILLING_ENROLLMENT_PAID = "billing.EnrollmentPaid";
+
+        // Published by a separate billing module, which owns this class and names the event "billing.EnrollmentPaid".
+        @Event(namespace = "billing", name = "EnrollmentPaid")
+        record BillingEnrollmentPaid(@EventTag String courseId, String studentId) {
+
+        }
+
+        // The course module's own view of that event: it shares the event name with billing, not the Java class.
+        record EnrollmentPaid(String courseId, String studentId) {
+
+        }
+
+        @EventSourcedEntity(tagKey = "courseId")
+        static class Course {
+
+            @SuppressWarnings("unused")
+            private String courseId;
+
+            @EntityMember(routingKey = "studentId")
+            private final List<PaidEnrollment> enrollments = new ArrayList<>();
+
+            @EventSourcingHandler
+            void on(CourseCreated event) {
+                this.courseId = event.courseId();
+            }
+
+            @EventSourcingHandler
+            void on(StudentEnrolled event) {
+                this.enrollments.add(new PaidEnrollment(event.studentId()));
+            }
+
+            @EntityCreator
+            protected Course() {
+            }
+        }
+
+        @EventSourcedEntity(tagKey = "courseId")
+        static class CourseWithEnrollmentMap {
+
+            @SuppressWarnings("unused")
+            private String courseId;
+
+            @EntityMember(routingKey = "studentId")
+            private final Map<String, PaidEnrollment> enrollments = new HashMap<>();
+
+            @EventSourcingHandler
+            void on(CourseCreated event) {
+                this.courseId = event.courseId();
+            }
+
+            @EventSourcingHandler
+            void on(StudentEnrolled event) {
+                this.enrollments.put(event.studentId(), new PaidEnrollment(event.studentId()));
+            }
+
+            @EntityCreator
+            protected CourseWithEnrollmentMap() {
+            }
+        }
+
+        // A paid enrollment is confirmed: the payment from billing evolves the child like its own confirmation does.
+        static class PaidEnrollment {
+
+            private final String studentId;
+            private boolean confirmed;
+
+            PaidEnrollment(String studentId) {
+                this.studentId = studentId;
+            }
+
+            @SuppressWarnings("unused")
+            public String getStudentId() {
+                return studentId;
+            }
+
+            @CommandHandler
+            public void handle(ConfirmEnrollment cmd, EventAppender appender) {
+                if (confirmed) {
+                    throw new IllegalStateException("Enrollment already confirmed");
+                }
+                appender.append(new EnrollmentConfirmed(cmd.courseId(), cmd.studentId()));
+            }
+
+            @EventSourcingHandler
+            void on(EnrollmentConfirmed event) {
+                this.confirmed = true;
+            }
+
+            @EventHandler(eventName = BILLING_ENROLLMENT_PAID)
+            void on(EnrollmentPaid event) {
+                this.confirmed = true;
+            }
+        }
+
+        AxonTestFixture fixture(Class<?> entityType) {
+            return AxonTestFixture.with(EventSourcingConfigurer.create().registerEntity(
+                    EventSourcedEntityModule.autodetected(String.class, entityType)));
+        }
+
+        /** The billing event reaches the list child whose routing value matches, so that child is confirmed. */
+        @Test
+        void billingEventWithExplicitNameReachesMatchingListChild() {
+            fixture(Course.class).given()
+                                 .events(new CourseCreated(COURSE_ID),
+                                         new StudentEnrolled(COURSE_ID, STUDENT_ONE),
+                                         new StudentEnrolled(COURSE_ID, STUDENT_TWO),
+                                         new BillingEnrollmentPaid(COURSE_ID, STUDENT_ONE))
+                                 .when()
+                                 .command(new ConfirmEnrollment(COURSE_ID, STUDENT_ONE))
+                                 .then()
+                                 .exception(IllegalStateException.class);
+        }
+
+        /** The billing event for student-1 leaves student-2 unconfirmed, so its confirmation still succeeds. */
+        @Test
+        void billingEventWithExplicitNameSkipsListChildWithOtherRoutingValue() {
+            fixture(Course.class).given()
+                                 .events(new CourseCreated(COURSE_ID),
+                                         new StudentEnrolled(COURSE_ID, STUDENT_ONE),
+                                         new StudentEnrolled(COURSE_ID, STUDENT_TWO),
+                                         new BillingEnrollmentPaid(COURSE_ID, STUDENT_ONE))
+                                 .when()
+                                 .command(new ConfirmEnrollment(COURSE_ID, STUDENT_TWO))
+                                 .then()
+                                 .events(new EnrollmentConfirmed(COURSE_ID, STUDENT_TWO));
+        }
+
+        /** The billing event reaches the map child whose routing value matches, so that child is confirmed. */
+        @Test
+        void billingEventWithExplicitNameReachesMatchingMapChild() {
+            fixture(CourseWithEnrollmentMap.class).given()
+                                                  .events(new CourseCreated(COURSE_ID),
+                                                          new StudentEnrolled(COURSE_ID, STUDENT_ONE),
+                                                          new StudentEnrolled(COURSE_ID, STUDENT_TWO),
+                                                          new BillingEnrollmentPaid(COURSE_ID, STUDENT_TWO))
+                                                  .when()
+                                                  .command(new ConfirmEnrollment(COURSE_ID, STUDENT_TWO))
+                                                  .then()
+                                                  .exception(IllegalStateException.class);
+        }
+
+        /** Control: the payload-named confirmation event reaches the same list child. */
+        @Test
+        void payloadNamedEventReachesMatchingListChild() {
+            fixture(Course.class).given()
+                                 .events(new CourseCreated(COURSE_ID),
+                                         new StudentEnrolled(COURSE_ID, STUDENT_ONE),
+                                         new EnrollmentConfirmed(COURSE_ID, STUDENT_ONE))
+                                 .when()
+                                 .command(new ConfirmEnrollment(COURSE_ID, STUDENT_ONE))
+                                 .then()
+                                 .exception(IllegalStateException.class);
         }
     }
 

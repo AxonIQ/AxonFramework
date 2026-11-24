@@ -28,9 +28,12 @@ import org.axonframework.integrationtests.testsuite.administration.commands.Crea
 import org.axonframework.integrationtests.testsuite.administration.commands.GiveRaise;
 import org.axonframework.integrationtests.testsuite.administration.commands.GrantCertificationCommand;
 import org.axonframework.integrationtests.testsuite.administration.commands.RevokeCertificationCommand;
+import org.axonframework.integrationtests.testsuite.administration.commands.SuspendEmployeeCommand;
 import org.axonframework.integrationtests.testsuite.administration.common.PersonIdentifier;
 import org.axonframework.integrationtests.testsuite.administration.common.PersonType;
 import org.axonframework.integrationtests.testsuite.administration.events.CertificationRevoked;
+import org.axonframework.integrationtests.testsuite.administration.events.CertificationWithdrawnExternally;
+import org.axonframework.integrationtests.testsuite.administration.events.TaskClosedExternally;
 import org.axonframework.integrationtests.testsuite.administration.events.TaskCompleted;
 import org.axonframework.integrationtests.testsuite.administration.state.immutable.ImmutableTask;
 import org.axonframework.integrationtests.testsuite.administration.state.mutable.MutableCertification;
@@ -41,6 +44,7 @@ import org.axonframework.integrationtests.testsuite.administration.state.mutable
 import org.axonframework.integrationtests.testsuite.administration.state.mutable.MutableTask;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageTypeResolver;
+import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.annotation.AnnotatedHandlerInspector;
 import org.axonframework.messaging.core.annotation.HandlerDefinition;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
@@ -162,6 +166,14 @@ public abstract class MutableBuilderEntityModelAdministrationIT extends Abstract
                                             entity.handle(convertedPayload, eventAppender);
                                             return MessageStream.empty().cast();
                                         }))
+                .instanceCommandHandler(new QualifiedName(SuspendEmployeeCommand.COMMAND_NAME),
+                                        ((command, entity, context) -> {
+                                            EventAppender eventAppender = EventAppender.forContext(context);
+                                            SuspendEmployeeCommand convertedPayload =
+                                                    command.payloadAs(SuspendEmployeeCommand.class);
+                                            entity.handle(convertedPayload, eventAppender);
+                                            return MessageStream.empty().cast();
+                                        }))
                 .addChild(EntityChildMetamodel
                                   .<String, MutableCertification, MutableEmployee>map(
                                           MutableEmployee.class, certificationMetamodel
@@ -191,6 +203,14 @@ public abstract class MutableBuilderEntityModelAdministrationIT extends Abstract
                                           Objects.requireNonNull(certificationRevoked,
                                                                  "CertificationRevoked event payload cannot be null");
                                           return o.getCertificationName().equals(certificationRevoked.certificationName());
+                                      }
+                                      if (eventMessage.type().name()
+                                                      .equals(CertificationWithdrawnExternally.EVENT_NAME)) {
+                                          CertificationWithdrawnExternally withdrawn =
+                                                  eventConverter.convertPayload(eventMessage,
+                                                                                CertificationWithdrawnExternally.class);
+                                          return withdrawn != null
+                                                  && o.getCertificationName().equals(withdrawn.certificationName());
                                       }
                                       return false;
                                   })
@@ -222,6 +242,12 @@ public abstract class MutableBuilderEntityModelAdministrationIT extends Abstract
                                           Objects.requireNonNull(taskCompleted,
                                                                  "TaskCompleted event payload cannot be null");
                                           return o.getTaskId().equals(taskCompleted.taskId());
+                                      }
+                                      if (eventMessage.type().name().equals(TaskClosedExternally.EVENT_NAME)) {
+                                          TaskClosedExternally closed =
+                                                  eventConverter.convertPayload(eventMessage,
+                                                                                TaskClosedExternally.class);
+                                          return closed != null && o.getTaskId().equals(closed.taskId());
                                       }
                                       return false;
                                   })

@@ -10,8 +10,8 @@ If you are curious about more details on the `AxonTestFixture`, be sure to read 
 ifdef::advanced-framework[]
 [NOTE]
 ====
-For sagas kept running through the `axon-legacy` module, `SagaTestFixture` (`org.axonframework.test.saga.SagaTestFixture`)
-is available unchanged in `axon-legacy-test`; see xref:migration:paths/sagas.adoc[Saga migration].
+For sagas kept running through the `axoniq-legacy` module, `SagaTestFixture` (`org.axonframework.test.saga.SagaTestFixture`)
+is available unchanged in `axoniq-legacy-test`; see xref:migration:paths/sagas.adoc[Saga migration].
 
 Simple sagas can also be written and tested without the legacy module, as an automation, going through the
 `AxonTestFixture`. Check out our xref:axon-framework-5-getting-started::implement-stateful-event-handler.adoc[getting started]

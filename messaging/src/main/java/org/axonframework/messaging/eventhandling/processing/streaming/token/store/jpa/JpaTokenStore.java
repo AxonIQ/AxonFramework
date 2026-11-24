@@ -22,6 +22,8 @@ import jakarta.persistence.PersistenceException;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.ClockUtils;
 import org.axonframework.common.annotation.Internal;
+import org.axonframework.common.function.ThrowingConsumer;
+import org.axonframework.common.function.ThrowingFunction;
 import org.axonframework.common.tx.TransactionalExecutor;
 import org.axonframework.conversion.Converter;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
@@ -41,6 +43,7 @@ import org.slf4j.LoggerFactory;
 import java.time.temporal.TemporalAmount;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
@@ -106,9 +109,9 @@ public class JpaTokenStore implements TokenStore {
             String processorName,
             int segmentCount,
             @Nullable TrackingToken initialToken,
-            @Nullable ProcessingContext context
+            ProcessingContext context
     ) {
-        return entityManagerExecutor(context).apply(em -> {
+        return execute(context, em -> {
             boolean segmentsPresent = !fetchSegmentsInternal(processorName, em).isEmpty();
             if (segmentsPresent) {
                 throw new UnableToClaimTokenException(
@@ -138,8 +141,8 @@ public class JpaTokenStore implements TokenStore {
     public CompletableFuture<Void> storeToken(@Nullable TrackingToken token,
                                               String processorName,
                                               int segment,
-                                              @Nullable ProcessingContext context) {
-        return entityManagerExecutor(context).accept(em -> {
+                                              ProcessingContext context) {
+        return executeAccepting(context, em -> {
             final byte[] tokenDataToStore;
             final String tokenTypeToStore;
             if (token != null) {
@@ -180,18 +183,17 @@ public class JpaTokenStore implements TokenStore {
     @Override
     public CompletableFuture<Void> releaseClaim(String processorName,
                                                 int segment,
-                                                @Nullable ProcessingContext context) {
-        return entityManagerExecutor(context)
-                .accept(em ->
-                                em.createQuery("""
-                                                       UPDATE TokenEntry te SET te.owner = null \
-                                                       WHERE te.owner = :owner AND te.processorName = :processorName \
-                                                       AND te.segment = :segment""")
-                                  .setParameter(PROCESSOR_NAME_PARAM, processorName)
-                                  .setParameter(SEGMENT_PARAM, segment)
-                                  .setParameter(OWNER_PARAM, nodeId)
-                                  .executeUpdate()
-                );
+                                                ProcessingContext context) {
+        return executeAccepting(context, em ->
+                em.createQuery("""
+                                       UPDATE TokenEntry te SET te.owner = null \
+                                       WHERE te.owner = :owner AND te.processorName = :processorName \
+                                       AND te.segment = :segment""")
+                  .setParameter(PROCESSOR_NAME_PARAM, processorName)
+                  .setParameter(SEGMENT_PARAM, segment)
+                  .setParameter(OWNER_PARAM, nodeId)
+                  .executeUpdate()
+        );
     }
 
     @Override
@@ -199,9 +201,9 @@ public class JpaTokenStore implements TokenStore {
             @Nullable TrackingToken token,
             String processorName,
             Segment segment,
-            @Nullable ProcessingContext context
+            ProcessingContext context
     ) {
-        return entityManagerExecutor(context).accept(em -> {
+        return executeAccepting(context, em -> {
             try {
                 em.persist(new TokenEntry(processorName, segment, token, converter));
                 em.flush();
@@ -217,9 +219,9 @@ public class JpaTokenStore implements TokenStore {
     public CompletableFuture<Void> deleteToken(
             String processorName,
             int segment,
-            @Nullable ProcessingContext context
+            ProcessingContext context
     ) {
-        return entityManagerExecutor(context).accept(em -> {
+        return executeAccepting(context, em -> {
             int updates = em.createQuery("""
                                                  DELETE FROM TokenEntry te \
                                                  WHERE te.owner = :owner AND te.processorName = :processorName \
@@ -243,26 +245,26 @@ public class JpaTokenStore implements TokenStore {
     @Override
     public CompletableFuture<TrackingToken> fetchToken(String processorName,
                                                        int segment,
-                                                       @Nullable ProcessingContext context) {
-        return entityManagerExecutor(context).apply(em -> loadToken(processorName, segment, em).getToken(converter));
+                                                       ProcessingContext context) {
+        return execute(context, em -> loadToken(processorName, segment, em).getToken(converter));
     }
 
     @Override
     public CompletableFuture<TrackingToken> fetchToken(
             String processorName,
             Segment segment,
-            @Nullable ProcessingContext context
+            ProcessingContext context
     ) {
-        return entityManagerExecutor(context).apply(em -> loadToken(processorName, segment, em).getToken(converter));
+        return execute(context, em -> loadToken(processorName, segment, em).getToken(converter));
     }
 
     @Override
     public CompletableFuture<Void> extendClaim(
             String processorName,
             int segment,
-            @Nullable ProcessingContext context
+            ProcessingContext context
     ) {
-        return entityManagerExecutor(context).accept(em -> {
+        return executeAccepting(context, em -> {
             int updates = em.createQuery("""
                                                  UPDATE TokenEntry te SET te.timestamp = :timestamp \
                                                  WHERE te.processorName = :processorName \
@@ -286,8 +288,8 @@ public class JpaTokenStore implements TokenStore {
     @Override
     public CompletableFuture<Segment> fetchSegment(String processorName,
                                                    int segmentId,
-                                                   @Nullable ProcessingContext context) {
-        return entityManagerExecutor(context).apply(em -> {
+                                                   ProcessingContext context) {
+        return execute(context, em -> {
             final TokenEntry te = em.createQuery("""
                                                          SELECT te FROM TokenEntry te \
                                                          WHERE te.processorName = :processorName AND te.segment = :segment""",
@@ -302,8 +304,8 @@ public class JpaTokenStore implements TokenStore {
 
     @Override
     public CompletableFuture<List<Segment>> fetchSegments(String processorName,
-                                                          @Nullable ProcessingContext context) {
-        return entityManagerExecutor(context).apply(em -> fetchSegmentsInternal(processorName, em));
+                                                          ProcessingContext context) {
+        return execute(context, em -> fetchSegmentsInternal(processorName, em));
     }
 
     private static @NonNull List<Segment> fetchSegmentsInternal(@NonNull String processorName, EntityManager em) {
@@ -321,8 +323,8 @@ public class JpaTokenStore implements TokenStore {
 
     @Override
     public CompletableFuture<List<Segment>> fetchAvailableSegments(String processorName,
-                                                                   @Nullable ProcessingContext context) {
-        return entityManagerExecutor(context).apply(em -> {
+                                                                   ProcessingContext context) {
+        return execute(context, em -> {
             final List<TokenEntry> resultList =
                     em.createQuery("""
                                            SELECT te FROM TokenEntry te \
@@ -443,8 +445,8 @@ public class JpaTokenStore implements TokenStore {
 
     @NonNull
     @Override
-    public CompletableFuture<String> retrieveStorageIdentifier(@Nullable ProcessingContext context) {
-        return entityManagerExecutor(context).apply(em -> {
+    public CompletableFuture<String> retrieveStorageIdentifier(ProcessingContext context) {
+        return execute(context, em -> {
             try {
                 return getConfig(em).get("id");
             } catch (Exception e) {
@@ -471,8 +473,38 @@ public class JpaTokenStore implements TokenStore {
         return (ConfigToken) token.getToken(converter);
     }
 
-    private TransactionalExecutor<EntityManager> entityManagerExecutor(@Nullable ProcessingContext processingContext) {
-        return transactionalExecutorProvider.getTransactionalExecutor(processingContext);
+    private <R> CompletableFuture<R> execute(ProcessingContext processingContext,
+                                             ThrowingFunction<EntityManager, R, Exception> function) {
+        Objects.requireNonNull(processingContext, "The processingContext may not be null.");
+
+        return transactionalExecutorProvider.getTransactionalExecutor(processingContext).apply(em -> {
+            assertInTransaction(em);
+
+            return function.apply(em);
+        });
+    }
+
+    private CompletableFuture<Void> executeAccepting(ProcessingContext processingContext,
+                                                     ThrowingConsumer<EntityManager, Exception> consumer) {
+        return execute(processingContext, em -> {
+            consumer.accept(em);
+
+            return null;
+        });
+    }
+
+    /*
+     * Token store operations consist of several statements, and callers combine operations, so an entity manager that
+     * is not part of a transaction can leave the token store inconsistent.
+     */
+    private static void assertInTransaction(EntityManager em) {
+        if (!em.isJoinedToTransaction()) {
+            throw new TokenStoreTransactionRequiredException(
+                    "The entity manager used by the JpaTokenStore is not part of a transaction, so its changes would "
+                            + "not be committed together. Make sure the EntityManagerProvider returns entity managers "
+                            + "of the EntityManagerFactory that is managed by the transaction manager in use."
+            );
+        }
     }
 
     /**

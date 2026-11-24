@@ -170,6 +170,7 @@ public class PooledStreamingEventProcessor implements StreamingEventProcessor {
                                       .processingStatusUpdater(this::statusUpdater)
                                       .tokenClaimInterval(configuration.tokenClaimInterval())
                                       .claimExtensionThreshold(configuration.claimExtensionThreshold())
+                                      .noCapacityDelay(configuration.noCapacityDelay())
                                       .clock(configuration.clock())
                                       .maxSegmentProvider(configuration.maxSegmentProvider())
                                       .initialSegmentCount(configuration.initialSegmentCount())

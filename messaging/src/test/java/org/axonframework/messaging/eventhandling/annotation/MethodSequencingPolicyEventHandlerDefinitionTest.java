@@ -35,7 +35,9 @@ import org.axonframework.messaging.core.sequencing.PropertySequencingPolicy;
 import org.axonframework.messaging.core.sequencing.SequencingPolicy;
 import org.axonframework.messaging.core.sequencing.SequentialPolicy;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
+import org.axonframework.messaging.eventhandling.EventTestUtils;
 import org.axonframework.messaging.eventhandling.replay.annotation.ResetHandler;
 import org.junit.jupiter.api.*;
 
@@ -43,7 +45,10 @@ import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
+import java.util.Map;
+import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -283,6 +288,95 @@ class MethodSequencingPolicyEventHandlerDefinitionTest {
         }
     }
 
+    @Nested
+    class ClassLevelMetaAnnotationSupport {
+
+        @Test
+        void metaAnnotatedClassLevelPolicyIsApplied() {
+            // given
+            MessageHandlingMember<MetaAnnotatedClassPolicy> handler =
+                    createHandler(MetaAnnotatedClassPolicy.class, "eventHandlerMethod", String.class);
+
+            // when
+            MessageHandlingMember<MetaAnnotatedClassPolicy> result = testSubject.wrapHandler(handler);
+
+            // then
+            SequencingPolicy<? super EventMessage> policy = getSequencingPolicy(result);
+            assertThat(policy).isInstanceOf(MetadataSequencingPolicy.class);
+            // the parameters defined on the meta-annotation are used to construct the policy
+            assertThat(sequenceIdentifierOf(policy, Map.of("userId", "user-1"))).contains("user-1");
+        }
+
+        @Test
+        void methodLevelPolicyOverridesMetaAnnotatedClassLevelPolicy() {
+            // given
+            MessageHandlingMember<MethodOverridesMetaAnnotatedClassPolicy> handler = createHandler(
+                    MethodOverridesMetaAnnotatedClassPolicy.class, "eventHandlerMethod", String.class
+            );
+
+            // when
+            MessageHandlingMember<MethodOverridesMetaAnnotatedClassPolicy> result = testSubject.wrapHandler(handler);
+
+            // then
+            SequencingPolicy<? super EventMessage> policy = getSequencingPolicy(result);
+            assertThat(policy).isInstanceOf(SequentialPolicy.class);
+        }
+
+        @Test
+        void directClassLevelPolicyWithParametersIsApplied() {
+            // given
+            MessageHandlingMember<DirectClassPolicyWithParameters> handler =
+                    createHandler(DirectClassPolicyWithParameters.class, "eventHandlerMethod", String.class);
+
+            // when
+            MessageHandlingMember<DirectClassPolicyWithParameters> result = testSubject.wrapHandler(handler);
+
+            // then
+            SequencingPolicy<? super EventMessage> policy = getSequencingPolicy(result);
+            assertThat(policy).isInstanceOf(MetadataSequencingPolicy.class);
+            assertThat(sequenceIdentifierOf(policy, Map.of("orderId", "order-1"))).contains("order-1");
+        }
+
+        @Test
+        void metaAnnotationOverridingPolicyParametersIsApplied() {
+            // given
+            MessageHandlingMember<MetaAnnotatedClassPolicyWithParameters> handler = createHandler(
+                    MetaAnnotatedClassPolicyWithParameters.class, "eventHandlerMethod", String.class
+            );
+
+            // when
+            MessageHandlingMember<MetaAnnotatedClassPolicyWithParameters> result = testSubject.wrapHandler(handler);
+
+            // then
+            SequencingPolicy<? super EventMessage> policy = getSequencingPolicy(result);
+            assertThat(policy).isInstanceOf(MetadataSequencingPolicy.class);
+            // the parameters given on the custom annotation override those on the meta-annotation
+            assertThat(sequenceIdentifierOf(policy, Map.of("tenantId", "tenant-1", "default", "other")))
+                    .contains("tenant-1");
+        }
+
+        @Test
+        void classLevelPolicyOnSuperclassIsApplied() {
+            // given
+            MessageHandlingMember<SubclassOfClassWithPolicy> handler =
+                    createHandler(SubclassOfClassWithPolicy.class, "eventHandlerMethod", String.class);
+
+            // when
+            MessageHandlingMember<SubclassOfClassWithPolicy> result = testSubject.wrapHandler(handler);
+
+            // then
+            SequencingPolicy<? super EventMessage> policy = getSequencingPolicy(result);
+            assertThat(policy).isInstanceOf(MetadataSequencingPolicy.class);
+            assertThat(sequenceIdentifierOf(policy, Map.of("orderId", "order-1"))).contains("order-1");
+        }
+
+        private Optional<Object> sequenceIdentifierOf(SequencingPolicy<? super EventMessage> policy,
+                                                      Map<String, String> metadata) {
+            EventMessage event = EventTestUtils.asEventMessage("payload").andMetadata(metadata);
+            return policy.sequenceIdentifierFor(event, new StubProcessingContext());
+        }
+    }
+
     private static MessageStream<?> returnTypeConverter(Object result) {
         return MessageStream.just(new GenericMessage(new MessageType(ObjectUtils.nullSafeTypeOf(result)), result));
     }
@@ -475,6 +569,77 @@ class MethodSequencingPolicyEventHandlerDefinitionTest {
         @SuppressWarnings("unused")
         @CustomEventHandler
         void handleWithCustomAnnotation(String payload) {
+        }
+    }
+
+    // Custom annotation meta-annotated with a parameterized @SequencingPolicy
+    @Target({ElementType.METHOD, ElementType.TYPE, ElementType.ANNOTATION_TYPE})
+    @Retention(RetentionPolicy.RUNTIME)
+    @org.axonframework.messaging.core.annotation.SequencingPolicy(
+            type = MetadataSequencingPolicy.class,
+            parameters = {"userId"}
+    )
+    @interface SequenceByUser {
+
+    }
+
+    // Custom annotation meta-annotated with @SequencingPolicy, overriding the policy parameters
+    @Target({ElementType.METHOD, ElementType.TYPE, ElementType.ANNOTATION_TYPE})
+    @Retention(RetentionPolicy.RUNTIME)
+    @org.axonframework.messaging.core.annotation.SequencingPolicy(
+            type = MetadataSequencingPolicy.class,
+            parameters = {"default"}
+    )
+    public @interface SequenceByMetadata {
+
+        String[] parameters();
+    }
+
+    @SequenceByUser
+    static class MetaAnnotatedClassPolicy {
+
+        @SuppressWarnings("unused")
+        @EventHandler
+        void eventHandlerMethod(String payload) {
+        }
+    }
+
+    @SequenceByUser
+    static class MethodOverridesMetaAnnotatedClassPolicy {
+
+        @SuppressWarnings({"unused", "DefaultAnnotationParam"})
+        @EventHandler
+        @org.axonframework.messaging.core.annotation.SequencingPolicy(type = SequentialPolicy.class)
+        void eventHandlerMethod(String payload) {
+        }
+    }
+
+    @SequenceByMetadata(parameters = {"tenantId"})
+    static class MetaAnnotatedClassPolicyWithParameters {
+
+        @SuppressWarnings("unused")
+        @EventHandler
+        void eventHandlerMethod(String payload) {
+        }
+    }
+
+    @org.axonframework.messaging.core.annotation.SequencingPolicy(
+            type = MetadataSequencingPolicy.class,
+            parameters = {"orderId"}
+    )
+    static class DirectClassPolicyWithParameters {
+
+        @SuppressWarnings("unused")
+        @EventHandler
+        void eventHandlerMethod(String payload) {
+        }
+    }
+
+    static class SubclassOfClassWithPolicy extends DirectClassPolicyWithParameters {
+
+        @SuppressWarnings("unused")
+        @EventHandler
+        void eventHandlerMethod(String payload) {
         }
     }
 }

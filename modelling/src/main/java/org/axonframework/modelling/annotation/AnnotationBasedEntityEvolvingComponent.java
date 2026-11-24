@@ -17,6 +17,7 @@
 package org.axonframework.modelling.annotation;
 
 import org.axonframework.common.StringUtils;
+import org.axonframework.common.ReflectionUtils;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.QualifiedName;
@@ -36,9 +37,11 @@ import org.axonframework.modelling.EntityEvolvingComponent;
 import org.axonframework.modelling.StateEvolvingException;
 import org.jspecify.annotations.Nullable;
 
+import java.lang.reflect.Member;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -57,6 +60,12 @@ import static java.util.Objects.requireNonNull;
  * startup work and memory usage in proportion to the number of handlers. In return, event evolution performs direct
  * lookups without reflection, message type resolution, cache mutation, or a scan of all handlers. Resolution failures
  * are also reported during initialization instead of on the first matching event.
+ * <p>
+ * An overriding method counts as one handler and runs where the handler it overrides runs; call {@code super} to run
+ * the overridden one. Separate methods for the same event all run, parent handlers first, each receiving the entity
+ * returned by the previous one. Within one class the order is unspecified. If a handler returns an entity the next
+ * handler cannot run on, evolving fails with a {@link StateEvolvingException}. Handlers of the returned type do not run
+ * for the same event.
  *
  * @param <E> The entity type to evolve.
  * @author Mateusz Nowak
@@ -65,10 +74,14 @@ import static java.util.Objects.requireNonNull;
  */
 public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolvingComponent<E> {
 
+    private static final Comparator<MessageHandlingMember<?>> LEAST_SPECIFIC_DECLARING_TYPE_FIRST =
+            Comparator.comparingInt(AnnotationBasedEntityEvolvingComponent::declaringTypeSpecificity);
+
     private final Class<E> entityType;
     private final AnnotatedHandlerInspector<E> inspector;
     private final EventConverter converter;
     private final Map<Class<?>, Map<QualifiedName, List<EvolvingHandler<E>>>> handlersByEntityType;
+    private final Set<Class<? extends E>> evolvableTypes;
     private final boolean hasStaticHandlers;
 
     /**
@@ -127,6 +140,8 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
 
     /**
      * Initialize a new annotation-based {@link EntityEvolver}.
+     * <p>
+     * Defaults the evolvable types to {@code entityType}, so a handler may only return that type.
      *
      * @param entityType          The type of entity this instance will handle state changes for.
      * @param inspector           The inspector to use to find the annotated handlers on the entity.
@@ -136,14 +151,38 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
     public AnnotationBasedEntityEvolvingComponent(Class<E> entityType,
                                                   AnnotatedHandlerInspector<E> inspector,
                                                   EventConverter converter,
-                                                  MessageTypeResolver messageTypeResolver
-    ) {
+                                                  MessageTypeResolver messageTypeResolver) {
+        this(entityType, inspector, converter, messageTypeResolver, Set.<Class<? extends E>>of(entityType));
+    }
+
+    /**
+     * Initialize a new annotation-based {@link EntityEvolver} that rejects handler results whose runtime type is not
+     * among the given {@code evolvableTypes}.
+     * <p>
+     * The annotated metamodel passes the entity type plus every registered concrete type, including types discovered
+     * from a sealed hierarchy, so a handler may return a sibling type.
+     *
+     * @param entityType          the type of entity this instance will handle state changes for
+     * @param inspector           the inspector to use to find the annotated handlers on the entity
+     * @param converter           the converter to use for converting event payloads to the handler's expected type
+     * @param messageTypeResolver the resolver to use for resolving the event message type
+     * @param evolvableTypes      the entity type and registered concrete types that a handler may return
+     */
+    public AnnotationBasedEntityEvolvingComponent(Class<E> entityType,
+                                                  AnnotatedHandlerInspector<E> inspector,
+                                                  EventConverter converter,
+                                                  MessageTypeResolver messageTypeResolver,
+                                                  Set<Class<? extends E>> evolvableTypes) {
         this.entityType = requireNonNull(entityType, "The entity type must not be null.");
         this.inspector = requireNonNull(inspector, "The Annotated Handler Inspector must not be null.");
         this.converter = requireNonNull(converter, "The Converter must not be null.");
         this.handlersByEntityType = indexHandlersByEntityType(
                 requireNonNull(messageTypeResolver, "The Message Type Resolver must not be null.")
         );
+        this.evolvableTypes = Set.copyOf(requireNonNull(
+                evolvableTypes,
+                "The evolvable types must not be null."
+        ));
         this.hasStaticHandlers = handlersByEntityType.values().stream()
                                                      .flatMap(handlers -> handlers.values().stream())
                                                      .flatMap(List::stream)
@@ -168,26 +207,28 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
                                                .getOrDefault(event.type().qualifiedName(), List.of());
 
             E evolvedEntity = entity;
+            MessageHandlingMember<? super E> previous = null;
             for (var evolvingHandler : handlers) {
-                // An existing entity is handed to every handler as it was before the event, so each handler sees
-                // the same state. Only while the entity is absent does a handler see what an earlier handler created.
-                E target = entity != null ? entity : evolvedEntity;
-                if (target == null && !evolvingHandler.isStatic()) {
+                if (evolvedEntity == null && !evolvingHandler.isStatic()) {
                     // An instance handler cannot run without an instance to invoke it on.
                     continue;
                 }
                 var handler = evolvingHandler.member();
                 var convertedEvent = event.withConvertedPayload(handler.payloadType(), converter);
-                var contextWithEntity = ActiveEntity.set(context, target);
+                var contextWithEntity = ActiveEntity.set(context, evolvedEntity);
                 if (!handler.canHandle(convertedEvent, contextWithEntity)) {
                     continue;
                 }
+                if (evolvedEntity != null) {
+                    assertHandlerCanRunOn(handler, previous, evolvedEntity, event);
+                }
+                previous = handler;
                 var interceptor = inspector.chainedInterceptor(listenerType);
-                var result = interceptor.handle(convertedEvent, contextWithEntity, target, handler)
+                var result = interceptor.handle(convertedEvent, contextWithEntity, evolvedEntity, handler)
                                         .first()
                                         .asCompletableFuture()
                                         .join();
-                evolvedEntity = nextState(result, target, evolvingHandler);
+                evolvedEntity = nextState(result, evolvedEntity, evolvingHandler, event);
             }
 
             return evolvedEntity;
@@ -207,22 +248,25 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
         return inspector.getAllHandlers().entrySet().stream()
                         .collect(Collectors.toUnmodifiableMap(
                                 Map.Entry::getKey,
-                                entry -> indexHandlersByEventName(entry.getValue(), messageTypeResolver)
+                                entry -> indexHandlersByEventName(entry.getKey(), entry.getValue(), messageTypeResolver)
                         ));
     }
 
     private Map<QualifiedName, List<EvolvingHandler<E>>> indexHandlersByEventName(
+            Class<?> type,
             Collection<MessageHandlingMember<? super E>> handlers,
             MessageTypeResolver messageTypeResolver
     ) {
         return handlers.stream()
                        .filter(handler -> handler.canHandleMessageType(EventMessage.class))
-                       .collect(Collectors.collectingAndThen(
-                               Collectors.groupingBy(
-                                       handler -> eventName(handler, messageTypeResolver),
-                                       Collectors.mapping(this::toEvolvingHandler, Collectors.toUnmodifiableList())
-                               ),
-                               Map::copyOf
+                       .collect(Collectors.groupingBy(handler -> eventName(handler, messageTypeResolver)))
+                       .entrySet().stream()
+                       .collect(Collectors.toUnmodifiableMap(
+                               Map.Entry::getKey,
+                               entry -> onePerDispatchTargetParentFirst(type, entry.getValue())
+                                       .stream()
+                                       .map(this::toEvolvingHandler)
+                                       .toList()
                        ));
     }
 
@@ -231,6 +275,55 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
         boolean isStatic = method.map(m -> Modifier.isStatic(m.getModifiers())).orElse(false);
         boolean returnsEntity = method.map(m -> entityType.isAssignableFrom(m.getReturnType())).orElse(false);
         return new EvolvingHandler<>(handler, isStatic, returnsEntity);
+    }
+
+    /**
+     * Keeps one handler per method that Java would actually run on the given entity type, the one declared by the most
+     * specific type, and orders them parent handlers first. Handlers whose methods are overridden by a method without
+     * the annotation therefore still run exactly once, through virtual dispatch.
+     */
+    private List<MessageHandlingMember<? super E>> onePerDispatchTargetParentFirst(
+            Class<?> entityType,
+            List<MessageHandlingMember<? super E>> handlers
+    ) {
+        // Sorting before merging lets an override take the position of the handler it overrides, as merging keeps
+        // the position where a dispatch target first appears. The sort is stable, keeping the inspector's order among
+        // handlers declared on equally specific types.
+        List<MessageHandlingMember<? super E>> parentFirst = handlers.stream()
+                                                                     .sorted(LEAST_SPECIFIC_DECLARING_TYPE_FIRST)
+                                                                     .toList();
+        return ReflectionUtils.uniqueByDispatchTarget(entityType, parentFirst, handler -> handler.unwrap(Method.class));
+    }
+
+    private static Optional<Class<?>> declaringClass(MessageHandlingMember<?> handler) {
+        return handler.unwrap(Member.class).map(Member::getDeclaringClass);
+    }
+
+    private static int declaringTypeSpecificity(MessageHandlingMember<?> handler) {
+        // A subtype always has more supertypes than any of its supertypes, for classes and interfaces alike
+        return declaringClass(handler).map(type -> ReflectionUtils.allSupertypes(type).size()).orElse(0);
+    }
+
+    private void assertHandlerCanRunOn(MessageHandlingMember<? super E> handler,
+                                       @Nullable MessageHandlingMember<? super E> previous,
+                                       E evolvedEntity,
+                                       EventMessage event) {
+        Optional<Class<?>> declaringClass = declaringClass(handler);
+        if (declaringClass.isPresent() && !declaringClass.get().isInstance(evolvedEntity)) {
+            // The first handler always fits the entity it receives, so a failing check has a previous handler
+            throw new IllegalStateException(
+                    "Cannot apply [" + event.type() + "]: [" + (previous == null ? "?" : shortName(previous))
+                            + "] returned [" + evolvedEntity.getClass().getSimpleName() + "], but the next handler ["
+                            + shortName(handler) + "] requires [" + declaringClass.get().getSimpleName()
+                            + "] or a subtype. Move the type change to the last handler or return a compatible entity."
+            );
+        }
+    }
+
+    private static String shortName(MessageHandlingMember<?> handler) {
+        return handler.unwrap(Method.class)
+                      .map(method -> method.getDeclaringClass().getSimpleName() + "." + method.getName())
+                      .orElseGet(handler::signature);
     }
 
     private QualifiedName eventName(MessageHandlingMember<? super E> handler,
@@ -245,10 +338,26 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
     @Nullable
     private E nextState(MessageStream.@Nullable Entry<?> potentialEntityFromStream,
                         @Nullable E existing,
-                        EvolvingHandler<E> handler) {
+                        EvolvingHandler<E> evolvingHandler,
+                        EventMessage event) {
+        var handler = evolvingHandler.member();
         if (potentialEntityFromStream != null) {
             var resultPayload = potentialEntityFromStream.message().payload();
             if (resultPayload != null && entityType.isAssignableFrom(resultPayload.getClass())) {
+                Class<?> resultType = resultPayload.getClass();
+                if (!evolvableTypes.contains(resultType)) {
+                    throw new StateEvolvingException(
+                            ("Cannot apply [%s]: [%s] returned [%s], which is not the entity type [%s] or a registered "
+                                    + "concrete type. List it in @EventSourcedEntity(concreteTypes = ...) or make the "
+                                    + "entity type sealed.")
+                                    .formatted(
+                                            event.type(),
+                                            handler.signature(),
+                                            resultType.getName(),
+                                            entityType.getName()
+                                    )
+                    );
+                }
                 //noinspection unchecked
                 return (E) entityType.cast(resultPayload);
             }
@@ -256,7 +365,7 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
         // A static handler declaring the entity as its return type returned null (an empty stream). While the entity
         // does not exist yet, this is a legitimate "decline to create" outcome. Once the entity exists, however, it
         // may not be removed by returning null: model end-of-life as a terminal state instead.
-        if (handler.isStatic() && handler.returnsEntity()) {
+        if (evolvingHandler.isStatic() && evolvingHandler.returnsEntity()) {
             if (existing != null) {
                 throw new StateEvolvingException(
                         "A static event sourcing handler returned null for an existing [" + entityType.getName()

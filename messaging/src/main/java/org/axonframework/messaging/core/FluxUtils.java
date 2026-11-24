@@ -21,8 +21,12 @@ import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
 
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -42,17 +46,55 @@ public final class FluxUtils {
      * multiple invocations of this method on the same {@code source}, or otherwise any components consuming entries
      * from the given {@code source} will cause entries to be consumed by only one of the fluxes or competing
      * consumers.
+     * <p>
+     * Entries are read from the {@code source} on the thread that requests them, or on a thread of
+     * {@link Schedulers#boundedElastic()} when the {@code source} reports later that entries became available.
      *
-     * @param source The MessageStream providing the elements.
-     * @param <M>    The type of Message returned by the source.
-     * @return A Flux with the elements provided by the source.
+     * @param source the {@code MessageStream} providing the elements
+     * @param <M>    the type of {@code Message} returned by the source
+     * @return a {@code Flux} with the elements provided by the source
      */
     public static <M extends Message> Flux<MessageStream.Entry<M>> of(MessageStream<? extends M> source) {
+        return of(source, Schedulers.boundedElastic());
+    }
+
+    /**
+     * Creates a Flux containing the {@link MessageStream.Entry entries} provided by the given {@code source}, as
+     * {@link #of(MessageStream)} does, but reading entries that the {@code source} reports to be available later on a
+     * thread of the given {@code scheduler}.
+     * <p>
+     * The thread on which the {@code source} reports this is usually shared with other streams, and is only used to
+     * schedule the read. The given {@code scheduler} must therefore not run tasks on the scheduling thread, as
+     * {@link Schedulers#immediate()} does. Downstream operators and the subscriber receive the entries on the thread
+     * that read them.
+     *
+     * @param source    the {@code MessageStream} providing the elements
+     * @param scheduler the {@link Scheduler} on which to read entries that become available after the subscription,
+     *                  for example a single thread scheduler for a source that must be read from one specific thread
+     * @param <M>       the type of {@code Message} returned by the source
+     * @return a {@code Flux} with the elements provided by the source
+     */
+    public static <M extends Message> Flux<MessageStream.Entry<M>> of(MessageStream<? extends M> source,
+                                                                      Scheduler scheduler) {
         return Flux.create(emitter -> {
             FluxStreamAdapter<M> fluxTask = new FluxStreamAdapter<>(source, emitter);
+            AtomicBoolean scheduled = new AtomicBoolean();
+
             emitter.onRequest(i -> fluxTask.process());
             emitter.onDispose(source::close);
-            source.setCallback(fluxTask::process);
+            source.setCallback(() -> {
+                if (scheduled.compareAndSet(false, true)) {  // signals that arrive before the read starts share one read
+                    try {
+                        scheduler.schedule(() -> {
+                            scheduled.set(false);
+                            fluxTask.process();
+                        });
+                    }
+                    catch (RejectedExecutionException e) {
+                        emitter.error(e);
+                    }
+                }
+            });
         });
     }
 
@@ -114,7 +156,7 @@ public final class FluxUtils {
 
     static class FluxStreamAdapter<M extends Message> {
 
-        private final AtomicBoolean processingGate = new AtomicBoolean(false);
+        private final AtomicInteger pendingSignals = new AtomicInteger();
         private final MessageStream<M> source;
         private final FluxSink<MessageStream.Entry<M>> emitter;
 
@@ -124,8 +166,20 @@ public final class FluxUtils {
             this.emitter = emitter;
         }
 
+        /**
+         * Emits the entries the {@link MessageStream} has available, as far as downstream demand allows. Invoked on
+         * every new demand and on every progress signal of the source.
+         * <p>
+         * A signal that arrives while another invocation is emitting, such as a subscriber requesting more from within
+         * {@code onNext}, is not dropped: the emitting invocation drains again until no signal is left unhandled.
+         * Dropping it would stall the stream, as the source only signals progress again after it was found empty.
+         */
         public void process() {
-            if (!processingGate.getAndSet(true)) {
+            if (pendingSignals.getAndIncrement() != 0) {
+                return;
+            }
+            int missed = 1;
+            do {
                 try {
                     long remaining = emitter.requestedFromDownstream();
 
@@ -140,10 +194,10 @@ public final class FluxUtils {
                     // The emitter's onDispose(source::close) closes the source once the error terminates the
                     // sink, so no explicit close() is needed here (avoids a duplicate close).
                     emitter.error(e);
-                } finally {
-                    processingGate.set(false);
+                    return;
                 }
-            }
+                missed = pendingSignals.addAndGet(-missed);
+            } while (missed != 0);
         }
     }
 }

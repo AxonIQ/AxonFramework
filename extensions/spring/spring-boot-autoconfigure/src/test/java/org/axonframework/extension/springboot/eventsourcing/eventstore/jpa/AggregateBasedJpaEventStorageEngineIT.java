@@ -65,6 +65,7 @@ import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 import org.springframework.transaction.PlatformTransactionManager;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -234,6 +235,38 @@ class AggregateBasedJpaEventStorageEngineIT
                 .map(Entry::message)
                 .map(m -> m.payloadAs(String.class))
                 .contains("event");
+    }
+
+    @Test
+    void readsEventWithComplexMetadataValuesAsStrings() throws Exception {
+        // given an event whose stored metadata holds values Axon Framework 4 allowed, but are not Strings
+        appendCommitAndWait(testSubject, AppendCondition.none(), taggedEventMessage("event", Set.of()));
+        EntityManager entityManager = entityManagerProvider.getEntityManager();
+        Transaction transaction = transactionManager.startTransaction();
+        String storedMetadata = "{\"text\":\"value\",\"number\":3,\"flag\":true,\"nothing\":null,"
+                + "\"nested\":{\"key\":\"v\"},\"list\":[1,2]}";
+        entityManager.createQuery("UPDATE AggregateEventEntry e SET e.metadata = :metadata")
+                     .setParameter("metadata", storedMetadata.getBytes(StandardCharsets.UTF_8))
+                     .executeUpdate();
+        entityManager.clear();
+        transaction.commit();
+
+        // when
+        MessageStream<EventMessage> stream =
+                testSubject.stream(StreamingCondition.startingFrom(testSubject.firstToken().get()));
+        await().until(stream::hasNextAvailable);
+        EventMessage result = stream.next().orElseThrow().message();
+        stream.close();
+
+        // then
+        assertThat(result.payloadAs(String.class)).isEqualTo("event");
+        assertThat(result.metadata())
+                .containsEntry("text", "value")
+                .containsEntry("number", "3")
+                .containsEntry("flag", "true")
+                .containsEntry("nothing", null)
+                .containsEntry("nested", "{\"key\":\"v\"}")
+                .containsEntry("list", "[1,2]");
     }
 
     @Test

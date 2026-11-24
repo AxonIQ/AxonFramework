@@ -44,19 +44,21 @@
         <javax.cache-api.version>1.1.1</javax.cache-api.version>
         <!-- Database -->
         <c3p0.version>0.9.1.2</c3p0.version>
+        <atomikos.version>6.0.1</atomikos.version>
         <hikari.version>7.1.0</hikari.version>
         <hsqldb.version>2.7.4</hsqldb.version>
-        <hibernate-core.version>7.4.11.Final</hibernate-core.version>
-        <mongo.driver.version>5.13.0</mongo.driver.version>
-        <mysql-connector-java.version>26.7.0</mysql-connector-java.version>
-        <postgresql.version>42.7.13</postgresql.version>
-        <ojdbc.version>23.26.3.0.0</ojdbc.version>
+        <hibernate-core.version>7.4.16.Final</hibernate-core.version>
+        <mongo.driver.version>5.14.0</mongo.driver.version>
+        <mysql-connector-java.version>26.10.0</mysql-connector-java.version>
+        <postgresql.version>42.7.14</postgresql.version>
+        <ojdbc.version>23.26.4.0.0</ojdbc.version>
         <!-- Jakarta -->
         <jakarta.annotation.version>3.0.0</jakarta.annotation.version>
         <jakarta.el.version>6.0.1</jakarta.el.version>
         <jakarta.el-impl.version>6.0.0</jakarta.el-impl.version>
         <jakarta.inject.version>2.0.1.MR</jakarta.inject.version>
         <jakarta.persistence.version>3.2.0</jakarta.persistence.version>
+        <jakarta.transaction.version>2.0.1</jakarta.transaction.version>
         <jakarta.validation.version>3.1.1</jakarta.validation.version>
         <jspecify.version>1.0.1</jspecify.version>
         <!-- Logging -->
@@ -64,11 +66,11 @@
         <slf4j.version>2.0.20</slf4j.version>
         <!-- Metrics -->
         <dropwizard.metrics.version>5.0.8</dropwizard.metrics.version>
-        <micrometer.version>1.17.1</micrometer.version>
+        <micrometer.version>1.17.2</micrometer.version>
         <!-- Micrometer Tracing versions independently of Micrometer core, so it has its own property. -->
-        <micrometer-tracing.version>1.7.1</micrometer-tracing.version>
+        <micrometer-tracing.version>1.7.2</micrometer-tracing.version>
         <!-- Other -->
-        <byte-buddy.version>1.18.14</byte-buddy.version>
+        <byte-buddy.version>1.18.17</byte-buddy.version>
         <commons-io.version>2.22.0</commons-io.version>
         <disruptor.version>4.0.0</disruptor.version>
         <findbugs-jsr305.version>3.0.2</findbugs-jsr305.version>
@@ -77,18 +79,13 @@
         <equalsverifier.version>4.5.2</equalsverifier.version>
         <!-- Reactive -->
         <context-propagation.version>1.2.1</context-propagation.version>
-        <projectreactor.version>3.8.7</projectreactor.version>
+        <projectreactor.version>3.8.8</projectreactor.version>
         <reactive.streams.spec.version>1.0.4</reactive.streams.spec.version>
         <!-- Conversion -->
         <avro.version>1.12.2</avro.version>
         <dom4j.version>2.2.0</dom4j.version>
-        <gson.version>2.14.0</gson.version>
-        <jackson.version>3.2.3</jackson.version>
-        <jackson2.version>2.22.3</jackson2.version>
-        <!-- Scheduling -->
-        <db-scheduler.version>16.12.0</db-scheduler.version>
-        <jobrunr.version>9.0.0</jobrunr.version>
-        <quartz.version>2.5.2</quartz.version>
+        <jackson.version>3.3.0</jackson.version>
+        <jackson2.version>2.23.0</jackson2.version>
         <!-- Spring -->
         <spring.version>6.2.19</spring.version>
         <spring.boot.version>3.5.16</spring.boot.version>
@@ -103,11 +100,11 @@
         <assertj.version>3.27.7</assertj.version>
         <archunit.version>1.5.1</archunit.version>
         <!-- Validation -->
-        <hibernate-validator.version>9.1.4.Final</hibernate-validator.version>
+        <hibernate-validator.version>9.1.6.Final</hibernate-validator.version>
 
         <!-- Maven plugins -->
         <checkstyle-maven-plugin.version>3.6.0</checkstyle-maven-plugin.version>
-        <checkstyle.version>14.3.0</checkstyle.version>
+        <checkstyle.version>14.4.0</checkstyle.version>
     </properties>
 
     <dependencyManagement>
@@ -144,6 +141,38 @@
                 <groupId>com.zaxxer</groupId>
                 <artifactId>HikariCP</artifactId>
                 <version>${hikari.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.atomikos</groupId>
+                <artifactId>transactions-jta</artifactId>
+                <version>${atomikos.version}</version>
+                <classifier>jakarta</classifier>
+            </dependency>
+            <dependency>
+                <groupId>com.atomikos</groupId>
+                <artifactId>transactions-jdbc</artifactId>
+                <version>${atomikos.version}</version>
+                <classifier>jakarta</classifier>
+            </dependency>
+            <dependency>
+                <groupId>com.atomikos</groupId>
+                <artifactId>transactions</artifactId>
+                <version>${atomikos.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.atomikos</groupId>
+                <artifactId>transactions-api</artifactId>
+                <version>${atomikos.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.atomikos</groupId>
+                <artifactId>atomikos-util</artifactId>
+                <version>${atomikos.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>jakarta.transaction</groupId>
+                <artifactId>jakarta.transaction-api</artifactId>
+                <version>${jakarta.transaction.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.hsqldb</groupId>
@@ -277,22 +306,6 @@
                 <artifactId>context-propagation</artifactId>
                 <version>${context-propagation.version}</version>
             </dependency>
-            <!-- Scheduling -->
-            <dependency>
-                <groupId>com.github.kagkarlsson</groupId>
-                <artifactId>db-scheduler</artifactId>
-                <version>${db-scheduler.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.jobrunr</groupId>
-                <artifactId>jobrunr</artifactId>
-                <version>${jobrunr.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.quartz-scheduler</groupId>
-                <artifactId>quartz</artifactId>
-                <version>${quartz.version}</version>
-            </dependency>
             <!-- Conversion -->
             <dependency>
                 <groupId>org.dom4j</groupId>
@@ -304,11 +317,6 @@
                 <groupId>org.apache.avro</groupId>
                 <artifactId>avro</artifactId>
                 <version>${avro.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>com.google.code.gson</groupId>
-                <artifactId>gson</artifactId>
-                <version>${gson.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.fasterxml.jackson</groupId>

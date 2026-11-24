@@ -18,6 +18,7 @@ package org.axonframework.messaging.core.configuration.reflection;
 
 import org.jspecify.annotations.Nullable;
 import org.axonframework.common.Priority;
+import org.axonframework.common.configuration.AmbiguousComponentMatchException;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.messaging.core.annotation.FixedValueParameterResolver;
 import org.axonframework.messaging.core.annotation.ParameterResolver;
@@ -34,6 +35,9 @@ import static org.axonframework.common.Priority.LOW;
  * {@link Configuration} instance it was configured with.
  * <p>
  * This implementation is usually autoconfigured when using the Configuration API.
+ * <p>
+ * A parameter whose type matches several components is not resolved by this factory, leaving it to factories that can
+ * tell those components apart, such as by a qualifier.
  *
  * @author Allard Buijze
  * @since 3.0.2
@@ -58,8 +62,12 @@ public class ConfigurationParameterResolverFactory implements ParameterResolverF
                                                Parameter[] parameters,
                                                int parameterIndex) {
         Class<?> componentType = parameters[parameterIndex].getType();
-        return configuration.getOptionalComponent(componentType)
-                            .map(FixedValueParameterResolver::new)
-                            .orElse(null);
+        try {
+            return configuration.getOptionalComponent(componentType)
+                                .map(FixedValueParameterResolver::new)
+                                .orElse(null);
+        } catch (AmbiguousComponentMatchException e) {
+            return null;
+        }
     }
 }

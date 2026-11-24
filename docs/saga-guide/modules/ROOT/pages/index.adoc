@@ -78,7 +78,7 @@ ifdef::advanced-framework[]
 ====
 This guide describes how to write a process, and does not assume you have written one before. If you are migrating,
 the xref:{page-component-version}@axon-framework-reference:migration:paths/sagas.adoc[saga migration path] is the companion to it. It maps every
-Axon Framework 4 construct to what replaces it. It explains the `axon-legacy` module that keeps existing saga instances running
+Axon Framework 4 construct to what replaces it. It explains the `axoniq-legacy` module that keeps existing saga instances running
 while you write their replacement. It covers testing and the drainage strategy. This guide does not repeat any of
 that.
 ====

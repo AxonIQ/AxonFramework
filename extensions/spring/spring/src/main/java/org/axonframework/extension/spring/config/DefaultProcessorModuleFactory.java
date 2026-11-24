@@ -32,6 +32,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -98,14 +99,20 @@ public class DefaultProcessorModuleFactory implements ProcessorModuleFactory {
      * <p>
      * This implementation groups handlers by their assigned processor name (determined by
      * {@link #assignedProcessor(EventProcessorDefinition.EventHandlerDescriptor)}), then creates an
-     * {@link EventProcessorModule} for each processor with its assigned handlers.
+     * {@link EventProcessorModule} for each processor with its assigned handlers. Within a processor, the handlers
+     * are registered in the iteration order of the given {@code handlers}, which is the order in which the processor
+     * invokes them.
      */
     @Override
     public Set<EventProcessorModule> buildProcessorModules(Set<EventProcessorDefinition.EventHandlerDescriptor> handlers) {
 
         Set<EventProcessorModule> modules = new LinkedHashSet<>();
 
-        var assignments = handlers.stream().collect(Collectors.groupingBy(this::assignedProcessor));
+        var assignments = handlers.stream().collect(Collectors.groupingBy(
+                this::assignedProcessor,
+                LinkedHashMap::new,
+                Collectors.toList()
+        ));
 
         for (EventProcessorDefinition definition : eventProcessorDefinitions) {
             if (!assignments.containsKey(definition.name())) {

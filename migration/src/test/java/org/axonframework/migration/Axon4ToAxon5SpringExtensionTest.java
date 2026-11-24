@@ -180,7 +180,7 @@ class Axon4ToAxon5SpringExtensionTest implements RewriteTest {
 
     @Test
     void keepsTheSagaStereotypeInItsAxonFramework4Package() {
-        // axon-legacy ships @Saga as org.axonframework.spring.stereotype.Saga. The package moves skip stereotype.
+        // axoniq-legacy ships @Saga as org.axonframework.spring.stereotype.Saga. The package moves skip stereotype.
         rewriteRun(
                 java(
                         """
@@ -188,6 +188,25 @@ class Axon4ToAxon5SpringExtensionTest implements RewriteTest {
 
                         @Saga
                         class PaymentSaga {
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
+    void leavesSpringResourceInjectorInItsAxonFramework4Package() {
+        // SpringResourceInjector has no Axon Framework 5 counterpart, so moving its package would only trade one
+        // missing type for another. The commercial Saga recipe marks its usage instead.
+        rewriteRun(
+                java(
+                        """
+                        import org.axonframework.spring.saga.SpringResourceInjector;
+
+                        class SagaConfig {
+                            Object resourceInjector() {
+                                return new SpringResourceInjector();
+                            }
                         }
                         """
                 )

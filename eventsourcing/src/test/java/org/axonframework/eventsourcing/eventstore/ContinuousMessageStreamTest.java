@@ -26,13 +26,17 @@ import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.GenericEventMessage;
 import org.junit.jupiter.api.*;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 /**
  * Test for {@link ContinuousMessageStream}.
@@ -122,6 +126,96 @@ public class ContinuousMessageStreamTest extends MessageStreamTest<EventMessage>
             assertThat(capturedCursors).hasSize(2);
             assertThat(capturedCursors.get(0)).isNull();             // first call: cursor not yet set
             assertThat(capturedCursors.get(1)).isSameAs(cursorItem); // second call: closure advanced the cursor
+        }
+    }
+
+    /*
+     * The new events callback is invoked by the storage engine's own threads (an event monitor or
+     * a finalizer), and MessageStream requires such callbacks to be short. These tests block the
+     * first fetch, standing in for a slow query or an exhausted connection pool, and check how the
+     * callback behaves while that fetch is in progress.
+     */
+    @Nested
+    class WhenFetchIsInProgress {
+
+        private final CountDownLatch fetchStarted = new CountDownLatch(1);
+        private final CountDownLatch releaseFetch = new CountDownLatch(1);
+        private final AtomicBoolean firstFetch = new AtomicBoolean(true);
+        private final AtomicReference<Runnable> newEventsCallback = new AtomicReference<>();
+
+        private ContinuousMessageStream<EventMessage> stream;
+
+        @BeforeEach
+        void setUp() {
+            stream = new ContinuousMessageStream<>(
+                () -> {
+                    if (firstFetch.getAndSet(false)) {
+                        fetchStarted.countDown();
+                        awaitRelease();
+                    }
+
+                    return List.of();
+                },
+                m -> new SimpleEntry<>(m),
+                (ms, callback) -> {
+                    newEventsCallback.set(callback);
+
+                    return () -> true;
+                }
+            );
+        }
+
+        @AfterEach
+        void tearDown() {
+            releaseFetch.countDown();  // never leave the reader or signaller blocked when an assertion fails
+        }
+
+        @Test
+        void newEventsCallbackReturnsWithoutWaitingForTheFetch() throws InterruptedException {
+            // given
+            Thread.ofPlatform().start(stream::hasNextAvailable);
+
+            assertThat(fetchStarted.await(5, TimeUnit.SECONDS)).isTrue();
+
+            // when
+            Thread signaller = Thread.ofPlatform().start(newEventsCallback.get());
+
+            // then
+            assertThat(signaller.join(Duration.ofSeconds(2))).isTrue();
+        }
+
+        @Test
+        void newEventsSignalledWhileFetchingStillCallBackTheConsumer() throws InterruptedException {
+            // given
+            CountDownLatch consumerCalledBack = new CountDownLatch(1);
+
+            Thread.ofPlatform().start(() -> stream.setCallback(consumerCalledBack::countDown));
+
+            assertThat(fetchStarted.await(5, TimeUnit.SECONDS)).isTrue();
+
+            // when
+            Thread signaller = Thread.ofPlatform().start(newEventsCallback.get());
+
+            // signals for the fetch in progress, which may have missed the new events, must not be lost
+            await().until(() -> signaller.getState() == Thread.State.BLOCKED || !signaller.isAlive());
+
+            releaseFetch.countDown();
+
+            // then
+            assertThat(consumerCalledBack.await(5, TimeUnit.SECONDS)).isTrue();
+        }
+
+        private void awaitRelease() {
+            try {
+                if (!releaseFetch.await(10, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("The fetch was never released.");
+                }
+            }
+            catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+
+                throw new IllegalStateException(e);
+            }
         }
     }
 }

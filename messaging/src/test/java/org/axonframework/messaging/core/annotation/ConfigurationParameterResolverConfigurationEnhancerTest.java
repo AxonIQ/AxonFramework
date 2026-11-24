@@ -30,7 +30,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class ConfigurationParameterResolverConfigurationEnhancerTest {
 
     @Test
-    void addsConfigurationParameterResolverFactory() {
+    void addsConfigurationAndInjectComponentParameterResolverFactories() {
         DefaultComponentRegistry componentRegistry = new DefaultComponentRegistry();
         componentRegistry.disableEnhancerScanning()
                          .registerEnhancer(new ConfigurationParameterResolverConfigurationEnhancer())
@@ -42,10 +42,12 @@ class ConfigurationParameterResolverConfigurationEnhancerTest {
 
         ParameterResolverFactory factory = build.getComponent(ParameterResolverFactory.class);
         assertInstanceOf(MultiParameterResolverFactory.class, factory);
-        assertEquals(2, ((MultiParameterResolverFactory) factory).getDelegates().size());
-        assertInstanceOf(SequenceNumberParameterResolverFactory.class,
+        assertEquals(3, ((MultiParameterResolverFactory) factory).getDelegates().size());
+        assertInstanceOf(InjectComponentParameterResolverFactory.class,
                          ((MultiParameterResolverFactory) factory).getDelegates().get(0));
-        assertInstanceOf(ConfigurationParameterResolverFactory.class,
+        assertInstanceOf(SequenceNumberParameterResolverFactory.class,
                          ((MultiParameterResolverFactory) factory).getDelegates().get(1));
+        assertInstanceOf(ConfigurationParameterResolverFactory.class,
+                         ((MultiParameterResolverFactory) factory).getDelegates().get(2));
     }
 }

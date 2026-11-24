@@ -50,12 +50,16 @@
              (the rename recipes match AF4 fully-qualified names, so the test
              parser needs the AF4 classpath to produce a typed LST). -->
         <axon4.version>4.13.2</axon4.version>
-        <!-- Axoniq Framework 5 (commercial) target version. The free Axon
-             Framework 5 target is `${project.version}` (inherited from the
-             root `${revision}`); this property is the single source of truth
-             for the *commercial* coordinates the recipes migrate to. Bump
-             here when re-targeting the migration to a newer Axoniq release. -->
-        <axoniq.version>5.1.1</axoniq.version>
+        <!-- Axoniq Framework 5 (commercial) target version, used for every
+             `io.axoniq.framework` coordinate the recipes add or pin. The free
+             Axon Framework 5 target is `${project.version}` (inherited from the
+             root `${revision}`). Axoniq Framework is released in lockstep with
+             Axon Framework (its BOM imports the Axon Framework BOM of the same
+             version), so this follows `${project.version}` rather than holding a
+             literal that goes stale with every release. Mixing the two lines
+             leaves a migrated project with two different Axon Framework versions
+             on its classpath. -->
+        <axoniq.version>${project.version}</axoniq.version>
     </properties>
 
     <dependencyManagement>

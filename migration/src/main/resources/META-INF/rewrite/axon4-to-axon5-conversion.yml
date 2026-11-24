@@ -26,6 +26,7 @@ description: >-
   Note: this is a package rename; concrete renames such as `JacksonSerializer`
   to `JacksonConverter` are NOT applied here and must be handled separately.
 recipeList:
+  - org.axonframework.migration.FlagSerializerBeans
   - org.openrewrite.java.ChangePackage:
       oldPackageName: org.axonframework.serialization
       newPackageName: org.axonframework.conversion

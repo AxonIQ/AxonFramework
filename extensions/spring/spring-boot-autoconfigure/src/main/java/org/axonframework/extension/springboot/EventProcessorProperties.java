@@ -178,11 +178,22 @@ public class EventProcessorProperties {
         private String tokenStore;
 
         /**
-         * The name of the bean that represents the sequencing policy for processing events. If no name is specified,
-         * the processor defaults to a {@link SequentialPerAggregatePolicy},
-         * which guarantees to process events originating from the same Aggregate instance sequentially, while events
-         * from different Aggregate instances may be processed concurrently.
+         * The name of the bean that represents the sequencing policy for processing events.
+         * <p>
+         * Only applies to pooled streaming processors. A
+         * {@link org.axonframework.messaging.core.annotation.SequencingPolicy} annotation on an event handler method or
+         * class, and a policy given when an event handling component was created manually, take precedence over this
+         * policy.
+         * <p>
+         * When no name is specified, no processor-wide policy applies. Each event handling component then keeps its own
+         * sequencing, which without a more specific policy is a
+         * {@link org.axonframework.messaging.core.sequencing.HierarchicalSequencingPolicy} pairing a
+         * {@link SequentialPerAggregatePolicy} with a
+         * {@link org.axonframework.messaging.core.sequencing.SequentialPolicy}. That keeps per-aggregate sequencing for
+         * aggregate-based event stores, and falls back to full sequential processing when no aggregate identifier is
+         * present.
          */
+        @Nullable
         private String sequencingPolicy;
 
         /**
@@ -401,25 +412,30 @@ public class EventProcessorProperties {
         }
 
         /**
-         * Returns the name of the bean that defines the
-         * {@link SequencingPolicy} for this processor.
+         * Returns the name of the bean that defines the {@link SequencingPolicy} for this processor.
          *
-         * @return the name of the bean that defines the
-         * {@link SequencingPolicy} for this processor.
+         * @return the name of the bean that defines the {@link SequencingPolicy} for this processor
          */
+        @Override
+        @Nullable
         public String sequencingPolicy() {
             return sequencingPolicy;
         }
 
         /**
-         * Sets the name of the bean that defines the
-         * {@link SequencingPolicy} for this processor. The
-         * {@code SequencingPolicy} describes which Events must be handled sequentially, and which can be handled
-         * concurrently. Defaults to a {@link SequentialPerAggregatePolicy}.
+         * Sets the name of the bean that defines the {@link SequencingPolicy} for this processor.
+         * <p>
+         * Only applies to pooled streaming processors. A
+         * {@link org.axonframework.messaging.core.annotation.SequencingPolicy} on an event handler method or class, and
+         * a policy given when an event handling component was created manually, take precedence over this policy.
+         * <p>
+         * When no name is specified, no processor-wide policy applies. Each event handling component then keeps its own
+         * sequencing, which without a more specific policy is a
+         * {@link org.axonframework.messaging.core.sequencing.HierarchicalSequencingPolicy} pairing a
+         * {@link SequentialPerAggregatePolicy} with a
+         * {@link org.axonframework.messaging.core.sequencing.SequentialPolicy}.
          *
-         * @param sequencingPolicy the name of the bean that defines the
-         *                         {@link SequencingPolicy} for this
-         *                         processor.
+         * @param sequencingPolicy the name of the bean that defines the {@link SequencingPolicy} for this processor
          */
         public void setSequencingPolicy(String sequencingPolicy) {
             this.sequencingPolicy = sequencingPolicy;

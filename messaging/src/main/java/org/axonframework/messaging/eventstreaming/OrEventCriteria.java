@@ -69,7 +69,21 @@ sealed class OrEventCriteria implements EventCriteria permits EventTypeRestricta
         if (criteria instanceof AnyEvent) {
             return criteria;
         }
-        return new OrEventCriteria(Set.of(this, criteria));
+        Set<EventCriteria> combinedCriteria = new HashSet<>(this.criteria);
+        if (criteria instanceof OrEventCriteria orEventCriteria) {
+            combinedCriteria.addAll(orEventCriteria.criteria);
+        } else {
+            combinedCriteria.add(criteria);
+        }
+        return combinedCriteria.equals(this.criteria) ? this : new OrEventCriteria(combinedCriteria);
+    }
+
+    @Override
+    public EventCriteria withEventTypes(Set<QualifiedName> types) {
+        // A branch without criteria matches every tag, which flattening cannot express, so keep the union tag-free.
+        return criteria.stream().anyMatch(criterion -> !criterion.hasCriteria())
+                ? EventCriteria.havingAnyTag().withEventTypes(types)
+                : EventCriteria.super.withEventTypes(types);
     }
 
     @Override

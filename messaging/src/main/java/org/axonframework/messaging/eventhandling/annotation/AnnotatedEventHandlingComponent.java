@@ -179,16 +179,17 @@ public class AnnotatedEventHandlingComponent<T> implements EventHandlingComponen
     /**
      * {@inheritDoc}
      * <p>
-     * Besides resolving this wrapper itself, this delegates to the inspected {@link #model} to resolve the capability
-     * from the wrapped annotated target. This is the bridge that lets an ordinary annotated handler POJO signal a
-     * capability (a behavior interface the processor resolves via {@code unwrap}) even though this wrapper does not
-     * implement it. Routing through the model -- rather than inspecting the target directly -- keeps the door open for
-     * the model to synthesise a capability that is declared purely through annotations.
+     * Resolves the capability from, in order, this wrapper, the {@link SimpleEventHandlingComponent} it delegates to,
+     * and the annotated target through the inspected {@link #model}. The last step lets an annotated handler POJO
+     * signal a capability without this wrapper implementing it.
      */
     @Override
     public <C> Optional<C> unwrap(Class<C> componentType) {
         if (componentType.isInstance(this)) {
             return Optional.of(componentType.cast(this));
+        }
+        if (componentType.isInstance(handlingComponent)) {
+            return Optional.of(componentType.cast(handlingComponent));
         }
         return model.resolveBehavior(target, componentType);
     }

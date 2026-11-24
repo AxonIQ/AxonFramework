@@ -67,6 +67,126 @@ class MigrateAxonTestFixtureFluentApiSagaTest implements RewriteTest {
     }
 
     @Test
+    void leavesSagaFixtureChainsAloneWhenTheSagaPackageIsImportedWithAWildcard() {
+        rewriteRun(
+                java(
+                        """
+                        package com.example;
+
+                        import org.axonframework.test.saga.*;
+                        import org.junit.jupiter.api.Test;
+
+                        class OrderSagaTest {
+                            private final SagaTestFixture<OrderSaga> fixture = new SagaTestFixture<>(OrderSaga.class);
+
+                            @Test
+                            void startsOnOrderPlaced() {
+                                fixture.givenNoPriorActivity()
+                                       .whenPublishingA(new OrderPlaced("o-1"))
+                                       .expectActiveSagas(1);
+                            }
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
+    void leavesSagaFixtureChainsAloneWhenTheFixtureIsFullyQualified() {
+        rewriteRun(
+                java(
+                        """
+                        package com.example;
+
+                        import org.junit.jupiter.api.Test;
+
+                        class OrderSagaTest {
+                            private final org.axonframework.test.saga.SagaTestFixture<OrderSaga> fixture =
+                                    new org.axonframework.test.saga.SagaTestFixture<>(OrderSaga.class);
+
+                            @Test
+                            void startsOnOrderPlaced() {
+                                fixture.givenNoPriorActivity()
+                                       .whenPublishingA(new OrderPlaced("o-1"))
+                                       .expectActiveSagas(1);
+                            }
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
+    void leavesSagaFixtureChainsAloneWhenOnlyTheSagaFixtureConfigurationIsImported() {
+        rewriteRun(
+                java(
+                        """
+                        package com.example;
+
+                        import org.axonframework.test.saga.FixtureConfiguration;
+                        import org.junit.jupiter.api.Test;
+
+                        abstract class OrderSagaTest {
+                            abstract FixtureConfiguration fixture();
+
+                            @Test
+                            void startsOnOrderPlaced() {
+                                fixture().givenNoPriorActivity()
+                                         .whenPublishingA(new OrderPlaced("o-1"))
+                                         .expectActiveSagas(1);
+                            }
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
+    void stillRewritesAggregateFixtureChainsInFilesWithoutSagaFixtureTypes() {
+        rewriteRun(
+                java(
+                        """
+                        package com.example;
+
+                        import org.axonframework.test.aggregate.AggregateTestFixture;
+                        import org.junit.jupiter.api.Test;
+
+                        class OrderTest {
+                            private final AggregateTestFixture<Order> fixture = new AggregateTestFixture<>(Order.class);
+
+                            @Test
+                            void placesOrder() {
+                                fixture.givenNoPriorActivity()
+                                       .when(new PlaceOrder("o-1"))
+                                       .expectEvents(new OrderPlaced("o-1"));
+                            }
+                        }
+                        """,
+                        """
+                        package com.example;
+
+                        import org.axonframework.test.aggregate.AggregateTestFixture;
+                        import org.junit.jupiter.api.Test;
+
+                        class OrderTest {
+                            private final AggregateTestFixture<Order> fixture = new AggregateTestFixture<>(Order.class);
+
+                            @Test
+                            void placesOrder() {
+                                fixture.given()
+                                       .noPriorActivity()
+                                       .when()
+                                       .command(new PlaceOrder("o-1"))
+                                       .then()
+                                       .events(new OrderPlaced("o-1"));
+                            }
+                        }
+                        """
+                )
+        );
+    }
+
+    @Test
     void leavesKotlinSagaTestFixtureChainsAlone() {
         rewriteRun(
                 kotlin(

@@ -33,10 +33,17 @@ description: >-
   infer beyond removing the annotation itself).
 recipeList:
   # ── Package-prefix move: modelling.command → modelling.entity ───────────
-  - org.openrewrite.java.ChangePackage:
+  # AggregateScopeDescriptor stays: Axon Framework 5 has no such type in
+  # either package, and the axoniq-legacy module keeps it in
+  # modelling.command, where the commercial upgrade's deadline recipes
+  # reference it. Moving it and restoring it in a later step would toggle it
+  # in every cycle of a run.
+  - org.axonframework.migration.ChangePackageExcludingTypes:
       oldPackageName: org.axonframework.modelling.command
       newPackageName: org.axonframework.modelling.entity
       recursive: true
+      excludedTypes:
+        - org.axonframework.modelling.command.AggregateScopeDescriptor
 
   # ── Class moves on top of the package rename ────────────────────────────
   - org.openrewrite.java.ChangeType:

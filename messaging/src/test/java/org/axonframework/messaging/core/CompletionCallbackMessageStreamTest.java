@@ -19,8 +19,13 @@ package org.axonframework.messaging.core;
 import org.junit.jupiter.api.*;
 
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.axonframework.messaging.core.MessageStreamUtils.NO_OP_CALLBACK;
 
 /**
@@ -60,5 +65,266 @@ class CompletionCallbackMessageStreamTest extends MessageStreamTest<Message> {
     protected Message createRandomMessage() {
         return new GenericMessage(new MessageType("message"),
                                     "test-" + ThreadLocalRandom.current().nextInt(10000));
+    }
+
+    @Nested
+    class WhenCompletionStatusRequested {
+
+        @Test
+        void withCompletionObservedThroughIsCompletedThenRunsTheHandlerExactlyOnce() {
+            // given
+            AtomicInteger handlerCount = new AtomicInteger();
+            MessageStream<Message> testSubject = MessageStream.fromIterable(List.of(createRandomMessage()))
+                                                              .onComplete(handlerCount::incrementAndGet);
+
+            assertThat(testSubject.next()).isPresent();
+
+            // when
+            assertThat(testSubject.isCompleted()).isTrue();
+            assertThat(testSubject.isCompleted()).isTrue();
+            assertThat(testSubject.next()).isEmpty();
+
+            // then
+            assertThat(handlerCount).hasValue(1);
+        }
+
+        @Test
+        void withCompletionObservedFromTheConsumerCallbackThenRunsTheHandlerOnceWithoutHoldingTheLock() {
+            // given
+            AtomicInteger handlerCount = new AtomicInteger();
+            AtomicInteger callbackCount = new AtomicInteger();
+            AtomicBoolean callbackRanUnderLock = new AtomicBoolean();
+            QueueMessageStream<Message> source = new QueueMessageStream<>();
+            MessageStream<Message> testSubject = source.onComplete(handlerCount::incrementAndGet);
+
+            testSubject.setCallback(() -> {
+                callbackRanUnderLock.compareAndSet(false, Thread.holdsLock(testSubject));
+
+                if (callbackCount.incrementAndGet() < 5) {
+                    testSubject.isCompleted();
+                }
+            });
+
+            assertThat(testSubject.next()).isEmpty();
+
+            // when
+            source.seal();
+
+            // then
+            assertThat(testSubject.isCompleted()).isTrue();
+            assertThat(handlerCount).hasValue(1);
+            assertThat(callbackRanUnderLock).isFalse();
+        }
+
+        @Test
+        void withCompletionObservedDirectlyAfterSealingThenDoesNotInvokeTheCallbackWhileHoldingTheLock() {
+            // given
+            AtomicInteger handlerCount = new AtomicInteger();
+            AtomicBoolean callbackRanUnderLock = new AtomicBoolean();
+            QueueMessageStream<Message> source = new QueueMessageStream<>();
+            MessageStream<Message> testSubject = source.onComplete(handlerCount::incrementAndGet);
+
+            testSubject.setCallback(
+                    () -> callbackRanUnderLock.compareAndSet(false, Thread.holdsLock(testSubject))
+            );
+
+            assertThat(testSubject.next()).isEmpty();
+            source.seal();
+
+            // when
+            assertThat(testSubject.isCompleted()).isTrue();
+
+            // then
+            assertThat(handlerCount).hasValue(1);
+            assertThat(callbackRanUnderLock).isFalse();
+        }
+
+        @Test
+        void withHandlerAskingForTheCompletionStatusThenRunsTheHandlerOnce() {
+            // given
+            AtomicInteger handlerCount = new AtomicInteger();
+            AtomicBoolean observedCompleted = new AtomicBoolean();
+            AtomicReference<MessageStream<Message>> streamRef = new AtomicReference<>();
+            MessageStream<Message> testSubject = MessageStream.fromIterable(List.of(createRandomMessage()))
+                                                              .onComplete(() -> {
+                                                                  handlerCount.incrementAndGet();
+                                                                  observedCompleted.set(streamRef.get().isCompleted());
+                                                              });
+
+            streamRef.set(testSubject);
+
+            // when
+            assertThat(testSubject.next()).isPresent();
+            assertThat(testSubject.next()).isEmpty();
+
+            // then
+            assertThat(testSubject.isCompleted()).isTrue();
+            assertThat(handlerCount).hasValue(1);
+            assertThat(observedCompleted).isTrue();
+        }
+    }
+
+    @Nested
+    class WhenClosedByTheConsumer {
+
+        AtomicInteger handlerCount = new AtomicInteger();
+
+        @Test
+        void withEntriesRemainingThenDoesNotRunTheHandler() {
+            // given
+            MessageStream<Message> testSubject =
+                    MessageStream.fromIterable(List.of(createRandomMessage(), createRandomMessage()))
+                                 .onComplete(handlerCount::incrementAndGet);
+
+            assertThat(testSubject.next()).isPresent();
+
+            // when
+            testSubject.close();
+
+            // then
+            assertThat(handlerCount).hasValue(0);
+        }
+
+        @Test
+        void withAllEntriesReadThenRunsTheHandlerOnce() {
+            // given
+            MessageStream<Message> testSubject =
+                    MessageStream.fromIterable(List.of(createRandomMessage(), createRandomMessage()))
+                                 .onComplete(handlerCount::incrementAndGet);
+
+            assertThat(testSubject.next()).isPresent();
+            assertThat(testSubject.next()).isPresent();
+
+            // when
+            testSubject.close();
+
+            // then
+            assertThat(handlerCount).hasValue(1);
+        }
+
+        @Test
+        void withTheStreamReadPastItsEndThenRunsTheHandlerOnce() {
+            // given
+            MessageStream<Message> testSubject =
+                    MessageStream.fromIterable(List.of(createRandomMessage(), createRandomMessage()))
+                                 .onComplete(handlerCount::incrementAndGet);
+
+            assertThat(testSubject.next()).isPresent();
+            assertThat(testSubject.next()).isPresent();
+            assertThat(testSubject.next()).isEmpty();
+
+            // when
+            testSubject.close();
+
+            // then
+            assertThat(handlerCount).hasValue(1);
+        }
+
+        @Test
+        void withTheLastEntryPeekedButNotReadThenDoesNotRunTheHandler() {
+            // given
+            MessageStream<Message> testSubject = MessageStream.fromIterable(List.of(createRandomMessage()))
+                                                              .onComplete(handlerCount::incrementAndGet);
+
+            assertThat(testSubject.peek()).isPresent();
+
+            // when
+            testSubject.close();
+
+            // then
+            assertThat(handlerCount).hasValue(0);
+        }
+
+        @Test
+        void withTheLastEntryAvailableButNotReadThenDoesNotRunTheHandler() {
+            // given
+            MessageStream<Message> testSubject = MessageStream.fromIterable(List.of(createRandomMessage()))
+                                                              .onComplete(handlerCount::incrementAndGet);
+
+            assertThat(testSubject.hasNextAvailable()).isTrue();
+
+            // when
+            testSubject.close();
+
+            // then
+            assertThat(handlerCount).hasValue(0);
+        }
+
+        @Test
+        void withTheSingleValuePeekedButNotReadThenDoesNotRunTheHandler() {
+            // given
+            MessageStream<Message> testSubject =
+                    MessageStream.fromFuture(CompletableFuture.completedFuture(createRandomMessage()))
+                                 .onComplete(handlerCount::incrementAndGet);
+
+            assertThat(testSubject.peek()).isPresent();
+
+            // when
+            testSubject.close();
+
+            // then
+            assertThat(handlerCount).hasValue(0);
+        }
+
+        @Test
+        void withTheSingleValueAvailableButNotReadThenDoesNotRunTheHandler() {
+            // given
+            MessageStream<Message> testSubject =
+                    MessageStream.fromFuture(CompletableFuture.completedFuture(createRandomMessage()))
+                                 .onComplete(handlerCount::incrementAndGet);
+
+            assertThat(testSubject.hasNextAvailable()).isTrue();
+
+            // when
+            testSubject.close();
+
+            // then
+            assertThat(handlerCount).hasValue(0);
+        }
+
+        @Test
+        void withTheSingleValueReadThenRunsTheHandlerOnce() {
+            // given
+            MessageStream<Message> testSubject =
+                    MessageStream.fromFuture(CompletableFuture.completedFuture(createRandomMessage()))
+                                 .onComplete(handlerCount::incrementAndGet);
+
+            assertThat(testSubject.next()).isPresent();
+
+            // when
+            testSubject.close();
+
+            // then
+            assertThat(handlerCount).hasValue(1);
+        }
+
+        @Test
+        void withAFailedDelegateThenDoesNotRunTheHandler() {
+            // given
+            MessageStream<Message> testSubject =
+                    MessageStream.fromFuture(CompletableFuture.<Message>failedFuture(new RuntimeException("failed")))
+                                 .onComplete(handlerCount::incrementAndGet);
+
+            // when
+            testSubject.close();
+
+            // then
+            assertThat(handlerCount).hasValue(0);
+        }
+
+        @Test
+        void withAPendingSingleValueThenDoesNotRunTheHandler() {
+            // given
+            MessageStream<Message> testSubject = MessageStream.fromFuture(new CompletableFuture<Message>())
+                                                              .onComplete(handlerCount::incrementAndGet);
+
+            assertThat(testSubject.next()).isEmpty();
+
+            // when
+            testSubject.close();
+
+            // then
+            assertThat(handlerCount).hasValue(0);
+        }
     }
 }

@@ -1,5 +1,5 @@
 # Axon Framework 5 - Getting Started Sample Application
-Axon version: `5.0.0-RC3`
+Axon version: the Axon Framework version of this repository (see the root `pom.xml`).
 
 ## Getting Started Guide
 [Getting Started with Axon Framework 5](https://docs.axoniq.io/axon-framework-5-getting-started/) - there you will find a step-by-step introduction to the implementation showing how to move from Event Modeling to Vertical Slice Architecture (based on Dynamic Consistency Boundary) implementation.

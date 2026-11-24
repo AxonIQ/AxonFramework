@@ -3,6 +3,64 @@
 
 Any patch release made for an Axon project is tailored towards resolving bugs. This page aims to provide a dedicated overview of patch releases per project.
 
+[#release_5_4]
+== Release 5.4
+
+=== Release 5.4.2
+
+==== Enhancements
+
+- [Backport axon-5.4.x] [#5232] Extend token claims of idle and busy segments in time link:https://github.com/AxonIQ/AxonFramework/pull/5272[#5272]
+- [Backport axon-5.4.x] Require a processing context for `TokenStore` operations link:https://github.com/AxonIQ/AxonFramework/pull/5270[#5270]
+- [Backport axon-5.4.x] [#5205] Document `Metadata` value switch from `?` to `String` and auto-convert to `String` in JPA `EventStorageEngine` link:https://github.com/AxonIQ/AxonFramework/pull/5259[#5259]
+- [Backport axon-5.4.x] Mark `protected`, `@Internal`, and document `AggregateBasedJpaEventStorageEngine#queryEventsBy` link:https://github.com/AxonIQ/AxonFramework/pull/5238[#5238]
+- [Backport axon-5.4.x] Make the coordinator's wait for a full work package configurable, and stop it losing a wake-up link:https://github.com/AxonIQ/AxonFramework/pull/5233[#5233]
+- [Backport axon-5.4.x] Spring Cloud Connector - Spring Boot 4 example link:https://github.com/AxonIQ/AxonFramework/pull/5225[#5225]
+- [Backport axon-5.4.x] Replace `cache` for artifact-steps in the release GHA link:https://github.com/AxonIQ/AxonFramework/pull/5221[#5221]
+
+==== Bug fixes
+
+- [Backport axon-5.4.x] Remove `@Internal` marker from `EventCoordinator` link:https://github.com/AxonIQ/AxonFramework/pull/5295[#5295]
+- [#5278] Run entity loads and event handlers outside the map lock link:https://github.com/AxonIQ/AxonFramework/pull/5279[#5279]
+- [Port | #5125 & #5126] Run each event sourcing handler of an entity hierarchy once, and apply events once to polymorphic entities link:https://github.com/AxonIQ/AxonFramework/pull/5260[#5260]
+- [Backport axon-5.4.x] [#5217] Correct Consistency Marker position for `AggregateBasedJpaEventStorageEngine` when sourcing after snapshot link:https://github.com/AxonIQ/AxonFramework/pull/5256[#5256]
+- [Backport axon-5.4.x] Run all MessageStream suite cases and check how streams treat their sources link:https://github.com/AxonIQ/AxonFramework/pull/5245[#5245]
+- [Backport axon-5.4.x] Fine tune `null` and empty-String support for the namespace link:https://github.com/AxonIQ/AxonFramework/pull/5244[#5244]
+- [Backport axon-5.4.x] Invoke `AxonConfiguration#start()` in `AbstractQueryTestSuite` implementation link:https://github.com/AxonIQ/AxonFramework/pull/5243[#5243]
+- [Backport axon-5.4.x | #713] Run AbstractMessageStream.fetchNext without holding the stream lock link:https://github.com/AxonIQ/AxonFramework/pull/5236[#5236]
+- [Backport axon-5.4.x] Keep query-update counts and carry the emitUpdate trace context on updates link:https://github.com/AxonIQ/AxonFramework/pull/5229[#5229]
+
+==== Contributors
+
+Thank you to all the contributors who worked on this release:
+
+link:https://github.com/hjohn[@hjohn], link:https://github.com/schananas[@schananas], link:https://github.com/CodeDrivenMitch[@CodeDrivenMitch], https://github.com/MateuszNaKodach[@MateuszNaKodach], and link:https://github.com/smcvb[@smcvb]
+
+=== Release 5.4.1
+
+==== Enhancements
+
+* Migration Path enhancements, OpenRewrite Script expansion, and default PSEP-wide `SequencingPolicy` https://github.com/AxonIQ/AxonFramework/pull/5194[#5194]
+* Name migrated aggregate deadline handlers after aggregate type and deadline https://github.com/AxonIQ/AxonFramework/pull/5190[#5190]
+
+==== Bug fixes
+
+* Fix window of opportunity for "Duplicate key for `ConfigurationEnhancer`" https://github.com/AxonIQ/AxonFramework/pull/5195[#5195]
+* [\#5169] Ensure consistent interceptor behavior for Polymorphic Entities https://github.com/AxonIQ/AxonFramework/pull/5189[#5189]
+* Make `OrEventCriteria#or` idempotent https://github.com/AxonIQ/AxonFramework/pull/5183[#5183]
+* Keep `ReplayToken` on both halves when splitting during a replay https://github.com/AxonIQ/AxonFramework/pull/5173[#5173]
+* OpenRewrite: close 4 legacy saga and deadline migration gaps https://github.com/AxonIQ/AxonFramework/pull/5166[#5166]
+* [\#5133] Resolve bean types from merged definitions in SpringComponentRegistry https://github.com/AxonIQ/AxonFramework/pull/5165[#5165]
+* Fail ambiguous component lookups instead of silently using the default https://github.com/AxonIQ/AxonFramework/pull/5163[#5163]
+* Resolve components registered under a subtype before using the default https://github.com/AxonIQ/AxonFramework/pull/5162[#5162]
+* [\#5155] Keep emitting subscription query updates under bounded demand https://github.com/AxonIQ/AxonFramework/pull/5158[#5158]
+
+==== Contributors
+
+Thank you to all the contributors who worked on this release:
+
+@CodeDrivenMitch, @hatzlj, @schananas, and @smcvb
+
 [#release_5_3]
 == Release 5.3
 
@@ -170,6 +228,9 @@ A heartfelt thank you to all contributors who worked on this section:
 
 === Release 5.1.2
 
+NOTE: Non-annotated nested message classes now resolve to `package.SimpleName` instead of `package.Outer$SimpleName`.
+See <<release_5_1_2_nested_message_names,Nested message class names>> for how this affects existing applications.
+
 ==== Features
 
 - feat(migration): preserve AF4 `MessageOriginProvider` metadata key names in AF5 link:https://github.com/AxonIQ/AxonFramework/pull/4613[#4613]
@@ -199,6 +260,74 @@ We'd like to thank all the contributors who worked on this release!
 - link:https://github.com/MateuszNaKodach[@MateuszNaKodach]
 - link:https://github.com/abuijze[@abuijze]
 - link:https://github.com/hatzlj[@hatzlj]
+
+[#release_5_1_2_nested_message_names]
+==== Nested message class names
+
+Up to 5.1.1, a nested class that was *not* annotated with `@Command`, `@Event`, or `@Query` resolved to its binary name (for example `example.DocumentEvent$DocumentCreated`).
+As of 5.1.2, it resolves to `example.DocumentCreated`, as annotated classes already did.
+Top-level and annotated classes are not affected, and neither are names passed as a `String`, such as `new MessageType("example.DocumentEvent$DocumentCreated", version)`.
+Gateways or other components that build a `MessageType` from `Class#getName()` now dispatch under a different name than the handlers are registered under, resulting in a `NoHandlerForCommandException`.
+
+Events stored under the old name are no longer matched by handlers and `EventCriteria` using the new name.
+No stored-data migration is needed, as the stored name remains as-is.
+Instead, pin the old name on the nested class:
+
+[source,java,role=pseudocode]
+----
+public sealed interface DocumentEvent {
+
+    @Event(namespace = "example", name = "DocumentEvent$DocumentCreated", version = "0.0.1")
+    record DocumentCreated(String id) implements DocumentEvent {
+    }
+}
+----
+
+The version must match the one stored with the events.
+Annotations are only honored by the `AnnotationMessageTypeResolver`, the default, so a replaced `MessageTypeResolver` must take them into account.
+
+To keep binary names for all non-annotated classes instead, configure an `AnnotationMessageTypeResolver` with a fallback:
+
+[source,java,role=pseudocode]
+----
+MessagingConfigurer.enhance(applicationConfigurer)
+    .registerMessageTypeResolver(config -> new AnnotationMessageTypeResolver(
+        payloadType -> Optional.of(new MessageType(payloadType.getName(), MessageType.DEFAULT_VERSION))
+    ));
+----
+
+This also applies to events stored after upgrading, so prefer pinning per class when events were already persisted under the new names.
+
+Pinning alone is not sufficient if events were already stored under the new name (`example.DocumentCreated`).
+Handlers match on the `QualifiedName` only, so after pinning they register solely under `example.DocumentEvent$DocumentCreated`.
+Events stored under the new name are then silently skipped: event processors filter them out, and `evolve` on an event-sourced entity finds no handler and ignores them.
+Nothing fails, so projections and entities simply miss state.
+Events dispatched after pinning use the old name again, leaving the store with a mix of old, new, and old names.
+
+When events exist under both names, either:
+
+. *Add a handler per name.*
+Annotate a second handler with the new name through `@EventHandler(eventName = "example.DocumentCreated")`.
+As `@EventSourcingHandler` has no `eventName` attribute, an entity needs a plain `@EventHandler(eventName = ...)` for the second name.
+Any `@EventCriteriaBuilder` filtering on types needs to list both names.
++
+[source,java,role=pseudocode]
+----
+@EventHandler
+void on(DocumentCreated event) { ... }
+
+@EventHandler(eventName = "example.DocumentCreated")
+void onNew(DocumentCreated event) { ... }
+----
+
+. *Rename the event through an event transformation* (Axoniq Framework 5.2+).
+A xref:message-transformation:defining-transformations.adoc#_renaming_an_event[`rename(from, to)`] from `example.DocumentCreated` to the pinned name makes the existing handlers work unchanged.
+Type-filtered `EventCriteria` get the old name added automatically.
+
+Instances resolving a nested class to different names cannot exchange messages.
+For a rolling upgrade, first pin the old names on the new version, so all instances share identical names, and drop the pinning only when all instances run the new version and no stored events or external consumers rely on the old names.
+Nested classes sharing a simple name within one package collide; disambiguate them through the `name` or `namespace` attribute.
+See xref:messaging-concepts:anatomy-message.adoc#nested_message_classes[Nested message classes] for the current naming rules.
 
 === Release 5.1.1
 

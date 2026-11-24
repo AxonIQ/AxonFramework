@@ -19,9 +19,12 @@ package org.axonframework.extension.spring.config;
 import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.AxonThreadFactory;
 import org.axonframework.common.StringUtils;
+import org.axonframework.common.configuration.AmbiguousComponentMatchException;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.messaging.core.SubscribableEventSource;
+import org.axonframework.messaging.core.sequencing.SequencingPolicy;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkFactory;
+import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorConfiguration;
 import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorModule;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore;
@@ -110,10 +113,13 @@ interface SpringCustomizations {
             var result = subscribingEventProcessorConfiguration.unitOfWorkFactory(unitOfWorkFactory);
 
             String sourceName = StringUtils.nonEmptyOrNull(settings.source()) ? settings.source() : null;
-            var messageSource = getComponent(configuration, SubscribableEventSource.class, sourceName, null);
+            SubscribableEventSource messageSource;
             if (sourceName != null) {
+                messageSource = getComponent(configuration, SubscribableEventSource.class, sourceName, null);
                 require(messageSource != null, "Could not find a mandatory Source with name '" + settings.source()
                         + "' for event processor '" + name + "'.");
+            } else {
+                messageSource = getUniqueComponent(configuration, SubscribableEventSource.class);
             }
             return messageSource != null ? result.eventSource(messageSource) : result;
         }
@@ -178,10 +184,13 @@ interface SpringCustomizations {
             }
 
             String sourceName = StringUtils.nonEmptyOrNull(settings.source()) ? settings.source() : null;
-            var eventSource = getComponent(configuration, StreamableEventSource.class, sourceName, null);
+            StreamableEventSource eventSource;
             if (sourceName != null) {
+                eventSource = getComponent(configuration, StreamableEventSource.class, sourceName, null);
                 require(eventSource != null, "Could not find a mandatory Source with name '" + settings.source()
                         + "' for event processor '" + name + "'.");
+            } else {
+                eventSource = getUniqueComponent(configuration, StreamableEventSource.class);
             }
             if (eventSource != null) {
                 result = result.eventSource(eventSource);
@@ -197,10 +206,24 @@ interface SpringCustomizations {
                 tokenStore = getComponent(configuration,
                                           TokenStore.class,
                                           CONVENTIONAL_TOKEN_STORE_BEAN_NAME,
-                                          () -> getComponent(configuration, TokenStore.class, null, null));
+                                          () -> getUniqueComponent(configuration, TokenStore.class));
             }
             if (tokenStore != null) {
                 result = result.tokenStore(tokenStore);
+            }
+
+            String sequencingPolicyName = StringUtils.nonEmptyOrNull(settings.sequencingPolicy())
+                    ? settings.sequencingPolicy() : null;
+            if (sequencingPolicyName != null) {
+                @SuppressWarnings("unchecked")
+                SequencingPolicy<? super EventMessage> sequencingPolicy =
+                        (SequencingPolicy<? super EventMessage>) getComponent(
+                                configuration, SequencingPolicy.class, sequencingPolicyName, null
+                        );
+                require(sequencingPolicy != null,
+                        "Could not find a mandatory SequencingPolicy with name '" + settings.sequencingPolicy()
+                                + "' for event processor '" + name + "'.");
+                result = result.sequencingPolicy(sequencingPolicy);
             }
 
             return result;
@@ -243,6 +266,28 @@ interface SpringCustomizations {
                               @Nullable Supplier<T> supplier) {
         Supplier<T> safeSupplier = (supplier != null) ? supplier : () -> null;
         return configuration.getOptionalComponent(type, name).orElseGet(safeSupplier);
+    }
+
+    /**
+     * Retrieves the single component of the given {@code type}, ignoring component names.
+     * <p>
+     * Returns {@code null} when there is no such component, or when several match and the {@link Configuration}
+     * cannot choose one of them. In both cases, the caller should leave that part of the configuration untouched, so
+     * that a customization applied later, like an {@code EventProcessorDefinition}, can supply it, or validation
+     * reports it as missing.
+     *
+     * @param configuration the configuration holding the component registry
+     * @param type          the type of the component
+     * @param <T>           the type of the component
+     * @return the single component of the given {@code type}, or {@code null} if there is none or no unique one
+     */
+    @Nullable
+    static <T> T getUniqueComponent(Configuration configuration, Class<T> type) {
+        try {
+            return getComponent(configuration, type, null, null);
+        } catch (AmbiguousComponentMatchException e) {
+            return null;
+        }
     }
 
     /**

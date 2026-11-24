@@ -16,7 +16,6 @@
 
 package org.axonframework.common.tx;
 
-import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.function.ThrowingConsumer;
 import org.axonframework.common.function.ThrowingFunction;
 
@@ -33,6 +32,13 @@ import java.util.concurrent.CompletableFuture;
  * will result in the resource to be rolled back, and any associated lifecycle to
  * be put into an error state.
  * <p>
+ * Whether "the appropriate time" is driven by this executor itself or by an external owner of
+ * the resource depends on the implementation: an executor managing an independently-obtained
+ * resource typically commits, rolls back, and closes it as part of {@link #apply}/{@link #accept}
+ * completing, while one wrapping an ambient resource bound to an externally-managed unit of work
+ * (e.g. {@link org.axonframework.common.jdbc.ConnectionExecutor} wrapping a container's
+ * transaction-bound connection) leaves that entirely to the external owner instead.
+ * <p>
  * This interface provides convenience methods for both operations that return
  * a result and operations that are purely side-effecting.
  *
@@ -40,7 +46,6 @@ import java.util.concurrent.CompletableFuture;
  * @author John Hendrikx
  * @since 5.0.2
  */
-@Internal
 public interface TransactionalExecutor<T> {
 
     /**

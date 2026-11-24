@@ -36,11 +36,11 @@
     </modules>
 
     <properties>
-        <kotlin.version>2.4.20</kotlin.version>
-        <kotlin-serialization.version>1.11.0</kotlin-serialization.version>
+        <kotlin.version>2.4.21</kotlin.version>
+        <kotlin-serialization.version>1.13.0</kotlin-serialization.version>
         <!-- Logging -->
         <mockk.version>1.14.9</mockk.version>
-        <dokka.version>2.2.0</dokka.version>
+        <dokka.version>2.3.0</dokka.version>
 
         <!--
         Deactivate dokka by default, and make the build faster for all projects.
@@ -69,7 +69,7 @@
             <dependency>
                 <groupId>io.mockk</groupId>
                 <artifactId>mockk-jvm</artifactId>
-                <version>1.14.11</version>
+                <version>1.14.12</version>
                 <scope>test</scope>
             </dependency>
             <dependency>

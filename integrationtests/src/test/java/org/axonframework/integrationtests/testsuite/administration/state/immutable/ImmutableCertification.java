@@ -19,7 +19,9 @@ package org.axonframework.integrationtests.testsuite.administration.state.immuta
 import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
 import org.axonframework.integrationtests.testsuite.administration.commands.RevokeCertificationCommand;
 import org.axonframework.integrationtests.testsuite.administration.events.CertificationRevoked;
+import org.axonframework.integrationtests.testsuite.administration.events.CertificationWithdrawnExternally;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
+import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 
 public record ImmutableCertification(
@@ -38,6 +40,12 @@ public record ImmutableCertification(
 
     @EventSourcingHandler
     public ImmutableCertification on(CertificationRevoked event) {
+        return new ImmutableCertification(certificationName, issuingBody, true);
+    }
+
+    /** Reads another application's event by its published name {@link CertificationWithdrawnExternally#EVENT_NAME}. */
+    @EventHandler(eventName = CertificationWithdrawnExternally.EVENT_NAME)
+    public ImmutableCertification on(CertificationWithdrawnExternally event) {
         return new ImmutableCertification(certificationName, issuingBody, true);
     }
 

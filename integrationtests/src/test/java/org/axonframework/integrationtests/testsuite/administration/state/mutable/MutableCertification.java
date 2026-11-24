@@ -19,7 +19,9 @@ package org.axonframework.integrationtests.testsuite.administration.state.mutabl
 import org.axonframework.eventsourcing.annotation.EventSourcingHandler;
 import org.axonframework.integrationtests.testsuite.administration.commands.RevokeCertificationCommand;
 import org.axonframework.integrationtests.testsuite.administration.events.CertificationRevoked;
+import org.axonframework.integrationtests.testsuite.administration.events.CertificationWithdrawnExternally;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
+import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.axonframework.messaging.eventhandling.gateway.EventAppender;
 
 public class MutableCertification {
@@ -45,6 +47,12 @@ public class MutableCertification {
 
     @EventSourcingHandler
     public void on(CertificationRevoked event) {
+        this.revoked = true;
+    }
+
+    /** Reads another application's event by its published name {@link CertificationWithdrawnExternally#EVENT_NAME}. */
+    @EventHandler(eventName = CertificationWithdrawnExternally.EVENT_NAME)
+    public void on(CertificationWithdrawnExternally event) {
         this.revoked = true;
     }
 

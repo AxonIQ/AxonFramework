@@ -21,13 +21,16 @@ import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.ReflectionUtils;
 
 import java.lang.annotation.Annotation;
+import java.lang.annotation.Repeatable;
 import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Member;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -210,6 +213,116 @@ public final class AnnotationUtils {
     }
 
     /**
+     * Find the attributes of every occurrence of an annotation of type {@code annotationType} on the given
+     * {@code element}. Each entry in the returned {@link List} represents a single occurrence of the annotation, found
+     * either directly on the {@code element}, or as a meta-annotation on any level of the annotations present on the
+     * {@code element}.
+     * <p>
+     * In contrast to {@link #findAnnotationAttributes(AnnotatedElement, Class, boolean)}, this method does not stop at
+     * the first occurrence. All direct and meta-annotated occurrences are reported. When the {@code annotationType} is
+     * {@link Repeatable}, occurrences grouped in its {@link Repeatable#value() container annotation} are reported as
+     * separate entries as well, on any level. Likewise, every annotation grouped in the container annotation of any
+     * other {@link Repeatable} annotation type is inspected as a separate meta-annotation.
+     * <p>
+     * On every level, annotations are retrieved following the semantics of
+     * {@link AnnotatedElement#getAnnotationsByType(Class)}. As such, for a {@link Class}, annotations of a type that is
+     * {@link java.lang.annotation.Inherited} are only taken from a superclass when the class itself does not declare
+     * any annotation of that type, either directly or grouped in its container annotation.
+     * <p>
+     * The map of attributes of an occurrence contains the attributes of the given {@code annotationType}. Their values
+     * are overridden by same-named attributes of the annotations through which the occurrence was meta-annotated, with
+     * attributes of annotations closer to the {@code element} taking precedence. Other attributes of those annotations
+     * are not included.
+     * <p>
+     * Note that the {@code value} property of annotations is reported as the simple class name (lowercase first
+     * character) of the annotation. This allows specific attribute overrides for annotations that have multiple
+     * meta-annotations with the {@code value} property.
+     *
+     * @param element        the element to find the annotation occurrences on
+     * @param annotationType the type of the annotation to find
+     * @return a list containing a map with attribute names and values per found occurrence of the annotation, or an
+     * empty list if the annotation is not found
+     * @since 5.5.0
+     */
+    public static List<Map<String, Object>> findAllAnnotationAttributes(AnnotatedElement element,
+                                                                        Class<? extends Annotation> annotationType) {
+        Repeatable repeatable = annotationType.getAnnotation(Repeatable.class);
+        Class<? extends Annotation> containerType = repeatable != null ? repeatable.value() : null;
+        List<Map<String, Object>> occurrences = new ArrayList<>();
+        collectAllAnnotationAttributes(element, annotationType, containerType, new HashSet<>(), occurrences);
+        return occurrences;
+    }
+
+    private static void collectAllAnnotationAttributes(AnnotatedElement element,
+                                                       Class<? extends Annotation> annotationType,
+                                                       @Nullable Class<? extends Annotation> containerType,
+                                                       Set<Class<? extends Annotation>> path,
+                                                       List<Map<String, Object>> occurrences) {
+        // Covers both directly present occurrences and those grouped in the repeatable container annotation
+        for (Annotation annotation : element.getAnnotationsByType(annotationType)) {
+            Map<String, Object> attributes = new HashMap<>();
+            collectAttributes(annotation, attributes);
+            occurrences.add(attributes);
+        }
+        // Annotations of a repeatable type, both directly present and grouped in their container, are inspected once
+        Set<Class<? extends Annotation>> inspectedTypes = new HashSet<>();
+        for (Annotation annotation : element.getAnnotations()) {
+            Class<? extends Annotation> type = annotation.annotationType();
+            if (type.equals(annotationType) || type.equals(containerType)) {
+                continue;
+            }
+            Class<? extends Annotation> repeatedType = repeatedTypeOf(type);
+            Class<? extends Annotation> inspectedType = repeatedType != null ? repeatedType : type;
+            if (inspectedTypes.add(inspectedType)) {
+                for (Annotation metaAnnotation : element.getAnnotationsByType(inspectedType)) {
+                    collectMetaAnnotatedOccurrences(metaAnnotation, annotationType, containerType, path, occurrences);
+                }
+            }
+        }
+    }
+
+    private static void collectMetaAnnotatedOccurrences(Annotation metaAnnotation,
+                                                        Class<? extends Annotation> annotationType,
+                                                        @Nullable Class<? extends Annotation> containerType,
+                                                        Set<Class<? extends Annotation>> path,
+                                                        List<Map<String, Object>> occurrences) {
+        Class<? extends Annotation> type = metaAnnotation.annotationType();
+        if (!path.add(type)) {
+            return;
+        }
+        List<Map<String, Object>> metaOccurrences = new ArrayList<>();
+        collectAllAnnotationAttributes(type, annotationType, containerType, path, metaOccurrences);
+        path.remove(type);
+        for (Map<String, Object> metaOccurrence : metaOccurrences) {
+            collectAttributes(metaAnnotation, metaOccurrence, OVERRIDE_ONLY);
+            occurrences.add(metaOccurrence);
+        }
+    }
+
+    /**
+     * Returns the {@link Repeatable} annotation type of which the given {@code type} is the container annotation, or
+     * {@code null} if the given {@code type} is not a container annotation.
+     */
+    private static @Nullable Class<? extends Annotation> repeatedTypeOf(Class<? extends Annotation> type) {
+        Method valueMethod;
+        try {
+            valueMethod = type.getDeclaredMethod("value");
+        } catch (NoSuchMethodException e) {
+            return null;
+        }
+        Class<?> componentType = valueMethod.getReturnType().getComponentType();
+        if (componentType == null || !componentType.isAnnotation()) {
+            return null;
+        }
+        Repeatable repeatable = componentType.getAnnotation(Repeatable.class);
+        if (repeatable == null || !repeatable.value().equals(type)) {
+            return null;
+        }
+        //noinspection unchecked
+        return (Class<? extends Annotation>) componentType;
+    }
+
+    /**
      * Find the attributes of an annotation of type {@code annotationType} on the given {@code type}, following a
      * layered search strategy. The search stops as soon as the {@code expectedAttributes} predicate returns
      * {@code true} for the found attributes.
@@ -310,6 +423,10 @@ public final class AnnotationUtils {
             if (method.getParameterCount() == 0 && method.getReturnType() != void.class) {
                 try {
                     String key = resolveName(method);
+                    if (!method.canAccess(ann)) {
+                        // Allows reading attributes of non-public annotations
+                        method.trySetAccessible();
+                    }
                     Object value = method.invoke(ann);
                     if (overrideOnly) {
                         attributes.computeIfPresent(key, (k, v) -> value);

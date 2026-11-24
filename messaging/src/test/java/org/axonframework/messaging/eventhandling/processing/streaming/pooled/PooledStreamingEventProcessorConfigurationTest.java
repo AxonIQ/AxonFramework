@@ -16,14 +16,19 @@
 
 package org.axonframework.messaging.eventhandling.processing.streaming.pooled;
 
+import org.axonframework.common.AxonConfigurationException;
+import org.axonframework.messaging.core.sequencing.SequencingPolicy;
+import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.configuration.EventProcessorConfiguration;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.SegmentChangeListener;
 import org.junit.jupiter.api.*;
 
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.axonframework.common.FutureUtils.joinAndUnwrap;
 
 class PooledStreamingEventProcessorConfigurationTest {
@@ -47,5 +52,74 @@ class PooledStreamingEventProcessorConfigurationTest {
 
         // then
         assertThat(releaseInvocations).hasValue(2);
+    }
+
+    @Nested
+    class SequencingPolicyTest {
+
+        private final PooledStreamingEventProcessorConfiguration testSubject = new PooledStreamingEventProcessorConfiguration(
+                new EventProcessorConfiguration("processorName", null)
+        );
+
+        @Test
+        void defaultsToNull() {
+            assertThat(testSubject.sequencingPolicy()).isNull();
+        }
+
+        @Test
+        void sequencingPolicySetsAndReturnsTheGivenPolicy() {
+            // given
+            SequencingPolicy<EventMessage> policy = (event, context) -> Optional.of("seq-id");
+
+            // when
+            PooledStreamingEventProcessorConfiguration result = testSubject.sequencingPolicy(policy);
+
+            // then
+            assertThat(result).isSameAs(testSubject);
+            assertThat(testSubject.sequencingPolicy()).isSameAs(policy);
+        }
+
+        @Test
+        void sequencingPolicyRejectsNull() {
+            //noinspection DataFlowIssue
+            assertThatThrownBy(() -> testSubject.sequencingPolicy(null))
+                    .isInstanceOf(AxonConfigurationException.class);
+        }
+    }
+
+    @Nested
+    class NoCapacityDelayTest {
+
+        private final PooledStreamingEventProcessorConfiguration testSubject = new PooledStreamingEventProcessorConfiguration(
+                new EventProcessorConfiguration("processorName", null)
+        );
+
+        @Test
+        void defaultsToOneHundredMilliseconds() {
+            assertThat(testSubject.noCapacityDelay()).isEqualTo(100);
+        }
+
+        @Test
+        void noCapacityDelaySetsAndReturnsTheGivenDelay() {
+            // when
+            PooledStreamingEventProcessorConfiguration result = testSubject.noCapacityDelay(1);
+
+            // then
+            assertThat(result).isSameAs(testSubject);
+            assertThat(testSubject.noCapacityDelay()).isEqualTo(1);
+        }
+
+        @Test
+        void noCapacityDelayRejectsZeroAndNegativeDelays() {
+            assertThatThrownBy(() -> testSubject.noCapacityDelay(0)).isInstanceOf(AxonConfigurationException.class);
+            assertThatThrownBy(() -> testSubject.noCapacityDelay(-1)).isInstanceOf(AxonConfigurationException.class);
+        }
+
+        @Test
+        void noCapacityDelayAcceptsAtMostOneSecond() {
+            assertThat(testSubject.noCapacityDelay(1000).noCapacityDelay()).isEqualTo(1000);
+            assertThatThrownBy(() -> testSubject.noCapacityDelay(1001))
+                    .isInstanceOf(AxonConfigurationException.class);
+        }
     }
 }

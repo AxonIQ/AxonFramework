@@ -133,6 +133,16 @@ class TokenStoringProgressStrategyTest {
         }
 
         @Override
+        public @Nullable TrackingToken lastHandledToken() {
+            return lastConsumedToken;
+        }
+
+        @Override
+        public @Nullable TrackingToken lastStoredToken() {
+            return persisted.isEmpty() ? null : persisted.getLast();
+        }
+
+        @Override
         public void scheduleWorker() {
             // no-op for the default strategy, which never schedules out-of-band work
         }

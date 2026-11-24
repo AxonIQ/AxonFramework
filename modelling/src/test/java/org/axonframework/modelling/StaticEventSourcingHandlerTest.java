@@ -353,7 +353,8 @@ class StaticEventSourcingHandlerTest {
                             Set.of(Circle.class, Square.class)
                     ),
                     converter,
-                    messageTypeResolver
+                    messageTypeResolver,
+                    Set.of(Shape.class, Circle.class, Square.class)
             );
             EventMessage event = asEventMessage(new CreatedCircle(7));
             var context = StubProcessingContext.forMessage(event);

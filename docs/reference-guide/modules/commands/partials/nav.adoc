@@ -7,7 +7,9 @@
 **** xref:commands:entities/entity-creator.adoc[]
 *** xref:commands:entities/stateful-command-handler.adoc[]
 *** xref:commands:entities/entity-hierarchies.adoc[]
+*** xref:commands:entities/entity-inheritance.adoc[]
 *** xref:commands:entities/entity-polymorphism.adoc[]
+*** xref:commands:entities/entity-id-resolution.adoc[]
 
 ** xref:commands:infrastructure.adoc[]
 ** xref:commands:configuration.adoc[]

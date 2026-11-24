@@ -16,7 +16,6 @@
 
 package org.axonframework.messaging.core.annotation;
 
-import org.axonframework.common.ObjectUtils;
 import org.axonframework.common.StringUtils;
 import org.axonframework.common.annotation.AnnotationUtils;
 import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
@@ -31,6 +30,7 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Function;
 
 /**
  * A {@link MessageTypeResolver} implementation looking for configurable annotations on the {@link Class} this resolver
@@ -43,17 +43,22 @@ import java.util.Optional;
  * namespace attribute is determined by the {@link Namespace} annotation instead. The {@code Message} annotation is
  * meta-annotated with the namespace annotation as a fallback.
  * <p>
+ * An empty namespace, name, or {@code @Namespace} value is treated as "not set". In that case the value is derived from
+ * the payload type: the package name for the namespace and the simple class name for the name. A payload type in the
+ * default package thus results in a {@code MessageType} without a namespace.
+ * <p>
  * Allows for defining a fallback {@code MessageTypeResolver}, for when the defined annotations are not present.
  * <p>
  * As annotations are static class metadata, the annotation-based resolution result is cached per payload type without
- * preventing that type from being unloaded. Only when the configured annotations do not yield a {@link MessageType}
- * is the fallback consulted.
+ * preventing that type from being unloaded. Only when the configured annotations do not yield a {@link MessageType} is
+ * the fallback consulted.
  *
  * @author Steven van Beelen
  * @since 5.0.0
  */
 public class AnnotationMessageTypeResolver implements MessageTypeResolver {
 
+    @Nullable
     private final MessageTypeResolver fallback;
     private final AnnotationSpecification specification;
     private final ClassValue<Optional<MessageType>> annotationCache = new ClassValue<>() {
@@ -94,8 +99,8 @@ public class AnnotationMessageTypeResolver implements MessageTypeResolver {
      *                      {@link AnnotationSpecification#versionAnnotation()} as defined in the given
      *                      {@code specification} are not present on the given {@code payloadType} when resolving the
      *                      {@link MessageType}
-     * @param specification the specification that determines what annotation to look for on the given {@code payloadType}
-     *                      when resolving the {@link MessageType}
+     * @param specification the specification that determines what annotation to look for on the given
+     *                      {@code payloadType} when resolving the {@link MessageType}
      */
     public AnnotationMessageTypeResolver(@Nullable MessageTypeResolver fallback,
                                          AnnotationSpecification specification) {
@@ -120,14 +125,18 @@ public class AnnotationMessageTypeResolver implements MessageTypeResolver {
         }
 
         Map<String, Object> namespaceAttributes = namespaceAttributesFor(payloadType);
-        // Single-source the class-derived naming defaults through QualifiedName(Class).
-        QualifiedName defaultName = new QualifiedName(payloadType);
+        // An empty annotation value means "unset", so the specification's default applies. The namespace default
+        // may be null, which results in a MessageType without a namespace.
+        String annotatedNamespace = (String) namespaceAttributes.get(specification.namespaceAttribute());
+        String namespace = StringUtils.nonEmptyOrNull(annotatedNamespace)
+                ? annotatedNamespace
+                : specification.namespaceDefault().apply(payloadType);
+        String annotatedName = (String) nameAttributes.get(specification.nameAttribute());
+        String name = StringUtils.nonEmptyOrNull(annotatedName)
+                ? annotatedName
+                : specification.nameDefault().apply(payloadType);
         return Optional.of(new MessageType(
-                ObjectUtils.getNonEmptyOrDefault((String) namespaceAttributes.get(specification.namespaceAttribute()),
-                                                 defaultName.namespace()),
-                ObjectUtils.getNonEmptyOrDefault((String) nameAttributes.get(specification.nameAttribute()),
-                                                 defaultName.localName()),
-                (String) versionAttributes.get(specification.versionAttribute())
+                namespace, name, (String) versionAttributes.get(specification.versionAttribute())
         ));
     }
 
@@ -154,6 +163,9 @@ public class AnnotationMessageTypeResolver implements MessageTypeResolver {
      *                            {@code nameAttribute} specifically
      * @param nameAttribute       the attribute for the {@link MessageType#name()}, that should be present on the given
      *                            {@code annotation}
+     * @param nameDefault         derives the {@link QualifiedName#localName() local name} from the payload type when
+     *                            the name is not set, or empty, on the annotations. Must be deterministic, since
+     *                            results are cached per payload type
      * @param versionAnnotation   the annotation class to search for when {@link #resolve(Class)} is invoked for the
      *                            {@code versionAttribute} specifically
      * @param versionAttribute    the attribute for the {@link MessageType#version()}, that should be present on the
@@ -163,24 +175,63 @@ public class AnnotationMessageTypeResolver implements MessageTypeResolver {
      * @param namespaceAttribute  the attribute for the {@link QualifiedName#namespace()} field of the
      *                            {@link QualifiedName} set in the resolved {@link MessageType}, or just the
      *                            {@link #nameAttribute()} if {@code null}
+     * @param namespaceDefault    derives the namespace from the payload type when the namespace is not set, or empty,
+     *                            on the annotations. May return {@code null} to resolve a {@code MessageType} without a
+     *                            namespace. Must be deterministic, since results are cached per payload type
      */
     public record AnnotationSpecification(
             Class<? extends Annotation> nameAnnotation,
             String nameAttribute,
+            Function<Class<?>, String> nameDefault,
             Class<? extends Annotation> versionAnnotation,
             String versionAttribute,
             Class<? extends Annotation> namespaceAnnotation,
-            @Nullable String namespaceAttribute
+            @Nullable String namespaceAttribute,
+            Function<Class<?>, @Nullable String> namespaceDefault
     ) {
 
         /**
          * The default {@link AnnotationSpecification} that looks for the {@link Message} annotation for the
          * {@link #nameAttribute()} and {@link #versionAttribute()}, and the {@link Namespace} annotation for the
-         * {@link #namespaceAttribute()}.
+         * {@link #namespaceAttribute()}. The namespace and name default to the package and simple name of the payload
+         * type, as derived by {@link QualifiedName#QualifiedName(Class)}.
          */
         public static final AnnotationSpecification DEFAULT = new AnnotationSpecification(
                 Message.class, "name", Message.class, "version", Namespace.class, "namespace"
         );
+
+        /**
+         * Creates a specification, asserting the given defaults are non-null.
+         */
+        public AnnotationSpecification {
+            Objects.requireNonNull(namespaceDefault, "The namespace default may not be null.");
+            Objects.requireNonNull(nameDefault, "The name default may not be null.");
+        }
+
+        /**
+         * An annotation specification unique to the {@link AnnotationMessageTypeResolver}, defaulting the namespace and
+         * name to the package and simple name of the payload type.
+         *
+         * @param nameAnnotation      the annotation class to search for the {@code nameAttribute}
+         * @param nameAttribute       the attribute for the {@link MessageType#name()}, that should be present on the
+         *                            {@code nameAnnotation}
+         * @param versionAnnotation   the annotation class to search for the {@code versionAttribute}
+         * @param versionAttribute    the attribute for the {@link MessageType#version()}, that should be present on the
+         *                            {@code versionAnnotation}
+         * @param namespaceAnnotation the annotation class to search for the {@code namespaceAttribute}
+         * @param namespaceAttribute  the attribute for the {@link QualifiedName#namespace()}, that should be present on
+         *                            the {@code namespaceAnnotation}
+         */
+        public AnnotationSpecification(Class<? extends Annotation> nameAnnotation,
+                                       String nameAttribute,
+                                       Class<? extends Annotation> versionAnnotation,
+                                       String versionAttribute,
+                                       Class<? extends Annotation> namespaceAnnotation,
+                                       @Nullable String namespaceAttribute) {
+            this(nameAnnotation, nameAttribute, type -> new QualifiedName(type).localName(),
+                 versionAnnotation, versionAttribute,
+                 namespaceAnnotation, namespaceAttribute, type -> new QualifiedName(type).namespace());
+        }
 
         /**
          * An annotation specification unique to the {@link AnnotationMessageTypeResolver}.

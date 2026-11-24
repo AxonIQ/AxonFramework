@@ -137,6 +137,9 @@ If you need to override the name used to register the event handler or if the ev
 include::example$events/eventhandlers/NameResolutionHandlers.java[tag=event-handler-explicit-name,indent=0]
 ----
 
+`@EventSourcingHandler` has the same `eventName` attribute.
+Use it when an entity evolves from an event published under a name that differs from its payload class, for example an event from another module that the entity reads through its own class.
+
 [[handler-resolution]]
 == Handler resolution - How a published event reaches an event handler
 

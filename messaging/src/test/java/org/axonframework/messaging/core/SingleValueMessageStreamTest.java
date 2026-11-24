@@ -19,6 +19,7 @@ package org.axonframework.messaging.core;
 import org.junit.jupiter.api.*;
 
 import java.util.List;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -193,14 +194,12 @@ class SingleValueMessageStreamTest extends MessageStreamTest<Message> {
             assertThat(ms.hasNextAvailable()).isTrue();
             assertThat(ms.peek()).isNotEmpty();
             assertThat(ms.next()).isNotEmpty();
+        }
 
-            /*
-             * Expect that the stream has not completed at this point. Streams
-             * should never complete before returning their last element, even
-             * if they know it was the last element.
-             */
-
-            assertThat(ms.isCompleted()).isFalse();
+        @Test
+        void ensureStreamCompletesOnceTheSingleValueWasHandedOut() {
+            // the source resolved and its value was handed out, so the stream is completed
+            assertThat(ms.isCompleted()).isTrue();
         }
 
         @Test
@@ -219,6 +218,35 @@ class SingleValueMessageStreamTest extends MessageStreamTest<Message> {
         void ensureStreamCompletesAfterPeekCall() {
             assertThat(ms.peek()).isEmpty();
             assertThat(ms.isCompleted()).isTrue();
+        }
+    }
+
+    @Nested
+    class WhenSourceCancelled {
+
+        @Test
+        void thenIsCompletedReportsTheCancellation() {
+            // given
+            SingleValueMessageStream<Message> testSubject = new SingleValueMessageStream<>(new CompletableFuture<>());
+
+            testSubject.asCompletableFuture().cancel(false);
+
+            // when / then
+            assertThat(testSubject.isCompleted()).isTrue();
+            assertThat(testSubject.error()).get().isInstanceOf(CancellationException.class);
+        }
+
+        @Test
+        void thenNextReportsTheCancellation() {
+            // given
+            SingleValueMessageStream<Message> testSubject = new SingleValueMessageStream<>(new CompletableFuture<>());
+
+            testSubject.asCompletableFuture().cancel(false);
+
+            // when / then
+            assertThat(testSubject.next()).isEmpty();
+            assertThat(testSubject.isCompleted()).isTrue();
+            assertThat(testSubject.error()).get().isInstanceOf(CancellationException.class);
         }
     }
 }

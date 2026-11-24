@@ -36,6 +36,7 @@ import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.SimpleEntry;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
+import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.core.unitofwork.UnitOfWorkTestUtils;
 import org.axonframework.common.FutureUtils;
 import org.axonframework.common.util.DelegateScheduledExecutorService;
@@ -48,9 +49,11 @@ import java.util.Collections;
 import java.util.List;
 import java.util.OptionalLong;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiPredicate;
 import java.util.function.Predicate;
@@ -93,7 +96,7 @@ class WorkPackageTest {
         batchProcessor = new TestBatchProcessor();
         segment = Segment.ROOT_SEGMENT;
         initialTrackingToken = new GlobalSequenceTrackingToken(0L);
-        tokenStore.initializeSegment(initialTrackingToken, PROCESSOR_NAME, segment, null);
+        tokenStore.initializeSegment(initialTrackingToken, PROCESSOR_NAME, segment, new StubProcessingContext());
 
         trackerStatus = new TrackerStatus(segment, initialTrackingToken);
         trackerStatusUpdates = new ArrayList<>();
@@ -518,7 +521,7 @@ class WorkPackageTest {
     }
 
     private TrackingToken fetchStoredToken() {
-        return FutureUtils.joinAndUnwrap(tokenStore.fetchToken(PROCESSOR_NAME, segment.getSegmentId(), null));
+        return FutureUtils.joinAndUnwrap(tokenStore.fetchToken(PROCESSOR_NAME, segment.getSegmentId(), new StubProcessingContext()));
     }
 
     @Test
@@ -855,6 +858,111 @@ class WorkPackageTest {
     }
 
     @Nested
+    class ProgressPositions {
+
+        @Test
+        void handledAndStoredTokensStartAtTheClaimedToken() {
+            // given
+            WorkPackage subject = testSubjectBuilder.initialToken(new GlobalSequenceTrackingToken(3L)).build();
+
+            // when / then
+            assertEquals(new GlobalSequenceTrackingToken(3L), subject.lastHandledToken());
+            assertEquals(new GlobalSequenceTrackingToken(3L), subject.lastStoredToken());
+        }
+
+        @Test
+        void lastHandledTokenIgnoresSkippedEvents() {
+            // given: the filter rejects the second event, as it does for an event of another segment
+            var handledEvent = new SimpleEntry<>(EventTestUtils.asEventMessage("handled"), globalTrackingTokenContext(1L));
+            var skippedEvent = new SimpleEntry<>(EventTestUtils.asEventMessage("skipped"), globalTrackingTokenContext(2L));
+            eventFilterPredicate = event -> !event.equals(skippedEvent.message());
+
+            // when
+            testSubject.scheduleEvent(handledEvent);
+            testSubject.scheduleEvent(skippedEvent);
+
+            // then
+            await().atMost(TIMEOUT).untilAsserted(
+                    () -> assertEquals(new GlobalSequenceTrackingToken(2L), testSubject.lastConsumedToken())
+            );
+            assertEquals(new GlobalSequenceTrackingToken(1L), testSubject.lastHandledToken());
+        }
+
+        @Test
+        void lastHandledTokenIgnoresASkippedEventInTheSameBatch() {
+            // given: the worker is held back, so the handled and the skipped event end up in one batch
+            List<Runnable> deferredWorkerTasks = new ArrayList<>();
+            doAnswer(inv -> {
+                deferredWorkerTasks.add(inv.getArgument(0));
+                return CompletableFuture.completedFuture(null);
+            }).when(executorService).submit(any(Runnable.class));
+            List<TrackingToken> batchEndTokens = new ArrayList<>();
+            WorkPackage subject = testSubjectBuilder
+                    .batchSize(2)
+                    .batchProcessor((entries, ctx) -> {
+                        batchEndTokens.add(ctx.getResource(TrackingToken.BATCH_END_RESOURCE_KEY));
+                        return MessageStream.empty();
+                    })
+                    .build();
+            var handledEvent = new SimpleEntry<>(EventTestUtils.asEventMessage("handled"), globalTrackingTokenContext(1L));
+            var skippedEvent = new SimpleEntry<>(EventTestUtils.asEventMessage("skipped"), globalTrackingTokenContext(2L));
+            eventFilterPredicate = event -> !event.equals(skippedEvent.message());
+
+            // when
+            subject.scheduleEvent(handledEvent);
+            subject.scheduleEvent(skippedEvent);
+            runDeferred(deferredWorkerTasks);
+
+            // then: one batch consumed both events, but only the first was handled
+            assertThat(batchEndTokens).containsExactly(new GlobalSequenceTrackingToken(2L));
+            assertEquals(new GlobalSequenceTrackingToken(2L), subject.lastConsumedToken());
+            assertEquals(new GlobalSequenceTrackingToken(1L), subject.lastHandledToken());
+        }
+
+        @Test
+        void lastHandledTokenStaysAtTheClaimedTokenWhenTheFirstEventIsSkipped() {
+            // given: the filter rejects the event, as it does for an event of another segment
+            WorkPackage subject = testSubjectBuilder.initialToken(new GlobalSequenceTrackingToken(3L)).build();
+            var skippedEvent = new SimpleEntry<>(EventTestUtils.asEventMessage("skipped"), globalTrackingTokenContext(4L));
+            eventFilterPredicate = event -> false;
+
+            // when
+            subject.scheduleEvent(skippedEvent);
+
+            // then
+            await().atMost(TIMEOUT).untilAsserted(
+                    () -> assertEquals(new GlobalSequenceTrackingToken(4L), subject.lastConsumedToken())
+            );
+            assertEquals(new GlobalSequenceTrackingToken(3L), subject.lastHandledToken());
+        }
+
+        @Test
+        void lastStoredTokenReturnsToTheClaimedTokenWhenTheCommitFails() {
+            // when: two stores in one transaction whose commit fails
+            CompletableFuture<Void> result = UnitOfWorkTestUtils.SIMPLE_FACTORY.create().executeWithResult(ctx -> {
+                ctx.onCommit(c -> CompletableFuture.failedFuture(new IllegalStateException("commit failed")));
+                return testSubject.persistProgress(new GlobalSequenceTrackingToken(5L), ctx)
+                                  .thenCompose(unused -> testSubject.persistProgress(
+                                          new GlobalSequenceTrackingToken(7L), ctx
+                                  ));
+            });
+
+            // then: nothing was committed, so the token from before the first store comes back
+            assertThat(result).failsWithin(TIMEOUT);
+            assertEquals(initialTrackingToken, testSubject.lastStoredToken());
+        }
+
+        @Test
+        void lastStoredTokenFollowsPersistedProgress() {
+            // when
+            persistProgressInUnitOfWork(new GlobalSequenceTrackingToken(5L));
+
+            // then
+            assertEquals(new GlobalSequenceTrackingToken(5L), testSubject.lastStoredToken());
+        }
+    }
+
+    @Nested
     class ScheduleWorkerLifecycleTest {
 
         @Test
@@ -925,6 +1033,46 @@ class WorkPackageTest {
         }
     }
 
+    @Nested
+    class ClaimExtensionWhileHandlingEvents {
+
+        @Test
+        void batchExtendsTheClaimWhenTheProgressStrategyDefersStoringTheToken() {
+            // given - a strategy that never stores a token itself, as one deferring progress to checkpoints does, and
+            //         an event handler that holds on to its batch until it is released
+            int extremelyShortClaimExtensionThreshold = 1;
+            CountDownLatch batchReleased = new CountDownLatch(1);
+            batchProcessorPredicate = (events, token) -> {
+                try {
+                    return batchReleased.await(5, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return false;
+                }
+            };
+            WorkPackage deferringTestSubject =
+                    testSubjectBuilder.claimExtensionThreshold(extremelyShortClaimExtensionThreshold)
+                                      .progressStrategyFactory(context -> new DeferringProgressStrategy())
+                                      .build();
+            long thresholdPassed = System.currentTimeMillis() + extremelyShortClaimExtensionThreshold;
+
+            // when - the batch is released once the threshold has passed while it was being handled
+            deferringTestSubject.scheduleEvent(
+                    new SimpleEntry<>(EventTestUtils.asEventMessage("some-event"), globalTrackingTokenContext(1L))
+            );
+            await().atMost(TIMEOUT).until(() -> System.currentTimeMillis() > thresholdPassed);
+            batchReleased.countDown();
+
+            // then - the batch extends the claim, as no stored token refreshes it
+            await().atMost(TIMEOUT).untilAsserted(
+                    () -> verify(tokenStore, atLeastOnce()).extendClaim(eq(PROCESSOR_NAME),
+                                                                        eq(segment.getSegmentId()),
+                                                                        any())
+            );
+            verify(tokenStore, never()).storeToken(any(), anyString(), anyInt(), any());
+        }
+    }
+
     private static Context globalTrackingTokenContext(long globalIndex) {
         return trackingTokenContext(new GlobalSequenceTrackingToken(globalIndex));
     }
@@ -970,5 +1118,22 @@ class WorkPackageTest {
 
     record ContextMessage(EventMessage message, Context context) {
 
+    }
+
+    /**
+     * A {@link SegmentProgressStrategy} that never stores a token on its own, standing in for one that defers progress
+     * to explicit checkpoints.
+     */
+    private static class DeferringProgressStrategy implements SegmentProgressStrategy {
+
+        @Override
+        public CompletableFuture<Void> onBatchCommit(ProcessingContext context) {
+            return FutureUtils.emptyCompletedFuture();
+        }
+
+        @Override
+        public boolean hasPendingWork() {
+            return false;
+        }
     }
 }

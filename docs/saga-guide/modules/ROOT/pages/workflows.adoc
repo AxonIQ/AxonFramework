@@ -16,13 +16,12 @@ they do not need. Use this page when the process genuinely is one flow.
 
 [NOTE]
 ====
-Workflows are part of Axoniq Framework rather than Axon Framework, and are available as a preview rather than a
-production release. Trying them out is free; running them in production needs an Axoniq licence.
+Workflows are part of Axoniq Framework since the 5.4 release. Trying them out is free; running them in production requires an Axoniq licence.
 ====
 
 Consult the
 link:https://docs.axoniq.io/axon-framework-reference/development/workflows/[Workflows documentation,role=external,window=_blank]
-for the API and current status.
+for details on the configuration and usage of workflows.
 
 == What changes
 

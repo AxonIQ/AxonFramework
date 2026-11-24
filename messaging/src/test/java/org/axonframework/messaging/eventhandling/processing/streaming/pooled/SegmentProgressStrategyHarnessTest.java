@@ -17,12 +17,14 @@
 package org.axonframework.messaging.eventhandling.processing.streaming.pooled;
 
 import org.axonframework.common.FutureUtils;
+import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.eventhandling.processing.streaming.progress.SegmentProgressStrategyFactory;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
@@ -61,9 +63,26 @@ class SegmentProgressStrategyHarnessTest extends SegmentProgressStrategyTestSupp
         assertThat(storedPosition()).isEqualTo(3L);
     }
 
+    @Test
+    void skippedEventsAreStoredOnTheIdleUpkeepWithoutBeingHandled() {
+        // given: a threshold short enough that a worker cycle without a batch runs the idle upkeep
+        WorkPackageHarness harness = harness(segment(), SegmentProgressStrategyFactory.tokenStoring(), 1);
+        harness.onSegmentClaimed();
+        AtomicLong position = new AtomicLong();
+
+        // when: every skipped event runs the worker, so keep skipping events until a cycle reaches the upkeep
+        await().atMost(TIMEOUT).untilAsserted(() -> {
+            harness.scheduleSkippedEvent(eventAt(position.incrementAndGet()));
+            assertThat(storedPosition()).isPositive();
+        });
+
+        // then
+        assertThat(harness.batchProcessor().processed()).isEmpty();
+    }
+
     private long storedPosition() {
         TrackingToken token = FutureUtils.joinAndUnwrap(
-                tokenStore().fetchToken(PROCESSOR_NAME, Segment.ROOT_SEGMENT.getSegmentId(), null)
+                tokenStore().fetchToken(PROCESSOR_NAME, Segment.ROOT_SEGMENT.getSegmentId(), new StubProcessingContext())
         );
         return token == null ? -1L : token.position().orElse(-1L);
     }

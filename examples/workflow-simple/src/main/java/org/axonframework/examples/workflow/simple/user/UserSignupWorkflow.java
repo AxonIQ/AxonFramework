@@ -1,0 +1,75 @@
+/*
+ * Copyright (c) 2010-2026. AxonIQ B.V.
+ *
+ * Licensed under the AXONIQ TERMS OF SERVICE,
+ * Version 29 April 2026 (the "License");
+ *
+ * The software is available for evaluation use without registration.
+ * Continued use beyond the evaluation period requires registration
+ * and a commercial license. See the License for the specific language
+ * governing permissions and limitations under the License.
+ * You may not use this file except in compliance with the License.
+ *
+ * You may obtain a copy of the License at:
+ *  https://www.axoniq.io/legal/terms-of-service
+ *
+ * For licensing information and to register, visit:
+ *  https://www.axoniq.io/pricing
+ */
+package org.axonframework.examples.workflow.simple.user;
+
+import io.axoniq.framework.workflow.dsl.simple.SimpleWorkflowContext;
+import io.axoniq.framework.workflow.annotation.Workflow;
+import io.axoniq.framework.workflow.annotation.WorkflowCompletedHandler;
+import io.axoniq.framework.workflow.dsl.api.WorkflowStatus;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.time.Duration;
+
+import static io.axoniq.framework.workflow.runtime.association.Associations.associate;
+import static io.axoniq.framework.workflow.dsl.api.Payload.payload;
+import static io.axoniq.framework.workflow.dsl.api.EventAssociationsUtils.equalsTo;
+import static io.axoniq.framework.workflow.runtime.association.PayloadPropertyValueRetriever.payloadProperty;
+
+/**
+ * Sample user registration.
+ */
+public class UserSignupWorkflow {
+
+    private static final Logger logger = LoggerFactory.getLogger(UserSignupWorkflow.class);
+
+    @Workflow(
+            idProperty = "id",
+            startOnEventClass = RegistrationReceivedEvent.class,
+            startOnConditions = {"payload:status=vip"},
+            workflowName = "MyWorkflow",
+            workflowVersion = "1.0.0",
+            workflowNamespace = "io.axoniq.dsl.wf.workflow"
+    )
+    public void execute(SimpleWorkflowContext ctx) {
+        logger.info("User signup workflow started for {}", ctx.workflowPayload());
+        var registration = payload(ctx.workflowPayload());
+        String userId = registration.get("id");
+        String email = registration.get("email");
+
+        if (!ctx.awaitExecute("createUser", Boolean.class, UserService::createUser)) {
+            return;
+        }
+        ctx.awaitExecute("activateUser",
+                         payload("id", userId).getValues(),
+                         UserService::activateUser,
+                         step -> step.timeout(Duration.ofSeconds(10)));
+        ctx.awaitExecute("sendWelcomeEmail", Boolean.class, () -> NotificationService.sendEmail(email));
+
+        ctx.awaitEvent("waitForEmailConfirmation",
+                       EmailConfirmedEvent.class,
+                       associate(payloadProperty("userId"), equalsTo(userId)),
+                       step -> step.timeout(Duration.ofSeconds(5)));
+    }
+
+    @WorkflowCompletedHandler
+    public void onFinish(WorkflowStatus workflowStatus, SimpleWorkflowContext ctx) {
+        logger.info("User signup workflow {} for {}", workflowStatus, ctx.workflowPayload());
+    }
+}

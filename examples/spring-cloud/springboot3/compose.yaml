@@ -1,0 +1,26 @@
+services:
+  discovery:
+    build: .
+    environment:
+      SPRING_PROFILES_ACTIVE: discovery-server
+    ports:
+      - "8761:8761"
+
+  courses:
+    build: .
+    depends_on:
+      - discovery
+    environment:
+      SPRING_PROFILES_ACTIVE: courses
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery:8761/eureka/
+
+  portal:
+    build: .
+    depends_on:
+      - discovery
+      - courses
+    environment:
+      SPRING_PROFILES_ACTIVE: portal
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery:8761/eureka/
+    ports:
+      - "8080:8080"

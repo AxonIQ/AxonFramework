@@ -17,9 +17,13 @@
 package org.axonframework.modelling.entity;
 
 import org.axonframework.messaging.commandhandling.CommandMessage;
+import org.axonframework.messaging.core.MessageHandlerInterceptor;
+import org.axonframework.messaging.core.MessageHandlerInterceptorChain;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.jspecify.annotations.Nullable;
+
+import java.util.Objects;
 
 /**
  * Interceptor for {@link CommandMessage CommandMessages} dispatched to an entity through its {@link EntityMetamodel}.
@@ -40,6 +44,9 @@ import org.jspecify.annotations.Nullable;
  * {@link org.axonframework.messaging.commandhandling.interception.annotation.CommandHandlerInterceptor
  * CommandHandlerInterceptor} annotation is the annotation-based counterpart of this interface. Methods annotated as
  * such on an entity class are detected and registered through the declarative configuration API.
+ * <p>
+ * An existing {@link MessageHandlerInterceptor} for commands, one that does not need the entity, can be registered on
+ * an entity as well by adapting it through {@link #of(MessageHandlerInterceptor)}.
  *
  * @param <E> The type of the entity modeled by this interface.
  * @author Steven van Beelen
@@ -70,4 +77,40 @@ public interface EntityCommandHandlerInterceptor<E> {
                                        @Nullable E entity,
                                        ProcessingContext context,
                                        EntityCommandHandlerInterceptorChain<E> chain);
+
+    /**
+     * Adapts the given generic command {@code interceptor} into an {@code EntityCommandHandlerInterceptor}, so it can
+     * be registered on an entity through
+     * {@link EntityMetamodelBuilder#commandHandlerInterceptor(EntityCommandHandlerInterceptor)}.
+     * <p>
+     * The adapted {@code interceptor} is invoked with the command and the {@link ProcessingContext}, and never sees the
+     * entity. When it proceeds, the command it proceeds with continues through the entity's chain together with the
+     * entity the original command targeted. When it does not proceed, its result short-circuits the entity's handling,
+     * exactly as for any other {@code EntityCommandHandlerInterceptor}.
+     * <p>
+     * This allows reusing the same interceptor instance for a command-handling component and for an entity:
+     * <pre>{@code
+     * MessageHandlerInterceptor<CommandMessage> auditing = new AuditingInterceptor();
+     *
+     * ConcreteEntityMetamodel.forEntityClass(GiftCard.class)
+     *                        .instanceCommandHandler(redeemCardName, redeemCardHandler)
+     *                        .commandHandlerInterceptor(EntityCommandHandlerInterceptor.of(auditing))
+     *                        .build();
+     * }</pre>
+     *
+     * @param interceptor the generic command interceptor to adapt
+     * @param <E>         the type of the entity the adapted interceptor is registered on
+     * @return an {@code EntityCommandHandlerInterceptor} delegating to the given {@code interceptor}
+     * @since 5.5.0
+     */
+    static <E> EntityCommandHandlerInterceptor<E> of(MessageHandlerInterceptor<? super CommandMessage> interceptor) {
+        Objects.requireNonNull(interceptor, "The interceptor may not be null.");
+        return (command, entity, context, chain) -> {
+            MessageHandlerInterceptorChain<CommandMessage> entityChain =
+                    (nextCommand, nextContext) -> chain.proceed(nextCommand, entity, nextContext);
+            // The interceptor may be declared for a supertype of CommandMessage, so its chain type cannot be named.
+            //noinspection unchecked,rawtypes
+            return interceptor.interceptOnHandle(command, context, (MessageHandlerInterceptorChain) entityChain);
+        };
+    }
 }

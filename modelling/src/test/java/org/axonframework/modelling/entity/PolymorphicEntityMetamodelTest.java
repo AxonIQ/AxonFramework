@@ -312,9 +312,114 @@ class PolymorphicEntityMetamodelTest {
     }
 
     @Test
-    void commandHandlerInterceptorRegisteredOnPolymorphicBuilderDoesNotInterceptConcreteTypeOnlyCommand() {
+    void commandHandlerInterceptorRegisteredOnPolymorphicBuilderInterceptsConcreteTypeOnlyInstanceCommand() {
+        // given
         List<String> invocations = new ArrayList<>();
+        polymorphicMetamodel = polymorphicBuilderWithInterceptor(invocations).build();
+        CommandMessage commandMessage = new GenericCommandMessage(new MessageType(CONCRETE_ONE_INSTANCE_COMMAND),
+                                                                  "concrete-one-instance");
+        ProcessingContext context = StubProcessingContext.forMessage(commandMessage);
+
+        // when
+        MessageStream<CommandResultMessage> result = polymorphicMetamodel.handleInstance(
+                commandMessage, new ConcreteTestEntityOne(), context
+        );
+
+        // then
+        Object resultPayload = result.first()
+                                     .asCompletableFuture().orTimeout(50, TimeUnit.MILLISECONDS).join()
+                                     .message().payload();
+        assertThat(resultPayload).isEqualTo("concrete-one");
+        assertThat(invocations).containsExactly("intercepted");
+    }
+
+    @Test
+    void commandHandlerInterceptorRegisteredOnPolymorphicBuilderInterceptsConcreteTypeCreationalCommand() {
+        // given
+        List<String> invocations = new ArrayList<>();
+        polymorphicMetamodel = polymorphicBuilderWithInterceptor(invocations).build();
+        CommandMessage commandMessage = new GenericCommandMessage(new MessageType(CONCRETE_ONE_CREATIONAL_COMMAND),
+                                                                  "concrete-one-creational");
+        ProcessingContext context = StubProcessingContext.forMessage(commandMessage);
+
+        // when
+        MessageStream<CommandResultMessage> result = polymorphicMetamodel.handleCreate(commandMessage, context);
+
+        // then
+        Object resultPayload = result.first()
+                                     .asCompletableFuture().orTimeout(50, TimeUnit.MILLISECONDS).join()
+                                     .message().payload();
+        assertThat(resultPayload).isEqualTo("concrete-one-create");
+        assertThat(invocations).containsExactly("intercepted");
+    }
+
+    @Test
+    void commandHandlerInterceptorRegisteredOnPolymorphicBuilderRunsBeforeConcreteTypeOwnInterceptor() {
+        // given
+        List<String> invocations = new ArrayList<>();
+        EntityMetamodel<ConcreteTestEntityOne> concreteMetamodel = ConcreteEntityMetamodel
+                .forEntityClass(ConcreteTestEntityOne.class)
+                .instanceCommandHandler(CONCRETE_ONE_INSTANCE_COMMAND, (command, entity, ctx) -> {
+                    invocations.add("handled");
+                    return MessageStream.just(new GenericCommandResultMessage(new MessageType("Result"), "result"));
+                })
+                .commandHandlerInterceptor((command, entity, ctx, chain) -> {
+                    invocations.add("concrete-interceptor");
+                    return chain.proceed(command, entity, ctx);
+                })
+                .build();
         polymorphicMetamodel = PolymorphicEntityMetamodel
+                .forSuperType(AbstractTestEntity.class)
+                .addConcreteType(concreteMetamodel)
+                .commandHandlerInterceptor((command, entity, ctx, chain) -> {
+                    invocations.add("polymorphic-interceptor");
+                    return chain.proceed(command, entity, ctx);
+                })
+                .build();
+        CommandMessage commandMessage = new GenericCommandMessage(new MessageType(CONCRETE_ONE_INSTANCE_COMMAND),
+                                                                  "concrete-one-instance");
+        ProcessingContext context = StubProcessingContext.forMessage(commandMessage);
+
+        // when
+        polymorphicMetamodel.handleInstance(commandMessage, new ConcreteTestEntityOne(), context)
+                            .first()
+                            .asCompletableFuture().orTimeout(50, TimeUnit.MILLISECONDS).join();
+
+        // then
+        assertThat(invocations).containsExactly("polymorphic-interceptor", "concrete-interceptor", "handled");
+    }
+
+    @Test
+    void commandHandlerInterceptorRegisteredOnPolymorphicBuilderCanShortCircuitConcreteTypeCommand() {
+        // given
+        polymorphicMetamodel = PolymorphicEntityMetamodel
+                .forSuperType(AbstractTestEntity.class)
+                .addConcreteType(concreteTestEntityOneEntityMetamodel)
+                .commandHandlerInterceptor((command, entity, ctx, chain) -> MessageStream.just(
+                        new GenericCommandResultMessage(new MessageType("Rejected"), "rejected")
+                ))
+                .build();
+        CommandMessage commandMessage = new GenericCommandMessage(new MessageType(CONCRETE_ONE_INSTANCE_COMMAND),
+                                                                  "concrete-one-instance");
+        ProcessingContext context = StubProcessingContext.forMessage(commandMessage);
+
+        // when
+        MessageStream<CommandResultMessage> result = polymorphicMetamodel.handleInstance(
+                commandMessage, new ConcreteTestEntityOne(), context
+        );
+
+        // then
+        Object resultPayload = result.first()
+                                     .asCompletableFuture().orTimeout(50, TimeUnit.MILLISECONDS).join()
+                                     .message().payload();
+        assertThat(resultPayload).isEqualTo("rejected");
+        verify(concreteTestEntityOneEntityMetamodel, times(0)).handleInstance(any(), any(), any());
+    }
+
+    private PolymorphicEntityMetamodelBuilder<AbstractTestEntity> polymorphicBuilderWithInterceptor(
+            List<String> invocations
+    ) {
+        return PolymorphicEntityMetamodel
                 .forSuperType(AbstractTestEntity.class)
                 .addConcreteType(concreteTestEntityOneEntityMetamodel)
                 .addConcreteType(concreteTestEntityTwoEntityMetamodel)
@@ -322,18 +427,7 @@ class PolymorphicEntityMetamodelTest {
                 .commandHandlerInterceptor((command, entity, ctx, chain) -> {
                     invocations.add("intercepted");
                     return chain.proceed(command, entity, ctx);
-                })
-                .build();
-
-        CommandMessage commandMessage = new GenericCommandMessage(new MessageType(CONCRETE_ONE_INSTANCE_COMMAND),
-                                                                  "concrete-one-instance");
-        ProcessingContext context = StubProcessingContext.forMessage(commandMessage);
-        ConcreteTestEntityOne entity = new ConcreteTestEntityOne();
-
-        polymorphicMetamodel.handleInstance(commandMessage, entity, context);
-
-        // Dispatched straight to the (mocked) concrete-type metamodel; the super type's own interceptor never runs.
-        assertThat(invocations).isEmpty();
+                });
     }
 
     @Test

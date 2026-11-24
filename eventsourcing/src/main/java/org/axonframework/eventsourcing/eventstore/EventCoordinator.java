@@ -29,7 +29,6 @@ import java.util.List;
  * @author John Hendrikx
  * @since 5.0.0
  */
-@Internal
 public interface EventCoordinator {
 
     /**

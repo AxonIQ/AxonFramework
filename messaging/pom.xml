@@ -107,22 +107,6 @@
             <artifactId>hibernate-core</artifactId>
             <optional>true</optional>
         </dependency>
-        <!-- Scheduling  -->
-        <dependency>
-            <groupId>org.quartz-scheduler</groupId>
-            <artifactId>quartz</artifactId>
-            <optional>true</optional>
-        </dependency>
-        <dependency>
-            <groupId>org.jobrunr</groupId>
-            <artifactId>jobrunr</artifactId>
-            <optional>true</optional>
-        </dependency>
-        <dependency>
-            <groupId>com.github.kagkarlsson</groupId>
-            <artifactId>db-scheduler</artifactId>
-            <optional>true</optional>
-        </dependency>
         <!-- Other -->
         <dependency>
             <groupId>com.google.code.findbugs</groupId>
@@ -184,11 +168,6 @@
         <dependency>
             <groupId>org.hsqldb</groupId>
             <artifactId>hsqldb</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.google.code.gson</groupId>
-            <artifactId>gson</artifactId>
             <scope>test</scope>
         </dependency>
 

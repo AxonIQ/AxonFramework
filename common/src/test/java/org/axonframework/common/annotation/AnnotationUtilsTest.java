@@ -21,6 +21,8 @@ import org.junit.jupiter.api.*;
 import java.lang.annotation.Annotation;
 import java.lang.annotation.Documented;
 import java.lang.annotation.ElementType;
+import java.lang.annotation.Inherited;
+import java.lang.annotation.Repeatable;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
@@ -29,6 +31,7 @@ import java.lang.reflect.Parameter;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -404,6 +407,363 @@ class AnnotationUtilsTest {
 
         private static class UnannotatedClass {
 
+        }
+    }
+
+    @Nested
+    class FindAllAnnotationAttributesTest {
+
+        @Test
+        void returnsEmptyListWhenAnnotationIsNotPresent() throws NoSuchMethodException {
+            List<Map<String, Object>> result =
+                    findAllAnnotationAttributes(methodNamed("notAnnotated"), Tagged.class);
+
+            assertThat(result).isEmpty();
+        }
+
+        @Test
+        void findsDirectAnnotation() throws NoSuchMethodException {
+            List<Map<String, Object>> result =
+                    findAllAnnotationAttributes(methodNamed("directlyAnnotated"), Tagged.class);
+
+            assertThat(result).containsExactly(Map.of("key", "direct"));
+        }
+
+        @Test
+        void findsRepeatedAnnotationsAsSeparateOccurrences() throws NoSuchMethodException {
+            List<Map<String, Object>> result =
+                    findAllAnnotationAttributes(methodNamed("repeatedlyAnnotated"), Tagged.class);
+
+            assertThat(result).containsExactlyInAnyOrder(Map.of("key", "first"), Map.of("key", "second"));
+        }
+
+        @Test
+        void findsAnnotationsInExplicitContainerAnnotation() throws NoSuchMethodException {
+            List<Map<String, Object>> result =
+                    findAllAnnotationAttributes(methodNamed("containerAnnotated"), Tagged.class);
+
+            assertThat(result).containsExactlyInAnyOrder(Map.of("key", "first"), Map.of("key", "second"));
+        }
+
+        @Test
+        void findsDirectAndMetaAnnotatedOccurrences() throws NoSuchMethodException {
+            List<Map<String, Object>> result =
+                    findAllAnnotationAttributes(methodNamed("mixedAnnotated"), Tagged.class);
+
+            assertThat(result).containsExactlyInAnyOrder(Map.of("key", "direct"), Map.of("key", "meta"));
+        }
+
+        @Test
+        void findsRepeatedAnnotationsOnMetaAnnotation() throws NoSuchMethodException {
+            List<Map<String, Object>> result =
+                    findAllAnnotationAttributes(methodNamed("repeatedMetaAnnotated"), Tagged.class);
+
+            assertThat(result).containsExactlyInAnyOrder(Map.of("key", "metaFirst"), Map.of("key", "metaSecond"));
+        }
+
+        @Test
+        void findsMetaAnnotationsOnAnyLevel() throws NoSuchMethodException {
+            List<Map<String, Object>> result =
+                    findAllAnnotationAttributes(methodNamed("nestedMetaAnnotated"), Tagged.class);
+
+            assertThat(result).containsExactly(Map.of("key", "meta"));
+        }
+
+        @Test
+        void findsOccurrenceForEveryMetaAnnotationPath() throws NoSuchMethodException {
+            List<Map<String, Object>> result =
+                    findAllAnnotationAttributes(methodNamed("multiplePathsAnnotated"), Tagged.class);
+
+            assertThat(result).containsExactly(Map.of("key", "meta"), Map.of("key", "meta"));
+        }
+
+        @Test
+        void overridesAttributesWithIdenticallyNamedAttributesOfMetaAnnotatedAnnotations()
+                throws NoSuchMethodException {
+            List<Map<String, Object>> defaultResult =
+                    findAllAnnotationAttributes(methodNamed("overridingDefault"), Tagged.class);
+            List<Map<String, Object>> explicitResult =
+                    findAllAnnotationAttributes(methodNamed("overridingExplicit"), Tagged.class);
+
+            assertThat(defaultResult).containsExactly(Map.of("key", "overridden"));
+            assertThat(explicitResult).containsExactly(Map.of("key", "explicit"));
+        }
+
+        @Test
+        void excludesAttributesNotDeclaredByTheAnnotationType() throws NoSuchMethodException {
+            List<Map<String, Object>> singleResult =
+                    findAllAnnotationAttributes(methodNamed("overridingExplicit"), Tagged.class);
+            List<Map<String, Object>> repeatedResult =
+                    findAllAnnotationAttributes(methodNamed("repeatedKeyedAnnotated"), Tagged.class);
+
+            assertThat(singleResult).hasSize(1)
+                                    .allSatisfy(attributes -> assertThat(attributes).containsOnlyKeys("key"));
+            assertThat(repeatedResult).hasSize(2)
+                                      .allSatisfy(attributes -> assertThat(attributes).containsOnlyKeys("key"));
+        }
+
+        @Test
+        void findsOccurrenceForEveryRepeatedMetaAnnotatedAnnotation() throws NoSuchMethodException {
+            List<Map<String, Object>> singleResult =
+                    findAllAnnotationAttributes(methodNamed("singleKeyedAnnotated"), Tagged.class);
+            List<Map<String, Object>> repeatedResult =
+                    findAllAnnotationAttributes(methodNamed("repeatedKeyedAnnotated"), Tagged.class);
+
+            assertThat(singleResult).containsExactly(Map.of("key", "x"));
+            assertThat(repeatedResult).containsExactly(Map.of("key", "x"), Map.of("key", "y"));
+        }
+
+        @Test
+        void terminatesOnCyclicMetaAnnotations() throws NoSuchMethodException {
+            List<Map<String, Object>> taggedFirstResult =
+                    findAllAnnotationAttributes(methodNamed("cycleTaggedAnnotated"), Tagged.class);
+            List<Map<String, Object>> untaggedFirstResult =
+                    findAllAnnotationAttributes(methodNamed("cycleUntaggedAnnotated"), Tagged.class);
+
+            assertThat(taggedFirstResult).containsExactly(Map.of("key", "cycle"));
+            assertThat(untaggedFirstResult).containsExactly(Map.of("key", "cycle"));
+        }
+
+        @Test
+        void doesNotTreatLookAlikeContainerAnnotationAsContainer() throws NoSuchMethodException {
+            List<Map<String, Object>> lookAlikeResult =
+                    findAllAnnotationAttributes(methodNamed("lookAlikeContainerAnnotated"), Tagged.class);
+            List<Map<String, Object>> containerResult =
+                    findAllAnnotationAttributes(methodNamed("keyedContainerAnnotated"), Tagged.class);
+
+            assertThat(lookAlikeResult).isEmpty();
+            assertThat(containerResult).containsExactly(Map.of("key", "a"), Map.of("key", "b"));
+        }
+
+        @Test
+        void findsEachOccurrenceOnceWhenDirectAnnotationAndContainerAnnotationCoexist()
+                throws NoSuchMethodException {
+            List<Map<String, Object>> directResult =
+                    findAllAnnotationAttributes(methodNamed("directAndContainerAnnotated"), Tagged.class);
+            List<Map<String, Object>> metaResult =
+                    findAllAnnotationAttributes(methodNamed("keyedDirectAndContainerAnnotated"), Tagged.class);
+
+            assertThat(directResult).containsExactlyInAnyOrder(Map.of("key", "a"), Map.of("key", "b"));
+            assertThat(metaResult).containsExactlyInAnyOrder(Map.of("key", "a"), Map.of("key", "b"));
+        }
+
+        @Test
+        void findsOccurrencesInContainerAnnotationInheritedFromSuperclass() {
+            List<Map<String, Object>> parentResult =
+                    findAllAnnotationAttributes(InheritingParent.class, Tagged.class);
+            List<Map<String, Object>> childResult =
+                    findAllAnnotationAttributes(InheritingChild.class, Tagged.class);
+
+            assertThat(parentResult).containsExactly(Map.of("key", "a"), Map.of("key", "b"));
+            assertThat(childResult).containsExactly(Map.of("key", "a"), Map.of("key", "b"));
+        }
+
+        @Test
+        void directlyPresentOccurrenceHidesOccurrencesInheritedFromSuperclass() {
+            List<Map<String, Object>> result =
+                    findAllAnnotationAttributes(OverridingChild.class, Tagged.class);
+
+            assertThat(result).containsExactly(Map.of("key", "c"));
+        }
+
+        private Method methodNamed(String name) throws NoSuchMethodException {
+            return FindAllAnnotationAttributesTest.class.getDeclaredMethod(name);
+        }
+
+        void notAnnotated() {
+        }
+
+        @Tagged(key = "direct")
+        void directlyAnnotated() {
+        }
+
+        @Tagged(key = "first")
+        @Tagged(key = "second")
+        void repeatedlyAnnotated() {
+        }
+
+        @TaggedContainer({@Tagged(key = "first"), @Tagged(key = "second")})
+        void containerAnnotated() {
+        }
+
+        @Tagged(key = "direct")
+        @MetaTagged
+        void mixedAnnotated() {
+        }
+
+        @RepeatedMetaTagged
+        void repeatedMetaAnnotated() {
+        }
+
+        @NestedMetaTagged
+        void nestedMetaAnnotated() {
+        }
+
+        @MetaTagged
+        @NestedMetaTagged
+        void multiplePathsAnnotated() {
+        }
+
+        @OverridingTagged
+        void overridingDefault() {
+        }
+
+        @OverridingTagged(key = "explicit")
+        void overridingExplicit() {
+        }
+
+        @KeyedTagged(key = "x")
+        void singleKeyedAnnotated() {
+        }
+
+        @KeyedTagged(key = "x")
+        @KeyedTagged(key = "y", extra = "customExtra")
+        void repeatedKeyedAnnotated() {
+        }
+
+        @CycleTagged
+        void cycleTaggedAnnotated() {
+        }
+
+        @CycleUntagged
+        void cycleUntaggedAnnotated() {
+        }
+
+        @KeyedTaggedGroup({@KeyedTagged(key = "a"), @KeyedTagged(key = "b")})
+        void lookAlikeContainerAnnotated() {
+        }
+
+        @KeyedTaggedContainer({@KeyedTagged(key = "a"), @KeyedTagged(key = "b")})
+        void keyedContainerAnnotated() {
+        }
+
+        @Tagged(key = "a")
+        @TaggedContainer({@Tagged(key = "b")})
+        void directAndContainerAnnotated() {
+        }
+
+        @KeyedTagged(key = "a")
+        @KeyedTaggedContainer({@KeyedTagged(key = "b")})
+        void keyedDirectAndContainerAnnotated() {
+        }
+
+        @InheritedKeyedTaggedContainer({@InheritedKeyedTagged(key = "a"), @InheritedKeyedTagged(key = "b")})
+        static class InheritingParent {
+
+        }
+
+        static class InheritingChild extends InheritingParent {
+
+        }
+
+        @InheritedKeyedTagged(key = "c")
+        static class OverridingChild extends InheritingParent {
+
+        }
+
+        @Retention(RetentionPolicy.RUNTIME)
+        @Target(ElementType.METHOD)
+        @interface KeyedTaggedGroup {
+
+            KeyedTagged[] value();
+        }
+
+        @Retention(RetentionPolicy.RUNTIME)
+        @Target(ElementType.TYPE)
+        @Inherited
+        @Repeatable(InheritedKeyedTaggedContainer.class)
+        @Tagged(key = "default")
+        @interface InheritedKeyedTagged {
+
+            String key();
+        }
+
+        @Retention(RetentionPolicy.RUNTIME)
+        @Target(ElementType.TYPE)
+        @Inherited
+        @interface InheritedKeyedTaggedContainer {
+
+            InheritedKeyedTagged[] value();
+        }
+
+        @Retention(RetentionPolicy.RUNTIME)
+        @Target(ElementType.METHOD)
+        @Repeatable(KeyedTaggedContainer.class)
+        @Tagged(key = "default")
+        @interface KeyedTagged {
+
+            String key();
+
+            String extra() default "defaultExtra";
+        }
+
+        @Retention(RetentionPolicy.RUNTIME)
+        @Target(ElementType.METHOD)
+        @interface KeyedTaggedContainer {
+
+            KeyedTagged[] value();
+        }
+
+        @Retention(RetentionPolicy.RUNTIME)
+        @Target({ElementType.METHOD, ElementType.ANNOTATION_TYPE})
+        @Tagged(key = "cycle")
+        @CycleUntagged
+        @interface CycleTagged {
+
+        }
+
+        @Retention(RetentionPolicy.RUNTIME)
+        @Target({ElementType.METHOD, ElementType.ANNOTATION_TYPE})
+        @CycleTagged
+        @interface CycleUntagged {
+
+        }
+
+        @Retention(RetentionPolicy.RUNTIME)
+        @Target({ElementType.METHOD, ElementType.ANNOTATION_TYPE})
+        @Repeatable(TaggedContainer.class)
+        @interface Tagged {
+
+            String key() default "";
+        }
+
+        @Retention(RetentionPolicy.RUNTIME)
+        @Target({ElementType.METHOD, ElementType.ANNOTATION_TYPE})
+        @interface TaggedContainer {
+
+            Tagged[] value();
+        }
+
+        @Retention(RetentionPolicy.RUNTIME)
+        @Target({ElementType.METHOD, ElementType.ANNOTATION_TYPE})
+        @Tagged(key = "meta")
+        @interface MetaTagged {
+
+        }
+
+        @Retention(RetentionPolicy.RUNTIME)
+        @Target(ElementType.METHOD)
+        @Tagged(key = "metaFirst")
+        @Tagged(key = "metaSecond")
+        @interface RepeatedMetaTagged {
+
+        }
+
+        @Retention(RetentionPolicy.RUNTIME)
+        @Target(ElementType.METHOD)
+        @MetaTagged
+        @interface NestedMetaTagged {
+
+        }
+
+        @Retention(RetentionPolicy.RUNTIME)
+        @Target(ElementType.METHOD)
+        @Tagged(key = "default")
+        @interface OverridingTagged {
+
+            String key() default "overridden";
+
+            String extra() default "extraValue";
         }
     }
 

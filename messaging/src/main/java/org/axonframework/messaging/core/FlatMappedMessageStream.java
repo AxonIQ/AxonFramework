@@ -96,6 +96,20 @@ class FlatMappedMessageStream<M extends Message, N extends Message> extends Abst
     }
 
     @Override
+    protected FetchResult.NoValue<Entry<N>> terminalState() {
+        if (inner != null) {
+            FetchResult.NoValue<Entry<N>> innerState = terminalStateOf(inner);
+
+            // An exhausted inner stream leaves the outcome to the outer stream; otherwise, the inner stream decides.
+            if (!(innerState instanceof FetchResult.Completed)) {
+                return innerState;
+            }
+        }
+
+        return terminalStateOf(outer);
+    }
+
+    @Override
     protected void onCompleted() {
         if (inner != null) {
             inner.close();

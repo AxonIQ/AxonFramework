@@ -225,6 +225,7 @@ The framework has built-in support for this: when a `@CommandHandler` annotated 
 
 When command handlers don't return a value, the result will be `null`.
 
+[#command_routing]
 == Command routing
 
 Commands are routed to their handlers based on a *routing key*.

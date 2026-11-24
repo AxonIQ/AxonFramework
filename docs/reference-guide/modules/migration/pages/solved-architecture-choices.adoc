@@ -42,7 +42,7 @@ This forces teams to coordinate changes, creates merge conflicts, and prevents t
 **Axon Framework 5 Solution:** Dynamic Consistency Boundaries allow each vertical slice to maintain its own entity models based on the same underlying events.
 Teams can work completely independently without coordination overhead.
 
-**For more info:** link:https://github.com/AxonIQ/university-demo[University Demo README]
+**For more info:** link:https://github.com/AxonIQ/AxonFramework/tree/main/examples/university-demo[University Demo README]
 
 == 5. Spring Boot was the only real configuration option
 
@@ -111,7 +111,7 @@ This environment mismatch means configuration issues, connectivity problems, and
 **Axon Framework 5 Solution:** The `AxonTestFixture` has been enhanced to work seamlessly with both in-memory Event Store and Axon Server.
 The same test code can run against either environment, and adding the `axon-server-connector` dependency automatically enables Axon Server in tests.
 
-**For more info:** link:https://github.com/AxonIQ/university-demo[University Demo]
+**For more info:** link:https://github.com/AxonIQ/AxonFramework/tree/main/examples/university-demo[University Demo]
 
 == 12. Tightly coupled models through annotations necessity
 

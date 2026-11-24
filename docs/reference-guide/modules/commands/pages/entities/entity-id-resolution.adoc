@@ -1,0 +1,221 @@
+= Entity Identifier Resolution
+:navtitle: Entity identifier resolution
+:reftext: Entity identifier resolution
+
+Before invoking a command handler on an entity, Axon resolves the identifier of the entity instance the command targets.
+An `EntityIdResolver` performs this step: given a message, it returns the entity identifier.
+
+[NOTE]
+====
+Entity identifier resolution is separate from command routing.
+The routing key (see xref:commands:command-dispatchers.adoc#command_routing[Command routing]) selects the application instance that receives a command.
+The `EntityIdResolver` selects the entity instance that application instance loads.
+====
+
+[#entity_id_resolver]
+== The `EntityIdResolver`
+
+`EntityIdResolver<ID>` is a functional interface with a single method:
+
+[source,java]
+----
+ID resolve(Message message, ProcessingContext context) throws EntityIdResolutionException;
+----
+
+The returned identifier is used to load the entity from the `StateManager`.
+The identifier can be of any type, as long as it matches the identifier type of the entity.
+When no identifier can be resolved, the resolver throws an `EntityIdResolutionException`.
+The command then fails without invoking a handler.
+
+Axon uses an `EntityIdResolver` for:
+
+* the command handlers of event-sourced and state-based entities.
+* `@InjectEntity` parameters on xref:commands:entities/stateful-command-handler.adoc[stateful command handlers].
+
+[#built_in_resolvers]
+== Built-in resolvers
+
+[cols="<,<"]
+|===
+|Resolver |Resolves the identifier from
+
+|`AnnotationBasedEntityIdResolver`
+|The payload member (field or method) annotated with `@TargetEntityId`.
+This is the default.
+
+|`PropertyBasedEntityIdResolver`
+|A named payload property.
+Used for the `idProperty` attribute of `@InjectEntity`.
+
+|`MetadataEntityIdResolver`
+|An entry in the message metadata.
+
+|`FallbackEntityIdResolver`
+|A primary resolver, with a secondary resolver as fallback.
+|===
+
+=== Annotation-based resolution
+
+The `AnnotationBasedEntityIdResolver` reads the payload members annotated with `@TargetEntityId`, as described in xref:commands:entities/event-sourced-entity.adoc#_entity_identification[Entity identification].
+Several members may carry the annotation, as long as they result in exactly one distinct, non-null value.
+Otherwise, it throws an `EntityIdResolutionException`.
+
+=== Property-based resolution
+
+The `PropertyBasedEntityIdResolver` reads the payload field named by its `property` argument, or the matching method (`get<Property>` or `<Property>`).
+It throws an `EntityIdResolutionException` when the value is `null`.
+Setting `@InjectEntity(idProperty = "courseId")` constructs this resolver.
+
+[#metadata_resolution]
+=== Metadata-based resolution
+
+The `MetadataEntityIdResolver` reads the identifier from the message metadata.
+Use it when the payload does not carry the entity identifier, for example when the message originates from another model and the target identifier travels as metadata.
+
+[source,java]
+----
+include::example$commands/entities/entityidresolution/BuiltInResolvers.java[tag=metadata-string,indent=0]
+----
+
+<1> Resolves the identifier from the `courseId` metadata entry.
+An absent or blank entry results in an `EntityIdResolutionException`.
+
+Metadata values are `String` instances, so `forKey(String)` resolves a `String` identifier.
+For any other identifier type, pass the type and a `Converter`:
+
+[source,java]
+----
+include::example$commands/entities/entityidresolution/BuiltInResolvers.java[tag=metadata-converted,indent=0]
+----
+
+<1> Converts the `courseId` metadata value to a `UUID`.
+
+[#fallback_resolution]
+=== Fallback resolution
+
+The `FallbackEntityIdResolver` combines two resolvers.
+It invokes the secondary resolver **only** when the primary resolver throws an `EntityIdResolutionException`.
+Other exceptions of the primary resolver propagate.
+
+[source,java]
+----
+include::example$commands/entities/entityidresolution/BuiltInResolvers.java[tag=fallback,indent=0]
+----
+
+<1> The primary resolver reads the `@TargetEntityId` member of the payload.
+<2> The secondary resolver reads the `courseId` metadata entry.
+
+A `FallbackEntityIdResolver` is an `EntityIdResolver` itself, so fallbacks can be nested.
+
+[#custom_resolvers]
+== Custom resolvers
+
+Implement `EntityIdResolver` when no built-in resolver fits, for example when the identifier is composed of several fields.
+
+[source,java]
+----
+include::example$commands/entities/entityidresolution/FacultyCourseIdResolver.java[tag=custom-resolver,indent=0]
+----
+
+<1> Checks whether the payload is of a type this resolver supports.
+<2> Throws an `EntityIdResolutionException` when no identifier can be resolved.
+A `FallbackEntityIdResolver` relies on this exception to select its secondary resolver.
+<3> Composes the identifier from two payload fields.
+
+[#configuring_resolvers]
+== Configuring the resolver of an entity
+
+The way to set a resolver depends on how the entity is defined:
+
+[cols="<,<"]
+|===
+|Entity definition |Resolver configuration
+
+|`@InjectEntity` parameter
+|The `idProperty` or `idResolver` attribute, see xref:commands:entities/stateful-command-handler.adoc[Stateful command handlers].
+The `idResolver` attribute takes the `Class` of an `EntityIdResolver`.
+Without either attribute, the `AnnotationBasedEntityIdResolver` is used.
+
+|Declarative entity
+|The `entityIdResolver` step of the `EventSourcedEntityModule` or `StateBasedEntityModule`, see xref:commands:entities/event-sourced-entity.adoc#_declarative[Declarative].
+
+|Annotated entity (`@EventSourcedEntity` or `@EventSourced`)
+|The `entityIdResolverDefinition` attribute, see <<resolver_definition>>.
+|===
+
+[#resolver_definition]
+== The `EntityIdResolverDefinition`
+
+An annotated entity does not construct its `EntityIdResolver` itself.
+Axon asks an `EntityIdResolverDefinition` to create it.
+The definition receives the entity type, the identifier type, the entity metamodel, and the application `Configuration`:
+
+[source,java]
+----
+include::example$commands/entities/entityidresolution/MetadataFallbackEntityIdResolverDefinition.java[tag=definition,indent=0]
+----
+
+<1> Creates a resolver that reads the `@TargetEntityId` payload member first, and the `entityId` metadata entry second.
+The `Configuration` provides the `Converter` required to convert the metadata value to the identifier type.
+
+By default, an annotated entity uses a definition that creates the `AnnotationBasedEntityIdResolver`.
+Set the `entityIdResolverDefinition` attribute to use another definition for a single entity:
+
+[source,java]
+----
+include::example$commands/entities/entityidresolution/CourseWithExplicitDefinition.java[tag=explicit-definition,indent=0]
+----
+
+<1> The definition class requires a public no-argument constructor.
+
+[#application_wide_definition]
+=== Application-wide definition
+
+Register an `EntityIdResolverDefinition` as a component to change the default for all annotated entities in the application.
+Entities that name their own definition on the annotation keep it.
+
+[tabs]
+====
+Spring Boot::
++
+--
+[source,java]
+----
+include::example$commands/entities/entityidresolution/SpringApplicationWideDefinitionConfiguration.java[tag=spring,indent=0]
+----
+
+<1> Applies to every annotated entity that does not set `entityIdResolverDefinition`.
+--
+
+Plain Java::
++
+--
+[source,java]
+----
+include::example$commands/entities/entityidresolution/ApplicationWideDefinitionConfiguration.java[tag=plain-java,indent=0]
+----
+
+<1> Applies to every annotated entity that does not set `entityIdResolverDefinition`.
+--
+====
+
+Axon selects the definition of an annotated entity in this order:
+
+. The definition set on the `entityIdResolverDefinition` attribute of the annotation.
+. The `EntityIdResolverDefinition` registered as a component.
+. The default `EntityIdResolverDefinition` that creates the `AnnotationBasedEntityIdResolver`.
+
+[NOTE]
+====
+The application-wide definition applies to annotated entities only.
+Declarative entities set their resolver explicitly, and `@InjectEntity` uses its own `idProperty` and `idResolver` attributes.
+====
+
+[#resolution_failures]
+== Resolution failures
+
+An `EntityIdResolutionException` indicates one of the following:
+
+* The payload has no `@TargetEntityId` value, or more than one distinct value.
+* The metadata entry read by a `MetadataEntityIdResolver` is absent or blank.
+* A custom resolver could not determine an identifier.

@@ -22,7 +22,7 @@ jobs:
       uses: actions/checkout@v7
 
     - name: Create Release Notes Markdown
-      uses: docker://decathlon/release-notes-generator-action:3.1.7
+      uses: Decathlon/release-notes-generator-action@v3.1.7
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # This token is provided by Actions, you do not need to create your own token
         OUTPUT_FOLDER: temp_release_notes
@@ -39,12 +39,11 @@ jobs:
         echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
         echo "RELEASE_DATE=$(date +'%b %d, %Y')" >> $GITHUB_OUTPUT
 
-    - name: Add Release Notes to cache
-      id: cache-notes
-      uses: actions/cache@v6
+    - name: Upload Release Notes for the announcement job
+      uses: actions/upload-artifact@v7
       with:
+        name: release-notes
         path: ${{ env.RELEASE_NOTES_FILE }}
-        key: notes
 
     - name: Create a Draft Release Notes on GitHub
       id: create_release
@@ -64,12 +63,11 @@ jobs:
     - name: Get authorities certificates
       run: openssl s_client -showcerts -connect discuss.axoniq.io:443 </dev/null | sed -n -e '/-.BEGIN/,/-.END/ p' > $CA_FILE
 
-    - name: Retrieve Release Notes from cache
-      id: cache-notes
-      uses: actions/cache@v6
+    - name: Download Release Notes
+      uses: actions/download-artifact@v8
       with:
-        path: ${{ needs.create-release-notes.outputs.notes }}
-        key: notes
+        name: release-notes
+        path: temp_release_notes
 
     - name: Read release notes file
       id: read_release_notes

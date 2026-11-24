@@ -74,8 +74,9 @@ public class InMemoryTokenStore implements TokenStore {
             String processorName,
             int segmentCount,
             @Nullable TrackingToken initialToken,
-            @Nullable ProcessingContext context
+            ProcessingContext context
     ) throws UnableToClaimTokenException {
+        Objects.requireNonNull(context, "The context may not be null.");
         return fetchSegments(processorName, context)
                 .thenApply(segments -> {
                     if (segments.size() > 0) {
@@ -98,8 +99,8 @@ public class InMemoryTokenStore implements TokenStore {
     public CompletableFuture<Void> storeToken(@Nullable TrackingToken token,
                                               String processorName,
                                               int segmentId,
-                                              @Nullable ProcessingContext context) {
-        Objects.requireNonNull(context, "processingContext may not be null for an InMemoryTokenStore");
+                                              ProcessingContext context) {
+        Objects.requireNonNull(context, "The context may not be null.");
         ProcessAndSegmentId key = new ProcessAndSegmentId(processorName, segmentId);
         if (!tokens.containsKey(key)) {
             return noSuchToken(processorName, segmentId);
@@ -125,7 +126,8 @@ public class InMemoryTokenStore implements TokenStore {
     @Override
     public CompletableFuture<TrackingToken> fetchToken(String processorName,
                                                        int segmentId,
-                                                       @Nullable ProcessingContext context) {
+                                                       ProcessingContext context) {
+        Objects.requireNonNull(context, "The context may not be null.");
         SegmentAndToken st = tokens.get(new ProcessAndSegmentId(processorName, segmentId));
         if (st == null) {
             return failedFuture(new UnableToClaimTokenException(
@@ -139,7 +141,8 @@ public class InMemoryTokenStore implements TokenStore {
     @Override
     public CompletableFuture<Void> releaseClaim(String processorName,
                                                 int segment,
-                                                @Nullable ProcessingContext context) {
+                                                ProcessingContext context) {
+        Objects.requireNonNull(context, "The context may not be null.");
         // no-op, the in-memory implementation isn't accessible by multiple processes
         return FutureUtils.emptyCompletedFuture();
     }
@@ -148,8 +151,9 @@ public class InMemoryTokenStore implements TokenStore {
     public CompletableFuture<Void> deleteToken(
             String processorName,
             int segment,
-            @Nullable ProcessingContext context
+            ProcessingContext context
     ) throws UnableToClaimTokenException {
+        Objects.requireNonNull(context, "The context may not be null.");
         tokens.remove(new ProcessAndSegmentId(processorName, segment));
         return FutureUtils.emptyCompletedFuture();
     }
@@ -159,8 +163,9 @@ public class InMemoryTokenStore implements TokenStore {
             @Nullable TrackingToken token,
             String processorName,
             Segment segment,
-            @Nullable ProcessingContext context
+            ProcessingContext context
     ) throws UnableToInitializeTokenException {
+        Objects.requireNonNull(context, "The context may not be null.");
         SegmentAndToken previous = tokens.putIfAbsent(new ProcessAndSegmentId(processorName, segment.getSegmentId()),
                                                       new SegmentAndToken(segment, token == null ? NULL_TOKEN : token));
         if (previous != null) {
@@ -170,7 +175,8 @@ public class InMemoryTokenStore implements TokenStore {
     }
 
     @Override
-    public CompletableFuture<Segment> fetchSegment(String processorName, int segmentId, @Nullable ProcessingContext context) {
+    public CompletableFuture<Segment> fetchSegment(String processorName, int segmentId, ProcessingContext context) {
+        Objects.requireNonNull(context, "The context may not be null.");
         SegmentAndToken st = tokens.get(new ProcessAndSegmentId(processorName, segmentId));
 
         return completedFuture(st == null ? null : st.segment);
@@ -178,7 +184,8 @@ public class InMemoryTokenStore implements TokenStore {
 
     @Override
     public CompletableFuture<List<Segment>> fetchSegments(String processorName,
-                                                          @Nullable ProcessingContext context) {
+                                                          ProcessingContext context) {
+        Objects.requireNonNull(context, "The context may not be null.");
         return completedFuture(tokens.entrySet().stream()
                                      .filter(e -> e.getKey().processorName.equals(processorName))
                                      .map(e -> e.getValue().segment)
@@ -189,11 +196,13 @@ public class InMemoryTokenStore implements TokenStore {
 
     @Override
     public CompletableFuture<List<Segment>> fetchAvailableSegments(String processorName, ProcessingContext context) {
+        Objects.requireNonNull(context, "The context may not be null.");
         return fetchSegments(processorName, context);
     }
 
     @Override
-    public CompletableFuture<String> retrieveStorageIdentifier(@Nullable ProcessingContext context) {
+    public CompletableFuture<String> retrieveStorageIdentifier(ProcessingContext context) {
+        Objects.requireNonNull(context, "The context may not be null.");
         return completedFuture(identifier);
     }
 

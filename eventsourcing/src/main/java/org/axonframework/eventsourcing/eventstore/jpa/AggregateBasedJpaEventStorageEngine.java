@@ -19,9 +19,11 @@ package org.axonframework.eventsourcing.eventstore.jpa;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.TypedQuery;
 import org.axonframework.common.TypeReference;
+import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.common.jdbc.PersistenceExceptionResolver;
 import org.axonframework.common.tx.TransactionalExecutor;
+import org.axonframework.conversion.ConversionException;
 import org.axonframework.conversion.Converter;
 import org.axonframework.eventsourcing.eventstore.AggregateBasedConsistencyMarker;
 import org.axonframework.eventsourcing.eventstore.EventTypeResolver;
@@ -60,9 +62,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -99,6 +103,8 @@ public class AggregateBasedJpaEventStorageEngine implements EventStorageEngine {
     private static final Logger logger = LoggerFactory.getLogger(AggregateBasedJpaEventStorageEngine.class);
 
     private static final TypeReference<Map<String, String>> METADATA_MAP_TYPE_REF = new TypeReference<>() {
+    };
+    private static final TypeReference<Map<String, Object>> LENIENT_METADATA_MAP_TYPE_REF = new TypeReference<>() {
     };
 
     private static final String FIRST_TOKEN_QUERY = "SELECT COALESCE(MIN(e.globalIndex) - 1, -1) FROM AggregateEventEntry e";
@@ -306,9 +312,12 @@ public class AggregateBasedJpaEventStorageEngine implements EventStorageEngine {
                                          entry -> setMarkerAndBuildContext(entry, markerReference))
                              // Defaults the marker when the aggregate stream was empty
                              .onComplete(() -> markerReference.compareAndSet(
-                                     // making sequence number (=last seen event) -1 makes the position in the Consistency Marker 0
-                                     // this ensures 0-based sequence numbers, as they are derived from the marker when appending
-                                     null, new AggregateBasedConsistencyMarker(aggregateIdentifier, -1)
+                                     // the last seen event is the one right before the requested start. For a start of 0
+                                     // this is -1, which makes the position in the Consistency Marker 0 and ensures
+                                     // 0-based sequence numbers, as they are derived from the marker when appending.
+                                     // For a later start (e.g. after a snapshot) it retains the requested lower bound.
+                                     null,
+                                     new AggregateBasedConsistencyMarker(aggregateIdentifier, firstSequenceNumber - 1)
                              ))
                              .cast();
         return new AggregateSource(markerReference, source);
@@ -408,7 +417,43 @@ public class AggregateBasedJpaEventStorageEngine implements EventStorageEngine {
                             .getResultList();
     }
 
-    private List<AggregateEventEntry> queryEventsBy(EntityManager entityManager, GapAwareTrackingToken token) {
+    /**
+     * Queries the next batch of {@link AggregateEventEntry entries} that follow the given {@code token}, as used by
+     * {@link #stream(StreamingCondition)}.
+     * <p>
+     * The result contains every entry with a global index higher than the given {@link GapAwareTrackingToken#getIndex()
+     * token's index}, plus any entry whose global index is among the {@link GapAwareTrackingToken#getGaps() gaps} of
+     * the token. A {@code null} token yields the entries from the start of the event store. Entries are ordered by
+     * global index (ascending), and at most {@code batchSize} entries are returned.
+     * <p>
+     * <b>Internal API:</b> this operation is exposed only so that custom integrations can adjust how this engine reads
+     * from the underlying table, for example to add database-specific hints or locking. It is not part of the public
+     * API and may change or be removed in any minor or patch release, without prior notice. Subclasses overriding it
+     * do so at their own risk and should re-verify their implementation on every upgrade.
+     * <p>
+     * Overriding implementations should be careful about the following:
+     * <ul>
+     *     <li>The result <b>must</b> be ordered by global index, ascending. The caller advances the token over the
+     *     entries in the order returned, and an out-of-order result leads to incorrect gap tracking, and thus to
+     *     skipped or duplicated events.</li>
+     *     <li>The entries at the token's gaps <b>must</b> be included. Omitting them means events that were committed
+     *     late (out of global index order) are never delivered.</li>
+     *     <li>The result size is used to detect the head of the event store: fewer than {@code batchSize} entries is
+     *     interpreted as "no more events right now". Returning more or fewer entries than the batch size for any
+     *     other reason, such as additional filtering in the query, can cause the stream to stall or to poll
+     *     needlessly. Filtering by the {@code StreamingCondition} is done by the caller, not by this operation.</li>
+     *     <li>The given {@code entityManager} belongs to a transaction owned by the caller. Do not commit, roll back or
+     *     close it.</li>
+     *     <li>This operation is invoked repeatedly while streaming, so its cost directly affects every active stream
+     *     and its polling latency.</li>
+     * </ul>
+     *
+     * @param entityManager the {@link EntityManager} to query with, participating in the caller's transaction
+     * @param token         the {@link GapAwareTrackingToken} to read beyond, or {@code null} to read from the start
+     * @return the next batch of entries, ordered by global index, containing at most {@code batchSize} entries
+     */
+    @Internal
+    protected List<AggregateEventEntry> queryEventsBy(EntityManager entityManager, GapAwareTrackingToken token) {
         TypedQuery<AggregateEventEntry> eventsByTokenQuery =
                 token == null || token.getGaps().isEmpty()
                         ? entityManager.createQuery(EVENTS_BY_TOKEN_QUERY, AggregateEventEntry.class)
@@ -442,9 +487,53 @@ public class AggregateBasedJpaEventStorageEngine implements EventStorageEngine {
         return new GenericEventMessage(event.identifier(),
                                        eventTypeResolver.resolve(event.type(), event.version()),
                                        event.payload(),
-                                       converter.convert(event.metadata(), METADATA_MAP_TYPE_REF.getType()),
+                                       convertMetadata(event),
                                        event.timestamp()
         ).withConverter(converter);
+    }
+
+    /**
+     * Converts the stored metadata of the given {@code event} to a {@code Map<String, String>}.
+     * <p>
+     * Axon Framework 4 allowed any object as a metadata value, so a stored row may contain values, such as nested maps
+     * or lists, that cannot be read as a {@code String}. When the strict conversion fails, the metadata is read
+     * leniently instead: {@code String} values are kept as is, {@code null} values remain {@code null}, and any other
+     * value is rendered as {@code String} through the {@link #converter}, resulting in JSON for a JSON-based
+     * converter. This ensures a single complex metadata value does not make the entire event unreadable.
+     */
+    private Map<String, @Nullable String> convertMetadata(AggregateEventEntry event) {
+        try {
+            return converter.convert(event.metadata(), METADATA_MAP_TYPE_REF.getType());
+        } catch (ConversionException strictFailure) {
+            Map<String, Object> lenient;
+            try {
+                lenient = converter.convert(event.metadata(), LENIENT_METADATA_MAP_TYPE_REF.getType());
+            } catch (ConversionException lenientFailure) {
+                strictFailure.addSuppressed(lenientFailure);
+                throw strictFailure;
+            }
+            if (lenient == null) {
+                return Collections.emptyMap();
+            }
+            logger.debug("Event [{}] has metadata values that are not Strings. Rendering these as Strings.",
+                         event.identifier());
+            Map<String, @Nullable String> result = new HashMap<>();
+            lenient.forEach((key, value) -> result.put(key, renderMetadataValue(value)));
+            return result;
+        }
+    }
+
+    @Nullable
+    private String renderMetadataValue(@Nullable Object value) {
+        if (value == null || value instanceof String) {
+            return (String) value;
+        }
+        try {
+            byte[] rendered = converter.convert(value, byte[].class);
+            return rendered == null ? null : new String(rendered, StandardCharsets.UTF_8);
+        } catch (ConversionException e) {
+            return String.valueOf(value);
+        }
     }
 
     private static Context buildTrackedContext(TokenAndEvent tokenAndEvent) {

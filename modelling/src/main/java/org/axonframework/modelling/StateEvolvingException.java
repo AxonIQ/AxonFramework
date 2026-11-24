@@ -36,8 +36,8 @@ public class StateEvolvingException extends RuntimeException {
     /**
      * Initialize the exception with the given {@code message} and {@code cause}.
      *
-     * @param message The message describing the exception.
-     * @param cause   The underlying cause of the exception.
+     * @param message the message describing the exception
+     * @param cause   the underlying cause of the exception
      */
     public StateEvolvingException(String message, Throwable cause) {
         super(message, cause);

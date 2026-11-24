@@ -36,6 +36,12 @@ import java.util.concurrent.CompletableFuture;
  * store decision (and the claim-extension timing coupled to it) behind the context, so a strategy carries only the
  * decision logic.
  * <p>
+ * Three tokens describe the progress of the segment. The {@link #lastConsumedToken()} is the furthest position read,
+ * including events the segment skipped. The {@link #lastHandledToken()} is the last event handed to the handler. The
+ * {@link #lastStoredToken()} is the last position persisted. When the stored token covers the last handled event, every
+ * event after the last handled one, up to the consumed token, was skipped, so a strategy can store the consumed token
+ * without waiting for any handler.
+ * <p>
  * <b>Internal API.</b> This interface is marked {@link Internal}: it is the contract between a streaming processor and a
  * progress strategy, consumed by advanced (and out-of-module) strategies rather than by end users, and its shape may
  * change in a minor or patch release.
@@ -55,8 +61,8 @@ public interface SegmentProgressContext {
     Segment segment();
 
     /**
-     * Returns the highest {@link TrackingToken} handed to the handler so far for this segment, or {@code null} if
-     * nothing has been consumed yet.
+     * Returns the highest {@link TrackingToken} consumed so far for this segment, or {@code null} if nothing has been
+     * consumed yet. This includes events the segment skipped, for example because they belong to another segment.
      * <p>
      * This is the position a strategy treats as "safe up to here" when deciding what to persist.
      *
@@ -64,6 +70,48 @@ public interface SegmentProgressContext {
      */
     @Nullable
     TrackingToken lastConsumedToken();
+
+    /**
+     * Returns the {@link TrackingToken} of the last event handed to the handler for this segment, or the token the
+     * segment was claimed at when no event has been handed to it since. Unlike {@link #lastConsumedToken()}, skipped
+     * events do not move it.
+     * <p>
+     * Events between this token and the {@link #lastConsumedToken()} were skipped, so storing the consumed position
+     * instead of this one changes nothing for the handler: on a restart, the skipped events would be skipped again.
+     * <p>
+     * This token and the {@link #lastStoredToken()} can be wrapped, for example in a merged or replay token, and
+     * {@link TrackingToken#covers(TrackingToken)} fails for some combinations of wrapped tokens. Compare them with
+     * {@link org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingTokenUtils#coversWhenUnwrapped(TrackingToken, TrackingToken)}
+     * instead.
+     * <p>
+     * Defaults to the {@link #lastConsumedToken()}, treating every consumed event as handled. That is the safe answer
+     * for a context that does not tell skipped events apart.
+     *
+     * @return the token of the last handled event, or {@code null} if nothing has been handled and the segment was
+     * claimed at the start of the stream
+     */
+    @Nullable
+    default TrackingToken lastHandledToken() {
+        return lastConsumedToken();
+    }
+
+    /**
+     * Returns the {@link TrackingToken} last stored for this segment, either at claim time or through
+     * {@link #persistProgress(TrackingToken, ProcessingContext)}.
+     * <p>
+     * Like the {@link #lastHandledToken()}, this token can be wrapped, so compare it with
+     * {@link org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingTokenUtils#coversWhenUnwrapped(TrackingToken, TrackingToken)}
+     * instead of {@link TrackingToken#covers(TrackingToken)}.
+     * <p>
+     * Defaults to {@code null}, for a context that does not track its stored token.
+     *
+     * @return the last stored token, or {@code null} when no token is stored yet (the segment starts at the beginning
+     * of the stream) or the context does not track it
+     */
+    @Nullable
+    default TrackingToken lastStoredToken() {
+        return null;
+    }
 
     /**
      * Wakes the segment's worker so a commit cycle runs. The lever a strategy uses to act on out-of-band work (such as

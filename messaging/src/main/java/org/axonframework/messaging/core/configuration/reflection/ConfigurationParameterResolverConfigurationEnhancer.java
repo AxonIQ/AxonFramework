@@ -18,10 +18,12 @@ package org.axonframework.messaging.core.configuration.reflection;
 
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.ConfigurationEnhancer;
+import org.axonframework.messaging.core.annotation.InjectComponentParameterResolverFactory;
 
 /**
- * {@link ConfigurationEnhancer} that registers the {@link ConfigurationParameterResolverFactory} as additional
- * parameter resolver factory to the {@link ComponentRegistry}.
+ * {@link ConfigurationEnhancer} that registers the {@link ConfigurationParameterResolverFactory} and the
+ * {@link InjectComponentParameterResolverFactory} as additional parameter resolver factories to the
+ * {@link ComponentRegistry}.
  *
  * @author Mitchell Herrijgers
  * @since 5.0.0
@@ -33,6 +35,10 @@ public class ConfigurationParameterResolverConfigurationEnhancer implements Conf
         ParameterResolverFactoryUtils.registerToComponentRegistry(
                 componentRegistry,
                 ConfigurationParameterResolverFactory::new
+        );
+        ParameterResolverFactoryUtils.registerToComponentRegistry(
+                componentRegistry,
+                InjectComponentParameterResolverFactory::new
         );
     }
 }

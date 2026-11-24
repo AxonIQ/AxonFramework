@@ -71,19 +71,13 @@ import java.lang.annotation.Target;
  * }
  * }</pre>
  * <p/>
- * For each event, only a single method will be invoked per object instance with annotated methods. This method is
- * resolved in the following order: <ol> <li>First, the event handler methods of the actual class (at runtime) are
- * searched <li>If a method is found with a parameter that the domain event can be assigned to, it is marked as
- * eligible
- * <li>After a class  has been evaluated (but before any super class), the most specific event handler method is
- * called. That means that if an event handler for a class A and one for a class B are eligible, and B is a subclass of
- * A, then the method with a parameter of type B will be chosen<li>If no method is found in the actual class, its super
- * class is evaluated. <li>If still no method is found, the event listener ignores the event </ol>
+ * An overriding method counts as one handler and runs where the handler it overrides runs; call {@code super} to run
+ * the overridden one. Separate methods for the same event all run, parent handlers first, each receiving the entity
+ * returned by the previous one. Within one class the order is unspecified. If a handler returns an entity the next
+ * handler cannot run on, evolving fails with a {@link org.axonframework.modelling.StateEvolvingException}. Handlers of
+ * the returned type do not run for the same event.
  * <p/>
- * If you do not want any events to be ignored, but rather have some logging of the fact that an unhandled event came
- * by, make an abstract superclass that contains an event handler method that accepts any {@code Object}.
- * <p/>
- * Note: if there are two event handler methods accepting the same argument, the behavior is undefined.
+ * A handler matches an event by its event name, so a handler accepting {@code Object} does not receive other events.
  *
  * @author Allard Buijze
  * @since 2.1.0
@@ -93,6 +87,28 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.METHOD, ElementType.ANNOTATION_TYPE})
 public @interface EventSourcingHandler {
+
+    /**
+     * The name of the event this method handles, matching the
+     * {@link org.axonframework.messaging.core.MessageType#name()} of the {@link EventMessage#type()}.
+     * <p>
+     * Use it when the event is published under a name that differs from the name of the handler's payload type. For
+     * example, an event another module publishes as {@code billing.EnrollmentPaid}, read here through a local class:
+     * <pre>{@code
+     * @EventSourcingHandler(eventName = "billing.EnrollmentPaid")
+     * void on(PaymentReceived event) {
+     *     this.paid = true;
+     * }
+     * }</pre>
+     * The payload is converted to the type of the first parameter before the handler is invoked.
+     * <p>
+     * Optional. If unspecified, the {@link org.axonframework.messaging.core.MessageTypeResolver} derives the name from
+     * the payload type, thus the first parameter of the method. Mirrors {@link EventHandler#eventName()}.
+     *
+     * @return the name of the event this method handles, or an empty {@code String} to derive it from the payload type
+     * @since 5.5.0
+     */
+    String eventName() default "";
 
     /**
      * The type of event this method handles. If specified, this handler will only be invoked for message that have a

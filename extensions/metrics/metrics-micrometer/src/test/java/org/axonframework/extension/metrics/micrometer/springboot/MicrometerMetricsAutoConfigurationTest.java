@@ -16,16 +16,25 @@
 
 package org.axonframework.extension.metrics.micrometer.springboot;
 
+import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import org.axonframework.extension.metrics.micrometer.MetricsConfigurationEnhancer;
+import org.axonframework.extension.metrics.micrometer.MicrometerMetricsConfiguration;
+import org.axonframework.messaging.eventhandling.annotation.EventHandler;
+import org.axonframework.messaging.eventhandling.gateway.EventGateway;
+import org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore;
+import org.axonframework.messaging.eventhandling.processing.streaming.token.store.inmemory.InMemoryTokenStore;
 import org.junit.jupiter.api.*;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.stereotype.Component;
+
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 /**
  * Test class validating the {@link MicrometerMetricsAutoConfiguration}.
@@ -46,7 +55,7 @@ class MicrometerMetricsAutoConfigurationTest {
         testContext.withPropertyValues("axon.metrics.enabled=true")
                    .run(context -> {
                        assertThat(context).hasSingleBean(MeterRegistry.class);
-                       assertThat(context).hasSingleBean(MetricsConfigurationEnhancer.class);
+                       assertThat(context).hasSingleBean(MicrometerMetricsConfiguration.class);
                    });
     }
 
@@ -55,7 +64,7 @@ class MicrometerMetricsAutoConfigurationTest {
         // Deliberately not included "axon.metrics.enabled=true" per test!
         testContext.run(context -> {
             assertThat(context).hasSingleBean(MeterRegistry.class);
-            assertThat(context).hasSingleBean(MetricsConfigurationEnhancer.class);
+            assertThat(context).hasSingleBean(MicrometerMetricsConfiguration.class);
         });
     }
 
@@ -64,8 +73,28 @@ class MicrometerMetricsAutoConfigurationTest {
         testContext.withPropertyValues("axon.metrics.enabled=false")
                    .run(context -> {
                        assertThat(context).doesNotHaveBean(MeterRegistry.class);
-                       assertThat(context).doesNotHaveBean(MetricsConfigurationEnhancer.class);
+                       assertThat(context).doesNotHaveBean(MicrometerMetricsConfiguration.class);
                    });
+    }
+
+    @Test
+    void eventProcessorRecordsItsMetricsInTheApplicationsMeterRegistry() {
+        new ApplicationContextRunner().withUserConfiguration(EventHandlingContext.class)
+                                      .run(context -> {
+                                          assertThat(context).hasNotFailed();
+                                          MeterRegistry meterRegistry = context.getBean(MeterRegistry.class);
+
+                                          context.getBean(EventGateway.class).publish(null, "event").join();
+
+                                          String counterName = EventHandlingContext.class.getPackageName()
+                                                  + ".messageCounter.success";
+                                          await().atMost(Duration.ofSeconds(5))
+                                                 .untilAsserted(() -> {
+                                                     Counter counter = meterRegistry.find(counterName).counter();
+                                                     assertThat(counter).isNotNull();
+                                                     assertThat(counter.count()).isEqualTo(1);
+                                                 });
+                                      });
     }
 
     @Test
@@ -75,7 +104,8 @@ class MicrometerMetricsAutoConfigurationTest {
                                           assertThat(context).hasSingleBean(MeterRegistry.class);
                                           assertThat(context.getBean(MeterRegistry.class))
                                                   .isSameAs(UserMeterRegistryContext.USER_METER_REGISTRY);
-                                          assertThat(context).hasSingleBean(MetricsConfigurationEnhancer.class);
+                                          assertThat(context.getBean(MicrometerMetricsConfiguration.class).registry())
+                                                  .isSameAs(UserMeterRegistryContext.USER_METER_REGISTRY);
                                       });
     }
 
@@ -83,6 +113,30 @@ class MicrometerMetricsAutoConfigurationTest {
     @EnableAutoConfiguration
     public static class TestContext {
 
+    }
+
+    /**
+     * An event processor is a module with its own component registry, which receives a copy of every enhancer.
+     */
+    @Configuration
+    @EnableAutoConfiguration
+    public static class EventHandlingContext {
+
+        @Bean
+        public TokenStore tokenStore() {
+            return new InMemoryTokenStore();
+        }
+
+        @SuppressWarnings("unused")
+        @Component
+        public static class EventHandlingComponent {
+
+            @SuppressWarnings("unused")
+            @EventHandler
+            public void on(String event) {
+                // a handler is required for an event processor to be constructed at all
+            }
+        }
     }
 
     @Configuration

@@ -28,17 +28,22 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -671,6 +676,165 @@ public final class ReflectionUtils {
                 }
             }
         }
+    }
+
+    /**
+     * Returns the method the JVM runs when the given {@code method} is invoked on an instance of the given
+     * {@code type}: the override declared by the most specific class, or the most specific interface default method
+     * when no class declares one. Private and static methods are returned as is, as they are never overridden. A
+     * compiler-generated bridge method resolves to the method it bridges, and a package-private method overridden from
+     * another package resolves through the whole chain of overrides.
+     *
+     * @param type   the runtime type of the instance the method is invoked on
+     * @param method the invoked method, declared by {@code type} or one of its supertypes
+     * @return the method the JVM dispatches to, or {@code method} itself when it is not overridden
+     */
+    public static Method dispatchTarget(Class<?> type, Method method) {
+        Objects.requireNonNull(type, "The type may not be null.");
+        Objects.requireNonNull(method, "The method may not be null.");
+        // A package-private method is invisible to an override in another package, so the next override is only found
+        // by resolving again from the target found so far
+        Method target = method;
+        Method resolved = dispatchTargetOnce(type, target);
+        while (!resolved.equals(target)) {
+            target = resolved;
+            resolved = dispatchTargetOnce(type, target);
+        }
+        return target;
+    }
+
+    private static Method dispatchTargetOnce(Class<?> type, Method method) {
+        int modifiers = method.getModifiers();
+        if (Modifier.isPrivate(modifiers) || Modifier.isStatic(modifiers)) {
+            return method;
+        }
+        for (Class<?> current = type; current != null; current = current.getSuperclass()) {
+            for (Method declared : current.getDeclaredMethods()) {
+                if (isOverrideOrSame(declared, method)) {
+                    return bridgedMethodOrSelf(declared, method);
+                }
+            }
+        }
+        // Not declared by any class, so it is an interface default method: the most specific default wins
+        Set<Class<?>> interfaces = new HashSet<>(allSupertypes(type));
+        interfaces.add(type);
+        List<Method> defaults = interfaces.stream()
+                                          .filter(Class::isInterface)
+                                          .flatMap(candidate -> Arrays.stream(candidate.getDeclaredMethods()))
+                                          .filter(declared -> isOverrideOrSame(declared, method))
+                                          .toList();
+        return defaults.stream()
+                       .filter(candidate -> defaults.stream().noneMatch(
+                               other -> other != candidate
+                                       && candidate.getDeclaringClass().isAssignableFrom(other.getDeclaringClass())))
+                       .findFirst()
+                       .map(candidate -> bridgedMethodOrSelf(candidate, method))
+                       .orElse(method);
+    }
+
+    /**
+     * Java dispatches an override with a narrower signature through a compiler-generated bridge method, so a bridge
+     * stands for the method it bridges: the one of the same class with the same name whose parameters are exactly the
+     * parameter types of the {@code overridden} method, resolved against the type arguments of that class. Without
+     * exactly one such method, the bridge is left unresolved.
+     */
+    private static Method bridgedMethodOrSelf(Method bridge, Method overridden) {
+        if (!bridge.isBridge()) {
+            return bridge;
+        }
+        Class<?> declaringClass = bridge.getDeclaringClass();
+        Class<?>[] exactParameterTypes = TypeReflectionUtils.exactParameterTypes(overridden, declaringClass);
+        List<Method> bridged = Arrays.stream(declaringClass.getDeclaredMethods())
+                                     .filter(candidate -> !candidate.isBridge()
+                                             && candidate.getName().equals(bridge.getName())
+                                             && Arrays.equals(candidate.getParameterTypes(), exactParameterTypes))
+                                     .toList();
+        return bridged.size() == 1 ? bridged.getFirst() : bridge;
+    }
+
+    private static boolean isOverrideOrSame(Method candidate, Method method) {
+        if (candidate.equals(method)) {
+            return true;
+        }
+        int candidateModifiers = candidate.getModifiers();
+        int methodModifiers = method.getModifiers();
+        return !Modifier.isStatic(candidateModifiers)
+                && !Modifier.isPrivate(candidateModifiers)
+                && candidate.getName().equals(method.getName())
+                && Arrays.equals(candidate.getParameterTypes(), method.getParameterTypes())
+                && (Modifier.isPublic(methodModifiers)
+                || Modifier.isProtected(methodModifiers)
+                || candidate.getDeclaringClass().getPackageName()
+                            .equals(method.getDeclaringClass().getPackageName()));
+    }
+
+    /**
+     * Returns all supertypes of the given {@code type}: its superclasses and every interface it implements, directly or
+     * through a supertype. The type itself is not included.
+     *
+     * @param type the type to collect the supertypes of
+     * @return a new set with all supertypes of {@code type}
+     */
+    public static Set<Class<?>> allSupertypes(Class<?> type) {
+        Objects.requireNonNull(type, "The type may not be null.");
+        Set<Class<?>> supertypes = new HashSet<>();
+        Deque<Class<?>> pending = new ArrayDeque<>(List.of(type));
+        while (!pending.isEmpty()) {
+            Class<?> current = pending.pop();
+            if (current.getSuperclass() != null && supertypes.add(current.getSuperclass())) {
+                pending.push(current.getSuperclass());
+            }
+            for (Class<?> implemented : current.getInterfaces()) {
+                if (supertypes.add(implemented)) {
+                    pending.push(implemented);
+                }
+            }
+        }
+        return supertypes;
+    }
+
+    /**
+     * Returns the given candidates with compiler-generated bridge methods removed and one candidate per dispatch
+     * target: for each method the JVM would run on an instance of the given type, the candidate declared by the most
+     * specific type. Private and static methods are never overridden, so each one is its own dispatch target.
+     * Candidates without a method are kept as they are. The candidates are returned in the order in which their
+     * dispatch targets first appear.
+     * <p>
+     * javac copies the annotations of an overriding method onto the bridge method it generates, so without this filter
+     * annotation scanning finds two annotated methods that run the same body. Spring applies the same rule when it
+     * detects annotated methods, through {@code ReflectionUtils.USER_DECLARED_METHODS} and
+     * {@code ClassUtils.getMostSpecificMethod}.
+     *
+     * @param type       the runtime type the methods are invoked on
+     * @param candidates the candidates to filter, such as annotated message handlers
+     * @param methodOf   the method a candidate stands for, or an empty optional when it does not stand for one
+     * @param <T>        the candidate type
+     * @return the candidates without bridge methods, one per dispatch target
+     */
+    public static <T> List<T> uniqueByDispatchTarget(Class<?> type,
+                                                     Collection<T> candidates,
+                                                     Function<? super T, Optional<Method>> methodOf) {
+        Objects.requireNonNull(type, "The type may not be null.");
+        Objects.requireNonNull(candidates, "The candidates may not be null.");
+        Objects.requireNonNull(methodOf, "The method function may not be null.");
+        Map<Object, T> byDispatchTarget = new LinkedHashMap<>();
+        for (T candidate : candidates) {
+            Optional<Method> method = methodOf.apply(candidate);
+            if (method.filter(Method::isBridge).isPresent()) {
+                continue;
+            }
+            Object target = method.<Object>map(m -> dispatchTarget(type, m)).orElse(candidate);
+            byDispatchTarget.merge(target, candidate, (existing, replacement) ->
+                    declaringTypeSpecificity(methodOf.apply(replacement))
+                            > declaringTypeSpecificity(methodOf.apply(existing)) ? replacement : existing
+            );
+        }
+        return List.copyOf(byDispatchTarget.values());
+    }
+
+    private static int declaringTypeSpecificity(Optional<Method> method) {
+        // A subtype always has more supertypes than any of its supertypes, for classes and interfaces alike
+        return method.map(m -> allSupertypes(m.getDeclaringClass()).size()).orElse(0);
     }
 
     private ReflectionUtils() {

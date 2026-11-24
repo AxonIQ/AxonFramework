@@ -20,6 +20,8 @@ import org.axonframework.common.ClockUtils;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.Segment;
 import org.axonframework.messaging.eventhandling.processing.streaming.segmenting.TrackerStatus;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.GlobalSequenceTrackingToken;
+import org.axonframework.messaging.eventhandling.processing.streaming.token.MergedTrackingToken;
+import org.axonframework.messaging.eventhandling.processing.streaming.token.ReplayToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.UnableToClaimTokenException;
@@ -271,6 +273,88 @@ class SplitTaskTest {
             // then
             assertThat(result).isCompletedExceptionally();
             assertThat(releasesDeadlines).isEmpty();
+        }
+    }
+
+    @Nested
+    class ReplayStatus {
+
+        private static final GlobalSequenceTrackingToken TOKEN_AT_RESET = new GlobalSequenceTrackingToken(100);
+
+        private final Map<Segment, TrackingToken> storedTokens = new HashMap<>();
+
+        @BeforeEach
+        void setUp() {
+            when(tokenStore.fetchSegment(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any()))
+                    .thenReturn(completedFuture(Segment.ROOT_SEGMENT));
+            when(tokenStore.initializeSegment(any(), eq(PROCESSOR_NAME), any(), any()))
+                    .thenAnswer(invocation -> {
+                        storedTokens.put(invocation.getArgument(2), invocation.getArgument(0));
+                        return emptyCompletedFuture();
+                    });
+            when(tokenStore.deleteToken(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any()))
+                    .thenReturn(emptyCompletedFuture());
+        }
+
+        @Test
+        void runKeepsBothHalvesReplayingWhenSplittingAReplayingSegment() {
+            // given
+            TrackingToken replayingToken =
+                    ReplayToken.createReplayToken(TOKEN_AT_RESET, new GlobalSequenceTrackingToken(10));
+            when(tokenStore.fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any()))
+                    .thenReturn(completedFuture(replayingToken));
+
+            // when
+            testSubject.run();
+
+            // then
+            assertThat(result).isCompletedWithValue(true);
+            assertBothHalvesReplayUntilTokenAtReset();
+        }
+
+        @Test
+        void runKeepsBothHalvesReplayingWhenSplittingAReplayingSegmentWithMergeInProgress() {
+            // given - a replay was started while a merge of two segments had not yet completed
+            TrackingToken replayingMergeToken = ReplayToken.createReplayToken(
+                    TOKEN_AT_RESET,
+                    MergedTrackingToken.merged(new GlobalSequenceTrackingToken(10), new GlobalSequenceTrackingToken(20))
+            );
+            when(tokenStore.fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any()))
+                    .thenReturn(completedFuture(replayingMergeToken));
+
+            // when
+            testSubject.run();
+
+            // then
+            assertThat(result).isCompletedWithValue(true);
+            assertBothHalvesReplayUntilTokenAtReset();
+        }
+
+        @Test
+        void runKeepsBothHalvesReplayingWhenSplittingAMergeOfReplayingSegments() {
+            // given - two replaying segments were merged, and the merge has not yet completed
+            TrackingToken mergeOfReplayingTokens = MergedTrackingToken.merged(
+                    ReplayToken.createReplayToken(TOKEN_AT_RESET, new GlobalSequenceTrackingToken(10)),
+                    ReplayToken.createReplayToken(TOKEN_AT_RESET, new GlobalSequenceTrackingToken(20))
+            );
+            when(tokenStore.fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any()))
+                    .thenReturn(completedFuture(mergeOfReplayingTokens));
+
+            // when
+            testSubject.run();
+
+            // then
+            assertThat(result).isCompletedWithValue(true);
+            assertBothHalvesReplayUntilTokenAtReset();
+        }
+
+        private void assertBothHalvesReplayUntilTokenAtReset() {
+            assertThat(storedTokens).containsOnlyKeys(new Segment(0, 1), new Segment(1, 1));
+            assertThat(storedTokens.values()).allSatisfy(storedToken -> {
+                assertThat(storedToken).isInstanceOf(ReplayToken.class);
+                assertThat(((ReplayToken) storedToken).getTokenAtReset()).isEqualTo(TOKEN_AT_RESET);
+                assertThat(ReplayToken.isReplay(storedToken)).isTrue();
+            });
         }
     }
 

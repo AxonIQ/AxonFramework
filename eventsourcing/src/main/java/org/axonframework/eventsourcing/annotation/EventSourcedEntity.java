@@ -29,6 +29,7 @@ import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.eventstreaming.EventCriteria;
 import org.axonframework.modelling.annotation.AnnotationBasedEntityIdResolver;
 import org.axonframework.modelling.annotation.AnnotationBasedEntityIdResolverDefinition;
+import org.axonframework.modelling.annotation.DefaultEntityIdResolverDefinition;
 import org.axonframework.modelling.annotation.EntityIdResolverDefinition;
 import org.axonframework.modelling.annotation.TargetEntityId;
 import org.axonframework.modelling.entity.EntityCommandHandler;
@@ -161,12 +162,14 @@ public @interface EventSourcedEntity {
 
     /**
      * The definition of the {@link EntityIdResolverDefinition} to use to resolve the entity id from a
-     * {@link CommandMessage command message}. Defaults to the
-     * {@link AnnotationBasedEntityIdResolverDefinition}, which resolves the entity id based on the
-     * {@link TargetEntityId} annotation on a payload field or method. Conversion of the payload to the
-     * representation wanted by the entity is applied by the module before resolution.
+     * {@link CommandMessage command message}.
+     * <p>
+     * Defaults to {@link DefaultEntityIdResolverDefinition}, a {@link AnnotationBasedEntityIdResolverDefinition}
+     * implementation that resolves the entity id based on the {@link TargetEntityId} annotation on a payload field or
+     * method. Conversion of the payload to the representation wanted by the entity is applied by the module before
+     * resolution.
      *
-     * @return The definition to construct an {@link EntityIdResolverDefinition}.
+     * @return the definition to construct an {@link EntityIdResolverDefinition}
      */
-    Class<? extends EntityIdResolverDefinition> entityIdResolverDefinition() default AnnotationBasedEntityIdResolverDefinition.class;
+    Class<? extends EntityIdResolverDefinition> entityIdResolverDefinition() default DefaultEntityIdResolverDefinition.class;
 }

@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
@@ -75,6 +76,9 @@ public interface MessageStream<M extends Message> {
      * <p>
      * The returned stream will provide the messages as provided by the {@link Iterable#iterator()} call on the given
      * {@code iterable}.
+     * <p>
+     * The {@link java.util.Iterator#hasNext()} of that iterator must answer without blocking, as when iterating an
+     * in-memory collection or buffer.
      *
      * @param iterable The {@link Iterable} providing the {@link Message Messages} to stream.
      * @param <M>      The type of {@link Message} contained in the {@link Entry entries} of this stream.
@@ -103,6 +107,9 @@ public interface MessageStream<M extends Message> {
      * <p>
      * The returned stream will provide the messages as provided by the {@link Iterable#iterator()} call on the given
      * {@code iterable}.
+     * <p>
+     * The {@link java.util.Iterator#hasNext()} of that iterator must answer without blocking, as when iterating an
+     * in-memory collection or buffer.
      *
      * @param iterable        The {@link Iterable} providing the {@link Message Messages} to stream.
      * @param contextSupplier A {@link Function} ingesting each {@link Message} from the given {@code iterable}
@@ -125,6 +132,9 @@ public interface MessageStream<M extends Message> {
     /**
      * Create a stream that provides the {@link Message Messages} returned by the given {@code stream}, automatically
      * wrapped in an {@link Entry}.
+     * <p>
+     * The given {@code stream} must provide its elements without blocking, as when streaming an in-memory collection
+     * or buffer.
      *
      * @param stream The {@link Stream} providing the {@link Message Messages} to stream.
      * @param <M>    The type of {@link Message} contained in the {@link Entry entries} of this stream.
@@ -138,6 +148,9 @@ public interface MessageStream<M extends Message> {
     /**
      * Create a stream that provides the {@link Message Messages} returned by the given {@code stream}, automatically
      * wrapped in an {@link Entry} with the resulting {@link Context} from the {@code contextSupplier}.
+     * <p>
+     * The given {@code stream} must provide its elements without blocking, as when streaming an in-memory collection
+     * or buffer.
      *
      * @param stream          The {@link Stream} providing the {@link Message Messages} to stream.
      * @param contextSupplier A {@link Function} ingesting each {@link Message} from the given {@code stream} returning
@@ -156,6 +169,9 @@ public interface MessageStream<M extends Message> {
      * Create a stream that provides the items of type {@code T} returned by the given {@code stream}, automatically
      * wrapped in an {@link Entry} with the resulting {@link Message} and {@link Context} from the
      * {@code messageSupplier} and the {@code contextSupplier} respectively.
+     * <p>
+     * The given {@code stream} must provide its elements without blocking, as when streaming an in-memory collection
+     * or buffer.
      *
      * @param stream          The {@link Stream} providing the items of type {@code T} to map to a {@link Message} and
      *                        {@link Context}.
@@ -303,7 +319,8 @@ public interface MessageStream<M extends Message> {
      * stream completes.
      * <p>
      * Unlike simply closing the stream, the returned stream will still cause upstream entries to be consumed and any
-     * registered callbacks to be invoked.
+     * registered callbacks to be invoked. The entries are consumed when the returned stream is read, as by
+     * {@link Single#asCompletableFuture()}, like with any other stream.
      *
      * @return An Empty stream that ignores all results.
      */
@@ -354,10 +371,19 @@ public interface MessageStream<M extends Message> {
      * <p>
      * Any previously registered callback is replaced with the given {@code callback}.
      * <p>
-     * The callback is called on an arbitrary thread, and it should keep work performed on this thread to a minimum
-     * as this may interfere with other callbacks handled by the same thread. Any exception thrown by the callback
-     * will result in the stream completing with this exception as the error, unless the callback was called to
-     * indicate completion.
+     * The callback is invoked on the thread that reported the progress. That thread is typically shared with other
+     * streams, for example one that notifies all streams of a data source at once. The callback must therefore only
+     * signal that the stream should be read, and complete within microseconds. It must not read from this stream or
+     * any other stream, and must not block or perform I/O; any such work is to be done on a thread of the consumer's
+     * choosing, to which the callback hands off.
+     * <p>
+     * Streams based on {@link AbstractMessageStream} enforce this: calling {@link #next()}, {@link #peek()} or
+     * {@link #hasNextAvailable()} on any such stream, on a thread that is running a callback, throws an
+     * {@link IllegalStateException}.
+     * <p>
+     * After a callback was made, no further callback is made until the stream has been read, so the consumer must read
+     * what is available after each signal. Any exception thrown by the callback results in the stream completing with
+     * that exception as the error, unless the callback was called to indicate completion.
      *
      * @param callback The callback to invoke when {@link Entry entries} are available for reading, or the stream
      *                 completes.
@@ -378,6 +404,12 @@ public interface MessageStream<M extends Message> {
      * Indicates whether this stream has been completed. A completed stream will never return {@link Entry entries} from
      * {@link #next()}, and {@link #hasNextAvailable()} will always return {@code false}. If the stream completed with
      * an error, {@link #error()} will report so.
+     * <p>
+     * Returns {@code true} as soon as the stream can determine, without consuming entries, that no further
+     * {@link Entry entries} will arrive, for example directly after {@link #next()} returned the last one. Some
+     * implementations can only detect completion on a subsequent read. Returns {@code false} while an {@link Entry} is
+     * available for reading. Observing completion through this method runs any handlers registered for completion of
+     * this stream, such as those given to {@link #onComplete(Runnable)} and {@link #onClose(Runnable)}.
      *
      * @return {@code true} if the stream completed, otherwise {@code false}.
      */
@@ -524,6 +556,46 @@ public interface MessageStream<M extends Message> {
     }
 
     /**
+     * Reduces this stream as {@link #reduce(Object, BiFunction)} does, but reading the {@link Entry entries} that
+     * become available after this method returned on a thread of the given {@code executor}.
+     * <p>
+     * The thread that reports that entries are available is usually shared with other streams, so the given
+     * {@code executor} must not run tasks on the thread that submits them. With an executor that does, such as the
+     * {@link org.axonframework.common.DirectExecutor}, the read fails, as reading is rejected on that thread. Use this
+     * method for a stream that must be read from a specific thread, such as one backed by a thread-bound transaction,
+     * by passing an executor that runs its tasks on that thread.
+     * <p>
+     * When the given {@code executor} is {@code null}, all entries are read on the thread calling this method, which
+     * blocks until the stream reports progress or completes. The returned {@link CompletableFuture} is then complete
+     * when this method returns. When the stream reports no progress for 30 seconds, or the calling thread is
+     * interrupted, the stream is closed and the future completes exceptionally with a
+     * {@link java.util.concurrent.TimeoutException} or an {@link InterruptedException}, the latter after restoring
+     * the interrupt status of the calling thread.
+     * <p>
+     * Note that parallel processing <b>is not</b> supported!
+     *
+     * @param identity    the initial value given to the {@code accumulator}
+     * @param accumulator the {@link BiFunction} accumulating all {@link Entry entries} from this stream into a return
+     *                    value of type {@code R}
+     * @param executor    the {@link Executor} on which to read entries that become available after this method
+     *                    returned, or {@code null} to read all entries on the calling thread
+     * @param <R>         the result of the {@code accumulator} after reducing all {@link Entry entries} from this
+     *                    stream
+     * @return a {@link CompletableFuture} carrying the result of the given {@code accumulator} that reduced the entire
+     * stream
+     * @throws NullPointerException          if {@code accumulator} is {@code null}
+     * @throws IllegalStateException         if the {@code executor} is {@code null}, and the calling thread is
+     *                                       handling a progress signal of a stream, as that thread must not block
+     * @throws UnsupportedOperationException if this stream is unbounded
+     * @see #reduce(Object, BiFunction)
+     */
+    default <R> CompletableFuture<@Nullable R> reduce(@Nullable R identity,
+                                                      BiFunction<@Nullable R, ? super Entry<M>, @Nullable R> accumulator,
+                                                      @Nullable Executor executor) {
+        return MessageStreamUtils.reduce(this, identity, accumulator, executor);
+    }
+
+    /**
      * Returns a {@link CompletableFuture} containing the container produced by {@code containerSupplier}, populated
      * by passing each message in this stream to {@code accumulator}.
      * <p>
@@ -628,6 +700,10 @@ public interface MessageStream<M extends Message> {
     /**
      * Returns a stream that invokes the given {@code completeHandler} when the stream completes normally.
      * Throws an exception if this stream is unbounded.
+     * <p>
+     * The {@code completeHandler} is not invoked when the stream completes with an error, nor when the stream is
+     * {@link #close() closed} by its consumer before it completed, such as while an {@link Entry} remains to be read,
+     * even when that entry was already {@link #peek() peeked}.
      *
      * @param completeHandler The {@link Runnable} to invoke when the stream completes normally.
      * @return A stream that invokes the {@code completeHandler} upon normal completion.
