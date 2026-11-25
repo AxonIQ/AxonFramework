@@ -234,6 +234,17 @@ public class PooledStreamingEventProcessor implements StreamingEventProcessor {
         return releaseSegment(segmentId, tokenClaimInterval * 2, MILLISECONDS);
     }
 
+    /**
+     * {@inheritDoc}
+     * <p>
+     * Regardless of the {@code releaseDuration}, this processor does not claim the segment again before its release
+     * has completed: its work package has aborted, which waits for the batch it is handling, its final progress has
+     * been stored, or failed to be stored, its segment release listeners have been notified and its claim has been
+     * released. The wait for the final progress and the wait for the release listeners are each bounded by the
+     * {@link PooledStreamingEventProcessorConfiguration#claimExtensionThreshold(long) claim extension threshold}.
+     * Claim, split and merge instructions for the segment wait for its release to end, see
+     * {@link #claimSegment(int)}.
+     */
     @Override
     public CompletableFuture<Void> releaseSegment(int segmentId, long releaseDuration, TimeUnit unit) {
         coordinator.releaseUntil(
@@ -242,16 +253,55 @@ public class PooledStreamingEventProcessor implements StreamingEventProcessor {
         return FutureUtils.emptyCompletedFuture();
     }
 
+    /**
+     * {@inheritDoc}
+     * <p>
+     * Claim, split and merge instructions are performed one at a time, in the order they were given. An instruction
+     * touching a segment this processor is still releasing waits until that release has ended, and the instructions
+     * given after it, also those for unrelated segments, wait behind it. Event processing continues meanwhile. Of a
+     * release, only storing the final progress and notifying the segment release listeners are bounded by the
+     * {@link PooledStreamingEventProcessorConfiguration#claimExtensionThreshold(long) claim extension threshold}.
+     * Aborting the work package, which waits for the batch it is handling, and releasing the claim are not, so a
+     * release that never ends holds up later instructions and a shutdown. For the same reason, a segment release
+     * listener must not wait for a claim, split or merge instruction it gives: that instruction waits for the release
+     * the listener is part of, until the listener's wait times out.
+     */
     @Override
     public CompletableFuture<Boolean> claimSegment(int segmentId) {
         return coordinator.claimSegment(segmentId);
     }
 
+    /**
+     * {@inheritDoc}
+     * <p>
+     * Claim, split and merge instructions are performed one at a time, in the order they were given. An instruction
+     * touching a segment this processor is still releasing waits until that release has ended, and the instructions
+     * given after it, also those for unrelated segments, wait behind it. Event processing continues meanwhile. Of a
+     * release, only storing the final progress and notifying the segment release listeners are bounded by the
+     * {@link PooledStreamingEventProcessorConfiguration#claimExtensionThreshold(long) claim extension threshold}.
+     * Aborting the work package, which waits for the batch it is handling, and releasing the claim are not, so a
+     * release that never ends holds up later instructions and a shutdown. For the same reason, a segment release
+     * listener must not wait for a claim, split or merge instruction it gives: that instruction waits for the release
+     * the listener is part of, until the listener's wait times out.
+     */
     @Override
     public CompletableFuture<Boolean> splitSegment(int segmentId) {
         return coordinator.splitSegment(segmentId);
     }
 
+    /**
+     * {@inheritDoc}
+     * <p>
+     * Claim, split and merge instructions are performed one at a time, in the order they were given. An instruction
+     * touching a segment this processor is still releasing waits until that release has ended, and the instructions
+     * given after it, also those for unrelated segments, wait behind it. Event processing continues meanwhile. Of a
+     * release, only storing the final progress and notifying the segment release listeners are bounded by the
+     * {@link PooledStreamingEventProcessorConfiguration#claimExtensionThreshold(long) claim extension threshold}.
+     * Aborting the work package, which waits for the batch it is handling, and releasing the claim are not, so a
+     * release that never ends holds up later instructions and a shutdown. For the same reason, a segment release
+     * listener must not wait for a claim, split or merge instruction it gives: that instruction waits for the release
+     * the listener is part of, until the listener's wait times out.
+     */
     @Override
     public CompletableFuture<Boolean> mergeSegment(int segmentId) {
         return coordinator.mergeSegment(segmentId);

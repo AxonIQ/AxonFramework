@@ -98,6 +98,8 @@ public interface SegmentChangeListener {
     /**
      * Invoked when a segment has been claimed and processing for that segment is started.
      * <p>
+     * This includes the segments resulting from a split or merge, once the processor claims them.
+     * <p>
      * The {@code from} token is the position this segment resumes at, letting a listener see how far along the stream
      * the segment is before the first event is delivered.
      *
@@ -111,10 +113,20 @@ public interface SegmentChangeListener {
     /**
      * Invoked when a segment has been released.
      * <p>
-     * Invoked while the claim on the {@code segment} is still held, so a listener can wind down the work it runs for
-     * that segment before another node can pick it up. The claim is released once the returned
+     * This includes a segment the processor gives up because it splits it or merges it with another segment. The
+     * segments resulting from the split or merge are new claims, which
+     * {@link #onSegmentClaimed(Segment, TrackingToken)} is invoked for.
+     * <p>
+     * Invoked while the claim on the {@code segment} is still held, after the final progress of the segment has been
+     * stored, or failed to be stored, so a listener can wind down the work it runs for that segment before another
+     * node can pick it up. The claim is released once the returned
      * {@link CompletableFuture} completes, or once the processor's claim extension threshold has passed, whichever
      * comes first.
+     * <p>
+     * The processor does not claim the {@code segment} again before its claim has been released, so a listener is
+     * never asked to wind down the work of a newer claim on the same segment. A listener exceeding the claim extension
+     * threshold is the exception: the processor stops waiting for it, so the work it still does may overlap with a
+     * newer claim on the segment.
      *
      * @param segment released {@link Segment}
      * @return {@link CompletableFuture} that completes when handling has finished
