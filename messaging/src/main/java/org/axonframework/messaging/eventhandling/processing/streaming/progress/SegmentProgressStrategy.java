@@ -92,16 +92,8 @@ public interface SegmentProgressStrategy {
      * {@link SegmentProgressContext#persistProgress(TrackingToken, ProcessingContext)} within {@code context}, while the
      * token-store claim is still held. Defaults to a no-op (the per-batch persistence already covered progress).
      * <p>
-     * The processor waits for the returned {@link CompletableFuture} for at most its claim extension threshold, since
-     * the claim of the released segment is no longer extended. A future that does not complete within that time counts
-     * as a failed store. The processor does not claim the segment again before the returned future has completed or
-     * timed out and the claim has been released.
-     * <p>
-     * When the final store fails, the release continues regardless: the segment release listeners are notified and the
-     * claim is released. The segment then resumes from the token stored last, handling the events after it again. A
-     * store the strategy still applies after it timed out may fail, as the claim it needs may be gone. It may also
-     * succeed, when this processor claimed the segment again in the meantime, and then move the stored token back.
-     * Events are then handled again, but never skipped.
+     * When the final store fails, the release continues regardless, and the segment later resumes from the token stored
+     * last.
      *
      * @param context the processing context whose transaction the final store participates in
      * @return a {@link CompletableFuture} completing when the final persistence (if any) has been applied

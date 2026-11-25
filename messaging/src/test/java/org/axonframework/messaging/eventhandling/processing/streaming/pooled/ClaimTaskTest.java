@@ -38,7 +38,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -58,7 +57,6 @@ class ClaimTaskTest {
     private final TokenStore tokenStore = mock(TokenStore.class);
     private final Map<Integer, WorkPackage> workPackages = new HashMap<>();
     private final Map<Integer, Instant> releasesDeadlines = new HashMap<>();
-    private final Map<Integer, CompletableFuture<Void>> releasesInProgress = new HashMap<>();
 
     private CompletableFuture<Boolean> result;
     private ClaimTask testSubject;
@@ -72,7 +70,6 @@ class ClaimTaskTest {
                 SEGMENT_ID,
                 workPackages,
                 releasesDeadlines,
-                releasesInProgress,
                 tokenStore,
                 new SimpleUnitOfWorkFactory(EmptyApplicationContext.INSTANCE)
         );
@@ -87,59 +84,12 @@ class ClaimTaskTest {
             workPackages.put(SEGMENT_ID, mock(WorkPackage.class));
 
             // when
-            runUntilDone(testSubject);
+            testSubject.run();
 
             // then
             assertThat(result).isDone();
             assertThat(result.get()).isTrue();
             verifyNoInteractions(tokenStore);
-        }
-    }
-
-    @Nested
-    class WhenSegmentIsBeingReleased {
-
-        @Test
-        void runEndsWithTheReleaseToAwait() {
-            // given
-            CompletableFuture<Void> release = new CompletableFuture<>();
-            releasesInProgress.put(SEGMENT_ID, release);
-
-            // when
-            CompletableFuture<CompletableFuture<Void>> run = testSubject.run();
-
-            // then - the run ends right away with the release to await before running the task again
-            assertThat(run).isCompletedWithValue(release);
-            assertThat(result).isNotDone();
-        }
-
-        @Test
-        void runClaimsTheSegmentOnlyOnceItsReleaseEnded() throws ExecutionException, InterruptedException {
-            // given - this coordinator is still releasing the segment, whose work package has yet to abort
-            CompletableFuture<Void> release = new CompletableFuture<>();
-            releasesInProgress.put(SEGMENT_ID, release);
-            workPackages.put(SEGMENT_ID, mock(WorkPackage.class));
-            when(tokenStore.fetchAvailableSegments(eq(PROCESSOR_NAME), any()))
-                    .thenReturn(completedFuture(List.of(SEGMENT)));
-            when(tokenStore.fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any()))
-                    .thenReturn(completedFuture(new GlobalSequenceTrackingToken(0)));
-
-            // when
-            runUntilDone(testSubject);
-
-            // then
-            assertThat(result).isNotDone();
-            verify(tokenStore, never()).fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any());
-
-            // when - the release removed the work package and ended
-            workPackages.remove(SEGMENT_ID);
-            releasesInProgress.remove(SEGMENT_ID);
-            release.complete(null);
-
-            // then
-            assertThat(result).isDone();
-            assertThat(result.get()).isTrue();
-            verify(tokenStore).fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any());
         }
     }
 
@@ -153,7 +103,7 @@ class ClaimTaskTest {
                     .thenReturn(completedFuture(List.of()));
 
             // when
-            runUntilDone(testSubject);
+            testSubject.run();
 
             // then
             assertThat(result).isDone();
@@ -167,7 +117,7 @@ class ClaimTaskTest {
                     .thenReturn(completedFuture(List.of(OTHER_SEGMENT)));
 
             // when
-            runUntilDone(testSubject);
+            testSubject.run();
 
             // then
             assertThat(result).isDone();
@@ -191,7 +141,7 @@ class ClaimTaskTest {
                     .thenReturn(completedFuture(new GlobalSequenceTrackingToken(0)));
 
             // when
-            runUntilDone(testSubject);
+            testSubject.run();
 
             // then
             verify(tokenStore).fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any());
@@ -207,23 +157,12 @@ class ClaimTaskTest {
                     .thenReturn(CompletableFuture.failedFuture(new UnableToClaimTokenException("already claimed by another processor")));
 
             // when
-            runUntilDone(testSubject);
+            testSubject.run();
 
             // then - claim failure is a normal false result, not an exceptional completion
             assertThat(result).isDone();
             assertThat(result.isCompletedExceptionally()).isFalse();
             assertThat(result.get()).isFalse();
         }
-    }
-
-    /**
-     * Runs the given task again once a release it awaits has ended, as the {@link Coordinator} does.
-     */
-    private static void runUntilDone(CoordinatorTask task) {
-        task.run().thenAccept(release -> {
-            if (release != null) {
-                release.whenComplete((ignored, failure) -> runUntilDone(task));
-            }
-        });
     }
 }

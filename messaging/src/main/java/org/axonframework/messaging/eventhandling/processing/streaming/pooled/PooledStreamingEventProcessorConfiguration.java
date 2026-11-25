@@ -407,9 +407,6 @@ public class PooledStreamingEventProcessorConfiguration extends EventProcessorCo
      * Specifies a time in milliseconds the work packages of this processor should extend the claim on a
      * {@link TrackingToken}. The threshold will only be met in absence of regular event processing, since that update
      * the {@code TrackingToken} automatically. Defaults to {@code 5000} milliseconds.
-     * <p>
-     * As the claim of a released segment is no longer extended, this threshold also bounds how long the release of a
-     * segment waits for its final progress to be stored and for the segment release listeners to wind down.
      *
      * @param claimExtensionThreshold The time in milliseconds the work packages of this processor should extend the
      *                                claim on a {@link TrackingToken}.

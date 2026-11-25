@@ -33,8 +33,8 @@ import java.lang.invoke.MethodHandles;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.Function;
 
 
 /**
@@ -45,12 +45,7 @@ import java.util.function.Function;
  * of the specified {@code segmentId}, it will try to claim the segment's {@link TrackingToken} and then split it.
  * <p>
  * In either way, the segment's claim (if present) will be released, so that another thread can proceed with processing
- * it. When the {@code Coordinator} was processing the segment, its final progress is stored and the segment release
- * listeners are notified before the segment's token is split, as with any release of a segment.
- * <p>
- * The {@code Coordinator} runs this task exclusively, so it coordinates no other segment while the task winds down the
- * segment: storing its final progress and notifying its release listeners may take up to twice the claim extension
- * threshold.
+ * it.
  *
  * @author Steven van Beelen
  * @see Coordinator
@@ -64,8 +59,6 @@ class SplitTask extends CoordinatorTask {
     private final int segmentId;
     private final Map<Integer, WorkPackage> workPackages;
     private final Map<Integer, Instant> releasesDeadlines;
-    private final Map<Integer, CompletableFuture<Void>> releasesInProgress;
-    private final Function<WorkPackage, CompletableFuture<Void>> windDown;
     private final TokenStore tokenStore;
     private final UnitOfWorkFactory unitOfWorkFactory;
     @Deprecated(forRemoval = true, since = "5.2.0")
@@ -82,11 +75,6 @@ class SplitTask extends CoordinatorTask {
      * @param workPackages      The collection of {@link WorkPackage}s controlled by the {@link Coordinator}. Will be
      *                          queried for the presence of the given {@code segmentId}.
      * @param releasesDeadlines the map of segments that are blocked from claiming until a specified time
-     * @param releasesInProgress the releases the {@link Coordinator} is running, per segment identifier; a segment
-     *                           being released is only touched once its release has ended
-     * @param windDown           winds down the segment of a work package this coordinator processed and the task
-     *                           gives up, storing its final progress and notifying the segment release listeners;
-     *                           completes normally once done, also when either step failed or timed out
      * @param tokenStore        The storage solution for {@link TrackingToken}s. Used to claim the {@code segmentId} if
      *                          it is not present in the {@code workPackages} and to store the split segment.
      * @param unitOfWorkFactory The {@link UnitOfWorkFactory} that spawns {@link UnitOfWork UnitOfWorks} used to invoke
@@ -98,8 +86,6 @@ class SplitTask extends CoordinatorTask {
               int segmentId,
               Map<Integer, WorkPackage> workPackages,
               Map<Integer, Instant> releasesDeadlines,
-              Map<Integer, CompletableFuture<Void>> releasesInProgress,
-              Function<WorkPackage, CompletableFuture<Void>> windDown,
               TokenStore tokenStore,
               UnitOfWorkFactory unitOfWorkFactory,
               @Deprecated(forRemoval = true, since = "5.2.0")
@@ -110,8 +96,6 @@ class SplitTask extends CoordinatorTask {
         this.segmentId = segmentId;
         this.workPackages = workPackages;
         this.releasesDeadlines = releasesDeadlines;
-        this.releasesInProgress = releasesInProgress;
-        this.windDown = windDown;
         this.tokenStore = tokenStore;
         this.unitOfWorkFactory = unitOfWorkFactory;
         this.clock = clock;
@@ -126,11 +110,6 @@ class SplitTask extends CoordinatorTask {
      */
     @Override
     protected CompletableFuture<Boolean> task() {
-        CompletableFuture<Void> release = releasesInProgress.get(segmentId);
-        if (release != null) {
-            // The split takes place once the Coordinator released the segment, rather than racing that release.
-            return awaitRelease(release);
-        }
         // Block the segment from being claimed by the Coordinator while we perform the split.
         // This prevents a race condition where the Coordinator might claim a segment that's being split.
         releasesDeadlines.put(segmentId, clock.instant().plus(RECLAIM_BLOCK_TIMEOUT));
@@ -161,12 +140,8 @@ class SplitTask extends CoordinatorTask {
     private CompletableFuture<Boolean> splitAndRelease(Segment segmentToSplit, @Nullable WorkPackage workPackage) {
         // Commit the aborted package's final progress BEFORE fetching the token, so both split halves inherit the
         // freshly-reconciled position rather than a stale stored token.
-        // Like any release, the release listeners wind down the work of the segment while the claim is still held.
-        CompletableFuture<Void> woundDown = workPackage == null
-                ? FutureUtils.emptyCompletedFuture()
-                : windDown.apply(workPackage);
-        return woundDown
-                .thenCompose(ignored -> unitOfWorkFactory.create().executeWithResult(
+        return releaseProgressOf(workPackage, unitOfWorkFactory)
+                .thenCompose(released -> unitOfWorkFactory.create().executeWithResult(
                         context -> tokenStore.fetchToken(name, segmentToSplit.getSegmentId(), context)
                                              .thenApply(tokenToSplit -> TrackerStatus.split(segmentToSplit, tokenToSplit))
                                              .thenCompose(splitStatuses -> splitAndRelease(splitStatuses, segmentToSplit, context))
@@ -200,6 +175,11 @@ class SplitTask extends CoordinatorTask {
                              );
                              return true;
                          });
+    }
+
+    @Override
+    boolean touchesAnyOf(Set<Integer> segmentIds) {
+        return segmentIds.contains(segmentId);
     }
 
     @Override

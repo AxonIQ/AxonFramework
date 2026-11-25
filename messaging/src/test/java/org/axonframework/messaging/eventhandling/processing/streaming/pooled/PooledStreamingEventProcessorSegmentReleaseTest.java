@@ -16,6 +16,7 @@
 
 package org.axonframework.messaging.eventhandling.processing.streaming.pooled;
 
+import org.axonframework.common.FutureUtils;
 import org.axonframework.common.configuration.AxonConfiguration;
 import org.axonframework.messaging.core.configuration.MessagingConfigurer;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
@@ -74,6 +75,7 @@ class PooledStreamingEventProcessorSegmentReleaseTest {
     private final CompletableFuture<Void> finalProgressGate = new CompletableFuture<>();
     private final AtomicBoolean firstFinalProgressFails = new AtomicBoolean();
     private final AtomicBoolean failNextEvent = new AtomicBoolean(true);
+    private final AtomicReference<@Nullable Runnable> handlerAction = new AtomicReference<>();
     private final AtomicReference<@Nullable Throwable> releaseListenerFailure = new AtomicReference<>();
     private final AsyncInMemoryStreamableEventSource eventSource = new AsyncInMemoryStreamableEventSource(false, false);
     private @Nullable AxonConfiguration configuration;
@@ -216,41 +218,6 @@ class PooledStreamingEventProcessorSegmentReleaseTest {
     }
 
     @Nested
-    class WhenTheFinalStoreNeverCompletes {
-
-        private static final long CLAIM_EXTENSION_THRESHOLD = 300;
-
-        @BeforeEach
-        void setUp() {
-            releaseListenerGate.complete(null);
-            startProcessor(1, CLAIM_EXTENSION_THRESHOLD);
-        }
-
-        @Test
-        void segmentIsClaimedAgainOnceTheClaimExtensionThresholdPassed() {
-            // when
-            processor().releaseSegment(0, TOKEN_CLAIM_INTERVAL, TimeUnit.MILLISECONDS);
-
-            // then - the final store counts as failed, so the release continues
-            await().atMost(TIMEOUT).untilAsserted(() -> assertThat(segmentLog).containsExactly(
-                    CLAIMED, STORING_FINAL_PROGRESS, RELEASE_LISTENER_INVOKED, CLAIM_RELEASED, CLAIMED
-            ));
-        }
-
-        @Test
-        void shutdownCompletesOnceTheClaimExtensionThresholdPassed() {
-            // when
-            CompletableFuture<Void> shutdown = processor().shutdown();
-
-            // then
-            assertThat(shutdown).succeedsWithin(TIMEOUT);
-            assertThat(segmentLog).containsExactly(
-                    CLAIMED, STORING_FINAL_PROGRESS, RELEASE_LISTENER_INVOKED, CLAIM_RELEASED
-            );
-        }
-    }
-
-    @Nested
     class WhenInstructionsWaitForSeveralReleases {
 
         private final CompletableFuture<Void> releaseOfSegmentZero = new CompletableFuture<>();
@@ -289,7 +256,7 @@ class PooledStreamingEventProcessorSegmentReleaseTest {
         }
 
         @Test
-        void instructionsAwaitingReleasesArePerformedInTheOrderTheyWereGivenWhateverOrderTheReleasesEndIn() {
+        void anInstructionIsPerformedOnceTheReleaseOfItsOwnSegmentEndedRegardlessOfEarlierInstructions() {
             // given
             CompletableFuture<Boolean> splitOfOne = recorded("split 1", processor().splitSegment(1));
             CompletableFuture<Boolean> splitOfZero = recorded("split 0", processor().splitSegment(0));
@@ -297,13 +264,17 @@ class PooledStreamingEventProcessorSegmentReleaseTest {
 
             // when - the release awaited by the instruction given last ends first
             releaseOfSegmentZero.complete(null);
-            await().pollDelay(Duration.ofMillis(TOKEN_CLAIM_INTERVAL * 4)).until(() -> true);
+
+            // then - the instruction given last does not wait for the one given before it
+            assertThat(splitOfZero).succeedsWithin(TIMEOUT).isEqualTo(true);
+            assertThat(splitOfOne).isNotDone();
+
+            // when
             releaseOfSegmentOne.complete(null);
 
             // then
             assertThat(splitOfOne).succeedsWithin(TIMEOUT).isEqualTo(true);
-            assertThat(splitOfZero).succeedsWithin(TIMEOUT).isEqualTo(true);
-            assertThat(completedInstructions).containsExactly("split 1", "split 0");
+            assertThat(completedInstructions).containsExactly("split 0", "split 1");
         }
 
         private CompletableFuture<Boolean> recorded(String instruction, CompletableFuture<Boolean> result) {
@@ -325,22 +296,37 @@ class PooledStreamingEventProcessorSegmentReleaseTest {
         }
 
         @Test
-        void anInstructionForAnotherSegmentWaitsBehindAnInstructionWaitingForTheRelease() {
-            // given - a claim of segment one, which this processor already processes, would succeed right away
+        void anInstructionForAnotherSegmentDoesNotWaitForAnInstructionWaitingForTheRelease() {
+            // given
             CompletableFuture<Boolean> claimOfZero = processor().claimSegment(0);
+
+            // when - a claim of segment one, which this processor already processes
             CompletableFuture<Boolean> claimOfOne = processor().claimSegment(1);
 
             // then
-            await().during(Duration.ofMillis(TOKEN_CLAIM_INTERVAL * 4))
-                   .atMost(TIMEOUT)
-                   .untilAsserted(() -> assertThat(claimOfOne).isNotDone());
+            assertThat(claimOfOne).succeedsWithin(TIMEOUT).isEqualTo(true);
+            assertThat(claimOfZero).isNotDone();
 
             // when
             releaseListenerGate.complete(null);
 
             // then
             assertThat(claimOfZero).succeedsWithin(TIMEOUT).isEqualTo(true);
-            assertThat(claimOfOne).succeedsWithin(TIMEOUT).isEqualTo(true);
+        }
+
+        @Test
+        void anInstructionStillWaitingForTheReleaseCompletesUnsuccessfullyOnShutdown() {
+            // given
+            CompletableFuture<Boolean> claimOfZero = processor().claimSegment(0);
+            await().pollDelay(Duration.ofMillis(TOKEN_CLAIM_INTERVAL * 4)).until(() -> true);
+
+            // when - the processor shuts down, which waits for the release to end
+            CompletableFuture<Void> shutdown = processor().shutdown();
+            releaseListenerGate.complete(null);
+
+            // then
+            assertThat(shutdown).succeedsWithin(TIMEOUT);
+            assertThat(claimOfZero).succeedsWithin(TIMEOUT).isEqualTo(false);
         }
 
         @Test
@@ -401,84 +387,43 @@ class PooledStreamingEventProcessorSegmentReleaseTest {
     }
 
     @Nested
-    class WhenSplit {
+    class WhenAHandlerGivesAnInstruction {
 
         @BeforeEach
         void setUp() {
+            failNextEvent.set(false);
             releaseListenerGate.complete(null);
             finalProgressGate.complete(null);
         }
 
         @Test
-        void splitContinuesAfterAFailedFinalStore() {
-            // given
-            firstFinalProgressFails.set(true);
-            startProcessor(1);
+        void anInstructionForAnotherSegmentCompletesWhileTheHandlersOwnSegmentIsBeingReleased() {
+            // given - a handler that, while it handles an event, waits for an instruction for another segment
+            CompletableFuture<Void> handling = new CompletableFuture<>();
+            CompletableFuture<Void> instructionsGiven = new CompletableFuture<>();
+            CompletableFuture<Boolean> handlerInstruction = new CompletableFuture<>();
+            handlerAction.set(() -> {
+                handling.complete(null);
+                instructionsGiven.orTimeout(TIMEOUT.toMillis(), TimeUnit.MILLISECONDS).join();
+                processor().claimSegment(1)
+                           .orTimeout(2, TimeUnit.SECONDS)
+                           .whenComplete(FutureUtils.alsoComplete(handlerInstruction))
+                           .exceptionally(failure -> false)
+                           .join();
+            });
+            startProcessor();
+            eventSource.publishMessage(EventTestUtils.asEventMessage("event"));
+            await().atMost(TIMEOUT).until(handling::isDone);
 
-            // when
-            assertThat(processor().splitSegment(0)).succeedsWithin(TIMEOUT).isEqualTo(true);
+            // when - the segment is released, which waits for the handler, and a claim of it waits for that release
+            processor().releaseSegment(0, TOKEN_CLAIM_INTERVAL, TimeUnit.MILLISECONDS);
+            await().pollDelay(Duration.ofMillis(TOKEN_CLAIM_INTERVAL * 4)).until(() -> true);
+            CompletableFuture<Boolean> claimOfZero = processor().claimSegment(0);
+            instructionsGiven.complete(null);
 
-            // then
-            assertThat(segmentChanges).contains(new SegmentChange(RELEASED, Segment.ROOT_SEGMENT));
-            await().atMost(TIMEOUT).untilAsserted(
-                    () -> assertThat(processor().processingStatus()).containsOnlyKeys(0, 1)
-            );
-        }
-
-        @Test
-        void releaseListenersLearnTheSegmentWasGivenUpBeforeItsHalvesAreClaimed() {
-            // given
-            startProcessor(1);
-
-            // when
-            assertThat(processor().splitSegment(0)).succeedsWithin(TIMEOUT).isEqualTo(true);
-
-            // then
-            Segment original = Segment.ROOT_SEGMENT;
-            Segment lowerHalf = new Segment(0, 1);
-            Segment upperHalf = new Segment(1, 1);
-            await().atMost(TIMEOUT).untilAsserted(() -> assertThat(segmentChanges).containsExactlyInAnyOrder(
-                    new SegmentChange(CLAIMED, original),
-                    new SegmentChange(RELEASED, original),
-                    new SegmentChange(CLAIMED, lowerHalf),
-                    new SegmentChange(CLAIMED, upperHalf)
-            ));
-            assertThat(segmentChanges.subList(0, 2)).containsExactly(
-                    new SegmentChange(CLAIMED, original), new SegmentChange(RELEASED, original)
-            );
-        }
-    }
-
-    @Nested
-    class WhenMerged {
-
-        @BeforeEach
-        void setUp() {
-            releaseListenerGate.complete(null);
-            finalProgressGate.complete(null);
-        }
-
-        @Test
-        void releaseListenersLearnBothSegmentsWereGivenUpBeforeTheMergedSegmentIsClaimed() {
-            // given
-            Segment lowerHalf = new Segment(0, 1);
-            Segment upperHalf = new Segment(1, 1);
-            startProcessor(2);
-            await().atMost(TIMEOUT).until(() -> processor().processingStatus().containsKey(1));
-
-            // when
-            assertThat(processor().mergeSegment(0)).succeedsWithin(TIMEOUT).isEqualTo(true);
-
-            // then
-            Segment merged = Segment.ROOT_SEGMENT;
-            await().atMost(TIMEOUT).untilAsserted(() -> assertThat(segmentChanges).containsExactlyInAnyOrder(
-                    new SegmentChange(CLAIMED, lowerHalf),
-                    new SegmentChange(CLAIMED, upperHalf),
-                    new SegmentChange(RELEASED, lowerHalf),
-                    new SegmentChange(RELEASED, upperHalf),
-                    new SegmentChange(CLAIMED, merged)
-            ));
-            assertThat(segmentChanges.getLast()).isEqualTo(new SegmentChange(CLAIMED, merged));
+            // then - there is no segment one to claim, which the handler learns without waiting for the release
+            assertThat(handlerInstruction).succeedsWithin(TIMEOUT).isEqualTo(false);
+            assertThat(claimOfZero).succeedsWithin(TIMEOUT).isEqualTo(true);
         }
     }
 
@@ -487,10 +432,6 @@ class PooledStreamingEventProcessorSegmentReleaseTest {
     }
 
     private void startProcessor(int segmentCount) {
-        startProcessor(segmentCount, TIMEOUT.toMillis());
-    }
-
-    private void startProcessor(int segmentCount, long claimExtensionThreshold) {
         var listener = new SimpleSegmentChangeListener(
                 (segment, from) -> {
                     segmentLog.add(CLAIMED);
@@ -514,7 +455,7 @@ class PooledStreamingEventProcessorSegmentReleaseTest {
                                                                   .tokenStore(new RecordingTokenStore())
                                                                   .initialSegmentCount(segmentCount)
                                                                   .tokenClaimInterval(TOKEN_CLAIM_INTERVAL)
-                                                                  .claimExtensionThreshold(claimExtensionThreshold)
+                                                                  .claimExtensionThreshold(TIMEOUT.toMillis())
                                                                   .progressStrategyFactoryBuilder(
                                                                           components -> GatedReleaseStrategy::new
                                                                   )
@@ -588,6 +529,10 @@ class PooledStreamingEventProcessorSegmentReleaseTest {
         void on(String event) {
             if (failNextEvent.compareAndSet(true, false)) {
                 throw new IllegalStateException("simulated failure handling " + event);
+            }
+            Runnable action = handlerAction.getAndSet(null);
+            if (action != null) {
+                action.run();
             }
         }
     }

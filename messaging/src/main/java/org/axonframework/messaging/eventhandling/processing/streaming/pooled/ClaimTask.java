@@ -28,6 +28,7 @@ import java.lang.invoke.MethodHandles;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 
@@ -51,7 +52,6 @@ class ClaimTask extends CoordinatorTask {
     private final int segmentId;
     private final Map<Integer, WorkPackage> workPackages;
     private final Map<Integer, Instant> releasesDeadlines;
-    private final Map<Integer, CompletableFuture<Void>> releasesInProgress;
     private final TokenStore tokenStore;
     private final UnitOfWorkFactory unitOfWorkFactory;
 
@@ -67,8 +67,6 @@ class ClaimTask extends CoordinatorTask {
      *                          queried for the presence of the given {@code segmentId} and the segment to merge it
      *                          with.
      * @param releasesDeadlines The map of release deadlines for each segment.
-     * @param releasesInProgress the releases the {@link Coordinator} is running, per segment identifier; a segment
-     *                           being released is only touched once its release has ended
      * @param tokenStore        The storage solution for {@link TrackingToken}s. Used to claim the {@code segmentId} if
      *                          it is not present in the {@code workPackages}, to remove one of the segments and merge
      *                          the merged token.
@@ -80,7 +78,6 @@ class ClaimTask extends CoordinatorTask {
               int segmentId,
               Map<Integer, WorkPackage> workPackages,
               Map<Integer, Instant> releasesDeadlines,
-              Map<Integer, CompletableFuture<Void>> releasesInProgress,
               TokenStore tokenStore,
               UnitOfWorkFactory unitOfWorkFactory) {
         super(result, name);
@@ -88,7 +85,6 @@ class ClaimTask extends CoordinatorTask {
         this.segmentId = segmentId;
         this.workPackages = workPackages;
         this.releasesDeadlines = releasesDeadlines;
-        this.releasesInProgress = releasesInProgress;
         this.unitOfWorkFactory = unitOfWorkFactory;
         this.tokenStore = tokenStore;
     }
@@ -103,12 +99,6 @@ class ClaimTask extends CoordinatorTask {
     protected CompletableFuture<Boolean> task() {
         logger.debug("Processor [{}] will perform claim instruction for segment {}.", name, segmentId);
 
-        // Claiming a segment this coordinator is still releasing would let the remainder of that release, such as the
-        // release of its claim, act on the new claim. Its work package may still be present until it aborted.
-        CompletableFuture<Void> release = releasesInProgress.get(segmentId);
-        if (release != null) {
-            return awaitRelease(release);
-        }
         if (workPackages.containsKey(segmentId)) {
             return CompletableFuture.completedFuture(true);
         }
@@ -132,6 +122,11 @@ class ClaimTask extends CoordinatorTask {
                  return false;
              });
         });
+    }
+
+    @Override
+    boolean touchesAnyOf(Set<Integer> segmentIds) {
+        return segmentIds.contains(segmentId);
     }
 
     @Override
