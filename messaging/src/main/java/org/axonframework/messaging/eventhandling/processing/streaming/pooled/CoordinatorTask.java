@@ -143,6 +143,24 @@ abstract class CoordinatorTask {
     abstract boolean touchesAnyOf(Set<Integer> segmentIds);
 
     /**
+     * Returns the identifier of the segment this task was instructed for.
+     *
+     * @return the identifier of the segment this task was instructed for
+     */
+    abstract int segmentId();
+
+    /**
+     * Indicates whether this task and the given {@code other} task may touch the same segment, in which case they run
+     * in the order they were given.
+     *
+     * @param other the task to compare with
+     * @return {@code true} if both tasks may touch the same segment, {@code false} otherwise
+     */
+    boolean conflictsWith(CoordinatorTask other) {
+        return touchesAnyOf(Set.of(other.segmentId())) || other.touchesAnyOf(Set.of(segmentId()));
+    }
+
+    /**
      * Shortly describes this {@link CoordinatorTask}.
      *
      * @return a short description of this {@link CoordinatorTask}

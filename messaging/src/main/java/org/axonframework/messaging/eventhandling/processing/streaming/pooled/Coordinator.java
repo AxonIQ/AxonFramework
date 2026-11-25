@@ -957,17 +957,22 @@ class Coordinator {
         }
 
         /**
-         * Takes the first task from the queue that does not touch a segment that is being released. Other tasks stay
-         * queued, in order, until the release they wait for has completed.
+         * Takes the first task from the queue that neither touches a segment that is being released, nor conflicts with
+         * an earlier task that waits. Other tasks stay queued until the release they wait for has completed. Tasks that
+         * may touch the same segment thus run in the order they were given.
          *
          * @return the first task that can run, or {@code null} if there is none
          */
         private @Nullable CoordinatorTask nextRunnableTask() {
+            List<CoordinatorTask> waitingTasks = new ArrayList<>();
             for (CoordinatorTask task : coordinatorTasks) {
-                if (!task.touchesAnyOf(releasesInProgress.keySet())) {
-                    coordinatorTasks.remove(task);
-                    return task;
+                if (task.touchesAnyOf(releasesInProgress.keySet())
+                        || waitingTasks.stream().anyMatch(task::conflictsWith)) {
+                    waitingTasks.add(task);
+                    continue;
                 }
+                coordinatorTasks.remove(task);
+                return task;
             }
             return null;
         }

@@ -256,6 +256,28 @@ class PooledStreamingEventProcessorSegmentReleaseTest {
         }
 
         @Test
+        void aLaterClaimOfTheSegmentToMergeWithWaitsForAMergeAwaitingAnotherRelease() {
+            // given
+            CompletableFuture<Boolean> merge = recorded("merge", processor().mergeSegment(0));
+            CompletableFuture<Boolean> claim = recorded("claim", processor().claimSegment(1));
+
+            // when - the release of the segment to claim ends first
+            releaseOfSegmentOne.complete(null);
+            await().pollDelay(Duration.ofMillis(TOKEN_CLAIM_INTERVAL * 4)).until(() -> true);
+
+            // then
+            assertThat(claim).isNotDone();
+
+            // when
+            releaseOfSegmentZero.complete(null);
+
+            // then - the merge goes first, after which there is no segment one to claim anymore
+            assertThat(merge).succeedsWithin(TIMEOUT).isEqualTo(true);
+            assertThat(claim).succeedsWithin(TIMEOUT).isEqualTo(false);
+            assertThat(completedInstructions).containsExactly("merge", "claim");
+        }
+
+        @Test
         void anInstructionIsPerformedOnceTheReleaseOfItsOwnSegmentEndedRegardlessOfEarlierInstructions() {
             // given
             CompletableFuture<Boolean> splitOfOne = recorded("split 1", processor().splitSegment(1));

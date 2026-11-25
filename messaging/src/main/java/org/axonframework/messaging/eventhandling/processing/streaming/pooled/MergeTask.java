@@ -194,6 +194,11 @@ class MergeTask extends CoordinatorTask {
     }
 
     @Override
+    int segmentId() {
+        return segmentId;
+    }
+
+    @Override
     String getDescription() {
         return "Merge Task for segment " + segmentId;
     }

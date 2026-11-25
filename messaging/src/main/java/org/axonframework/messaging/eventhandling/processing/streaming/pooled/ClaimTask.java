@@ -130,6 +130,11 @@ class ClaimTask extends CoordinatorTask {
     }
 
     @Override
+    int segmentId() {
+        return segmentId;
+    }
+
+    @Override
     String getDescription() {
         return "Claim Task for segment " + segmentId;
     }
