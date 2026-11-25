@@ -115,6 +115,7 @@ class Coordinator {
     private final Map<Integer, Instant> releasesDeadlines = new ConcurrentHashMap<>();
     private final Map<Integer, Integer> releasesLastBackOffSeconds = new ConcurrentHashMap<>();
     private final Map<Integer, CompletableFuture<Void>> releasesInProgress = new ConcurrentHashMap<>();
+    private final Map<CoordinatorTask, List<Integer>> segmentsReleasedForTasks = new ConcurrentHashMap<>();
     private final Queue<CoordinatorTask> coordinatorTasks = new ConcurrentLinkedQueue<>();
     private final AtomicReference<@Nullable CoordinationTask> coordinationTask = new AtomicReference<>();
     private final AtomicLong coordinationTaskGeneration = new AtomicLong(-1);
@@ -259,9 +260,9 @@ class Coordinator {
     /**
      * Instructs this coordinator to split the segment for the given {@code segmentId}.
      * <p>
-     * If this coordinator is currently in charge of the specified segment, the {@link WorkPackage} will be aborted and
-     * subsequently its segment split. When this coordinator is not in charge of the specified {@code segmentId}, it
-     * will try to claim the segment's {@link TrackingToken} and then split it.
+     * If this coordinator is currently in charge of the specified segment, it releases the segment first, keeping its
+     * claim, after which the segment is split. When this coordinator is not in charge of the specified
+     * {@code segmentId}, it will try to claim the segment's {@link TrackingToken} and then split it.
      * <p>
      * In either way, the segment's claim (if present) will be released, so that another thread can proceed with
      * processing it.
@@ -286,9 +287,10 @@ class Coordinator {
     /**
      * Instructs this coordinator to merge the segment for the given {@code segmentId}.
      * <p>
-     * If this coordinator is currently in charge of the {@code segmentId} and the segment to merge it with, both
-     * {@link WorkPackage}s will be aborted, after which the merge will start. When this coordinator is not in charge of
-     * one of the two segments, it will try to claim either segment's {@link TrackingToken} and perform the merge then.
+     * If this coordinator is currently in charge of the {@code segmentId} or the segment to merge it with, it releases
+     * these segments first, keeping their claims, after which the merge will start. When this coordinator is not in
+     * charge of one of the two segments, it will try to claim either segment's {@link TrackingToken} and perform the
+     * merge then.
      * <p>
      * In either approach, this operation will delete one of the segments and release the claim on the other, so that
      * another thread can proceed with processing it.
@@ -809,13 +811,9 @@ class Coordinator {
                 // Also await releases that started earlier, e.g. on an error, and end the tasks that will not run.
                 abortWorkPackages(null)
                         .thenCompose(ignored -> awaitReleasesInProgress())
-                        .whenComplete((ignored, failure) -> {
-                            CoordinatorTask task;
-                            while ((task = coordinatorTasks.poll()) != null) {
-                                task.complete(false, null);
-                            }
-                            runState.get().shutdownHandle().complete(null);
-                        });
+                        .exceptionally(failure -> null)
+                        .thenCompose(ignored -> abandonTasks())
+                        .whenComplete((ignored, failure) -> runState.get().shutdownHandle().complete(null));
                 closeStreamQuietly();
                 return;
             }
@@ -873,6 +871,10 @@ class Coordinator {
                 task.run()
                     .thenRun(() -> unclaimedSegmentValidationThreshold = 0)
                     .whenComplete((result, exception) -> {
+                        List<Integer> releasedSegments = segmentsReleasedForTasks.remove(task);
+                        if (releasedSegments != null) {
+                            releasedSegments.forEach(releasesDeadlines::remove);
+                        }
                         processingGate.set(false);
                         if (exception != null) {
                             logger.warn(
@@ -960,6 +962,9 @@ class Coordinator {
          * Takes the first task from the queue that neither touches a segment that is being released, nor conflicts with
          * an earlier task that waits. Other tasks stay queued until the release they wait for has completed. Tasks that
          * may touch the same segment thus run in the order they were given.
+         * <p>
+         * A task that gives up segments this coordinator processes has those released first, see
+         * {@link #releaseForTask(CoordinatorTask, List)}, and is taken once these releases have completed.
          *
          * @return the first task that can run, or {@code null} if there is none
          */
@@ -971,10 +976,53 @@ class Coordinator {
                     waitingTasks.add(task);
                     continue;
                 }
-                coordinatorTasks.remove(task);
-                return task;
+                List<WorkPackage> workPackagesToRelease = task.workPackagesToRelease();
+                if (workPackagesToRelease.isEmpty()) {
+                    coordinatorTasks.remove(task);
+                    return task;
+                }
+                releaseForTask(task, workPackagesToRelease);
+                waitingTasks.add(task);
             }
             return null;
+        }
+
+        /**
+         * Releases the segments of the given {@code workPackages} for the given {@code task}, which rewrites their
+         * tokens, such as a {@link SplitTask} or {@link MergeTask}. These are released like any other segment, except
+         * that their claims are kept for the task, which takes them over. Until the task has completed, the segments
+         * are blocked from being claimed again.
+         *
+         * @param task         the task giving up the segments
+         * @param workPackages the work packages of the segments to release
+         */
+        private void releaseForTask(CoordinatorTask task, List<WorkPackage> workPackages) {
+            List<Integer> segmentIds = workPackages.stream().map(wp -> wp.segment().getSegmentId()).toList();
+            logger.debug("Processor [{}] (Coordination Task [{}]) releases segments {} for task [{}].",
+                         name, generation, segmentIds, task.getDescription());
+            segmentsReleasedForTasks.put(task, segmentIds);
+            Instant blockedUntil = clock.instant().plus(CoordinatorTask.RECLAIM_BLOCK_TIMEOUT);
+            segmentIds.forEach(segmentId -> releasesDeadlines.put(segmentId, blockedUntil));
+            workPackages.forEach(workPackage -> abortWorkPackage(workPackage, null, false));
+        }
+
+        /**
+         * Completes the tasks that will not run anymore unsuccessfully and releases the claims kept for them.
+         *
+         * @return a {@link CompletableFuture} completing once the kept claims have been released
+         */
+        private CompletableFuture<Void> abandonTasks() {
+            CoordinatorTask task;
+            while ((task = coordinatorTasks.poll()) != null) {
+                task.complete(false, null);
+            }
+            CompletableFuture<?>[] claimReleases = segmentsReleasedForTasks.values()
+                                                                           .stream()
+                                                                           .flatMap(List::stream)
+                                                                           .map(this::releaseClaim)
+                                                                           .toArray(CompletableFuture[]::new);
+            segmentsReleasedForTasks.clear();
+            return CompletableFuture.allOf(claimReleases);
         }
 
         private void coordinateEvents() {
@@ -1577,6 +1625,22 @@ class Coordinator {
          * @return a {@link CompletableFuture} completing once the release of the segment has ended
          */
         private CompletableFuture<Void> abortWorkPackage(WorkPackage work, @Nullable Throwable cause) {
+            return abortWorkPackage(work, cause, true);
+        }
+
+        /**
+         * Aborts the given {@code work} package and releases its segment like
+         * {@link #abortWorkPackage(WorkPackage, Throwable)}, releasing its claim only when {@code releaseClaim} is
+         * {@code true}.
+         *
+         * @param work         the work package to abort
+         * @param cause        the reason to abort the work package, may be {@code null}
+         * @param releaseClaim whether to release the claim once the release listeners have been notified
+         * @return a {@link CompletableFuture} completing once the release of the segment has ended
+         */
+        private CompletableFuture<Void> abortWorkPackage(WorkPackage work,
+                                                         @Nullable Throwable cause,
+                                                         boolean releaseClaim) {
             int segmentId = work.segment().getSegmentId();
             CompletableFuture<Void> release = new CompletableFuture<>();
             CompletableFuture<Void> ongoingRelease = releasesInProgress.putIfAbsent(segmentId, release);
@@ -1604,9 +1668,8 @@ class Coordinator {
                            return null;
                        })
                        .thenCompose(r -> notifyReleaseListeners(work.segment()))
-                       .thenComposeAsync(r -> unitOfWorkFactory.create().executeWithResult(
-                               context -> tokenStore.releaseClaim(name, segmentId, context)
-                       ), executorService)
+                       .thenComposeAsync(r -> releaseClaim ? releaseClaim(segmentId) : emptyCompletedFuture(),
+                                         executorService)
                        .exceptionally(throwable -> {
                            Throwable unwrapped = throwable instanceof CompletionException ce ? ce.getCause() : throwable;
                            if (unwrapped instanceof Error error) {
@@ -1663,6 +1726,12 @@ class Coordinator {
                                                     unwrapped);
                                             return null;
                                         });
+        }
+
+        private CompletableFuture<Void> releaseClaim(int segmentId) {
+            return unitOfWorkFactory.create().executeWithResult(
+                    context -> tokenStore.releaseClaim(name, segmentId, context)
+            );
         }
 
         /**

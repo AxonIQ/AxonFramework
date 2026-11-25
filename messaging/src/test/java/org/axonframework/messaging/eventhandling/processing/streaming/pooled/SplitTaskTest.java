@@ -76,50 +76,22 @@ class SplitTaskTest {
         );
     }
 
-    @Test
-    void runSplitsSegmentFromWorkPackage() throws ExecutionException, InterruptedException {
-        Segment testSegmentToSplit = Segment.ROOT_SEGMENT;
-        TrackingToken testTokenToSplit = new GlobalSequenceTrackingToken(0);
+    @Nested
+    class WorkPackagesToRelease {
 
-        TrackerStatus[] expectedTokens = TrackerStatus.split(testSegmentToSplit, testTokenToSplit);
-        TrackerStatus expectedOriginal = expectedTokens[0];
-        TrackerStatus expectedSplit = expectedTokens[1];
+        @Test
+        void containsTheWorkPackageOfTheSegmentToSplit() {
+            // given
+            workPackages.put(SEGMENT_ID, workPackage);
 
-        when(workPackage.segment()).thenReturn(testSegmentToSplit);
-        when(workPackage.abort(null)).thenReturn(emptyCompletedFuture());
-        when(workPackage.onSegmentReleased(any())).thenReturn(emptyCompletedFuture());
-        when(tokenStore.fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any()))
-                .thenReturn(completedFuture(testTokenToSplit));
-        when(tokenStore.initializeSegment(any(), eq(PROCESSOR_NAME), eq(new Segment(0, 1)), any()))
-                .thenReturn(emptyCompletedFuture());
-        when(tokenStore.initializeSegment(any(), eq(PROCESSOR_NAME), eq(new Segment(1, 1)), any()))
-                .thenReturn(emptyCompletedFuture());
-        when(tokenStore.deleteToken(eq(PROCESSOR_NAME), eq(Segment.ROOT_SEGMENT.getSegmentId()), any()))
-                .thenReturn(emptyCompletedFuture());
+            // when / then
+            assertThat(testSubject.workPackagesToRelease()).containsExactly(workPackage);
+        }
 
-        workPackages.put(SEGMENT_ID, workPackage);
-
-        testSubject.run();
-
-        // original token must be reinitialized (due to mask change):
-        verify(tokenStore).initializeSegment(eq(expectedOriginal.getTrackingToken()),
-                                             eq(PROCESSOR_NAME),
-                                             eq(expectedOriginal.getSegment()),
-                                             any());
-        verify(tokenStore).initializeSegment(eq(expectedSplit.getTrackingToken()),
-                                             eq(PROCESSOR_NAME),
-                                             eq(expectedSplit.getSegment()),
-                                             any());
-        verify(tokenStore).deleteToken(eq(PROCESSOR_NAME),
-                                       eq(expectedOriginal.getSegment().getSegmentId()),
-                                       any());
-        verify(tokenStore, never()).releaseClaim(any(), anyInt(), any());
-        // the aborted work package's final progress is flushed before the token is read, so both halves inherit it
-        InOrder releaseBeforeFetch = inOrder(workPackage, tokenStore);
-        releaseBeforeFetch.verify(workPackage).onSegmentReleased(any());
-        releaseBeforeFetch.verify(tokenStore).fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any());
-        assertTrue(result.isDone());
-        assertTrue(result.get());
+        @Test
+        void isEmptyWhenTheSegmentToSplitIsNotProcessed() {
+            assertThat(testSubject.workPackagesToRelease()).isEmpty();
+        }
     }
 
     @Test
@@ -157,8 +129,6 @@ class SplitTaskTest {
                                        eq(expectedOriginal.getSegment().getSegmentId()),
                                        any());
         verify(tokenStore, never()).releaseClaim(any(), anyInt(), any());
-        // the segment was claimed from the token store, so there is no local work package progress to release
-        verify(workPackage, never()).onSegmentReleased(any());
         assertTrue(result.isDone());
         assertTrue(result.get());
     }
@@ -259,21 +229,6 @@ class SplitTaskTest {
             assertThat(releasesDeadlines).isEmpty();
         }
 
-        @Test
-        void runClearsTheBlockWhenAbortingTheWorkPackageFails() {
-            // given
-            workPackages.put(SEGMENT_ID, workPackage);
-            when(workPackage.segment()).thenReturn(Segment.ROOT_SEGMENT);
-            when(workPackage.abort(null))
-                    .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("abort failed")));
-
-            // when
-            testSubject.run();
-
-            // then
-            assertThat(result).isCompletedExceptionally();
-            assertThat(releasesDeadlines).isEmpty();
-        }
     }
 
     @Nested
@@ -375,9 +330,8 @@ class SplitTaskTest {
         TrackerStatus expectedOriginal = expectedTokens[0]; // Segment(0, mask=1)
         TrackerStatus expectedSplit   = expectedTokens[1]; // Segment(1, mask=1)
 
-        when(workPackage.segment()).thenReturn(testSegmentToSplit);
-        when(workPackage.abort(null)).thenReturn(emptyCompletedFuture());
-        when(workPackage.onSegmentReleased(any())).thenReturn(emptyCompletedFuture());
+        when(tokenStore.fetchSegment(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any()))
+                .thenReturn(completedFuture(testSegmentToSplit));
         when(tokenStore.fetchToken(eq(PROCESSOR_NAME), eq(SEGMENT_ID), any()))
                 .thenReturn(completedFuture(testTokenToSplit));
         when(tokenStore.initializeSegment(any(), eq(PROCESSOR_NAME), eq(new Segment(0, 1)), any()))
@@ -386,8 +340,6 @@ class SplitTaskTest {
                 .thenReturn(emptyCompletedFuture());
         when(tokenStore.deleteToken(eq(PROCESSOR_NAME), eq(Segment.ROOT_SEGMENT.getSegmentId()), any()))
                 .thenReturn(emptyCompletedFuture());
-
-        workPackages.put(SEGMENT_ID, workPackage);
 
         testSubject.run();
 

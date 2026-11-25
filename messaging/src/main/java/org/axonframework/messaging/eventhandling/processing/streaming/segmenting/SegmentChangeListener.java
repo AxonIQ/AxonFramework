@@ -111,6 +111,10 @@ public interface SegmentChangeListener {
     /**
      * Invoked when a segment has been released.
      * <p>
+     * This includes a segment the processor gives up because it splits it or merges it with another segment. The
+     * segments resulting from the split or merge are new claims, which
+     * {@link #onSegmentClaimed(Segment, TrackingToken)} is invoked for.
+     * <p>
      * Invoked while the claim on the {@code segment} is still held, so a listener can wind down the work it runs for
      * that segment before another node can pick it up. The claim is released once the returned
      * {@link CompletableFuture} completes, or once the processor's claim extension threshold has passed, whichever
