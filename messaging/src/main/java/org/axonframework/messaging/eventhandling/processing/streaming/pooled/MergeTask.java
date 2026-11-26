@@ -187,10 +187,22 @@ class MergeTask extends CoordinatorTask {
         });
     }
 
-    // The segment to merge with is only known once this task runs, so any release counts.
+    /**
+     * {@inheritDoc}
+     * <p>
+     * A merge touches its own segment and the segment to merge it with. When this processor processes the segment, the
+     * mask of its {@link WorkPackage} names the segment to merge with. Otherwise, any segment that can be merged with
+     * this one for some mask counts: its identifier differs in a single bit, which is the highest bit of the larger of
+     * the two.
+     */
     @Override
     boolean touchesAnyOf(Set<Integer> segmentIds) {
-        return !segmentIds.isEmpty();
+        WorkPackage workPackage = workPackages.get(segmentId);
+        return segmentIds.stream().anyMatch(id -> id == segmentId || (
+                workPackage != null
+                        ? id == workPackage.segment().mergeableSegmentId()
+                        : Integer.bitCount(id ^ segmentId) == 1 && Math.min(id, segmentId) < (id ^ segmentId)
+        ));
     }
 
     @Override

@@ -409,6 +409,90 @@ class PooledStreamingEventProcessorSegmentReleaseTest {
     }
 
     @Nested
+    class WhenAMergeIsGivenWhileOtherSegmentsAreReleased {
+
+        /**
+         * A held release ends by itself once its listeners exceed the claim extension threshold ({@link #TIMEOUT}), so
+         * whatever must not wait for it has to complete well before that.
+         */
+        private static final Duration WELL_WITHIN_THE_THRESHOLD = Duration.ofSeconds(1);
+
+        @BeforeEach
+        void setUp() {
+            failNextEvent.set(false);
+            finalProgressGate.complete(null);
+            startProcessor(8);
+            await().atMost(TIMEOUT).until(() -> processor().processingStatus().size() == 8);
+        }
+
+        @Test
+        void aMergeAndALaterClaimDoNotWaitForReleasesOfSegmentsTheMergeDoesNotTouch() {
+            // given - segment zero merges with segment four, segments one and three are being released
+            holdReleaseOf(1);
+            holdReleaseOf(3);
+
+            // when
+            CompletableFuture<Boolean> merge = processor().mergeSegment(0);
+            CompletableFuture<Boolean> claim = processor().claimSegment(2);
+
+            // then
+            assertThat(merge).succeedsWithin(WELL_WITHIN_THE_THRESHOLD).isEqualTo(true);
+            assertThat(claim).succeedsWithin(WELL_WITHIN_THE_THRESHOLD).isEqualTo(true);
+        }
+
+        @Test
+        void aMergeWaitsForTheReleaseOfTheSegmentToMergeWith() {
+            // given
+            holdReleaseOf(4);
+            holdReleaseOf(1);
+
+            // when
+            CompletableFuture<Boolean> merge = processor().mergeSegment(0);
+            await().pollDelay(Duration.ofMillis(TOKEN_CLAIM_INTERVAL * 4)).until(() -> true);
+
+            // then
+            assertThat(merge).isNotDone();
+
+            // when
+            segmentReleaseListenerGates.get(4).complete(null);
+
+            // then - the release of segment one, which the merge does not touch, still runs
+            assertThat(merge).succeedsWithin(WELL_WITHIN_THE_THRESHOLD).isEqualTo(true);
+        }
+
+        @Test
+        void aMergeOfASegmentThisProcessorDoesNotProcessWaitsForTheReleaseOfTheSegmentToMergeWith() {
+            // given - segment zero is released for longer than the test runs, so the merge has to claim it
+            segmentReleaseListenerGates.put(0, emptyCompletedFuture());
+            processor().releaseSegment(0, 1, TimeUnit.MINUTES);
+            await().atMost(TIMEOUT).until(() -> segmentLog.contains(CLAIM_RELEASED));
+            holdReleaseOf(4);
+            holdReleaseOf(3);
+
+            // when
+            CompletableFuture<Boolean> merge = processor().mergeSegment(0);
+            await().pollDelay(Duration.ofMillis(TOKEN_CLAIM_INTERVAL * 4)).until(() -> true);
+
+            // then
+            assertThat(merge).isNotDone();
+
+            // when
+            segmentReleaseListenerGates.get(4).complete(null);
+
+            // then - without the mask of segment zero, segment three is still known not to be the one to merge with
+            assertThat(merge).succeedsWithin(WELL_WITHIN_THE_THRESHOLD).isEqualTo(true);
+        }
+
+        private void holdReleaseOf(int segmentId) {
+            segmentReleaseListenerGates.put(segmentId, new CompletableFuture<>());
+            processor().releaseSegment(segmentId, TOKEN_CLAIM_INTERVAL, TimeUnit.MILLISECONDS);
+            await().atMost(TIMEOUT).until(
+                    () -> segmentChanges.contains(new SegmentChange(RELEASED, new Segment(segmentId, 7)))
+            );
+        }
+    }
+
+    @Nested
     class WhenAHandlerGivesAnInstruction {
 
         @BeforeEach
