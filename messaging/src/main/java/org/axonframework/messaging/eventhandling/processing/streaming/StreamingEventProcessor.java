@@ -74,7 +74,7 @@ public interface StreamingEventProcessor extends EventProcessor {
      * Instructs the processor to release the segment with given {@code segmentId}. This processor will not try to claim
      * the given segment for the specified {@code releaseDuration} in the given {@code unit}, to ensure it is not
      * immediately reclaimed. Note that this will override any previous release duration that existed for this segment.
-     * Providing a negative value will allow the segment to be immediately claimed.
+     * Providing a negative value releases nothing: the processor keeps the segment and continues processing it.
      * <p>
      * If the processor is not actively processing the segment with given {@code segmentId}, claiming it will be ignored
      * for the given timeframe nonetheless.

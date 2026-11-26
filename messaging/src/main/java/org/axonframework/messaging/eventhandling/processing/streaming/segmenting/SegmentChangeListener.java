@@ -114,7 +114,7 @@ public interface SegmentChangeListener {
      * Invoked while the claim on the {@code segment} is still held, so a listener can wind down the work it runs for
      * that segment before another node can pick it up. The claim is released once the returned
      * {@link CompletableFuture} completes, or once the processor's claim extension threshold has passed, whichever
-     * comes first.
+     * comes first. The processor does not claim the {@code segment} again before then.
      *
      * @param segment released {@link Segment}
      * @return {@link CompletableFuture} that completes when handling has finished

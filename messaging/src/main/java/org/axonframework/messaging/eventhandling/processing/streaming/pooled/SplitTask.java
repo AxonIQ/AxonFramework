@@ -33,6 +33,7 @@ import java.lang.invoke.MethodHandles;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 
@@ -174,6 +175,16 @@ class SplitTask extends CoordinatorTask {
                              );
                              return true;
                          });
+    }
+
+    @Override
+    boolean touchesAnyOf(Set<Integer> segmentIds) {
+        return segmentIds.contains(segmentId);
+    }
+
+    @Override
+    int segmentId() {
+        return segmentId;
     }
 
     @Override

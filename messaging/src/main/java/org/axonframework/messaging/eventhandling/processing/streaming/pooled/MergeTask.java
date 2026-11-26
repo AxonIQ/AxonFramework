@@ -32,6 +32,7 @@ import java.lang.invoke.MethodHandles;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 
@@ -184,6 +185,17 @@ class MergeTask extends CoordinatorTask {
                                  return true;
                              });
         });
+    }
+
+    // The segment to merge with is only known once this task runs, so any release counts.
+    @Override
+    boolean touchesAnyOf(Set<Integer> segmentIds) {
+        return !segmentIds.isEmpty();
+    }
+
+    @Override
+    int segmentId() {
+        return segmentId;
     }
 
     @Override
