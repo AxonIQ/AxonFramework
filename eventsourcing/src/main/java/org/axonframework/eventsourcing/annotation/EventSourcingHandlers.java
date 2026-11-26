@@ -16,6 +16,8 @@
 
 package org.axonframework.eventsourcing.annotation;
 
+import org.axonframework.common.annotation.Internal;
+
 import java.lang.annotation.Documented;
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -33,6 +35,7 @@ import java.lang.annotation.Target;
  * @see EventSourcingHandler
  * @since 5.5.0
  */
+@Internal
 @Documented
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.METHOD, ElementType.ANNOTATION_TYPE})
