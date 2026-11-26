@@ -591,7 +591,10 @@ class PooledStreamingEventProcessorSegmentReleaseTest {
                                                                  .join();
             assertThat(claim).succeedsWithin(TIMEOUT).isEqualTo(true);
             assertThat(handlerGaveUp).isTrue();
-            assertThat(segmentLog).containsSubsequence(RELEASE_LISTENER_INVOKED, CLAIM_RELEASED, CLAIMED);
+            // the claim completes before the claim listener logs it
+            await().atMost(TIMEOUT).untilAsserted(() -> assertThat(segmentLog).containsSubsequence(
+                    RELEASE_LISTENER_INVOKED, CLAIM_RELEASED, CLAIMED
+            ));
         }
     }
 
