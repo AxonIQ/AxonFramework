@@ -190,10 +190,16 @@ class MergeTask extends CoordinatorTask {
     /**
      * {@inheritDoc}
      * <p>
-     * A merge touches its own segment and the segment to merge it with. When this processor processes the segment, the
-     * mask of its {@link WorkPackage} names the segment to merge with. Otherwise, any segment that can be merged with
-     * this one for some mask counts: its identifier differs in a single bit, which is the highest bit of the larger of
-     * the two.
+     * A merge touches its own segment and the segment it merges with, so it has to wait while either of them is being
+     * released. Which segment it merges with depends on the mask of its own segment:
+     * <ul>
+     *     <li>When this processor processes the segment, the mask of its {@link WorkPackage} is known, and
+     *     {@link Segment#mergeableSegmentId()} names the segment to merge with. A merge of segment 0 with mask 7 only
+     *     touches segments 0 and 4.</li>
+     *     <li>When it does not, the mask is only read from the token store once the merge runs. Until then, every
+     *     segment that {@link #isPossibleMergePartner(int, int) could be the partner} counts. A merge of segment 0 then
+     *     touches segment 0 and every power of two (1, 2, 4, 8, ...), but not 3 or 5.</li>
+     * </ul>
      */
     @Override
     boolean touchesAnyOf(Set<Integer> segmentIds) {
@@ -201,8 +207,28 @@ class MergeTask extends CoordinatorTask {
         return segmentIds.stream().anyMatch(id -> id == segmentId || (
                 workPackage != null
                         ? id == workPackage.segment().mergeableSegmentId()
-                        : Integer.bitCount(id ^ segmentId) == 1 && Math.min(id, segmentId) < (id ^ segmentId)
+                        : isPossibleMergePartner(segmentId, id)
         ));
+    }
+
+    /**
+     * Indicates whether the given segments merge with each other under some mask: their identifiers differ in a single
+     * bit, which is the highest bit of the larger one.
+     * <p>
+     * This is a guess on purpose. The exact answer would be {@link Segment#mergeableSegmentId()}, but that needs the
+     * mask, and this node does not know the mask of a segment it does not process. Using the mask of the other segment
+     * instead is not enough, since after a split the masks differ. Take four segments and split segment 2. That gives
+     * 0/3, 1/3, 2/7, 3/3 and 6/7 (identifier/mask). Under mask 3, segment 0 merges with segment 2. Segment 2/7 merges
+     * with segment 6, so its own mask would say that a merge of segment 0 never touches it, and the merge would touch
+     * segment 2 while segment 2 is being released.
+     *
+     * @param segmentId      the identifier of the segment to merge
+     * @param otherSegmentId the identifier of the segment that may be merged with it
+     * @return {@code true} if some mask merges the two segments, {@code false} otherwise
+     */
+    private static boolean isPossibleMergePartner(int segmentId, int otherSegmentId) {
+        int differingBits = segmentId ^ otherSegmentId;
+        return Integer.bitCount(differingBits) == 1 && Math.min(segmentId, otherSegmentId) < differingBits;
     }
 
     @Override

@@ -523,6 +523,35 @@ class PooledStreamingEventProcessorSegmentReleaseTest {
             assertThat(merge).succeedsWithin(WELL_WITHIN_THE_THRESHOLD).isEqualTo(true);
         }
 
+        @Test
+        void aMergeOfASegmentThisProcessorDoesNotProcessWaitsForTheReleaseOfAPartnerWithAnotherMask() {
+            // given - merging 0 with 4 leaves 0/3, which merges with 2, while 2/7 itself merges with 6
+            assertThat(processor().mergeSegment(0)).succeedsWithin(TIMEOUT).isEqualTo(true);
+            await().atMost(TIMEOUT).until(
+                    () -> segmentChanges.contains(new SegmentChange(CLAIMED, new Segment(0, 3)))
+            );
+            long claimsReleased = segmentLog.stream().filter(CLAIM_RELEASED::equals).count();
+            segmentReleaseListenerGates.put(0, emptyCompletedFuture());
+            processor().releaseSegment(0, 1, TimeUnit.MINUTES);
+            await().atMost(TIMEOUT).until(
+                    () -> segmentLog.stream().filter(CLAIM_RELEASED::equals).count() > claimsReleased
+            );
+            holdReleaseOf(2);
+
+            // when
+            CompletableFuture<Boolean> merge = processor().mergeSegment(0);
+            await().pollDelay(Duration.ofMillis(TOKEN_CLAIM_INTERVAL * 4)).until(() -> true);
+
+            // then - the mask of segment 0 is unknown, so segment 2 may be the one to merge with
+            assertThat(merge).isNotDone();
+
+            // when
+            segmentReleaseListenerGates.get(2).complete(null);
+
+            // then
+            await().atMost(WELL_WITHIN_THE_THRESHOLD).until(merge::isDone);
+        }
+
         private void holdReleaseOf(int segmentId) {
             segmentReleaseListenerGates.put(segmentId, new CompletableFuture<>());
             processor().releaseSegment(segmentId, TOKEN_CLAIM_INTERVAL, TimeUnit.MILLISECONDS);
