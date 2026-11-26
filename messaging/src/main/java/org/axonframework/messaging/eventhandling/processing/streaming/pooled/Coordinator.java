@@ -56,6 +56,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -818,8 +819,7 @@ class Coordinator {
                         name,
                         generation);
                 // Also await releases that started earlier, e.g. on an error, and end the tasks that will not run.
-                abortWorkPackages(null)
-                        .thenCompose(ignored -> awaitReleasesInProgress())
+                releaseAllSegmentsWithinThreshold()
                         .whenComplete((ignored, failure) -> {
                             CoordinatorTask task;
                             while ((task = coordinatorTasks.poll()) != null) {
@@ -1674,6 +1674,33 @@ class Coordinator {
                                                     unwrapped);
                                             return null;
                                         });
+        }
+
+        /**
+         * Releases all segments, returning a {@link CompletableFuture} completing once every release has ended, or once
+         * the claim extension threshold has passed, whichever comes first.
+         * <p>
+         * A release still running at that point goes on: it keeps the claim of its segment until its final progress is
+         * stored, and only releases the claim after that, so no other node processes the segment while that store can
+         * still land. If the final store never lands, the claim times out in the token store instead.
+         *
+         * @return a {@link CompletableFuture} completing once all releases ended or the threshold has passed
+         */
+        private CompletableFuture<Void> releaseAllSegmentsWithinThreshold() {
+            return abortWorkPackages(null)
+                    .thenCompose(ignored -> awaitReleasesInProgress())
+                    .orTimeout(claimExtensionThreshold, TimeUnit.MILLISECONDS)
+                    .exceptionally(failure -> {
+                        Throwable unwrapped = failure instanceof CompletionException ce ? ce.getCause() : failure;
+                        if (unwrapped instanceof TimeoutException) {
+                            logger.warn("Processor [{}] (Coordination Task [{}]). The release of segments {} did not "
+                                                + "end within the claim extension threshold of [{}]ms. Shutting down "
+                                                + "regardless; each of these segments keeps its claim until its "
+                                                + "release ends or the claim times out.",
+                                        name, generation, releasesInProgress.keySet(), claimExtensionThreshold);
+                        }
+                        return null;
+                    });
         }
 
         /**
