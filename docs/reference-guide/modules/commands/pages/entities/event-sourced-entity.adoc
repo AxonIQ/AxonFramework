@@ -61,9 +61,9 @@ An event-sourced entity consists of four types of members:
 They validate the command and append the creation event.
 * **Instance command handlers**: instance methods that handle commands on an already-existing entity.
 They validate the command against current state and append events.
-* **Event sourcing handlers**: instance methods that apply events to update the entity's state fields.
+* **Event sourcing handlers**: instance methods that apply events to update the entity's state fields, or xref:#_static_event_sourcing_handlers[static methods] that return the next state.
 They must never contain business logic, only state assignments.
-* **Entity creator**: a constructor or static factory method that tells Axon how to construct the initial entity instance before replaying events.
+* **Entity creator**: a constructor or static factory method that tells Axon how to construct the initial entity instance before replaying events. It is optional when a static event sourcing handler creates the entity.
 
 The following plain Java class illustrates all four members:
 
@@ -112,19 +112,7 @@ It can handle any event of the entity, not only the one that creates it:
 
 [source,java]
 ----
-@EventSourcedEntity(tagKey = "courseId")
-record Course(String courseId, String name, int capacity) {
-
-    @EventSourcingHandler
-    static Course on(CourseCreated event, @Nullable Course state) {
-        return new Course(event.courseId(), event.name(), event.capacity());
-    }
-
-    @EventSourcingHandler
-    static @Nullable Course on(CourseCapacityChanged event, @Nullable Course state) {
-        return state == null ? null : new Course(state.courseId(), state.name(), event.capacity());
-    }
-}
+include::example$commands/entities/eventsourcedentity/statichandlers/Course.java[tag=static-event-sourcing-handlers,indent=0]
 ----
 
 The state parameter is `null` while the entity does not exist yet.
@@ -143,10 +131,7 @@ When a handler creates the entity purely from the event and does not need the pr
 
 [source,java]
 ----
-@EventSourcingHandler
-static Course on(CourseCreated event) {
-    return new Course(event.courseId(), event.name(), event.capacity());
-}
+include::example$commands/entities/eventsourcedentity/statichandlers/withoutstate/Course.java[tag=static-event-sourcing-handler-without-state,indent=0]
 ----
 
 Because this form has no access to the prior state, it always produces a fresh instance from the event.
@@ -155,6 +140,7 @@ Keep the state parameter (marked `@Nullable`) whenever the next state depends on
 
 [NOTE]
 ====
+A static event sourcing handler always returns the next state: one declared `void`, or returning an unrelated type, is rejected when the entity is inspected.
 Once an entity exists, it stays non-null.
 A static event sourcing handler that returns `null` for an existing entity is rejected with a `StateEvolvingException`.
 Model the end of an entity's lifecycle as a terminal state, for example a `closed` flag, rather than as a `null` entity.
