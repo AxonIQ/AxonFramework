@@ -78,6 +78,8 @@ class PooledStreamingEventProcessorSegmentReleaseTest {
     private final AtomicReference<@Nullable Runnable> handlerAction = new AtomicReference<>();
     private final AtomicReference<@Nullable Throwable> releaseListenerFailure = new AtomicReference<>();
     private final AsyncInMemoryStreamableEventSource eventSource = new AsyncInMemoryStreamableEventSource(false, false);
+    private long tokenClaimInterval = TOKEN_CLAIM_INTERVAL;
+    private long claimExtensionThreshold = TIMEOUT.toMillis();
     private @Nullable AxonConfiguration configuration;
 
     @AfterEach
@@ -409,6 +411,29 @@ class PooledStreamingEventProcessorSegmentReleaseTest {
     }
 
     @Nested
+    class WhenTheCoordinatorIsIdleForLong {
+
+        @Test
+        void aClaimWaitingForTheReleaseIsPerformedAsSoonAsTheReleaseEnds() {
+            // given - without events or claims to refresh, the coordinator only wakes up after half a minute
+            tokenClaimInterval = Duration.ofMinutes(1).toMillis();
+            claimExtensionThreshold = Duration.ofMinutes(1).toMillis();
+            finalProgressGate.complete(null);
+            startProcessor();
+            processor().releaseSegment(0, TOKEN_CLAIM_INTERVAL, TimeUnit.MILLISECONDS);
+            await().atMost(TIMEOUT).until(() -> segmentLog.contains(RELEASE_LISTENER_INVOKED));
+            CompletableFuture<Boolean> claim = processor().claimSegment(0);
+            await().pollDelay(Duration.ofMillis(TOKEN_CLAIM_INTERVAL * 4)).until(() -> true);
+
+            // when
+            releaseListenerGate.complete(null);
+
+            // then - the end of the release wakes the coordinator up
+            assertThat(claim).succeedsWithin(Duration.ofSeconds(1)).isEqualTo(true);
+        }
+    }
+
+    @Nested
     class WhenAMergeIsGivenWhileOtherSegmentsAreReleased {
 
         /**
@@ -560,8 +585,8 @@ class PooledStreamingEventProcessorSegmentReleaseTest {
                                          .customized((cfg, c) -> c.eventSource(eventSource)
                                                                   .tokenStore(new RecordingTokenStore())
                                                                   .initialSegmentCount(segmentCount)
-                                                                  .tokenClaimInterval(TOKEN_CLAIM_INTERVAL)
-                                                                  .claimExtensionThreshold(TIMEOUT.toMillis())
+                                                                  .tokenClaimInterval(tokenClaimInterval)
+                                                                  .claimExtensionThreshold(claimExtensionThreshold)
                                                                   .progressStrategyFactoryBuilder(
                                                                           components -> GatedReleaseStrategy::new
                                                                   )
