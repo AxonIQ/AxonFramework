@@ -537,6 +537,37 @@ class PooledStreamingEventProcessorSegmentReleaseTest {
     }
 
     @Nested
+    class WhenShutDownWhileASplitReleasesItsSegment {
+
+        @BeforeEach
+        void setUp() {
+            failNextEvent.set(false);
+            releaseListenerGate.complete(null);
+        }
+
+        @Test
+        void aRestartClaimsTheSegmentAgainWithoutWaitingForTheReclaimBlockOfTheSplit() {
+            // given - the split waits for the final progress store of its segment when the processor shuts down
+            startProcessor(1);
+            CompletableFuture<Boolean> split = processor().splitSegment(0);
+            await().atMost(TIMEOUT).until(() -> segmentLog.contains(STORING_FINAL_PROGRESS));
+            CompletableFuture<Void> shutdown = processor().shutdown();
+            finalProgressGate.complete(null);
+            assertThat(shutdown).succeedsWithin(TIMEOUT);
+            assertThat(split).succeedsWithin(TIMEOUT);
+            assertThat(processor().processingStatus()).doesNotContainKey(0);
+
+            // when
+            assertThat(processor().start()).succeedsWithin(TIMEOUT);
+
+            // then - segment zero, split or not, is processed again within a few claim intervals
+            await().atMost(TIMEOUT).untilAsserted(
+                    () -> assertThat(processor().processingStatus()).containsKey(0)
+            );
+        }
+    }
+
+    @Nested
     class WhenAHandlerGivesAnInstruction {
 
         @BeforeEach

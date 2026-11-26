@@ -1007,7 +1007,8 @@ class Coordinator {
         }
 
         /**
-         * Completes the tasks that will not run anymore unsuccessfully and releases the claims kept for them.
+         * Completes the tasks that will not run anymore unsuccessfully and releases the claims kept for them,
+         * lifting their block on re-claiming these segments.
          *
          * @return a {@link CompletableFuture} completing once the kept claims have been released
          */
@@ -1016,6 +1017,7 @@ class Coordinator {
             while ((task = coordinatorTasks.poll()) != null) {
                 task.complete(false, null);
             }
+            segmentsReleasedForTasks.values().forEach(segmentIds -> segmentIds.forEach(releasesDeadlines::remove));
             CompletableFuture<?>[] claimReleases = segmentsReleasedForTasks.values()
                                                                            .stream()
                                                                            .flatMap(List::stream)
