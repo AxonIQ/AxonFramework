@@ -50,16 +50,18 @@ import java.lang.reflect.Parameter;
  * This factory is registered through the {@link java.util.ServiceLoader} mechanism, like other parameter resolver
  * factories. It only acts on parameters after the first one of {@code static} {@code @EventHandler} methods, when the
  * parameter is typed as the declaring entity type, one of its super types, or one of its subtypes. It never resolves
- * parameters of instance handlers, command handlers, or other methods. It comes after every factory that resolves
- * specific parameters, such as Spring bean or configuration component injection, which therefore take precedence. It
- * still comes before factories with the {@link Priority#LAST last} priority, which accept any parameter, such as the
- * resource resolver of the test fixtures.
+ * parameters of instance handlers, command handlers, or other methods.
+ * <p>
+ * The first factory that accepts a parameter resolves it, so the priority is {@link Priority#LOWER}: a parameter of
+ * the entity's type that another resolver can fill, such as a configuration component or a Spring bean, keeps getting
+ * that value. It still comes before the {@link Priority#LAST} factories that accept any parameter, such as the test
+ * fixtures' resource resolver, which would otherwise take the state parameter in tests.
  *
  * @author Mateusz Nowak
  * @since 5.5.0
  */
 @Internal
-@Priority(Priority.LAST + 1)
+@Priority(Priority.LOWER)
 public class ActiveEntityParameterResolverFactory implements ParameterResolverFactory {
 
     private static final ActiveEntityParameterResolver ACTIVE_ENTITY_RESOLVER = new ActiveEntityParameterResolver();
