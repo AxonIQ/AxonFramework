@@ -118,7 +118,7 @@ public class PolymorphicEntityMetamodel<E> implements EntityMetamodel<E>, Descri
     public E evolve(@Nullable E entity, EventMessage event, ProcessingContext context) {
         var superTypeEvolvedEntity = superTypeMetamodel.evolve(entity, event, context);
         if (superTypeEvolvedEntity == null) {
-            // The entity does not exist yet (or was removed); the concrete type cannot be determined.
+            // The entity does not exist yet, so the concrete type cannot be determined.
             return null;
         }
         // An existing entity keeps being evolved by the metamodel of its own concrete type. Only an entity that did

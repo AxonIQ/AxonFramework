@@ -30,7 +30,7 @@ import java.util.concurrent.CompletableFuture;
  * {@code null} state or to decide not to create it at all.
  *
  * @author Mateusz Nowak
- * @since 5.4.0
+ * @since 5.5.0
  */
 class ActiveEntityParameterResolver implements ParameterResolver<Object> {
 

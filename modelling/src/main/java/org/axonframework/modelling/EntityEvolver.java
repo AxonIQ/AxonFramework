@@ -43,12 +43,12 @@ public interface EntityEvolver<E> {
     /**
      * Evolve the given {@code entity} by applying the given {@code event} to it.
      *
-     * @param event   The event that might adjust the {@code entity}.
-     * @param entity  The current entity to evolve with the given {@code event}, or {@code null} when the entity does
-     *                not exist yet.
-     * @param context The context within which to evolve the {@code entity} by the given {@code event}.
-     * @return The evolved {@code entity} based on the given {@code event}, the same {@code entity} when nothing
-     * happened, or {@code null} when the entity does not exist after applying the {@code event}.
+     * @param event   the event that might adjust the {@code entity}
+     * @param entity  the current entity to evolve with the given {@code event}, or {@code null} when the entity does
+     *                not exist yet
+     * @param context the context within which to evolve the {@code entity} by the given {@code event}
+     * @return the evolved {@code entity} based on the given {@code event}, the same {@code entity} when nothing
+     * happened, or {@code null} when the entity does not exist after applying the {@code event}
      */
     @Nullable
     E evolve(@Nullable E entity,

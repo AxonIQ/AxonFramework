@@ -56,7 +56,7 @@ import java.lang.reflect.Parameter;
  * resource resolver of the test fixtures.
  *
  * @author Mateusz Nowak
- * @since 5.4.0
+ * @since 5.5.0
  */
 @Internal
 @Priority(Priority.LAST + 1)

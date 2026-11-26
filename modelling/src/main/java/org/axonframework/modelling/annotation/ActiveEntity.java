@@ -25,11 +25,11 @@ import org.jspecify.annotations.Nullable;
  * argument into a {@code static} {@code @EventHandler} method through the {@link ActiveEntityParameterResolver}.
  * <p>
  * A dedicated holder is used because {@link ProcessingContext} resources cannot be {@code null}, whereas the active
- * entity legitimately can be (representing an entity that does not exist yet, or that was removed). The presence of the
+ * entity legitimately can be (representing an entity that does not exist yet). The presence of the
  * resource signals that an evolve step is in progress, while the wrapped value carries the actual, nullable state.
  *
  * @author Mateusz Nowak
- * @since 5.4.0
+ * @since 5.5.0
  */
 final class ActiveEntity {
 
