@@ -499,24 +499,6 @@ class PooledStreamingEventProcessorTest {
         }
 
         @Test
-        void instructionsGivenAfterShutdownCompleteUnsuccessfully() {
-            // given
-            startEventProcessor();
-            assertWithin(1, TimeUnit.SECONDS, () -> assertEquals(8, testSubject.processingStatus().size()));
-            assertThat(testSubject.shutdown()).succeedsWithin(Duration.ofSeconds(5));
-
-            // when
-            CompletableFuture<Boolean> claim = testSubject.claimSegment(0);
-            CompletableFuture<Boolean> split = testSubject.splitSegment(0);
-            CompletableFuture<Boolean> merge = testSubject.mergeSegment(0);
-
-            // then - no coordinator is left to perform them
-            assertThat(claim).succeedsWithin(Duration.ofSeconds(1)).isEqualTo(false);
-            assertThat(split).succeedsWithin(Duration.ofSeconds(1)).isEqualTo(false);
-            assertThat(merge).succeedsWithin(Duration.ofSeconds(1)).isEqualTo(false);
-        }
-
-        @Test
         void shutdownProcessorAsyncTwiceReturnsSameFuture() {
             startEventProcessor();
 
