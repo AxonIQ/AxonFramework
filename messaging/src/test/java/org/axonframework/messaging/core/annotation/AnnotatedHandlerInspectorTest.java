@@ -16,17 +16,21 @@
 
 package org.axonframework.messaging.core.annotation;
 
+import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.util.MockException;
 import org.axonframework.messaging.commandhandling.CommandMessage;
 import org.axonframework.messaging.commandhandling.annotation.CommandHandler;
 import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
+import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageHandlerInterceptorChain;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.interception.annotation.MessageHandlerInterceptor;
 import org.axonframework.messaging.core.interception.annotation.MessageHandlerInterceptorMemberChain;
+import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.*;
 
 import java.lang.reflect.Method;
@@ -42,6 +46,7 @@ import java.util.stream.Stream;
 
 import static java.util.Arrays.asList;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.axonframework.messaging.core.annotation.MessageStreamResolverUtils.resolveToStream;
 import static org.axonframework.messaging.eventhandling.EventTestUtils.asEventMessage;
 import static org.junit.jupiter.api.Assertions.*;
@@ -191,6 +196,75 @@ class AnnotatedHandlerInspectorTest {
         assertThat(result.hasNextAvailable()).isFalse();
         assertThat(result.isCompleted()).isTrue();
         assertThat(result.error()).containsInstanceOf(MockException.class);
+    }
+
+    @Nested
+    class GetUniqueHandlers {
+
+        @Test
+        void throwsConfigurationExceptionNamingWrapperThatDoesNotPassUnwrapOn() {
+            // given
+            AnnotatedHandlerInspector<SingleHandler> testSubject = AnnotatedHandlerInspector.inspectType(
+                    SingleHandler.class,
+                    new AnnotationMessageTypeResolver(),
+                    parameterResolverFactory,
+                    MultiHandlerDefinition.ordered(new UnwrapHidingEnhancer(),
+                                                   ClasspathHandlerDefinition.forClass(SingleHandler.class))
+            );
+
+            // when / then
+            assertThatThrownBy(() -> testSubject.getUniqueHandlers(SingleHandler.class, CommandMessage.class))
+                    .isInstanceOf(AxonConfigurationException.class)
+                    .hasMessageContaining(UnwrapHidingMember.class.getName())
+                    .hasMessageContaining("WrappedMessageHandlingMember");
+        }
+    }
+
+    private static class SingleHandler {
+
+        @CommandHandler
+        public void handle(String command) {
+        }
+    }
+
+    private static class UnwrapHidingEnhancer implements HandlerEnhancerDefinition {
+
+        @Override
+        public <T> MessageHandlingMember<T> wrapHandler(MessageHandlingMember<T> original) {
+            return new UnwrapHidingMember<>(original);
+        }
+    }
+
+    /**
+     * A wrapper that implements {@link MessageHandlingMember} directly and does not pass {@code unwrap} on to the
+     * handler it wraps.
+     */
+    private record UnwrapHidingMember<T>(MessageHandlingMember<T> original) implements MessageHandlingMember<T> {
+
+        @Override
+        public Class<?> payloadType() {
+            return original.payloadType();
+        }
+
+        @Override
+        public boolean canHandle(Message message, ProcessingContext context) {
+            return original.canHandle(message, context);
+        }
+
+        @Override
+        public boolean canHandleMessageType(Class<? extends Message> messageType) {
+            return original.canHandleMessageType(messageType);
+        }
+
+        @Override
+        public MessageStream<?> handle(Message message, ProcessingContext context, @Nullable T target) {
+            return original.handle(message, context, target);
+        }
+
+        @Override
+        public <HT> Optional<HT> unwrap(Class<HT> handlerType) {
+            return handlerType.isInstance(this) ? Optional.of(handlerType.cast(this)) : Optional.empty();
+        }
     }
 
     @SuppressWarnings("unused")

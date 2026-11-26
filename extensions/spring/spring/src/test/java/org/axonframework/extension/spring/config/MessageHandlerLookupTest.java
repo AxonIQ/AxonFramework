@@ -18,13 +18,15 @@ package org.axonframework.extension.spring.config;
 
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
-import org.junit.jupiter.api.Nested;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.support.BeanDefinitionBuilder;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 
 import java.util.List;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -92,6 +94,59 @@ class MessageHandlerLookupTest {
         }
     }
 
+    /**
+     * Event handling components within a processor are invoked in the order the lookup hands them over, so the lookup
+     * must sort by {@link Order @Order} and keep registration order for beans of equal order.
+     */
+    @Nested
+    class Ordering {
+
+        @Test
+        void sortsHandlersByOrderAnnotation() {
+            // given
+            DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory();
+            handlerBean(beanFactory, "last", LastHandler.class);
+            handlerBean(beanFactory, "unordered", SimpleEventHandler.class);
+            handlerBean(beanFactory, "second", SecondHandler.class);
+            handlerBean(beanFactory, "first", FirstHandler.class);
+
+            // when
+            new MessageHandlerLookup().postProcessBeanFactory(beanFactory);
+
+            // then
+            assertThat(eventHandlerBeanNames(beanFactory)).containsExactly("first", "second", "last", "unordered");
+        }
+
+        @Test
+        void retainsRegistrationOrderForHandlersWithEqualOrder() {
+            // given - enough beans that a hash based ordering would practically never match registration order
+            DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory();
+            List<String> registered = IntStream.range(0, 25).mapToObj(i -> "handler-" + i).toList();
+            registered.forEach(name -> handlerBean(beanFactory, name, SimpleEventHandler.class));
+
+            // when
+            new MessageHandlerLookup().postProcessBeanFactory(beanFactory);
+
+            // then
+            assertThat(eventHandlerBeanNames(beanFactory)).containsExactlyElementsOf(registered);
+        }
+
+        @SuppressWarnings({"unchecked", "DataFlowIssue"})
+        private List<String> eventHandlerBeanNames(DefaultListableBeanFactory beanFactory) {
+            BeanDefinition configurer = beanFactory.getBeanDefinition("MessageHandlerConfigurer$$Axon$$EVENT");
+            return (List<String>) configurer.getConstructorArgumentValues()
+                                            .getIndexedArgumentValue(1, null)
+                                            .getValue();
+        }
+
+        private void handlerBean(DefaultListableBeanFactory beanFactory, String beanName, Class<?> type) {
+            beanFactory.registerBeanDefinition(
+                    beanName,
+                    BeanDefinitionBuilder.genericBeanDefinition(type).getBeanDefinition()
+            );
+        }
+    }
+
     private static void handlerBean(DefaultListableBeanFactory beanFactory, String beanName, String scope) {
         beanFactory.registerBeanDefinition(beanName,
                                            BeanDefinitionBuilder.genericBeanDefinition(SimpleEventHandler.class)
@@ -114,6 +169,21 @@ class MessageHandlerLookupTest {
         void on(SomethingHappened event) {
             // Intentionally empty; the bean only needs a handler for the lookup to consider it.
         }
+    }
+
+    @Order(1)
+    static class FirstHandler extends SimpleEventHandler {
+
+    }
+
+    @Order(2)
+    static class SecondHandler extends SimpleEventHandler {
+
+    }
+
+    @Order(Ordered.LOWEST_PRECEDENCE - 1)
+    static class LastHandler extends SimpleEventHandler {
+
     }
 
     record SomethingHappened(String id) {

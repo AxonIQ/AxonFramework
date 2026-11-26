@@ -14,3 +14,4 @@
 # limitations under the License.
 #
 org.axonframework.eventsourcing.handler.tracing.annotation.TracingEventTagsHandlerEnhancerDefinition
+org.axonframework.eventsourcing.commandhandling.annotation.AppendCriteriaBuilderDefinition

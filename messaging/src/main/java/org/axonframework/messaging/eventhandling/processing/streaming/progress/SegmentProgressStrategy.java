@@ -91,6 +91,9 @@ public interface SegmentProgressStrategy {
      * Performs the final progress persistence as the segment is released: decides the safe token and persists it through
      * {@link SegmentProgressContext#persistProgress(TrackingToken, ProcessingContext)} within {@code context}, while the
      * token-store claim is still held. Defaults to a no-op (the per-batch persistence already covered progress).
+     * <p>
+     * When the final store fails, the release continues regardless, and the segment later resumes from the token stored
+     * last.
      *
      * @param context the processing context whose transaction the final store participates in
      * @return a {@link CompletableFuture} completing when the final persistence (if any) has been applied

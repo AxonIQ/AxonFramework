@@ -234,6 +234,14 @@ public class PooledStreamingEventProcessor implements StreamingEventProcessor {
         return releaseSegment(segmentId, tokenClaimInterval * 2, MILLISECONDS);
     }
 
+    /**
+     * {@inheritDoc}
+     * <p>
+     * Regardless of the {@code releaseDuration}, this processor does not claim the segment again before its release
+     * has completed: its work package has aborted, its final progress has been stored and its segment release listeners
+     * have been notified, after which its claim has been released. Until then, claim and split instructions for the
+     * segment wait, as do merge instructions. A segment release listener should therefore not wait for those.
+     */
     @Override
     public CompletableFuture<Void> releaseSegment(int segmentId, long releaseDuration, TimeUnit unit) {
         coordinator.releaseUntil(

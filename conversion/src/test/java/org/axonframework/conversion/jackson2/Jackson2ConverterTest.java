@@ -17,9 +17,11 @@
 package org.axonframework.conversion.jackson2;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.NullNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.axonframework.common.TypeReference;
 import org.axonframework.conversion.ConversionException;
@@ -32,6 +34,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.fail;
 import static org.junit.jupiter.params.provider.Arguments.*;
@@ -99,5 +102,107 @@ class Jackson2ConverterTest extends ConverterTestSuite<Jackson2Converter> {
 
         assertThatThrownBy(() -> failingTestSubject.convert(testInput, SomeInput.class))
                 .isExactlyInstanceOf(ConversionException.class);
+    }
+
+    @Nested
+    class NullInput {
+
+        @Test
+        void convertToPojoReturnsNull() {
+            // given
+            Jackson2Converter testSubject = buildConverter();
+
+            // when
+            SomeInput result = testSubject.convert(null, SomeInput.class);
+
+            // then
+            assertThat(result).isNull();
+        }
+
+        @Test
+        void convertToGenericTypeReturnsNull() {
+            // given
+            Jackson2Converter testSubject = buildConverter();
+
+            // when
+            List<SomeInput> result = testSubject.convert(null, SOME_INPUT_LIST_TYPE_REF.getType());
+
+            // then
+            assertThat(result).isNull();
+        }
+
+        @Test
+        void convertToByteArrayReturnsNull() {
+            // given
+            Jackson2Converter testSubject = buildConverter();
+
+            // when
+            byte[] result = testSubject.convert(null, byte[].class);
+
+            // then
+            assertThat(result).isNull();
+        }
+
+        @Test
+        void convertToStringReturnsNull() {
+            // given
+            Jackson2Converter testSubject = buildConverter();
+
+            // when
+            String result = testSubject.convert(null, String.class);
+
+            // then
+            assertThat(result).isNull();
+        }
+
+        @Test
+        void convertToObjectNodeReturnsNull() {
+            // given
+            Jackson2Converter testSubject = buildConverter();
+
+            // when
+            ObjectNode result = testSubject.convert(null, ObjectNode.class);
+
+            // then
+            assertThat(result).isNull();
+        }
+
+        @Test
+        void convertToJsonNodeReturnsNullNode() {
+            // given
+            Jackson2Converter testSubject = buildConverter();
+
+            // when
+            JsonNode result = testSubject.convert(null, JsonNode.class);
+
+            // then
+            assertThat(result).isInstanceOf(NullNode.class);
+        }
+
+        @Test
+        void convertToPrimitiveReturnsDefaultValueWhenMapperDoesNotFailOnNullPrimitives() {
+            // given
+            Jackson2Converter testSubject = buildConverter();
+
+            // when
+            int result = testSubject.convert(null, int.class);
+
+            // then
+            assertThat(result).isZero();
+        }
+
+        @Test
+        void convertToPrimitiveThrowsConversionExceptionWhenMapperFailsOnNullPrimitives() {
+            // given
+            ObjectMapper strictMapper = new ObjectMapper().enable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES);
+            Jackson2Converter testSubject = new Jackson2Converter(strictMapper);
+
+            // when / then
+            assertThatThrownBy(() -> testSubject.convert(null, int.class))
+                    .isExactlyInstanceOf(ConversionException.class)
+                    .hasMessageContaining("null")
+                    .hasMessageContaining(int.class.getTypeName())
+                    .hasCauseInstanceOf(IllegalArgumentException.class);
+        }
     }
 }

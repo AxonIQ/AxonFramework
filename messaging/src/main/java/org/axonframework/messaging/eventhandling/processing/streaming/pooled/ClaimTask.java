@@ -28,6 +28,7 @@ import java.lang.invoke.MethodHandles;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 
@@ -121,6 +122,16 @@ class ClaimTask extends CoordinatorTask {
                  return false;
              });
         });
+    }
+
+    @Override
+    boolean touchesAnyOf(Set<Integer> segmentIds) {
+        return segmentIds.contains(segmentId);
+    }
+
+    @Override
+    int segmentId() {
+        return segmentId;
     }
 
     @Override

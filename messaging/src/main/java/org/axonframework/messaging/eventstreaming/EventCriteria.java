@@ -17,6 +17,8 @@
 package org.axonframework.messaging.eventstreaming;
 
 import org.axonframework.common.annotation.Internal;
+import org.axonframework.messaging.core.MessageType;
+import org.axonframework.messaging.core.MessageTypeResolver;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.eventhandling.EventMessage;
 
@@ -289,6 +291,87 @@ public sealed interface EventCriteria
      */
     default OrEventCriteriaBuilder or() {
         return new OrEventCriteriaBuilder(this);
+    }
+
+    /**
+     * Returns a copy of this criteria with the given event {@code types} on every branch, in place of the types it had.
+     * Each branch's tags and the criteria's OR semantics are preserved. As existing type restrictions are discarded,
+     * the resulting type set may be either narrower or broader than the original set.
+     * <p>
+     * Unlike the builder-style {@link EventTypeRestrictableEventCriteria#andBeingOneOfTypes(Set)}, which adds a type
+     * restriction to the branch currently being built, this operation sets the types of an already complete criteria.
+     * An empty set clears existing type restrictions, allowing any event type that matches a branch's tags.
+     * <p>
+     * Criteria without any restriction, such as {@link #havingAnyTag()}, have no branch to keep tags from: the result
+     * matches every event of the given {@code types}, whatever its tags. That restricts what was unrestricted before,
+     * so used as append criteria for a command that sourced nothing, it is checked against the complete event history.
+     *
+     * @param types the event types used by every branch of the resulting criteria
+     * @return criteria with the given event types on every branch
+     * @since 5.5.0
+     */
+    default EventCriteria withEventTypes(Set<QualifiedName> types) {
+        Set<QualifiedName> requestedTypes = Set.copyOf(Objects.requireNonNull(types, "The types cannot be null."));
+        if (!hasCriteria()) {
+            return havingAnyTag().andBeingOneOfTypes(requestedTypes);
+        }
+        Set<EventCriteria> branches = flatten().stream()
+                                               .map(criterion -> havingTags(criterion.tags())
+                                                       .andBeingOneOfTypes(requestedTypes))
+                                               .collect(Collectors.toSet());
+        return branches.size() == 1 ? branches.iterator().next() : either(branches);
+    }
+
+    /**
+     * Returns a copy of this criteria with the given event {@code types} on every branch.
+     *
+     * @param types the event types used by every branch of the resulting criteria
+     * @return criteria with the given event types on every branch
+     * @see #withEventTypes(Set)
+     * @since 5.5.0
+     */
+    default EventCriteria withEventTypes(QualifiedName... types) {
+        Objects.requireNonNull(types, "The types cannot be null.");
+        return withEventTypes(Arrays.stream(types).collect(Collectors.toSet()));
+    }
+
+    /**
+     * Returns a copy of this criteria with the given fully qualified event type names on every branch.
+     *
+     * @param types the fully qualified event type names used by every branch of the resulting criteria
+     * @return criteria with the given event types on every branch
+     * @see #withEventTypes(Set)
+     * @since 5.5.0
+     */
+    default EventCriteria withEventTypes(String... types) {
+        Objects.requireNonNull(types, "The types cannot be null.");
+        return withEventTypes(Arrays.stream(types)
+                                    .map(QualifiedName::new)
+                                    .collect(Collectors.toSet()));
+    }
+
+    /**
+     * Returns a copy of this criteria with, on every branch, the event type names the given
+     * {@code messageTypeResolver} resolves for the given Java event {@code types}.
+     * <p>
+     * Resolving through the {@link MessageTypeResolver} keeps the names equal to the ones events are stored under,
+     * including names customized through annotations such as {@code @Event}. Use the configured resolver, for example
+     * by declaring a {@code MessageTypeResolver} parameter on an
+     * {@code org.axonframework.eventsourcing.commandhandling.annotation.AppendCriteriaBuilder} method.
+     *
+     * @param messageTypeResolver the resolver deriving the event type names from the given {@code types}
+     * @param types               the Java event types used by every branch of the resulting criteria
+     * @return criteria with the resolved event types on every branch
+     * @see #withEventTypes(Set)
+     * @since 5.5.0
+     */
+    default EventCriteria withEventTypes(MessageTypeResolver messageTypeResolver, Class<?>... types) {
+        Objects.requireNonNull(messageTypeResolver, "The MessageTypeResolver cannot be null.");
+        Objects.requireNonNull(types, "The types cannot be null.");
+        return withEventTypes(Arrays.stream(types)
+                                    .map(messageTypeResolver::resolveOrThrow)
+                                    .map(MessageType::qualifiedName)
+                                    .collect(Collectors.toSet()));
     }
 
     /**

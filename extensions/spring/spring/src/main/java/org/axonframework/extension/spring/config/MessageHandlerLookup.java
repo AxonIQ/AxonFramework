@@ -34,10 +34,11 @@ import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProcessor;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
-import org.springframework.core.annotation.OrderUtils;
+import org.springframework.core.annotation.AnnotationAwareOrderComparator;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -139,29 +140,23 @@ public class MessageHandlerLookup implements BeanDefinitionRegistryPostProcessor
     }
 
     /**
-     * Sorts the given {@code found} bean references based on the value in the {@link Order} annotation on these beans.
+     * Sorts the given {@code found} bean references based on the {@link Order} (or
+     * {@link jakarta.annotation.Priority}) annotation on the types of these beans, using the
+     * {@link AnnotationAwareOrderComparator}.
      * <p>
-     * This method uses the given {@code beanFactory} to find the value of the {@code Order} annotation. In absence of
-     * this annotation, the order defaults to {@link Ordered#LOWEST_PRECEDENCE}.
+     * In absence of such an annotation, the order defaults to {@link Ordered#LOWEST_PRECEDENCE}. The sort is stable,
+     * hence beans with an equal order retain their relative position from {@code found}.
      *
-     * @param found       The bean references of components containing message handling functions.
-     * @param beanFactory The bean factory used to find the {@link Order} annotation value.
-     * @return A new {@link List} of sorted bean references, according to the value of the {@link Order} annotation
-     * value on the beans.
+     * @param found       The bean references of components containing message handling functions
+     * @param beanFactory The bean factory used to find the type of each bean
+     * @return a new {@link List} of sorted bean references, according to the order annotation on the beans
      */
     private List<String> sortByOrder(List<String> found, ConfigurableListableBeanFactory beanFactory) {
         return found.stream()
-                    .collect(Collectors.toMap(
-                            beanRef -> beanRef,
-                            beanRef -> OrderUtils.getOrder(
-                                    ObjectUtils.getOrDefault(beanFactory.getType(beanRef), Object.class),
-                                    Ordered.LOWEST_PRECEDENCE
-                            )
+                    .sorted(Comparator.comparing(
+                            beanRef -> ObjectUtils.getOrDefault(beanFactory.getType(beanRef), Object.class),
+                            AnnotationAwareOrderComparator.INSTANCE
                     ))
-                    .entrySet()
-                    .stream()
-                    .sorted(java.util.Map.Entry.comparingByValue())
-                    .map(java.util.Map.Entry::getKey)
                     .collect(Collectors.toList());
     }
 

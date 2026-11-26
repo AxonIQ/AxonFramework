@@ -24,6 +24,7 @@ import org.slf4j.LoggerFactory;
 
 import java.lang.invoke.MethodHandles;
 import java.time.Duration;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -130,6 +131,33 @@ abstract class CoordinatorTask {
         return workPackage == null
                 ? FutureUtils.emptyCompletedFuture()
                 : unitOfWorkFactory.create().executeWithResult(workPackage::onSegmentReleased);
+    }
+
+    /**
+     * Indicates whether this task touches the claim or token of any of the given segments. The {@link Coordinator}
+     * does not run a task touching a segment it is still releasing.
+     *
+     * @param segmentIds the identifiers of the segments being released
+     * @return {@code true} if this task touches any of the given segments, {@code false} otherwise
+     */
+    abstract boolean touchesAnyOf(Set<Integer> segmentIds);
+
+    /**
+     * Returns the identifier of the segment this task was instructed for.
+     *
+     * @return the identifier of the segment this task was instructed for
+     */
+    abstract int segmentId();
+
+    /**
+     * Indicates whether this task and the given {@code other} task may touch the same segment, in which case they run
+     * in the order they were given.
+     *
+     * @param other the task to compare with
+     * @return {@code true} if both tasks may touch the same segment, {@code false} otherwise
+     */
+    boolean conflictsWith(CoordinatorTask other) {
+        return touchesAnyOf(Set.of(other.segmentId())) || other.touchesAnyOf(Set.of(segmentId()));
     }
 
     /**

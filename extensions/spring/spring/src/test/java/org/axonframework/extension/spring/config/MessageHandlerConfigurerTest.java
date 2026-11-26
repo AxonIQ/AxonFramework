@@ -29,11 +29,13 @@ import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.beans.factory.support.AbstractBeanDefinition;
 import org.springframework.context.ConfigurableApplicationContext;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
@@ -195,6 +197,26 @@ class MessageHandlerConfigurerTest {
                 "QueryHandling[my.query.packaging.custom]",
                 "QueryHandling[default]"
         );
+    }
+
+    @Test
+    void handsEventHandlersToTheProcessorModuleFactoryInTheGivenOrder() {
+        // given - enough handlers that a hash based ordering would practically never match the given order
+        List<String> handlerNames = IntStream.range(0, 25).mapToObj(i -> "handler-" + i).toList();
+        List<String> receivedNames = new ArrayList<>();
+        when(applicationContext.getBean(ProcessorModuleFactory.class)).thenReturn(handlers -> {
+            handlers.forEach(handler -> receivedNames.add(handler.beanName()));
+            return Collections.emptySet();
+        });
+        MessageHandlerConfigurer configurer =
+                new MessageHandlerConfigurer(MessageHandlerConfigurer.Type.EVENT, handlerNames);
+        configurer.setApplicationContext(applicationContext);
+
+        // when
+        configurer.enhance(registry);
+
+        // then
+        assertThat(receivedNames).containsExactlyElementsOf(handlerNames);
     }
 
     private static AbstractBeanDefinition beanDefinitionMock(String fqcn) {

@@ -17,6 +17,7 @@
 package org.axonframework.messaging.eventhandling.processing.streaming.pooled;
 
 import org.axonframework.common.ClockUtils;
+import org.axonframework.common.FutureUtils;
 import org.axonframework.common.ProcessUtils;
 import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
@@ -113,6 +114,7 @@ class Coordinator {
     private final AtomicReference<RunState> runState;
     private final Map<Integer, Instant> releasesDeadlines = new ConcurrentHashMap<>();
     private final Map<Integer, Integer> releasesLastBackOffSeconds = new ConcurrentHashMap<>();
+    private final Map<Integer, CompletableFuture<Void>> releasesInProgress = new ConcurrentHashMap<>();
     private final Queue<CoordinatorTask> coordinatorTasks = new ConcurrentLinkedQueue<>();
     private final AtomicReference<@Nullable CoordinationTask> coordinationTask = new AtomicReference<>();
     private final AtomicLong coordinationTaskGeneration = new AtomicLong(-1);
@@ -234,7 +236,11 @@ class Coordinator {
 
     /**
      * Instructs this coordinator to release the segment with the given {@code segmentId}. Furthermore, it will be
-     * ignored for "re-claiming" for the specified {@code releaseDuration}.
+     * ignored for "re-claiming" for the specified {@code releaseDuration}, or until the release of the segment has
+     * completed, whichever comes last.
+     * <p>
+     * Claim and split instructions for a segment that is being released, and merge instructions, wait until the
+     * release has completed.
      * <p>
      * If the coordinator is not actively processing {@code segmentId}, it will be disregarded for processing for the
      * given timeframe nonetheless.
@@ -756,7 +762,8 @@ class Coordinator {
      *     <li>{@link WorkPackage#extendClaimIfThresholdIsMet() Extend the claims} of all {@code WorkPackages} with an
      *     outstanding worker, to relieve them of this effort.
      *     This is an optimization activated through {@link Builder#coordinatorClaimExtension(boolean)}.</li>
-     *     <li>Validating if there are {@link CoordinatorTask CoordinatorTasks} to run, and run a single one if there are any.</li>
+     *     <li>Running the first {@link CoordinatorTask} in the queue that does not touch a segment that is still being
+     *     released, if any.</li>
      *     <li>Periodically checking for unclaimed segments, claim these and start a {@code WorkPackage} per claim.</li>
      *     <li>(Re)Opening an Event stream based on the lower bound token of all active {@code WorkPackages}.</li>
      *     <li>Reading events from the stream.</li>
@@ -799,7 +806,16 @@ class Coordinator {
                         "Processor [{}] (Coordination Task [{}]). Stopped processing. Runnable flag is false. Releasing claims and closing the event stream.",
                         name,
                         generation);
-                abortWorkPackages(null).thenRun(() -> runState.get().shutdownHandle().complete(null));
+                // Also await releases that started earlier, e.g. on an error, and end the tasks that will not run.
+                abortWorkPackages(null)
+                        .thenCompose(ignored -> awaitReleasesInProgress())
+                        .whenComplete((ignored, failure) -> {
+                            CoordinatorTask task;
+                            while ((task = coordinatorTasks.poll()) != null) {
+                                task.complete(false, null);
+                            }
+                            runState.get().shutdownHandle().complete(null);
+                        });
                 closeStreamQuietly();
                 return;
             }
@@ -848,9 +864,8 @@ class Coordinator {
                                                                }));
             }
 
-            if (!coordinatorTasks.isEmpty()) {
-                // Process any available coordinator tasks.
-                CoordinatorTask task = coordinatorTasks.remove();
+            CoordinatorTask task = nextRunnableTask();
+            if (task != null) {
                 logger.debug("Processor [{}] (Coordination Task [{}]) found task [{}] to run.",
                              name,
                              generation,
@@ -939,6 +954,27 @@ class Coordinator {
                     coordinateEvents();
                 }
             });
+        }
+
+        /**
+         * Takes the first task from the queue that neither touches a segment that is being released, nor conflicts with
+         * an earlier task that waits. Other tasks stay queued until the release they wait for has completed. Tasks that
+         * may touch the same segment thus run in the order they were given.
+         *
+         * @return the first task that can run, or {@code null} if there is none
+         */
+        private @Nullable CoordinatorTask nextRunnableTask() {
+            List<CoordinatorTask> waitingTasks = new ArrayList<>();
+            for (CoordinatorTask task : coordinatorTasks) {
+                if (task.touchesAnyOf(releasesInProgress.keySet())
+                        || waitingTasks.stream().anyMatch(task::conflictsWith)) {
+                    waitingTasks.add(task);
+                    continue;
+                }
+                coordinatorTasks.remove(task);
+                return task;
+            }
+            return null;
         }
 
         private void coordinateEvents() {
@@ -1158,7 +1194,7 @@ class Coordinator {
             List<Segment> candidates = new ArrayList<>();
             for (Segment segment : segments) {
                 int segmentId = segment.getSegmentId();
-                if (workPackages.containsKey(segmentId)) {
+                if (workPackages.containsKey(segmentId) || releasesInProgress.containsKey(segmentId)) {
                     continue;
                 }
                 if (isSegmentBlockedFromClaim(segmentId)) {
@@ -1400,8 +1436,10 @@ class Coordinator {
             }
 
             // If a work package has been aborted by something else than the Coordinator. We should abandon it.
+            // A release only starts once per work package, so its release deadline is only advanced once as well.
             workPackages.values().stream()
                         .filter(WorkPackage::isAbortTriggered)
+                        .filter(workPackage -> !releasesInProgress.containsKey(workPackage.segment().getSegmentId()))
                         .forEach(workPackage -> {
                             advanceReleaseDeadlineFor(workPackage.segment().getSegmentId());
                             abortWorkPackage(workPackage, null);
@@ -1525,10 +1563,30 @@ class Coordinator {
             closeStreamQuietly();
         }
 
+        /**
+         * Aborts the given {@code work} package and releases its segment: the final progress is persisted, the release
+         * listeners are notified and the claim is released, in that order. A failed abort or final store does not stop
+         * the release.
+         * <p>
+         * Until the release has ended, this coordinator does not claim the segment again, regardless of its release
+         * deadline, so the remainder of the release cannot act on a new claim. Aborting a work package whose segment is
+         * already being released joins that release.
+         *
+         * @param work  the work package to abort
+         * @param cause the reason to abort the work package, may be {@code null}
+         * @return a {@link CompletableFuture} completing once the release of the segment has ended
+         */
         private CompletableFuture<Void> abortWorkPackage(WorkPackage work, @Nullable Throwable cause) {
             int segmentId = work.segment().getSegmentId();
-            return work.abort(cause)
-                       .thenRun(() -> {
+            CompletableFuture<Void> release = new CompletableFuture<>();
+            CompletableFuture<Void> ongoingRelease = releasesInProgress.putIfAbsent(segmentId, release);
+            if (ongoingRelease != null) {
+                return ongoingRelease;
+            }
+            // Composed, so anything the abort throws, an Error included, fails the chain and the release still ends.
+            emptyCompletedFuture().thenCompose(ignored -> work.abort(cause))
+                       // A package that failed to abort cannot be relied upon either, so it goes regardless.
+                       .whenComplete((ignored, failure) -> {
                            if (workPackages.remove(segmentId, work)) {
                                logger.debug("Processor [{}] (Coordination Task [{}]) released claim on {}.",
                                             name, generation, work.segment());
@@ -1538,6 +1596,13 @@ class Coordinator {
                        // listeners wind down WHILE the claim is still held, then release the claim LAST so no
                        // other node can resume past durable progress or pick up work still running here.
                        .thenCompose(unused -> unitOfWorkFactory.create().executeWithResult(work::onSegmentReleased))
+                       // A failed abort or final store leaves the listeners to wind down and the claim to release.
+                       .exceptionally(failure -> {
+                           logger.warn("Processor [{}] (Coordination Task [{}]). Aborting or storing the final "
+                                               + "progress of {} failed. Continuing its release.",
+                                       name, generation, work.segment(), failure);
+                           return null;
+                       })
                        .thenCompose(r -> notifyReleaseListeners(work.segment()))
                        .thenComposeAsync(r -> unitOfWorkFactory.create().executeWithResult(
                                context -> tokenStore.releaseClaim(name, segmentId, context)
@@ -1554,7 +1619,14 @@ class Coordinator {
                                    segmentId,
                                    unwrapped);
                            return null;
-                       });
+                       })
+                       .whenComplete((ignored, failure) -> {
+                           releasesInProgress.remove(segmentId, release);
+                           // Queued tasks may have waited for this release.
+                           scheduleCoordinator();
+                       })
+                       .whenComplete(FutureUtils.alsoComplete(release));
+            return release;
         }
 
         /**
@@ -1591,6 +1663,19 @@ class Coordinator {
                                                     unwrapped);
                                             return null;
                                         });
+        }
+
+        /**
+         * Returns a {@link CompletableFuture} completing once all releases running at the time of invocation have
+         * ended, whether they succeeded or not.
+         *
+         * @return a {@link CompletableFuture} completing once the running releases have ended
+         */
+        private CompletableFuture<Void> awaitReleasesInProgress() {
+            return CompletableFuture.allOf(releasesInProgress.values()
+                                                             .stream()
+                                                             .map(release -> release.exceptionally(failure -> null))
+                                                             .toArray(CompletableFuture[]::new));
         }
 
         private void advanceReleaseDeadlineFor(int segmentId) {
