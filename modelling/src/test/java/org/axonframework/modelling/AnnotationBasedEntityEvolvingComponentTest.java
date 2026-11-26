@@ -16,6 +16,7 @@
 
 package org.axonframework.modelling;
 
+import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.ClockUtils;
 import org.axonframework.conversion.jackson.JacksonConverter;
 import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
@@ -351,15 +352,21 @@ class AnnotationBasedEntityEvolvingComponentTest {
         }
 
         @Test
-        void rejectsNullModel() {
-            // given
+        void rejectsAbsentEntityWhenNoStaticEventSourcingHandlerCanCreateIt() {
+            // given TestState declares only instance handlers, so nothing can create it from an event
             var event = createEvent(0);
+            var context = StubProcessingContext.forMessage(event);
 
-            // when-then
-            //noinspection DataFlowIssue
-            assertThrows(NullPointerException.class,
-                         () -> ENTITY_EVOLVER.evolve(null, event, StubProcessingContext.forMessage(event)),
-                         "Model may not be null");
+            // when
+            var exception = assertThrows(AxonConfigurationException.class,
+                                         () -> ENTITY_EVOLVER.evolve(null, event, context));
+
+            // then the message names what is missing and how to fix it
+            assertThat(exception.getMessage())
+                    .contains(TestState.class.getName())
+                    .contains("does not exist yet")
+                    .contains("@EntityCreator")
+                    .contains("static @EventSourcingHandler");
         }
     }
 

@@ -16,6 +16,7 @@
 
 package org.axonframework.modelling.annotation;
 
+import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.StringUtils;
 import org.axonframework.common.ReflectionUtils;
 import org.axonframework.messaging.core.MessageStream;
@@ -196,8 +197,11 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
                     EventMessage event,
                     ProcessingContext context) {
         if (entity == null && !hasStaticHandlers) {
-            throw new NullPointerException(
-                    "Cannot evolve an absent [" + entityType.getName() + "] entity without static event sourcing handlers."
+            throw new AxonConfigurationException(
+                    "Cannot apply [" + event.type() + "]: the [" + entityType.getName() + "] entity does not exist yet,"
+                            + " and it declares no static event sourcing handler that could create it. Create the entity"
+                            + " before this event, for example with an @EntityCreator or in its EventSourcedEntityFactory,"
+                            + " or declare a static @EventSourcingHandler that creates it."
             );
         }
         // With a null entity the concrete type is unknown, so static (create-from-null) handlers are routed by the
