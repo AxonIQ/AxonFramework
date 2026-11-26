@@ -73,7 +73,7 @@ public class AnnotatedMessageHandlingMemberDefinition implements HandlerDefiniti
             Function<Object, MessageStream<?>> messageStreamResolver
     ) {
         List<MessageHandlingMember<T>> handlers = new ArrayList<>();
-        for (AnnotatedElement occurrence : HandlerAnnotationOccurrence.of(method)) {
+        for (AnnotatedElement occurrence : AnnotatedHandlerElement.of(method)) {
             messageHandlerAttributesOf(occurrence)
                     .map(attr -> createMember(method, occurrence, attr, parameterResolverFactory,
                                               messageStreamResolver))
@@ -83,7 +83,7 @@ public class AnnotatedMessageHandlingMemberDefinition implements HandlerDefiniti
     }
 
     private static Optional<Map<String, Object>> messageHandlerAttributesOf(AnnotatedElement element) {
-        if (element instanceof HandlerAnnotationOccurrence occurrence) {
+        if (element instanceof AnnotatedHandlerElement occurrence) {
             return Optional.of(occurrence.messageHandlerAttributes());
         }
         return findAnnotationAttributes(element, MessageHandler.class);

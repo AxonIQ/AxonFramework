@@ -31,7 +31,7 @@ import java.util.function.ToIntFunction;
  * <li>The parameter count on the actual message handling function, favoring the highest number as the most specific handler.</li>
  * <li>The {@link Executable#toGenericString()} of the actual message handling function</li>
  * <li>As a final tiebreaker, the declaration order of the message handler annotations, for a function that repeats
- * its message handler annotation (see {@link HandlerAnnotationOccurrence#index()})</li>
+ * its message handler annotation (see {@link AnnotatedHandlerElement#index()})</li>
  * <li>The name of the {@link MessageHandlingMember#payloadType()}, keeping apart several members a
  * {@link HandlerDefinition} created for one function, for example one per handled payload type</li>
  * </ol>
@@ -117,8 +117,8 @@ public final class HandlerComparator {
     }
 
     private static int occurrenceIndex(MessageHandlingMember<?> handler) {
-        return handler.unwrap(HandlerAnnotationOccurrence.class)
-                      .map(HandlerAnnotationOccurrence::index)
+        return handler.unwrap(AnnotatedHandlerElement.class)
+                      .map(AnnotatedHandlerElement::index)
                       .orElse(0);
     }
 

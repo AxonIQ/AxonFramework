@@ -54,7 +54,7 @@ import java.util.Set;
  * @since 5.5.0
  */
 @Internal
-public final class HandlerAnnotationOccurrence implements AnnotatedElement {
+public final class AnnotatedHandlerElement implements AnnotatedElement {
 
     private final Method method;
     private final int index;
@@ -62,10 +62,10 @@ public final class HandlerAnnotationOccurrence implements AnnotatedElement {
     private final Map<String, Object> handlerAttributes;
     private final Map<String, Object> messageHandlerAttributes;
 
-    private HandlerAnnotationOccurrence(Method method,
-                                        int index,
-                                        List<Annotation> chain,
-                                        List<Annotation> otherAnnotations) {
+    private AnnotatedHandlerElement(Method method,
+                                    int index,
+                                    List<Annotation> chain,
+                                    List<Annotation> otherAnnotations) {
         this.method = method;
         this.index = index;
         List<Annotation> exposed = new ArrayList<>(otherAnnotations);
@@ -95,7 +95,7 @@ public final class HandlerAnnotationOccurrence implements AnnotatedElement {
      * <p>
      * When the given {@code method} does not repeat any message handler annotation, either directly or through the
      * annotations it is annotated with, the result contains only the {@code method} itself. Otherwise, the result
-     * contains a {@link HandlerAnnotationOccurrence} per message handler annotation, in declaration order.
+     * contains an {@link AnnotatedHandlerElement} per message handler annotation, in declaration order.
      *
      * @param method the method to find the message handler annotation occurrences of
      * @return the elements to read the message handler annotations of the given {@code method} from, one per declared
@@ -109,7 +109,7 @@ public final class HandlerAnnotationOccurrence implements AnnotatedElement {
         }
         List<AnnotatedElement> occurrences = new ArrayList<>(chains.chains().size());
         for (int i = 0; i < chains.chains().size(); i++) {
-            occurrences.add(new HandlerAnnotationOccurrence(method, i, chains.chains().get(i), otherAnnotations));
+            occurrences.add(new AnnotatedHandlerElement(method, i, chains.chains().get(i), otherAnnotations));
         }
         return occurrences;
     }
@@ -279,7 +279,7 @@ public final class HandlerAnnotationOccurrence implements AnnotatedElement {
         if (o == null || getClass() != o.getClass()) {
             return false;
         }
-        HandlerAnnotationOccurrence that = (HandlerAnnotationOccurrence) o;
+        AnnotatedHandlerElement that = (AnnotatedHandlerElement) o;
         return index == that.index && method.equals(that.method);
     }
 

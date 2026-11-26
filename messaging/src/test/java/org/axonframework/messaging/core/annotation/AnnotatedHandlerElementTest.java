@@ -30,12 +30,12 @@ import java.util.function.Function;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Test class validating the {@link HandlerAnnotationOccurrence} and the creation of a
+ * Test class validating the {@link AnnotatedHandlerElement} and the creation of a
  * {@link MessageHandlingMember} per occurrence by the {@link AnnotatedMessageHandlingMemberDefinition}.
  *
  * @author Allard Buijze
  */
-class HandlerAnnotationOccurrenceTest {
+class AnnotatedHandlerElementTest {
 
     @Nested
     class Of {
@@ -46,7 +46,7 @@ class HandlerAnnotationOccurrenceTest {
             Method method = Handlers.class.getDeclaredMethod("single", String.class);
 
             // when
-            List<AnnotatedElement> result = HandlerAnnotationOccurrence.of(method);
+            List<AnnotatedElement> result = AnnotatedHandlerElement.of(method);
 
             // then
             assertThat(result).containsExactly(method);
@@ -58,12 +58,12 @@ class HandlerAnnotationOccurrenceTest {
             Method method = Handlers.class.getDeclaredMethod("repeated", String.class);
 
             // when
-            List<AnnotatedElement> result = HandlerAnnotationOccurrence.of(method);
+            List<AnnotatedElement> result = AnnotatedHandlerElement.of(method);
 
             // then
             assertThat(result).hasSize(2)
                               .allSatisfy(occurrence -> assertThat(occurrence)
-                                      .isInstanceOf(HandlerAnnotationOccurrence.class));
+                                      .isInstanceOf(AnnotatedHandlerElement.class));
             assertThat(result).extracting(occurrence -> occurrence.getAnnotation(EventHandler.class).name())
                               .containsExactly("First", "Second");
         }
@@ -74,7 +74,7 @@ class HandlerAnnotationOccurrenceTest {
             Method method = Handlers.class.getDeclaredMethod("repeated", String.class);
 
             // when
-            List<AnnotatedElement> result = HandlerAnnotationOccurrence.of(method);
+            List<AnnotatedElement> result = AnnotatedHandlerElement.of(method);
 
             // then
             assertThat(result).allSatisfy(occurrence -> {
