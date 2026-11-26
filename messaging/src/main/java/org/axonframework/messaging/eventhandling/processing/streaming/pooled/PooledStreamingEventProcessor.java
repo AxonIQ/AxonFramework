@@ -195,6 +195,14 @@ public class PooledStreamingEventProcessor implements StreamingEventProcessor {
                          .thenCompose(unused -> coordinator.start());
     }
 
+    /**
+     * {@inheritDoc}
+     * <p>
+     * The shutdown completes once every segment release has ended, also releases that started before the shutdown, for
+     * example after an error. Only the segment release listeners of a release are bounded, by the claim extension
+     * threshold. Aborting the work package and storing its final progress are not, so a final progress store that hangs
+     * holds up the shutdown just as long.
+     */
     @Override
     public CompletableFuture<Void> shutdown() {
         logger.info("Stopping PooledStreamingEventProcessor [{}]", name);
