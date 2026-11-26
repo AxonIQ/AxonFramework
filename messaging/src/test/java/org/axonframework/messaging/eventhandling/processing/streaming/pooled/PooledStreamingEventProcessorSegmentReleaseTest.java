@@ -508,6 +508,21 @@ class PooledStreamingEventProcessorSegmentReleaseTest {
             assertThat(merge).succeedsWithin(WELL_WITHIN_THE_THRESHOLD).isEqualTo(true);
         }
 
+        @Test
+        void aMergeOfASegmentThisProcessorDoesNotProcessDoesNotWaitForTheReleaseOfASegmentItCannotMergeWith() {
+            // given - segment 4 is released for longer than the test runs, so the merge of 4 with 0 has to claim it
+            segmentReleaseListenerGates.put(4, emptyCompletedFuture());
+            processor().releaseSegment(4, 1, TimeUnit.MINUTES);
+            await().atMost(TIMEOUT).until(() -> segmentLog.contains(CLAIM_RELEASED));
+            holdReleaseOf(5);
+
+            // when
+            CompletableFuture<Boolean> merge = processor().mergeSegment(4);
+
+            // then - segment 5 differs from 4 in a single bit, but not in the highest bit, so no mask merges the two
+            assertThat(merge).succeedsWithin(WELL_WITHIN_THE_THRESHOLD).isEqualTo(true);
+        }
+
         private void holdReleaseOf(int segmentId) {
             segmentReleaseListenerGates.put(segmentId, new CompletableFuture<>());
             processor().releaseSegment(segmentId, TOKEN_CLAIM_INTERVAL, TimeUnit.MILLISECONDS);
