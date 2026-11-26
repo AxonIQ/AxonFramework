@@ -537,6 +537,37 @@ class PooledStreamingEventProcessorSegmentReleaseTest {
     }
 
     @Nested
+    class WhenMergedInALayoutWithDifferentMasks {
+
+        @BeforeEach
+        void setUp() {
+            failNextEvent.set(false);
+            releaseListenerGate.complete(null);
+            finalProgressGate.complete(null);
+        }
+
+        @Test
+        void aMergeOfAProcessedSegmentLeavesASegmentItDoesNotMergeWithAlone() {
+            // given - splitting segment 0 of two segments gives 0/3, 1/1 and 2/3
+            startProcessor(2);
+            await().atMost(TIMEOUT).until(() -> processor().processingStatus().containsKey(1));
+            assertThat(processor().splitSegment(0)).succeedsWithin(TIMEOUT).isEqualTo(true);
+            await().atMost(TIMEOUT).until(() -> processor().processingStatus().keySet().containsAll(List.of(0, 1, 2)));
+            Segment untouched = new Segment(1, 1);
+            segmentChanges.clear();
+
+            // when - 0/3 merges with 2/3; 1/1 also names 0 as the segment it merges with, but under another mask
+            assertThat(processor().mergeSegment(0)).succeedsWithin(TIMEOUT).isEqualTo(true);
+            await().atMost(TIMEOUT).until(
+                    () -> segmentChanges.contains(new SegmentChange(CLAIMED, new Segment(0, 1)))
+            );
+
+            // then
+            assertThat(segmentChanges).noneMatch(change -> change.segment().equals(untouched));
+        }
+    }
+
+    @Nested
     class WhenShutDownWhileASplitReleasesItsSegment {
 
         @BeforeEach
