@@ -64,6 +64,7 @@ import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.UnaryOperator;
+import java.util.stream.Stream;
 
 import static org.axonframework.common.BuilderUtils.assertStrictPositive;
 import static org.axonframework.common.FutureUtils.emptyCompletedFuture;
@@ -1000,7 +1001,8 @@ class Coordinator {
             List<Integer> segmentIds = workPackages.stream().map(wp -> wp.segment().getSegmentId()).toList();
             logger.debug("Processor [{}] (Coordination Task [{}]) releases segments {} for task [{}].",
                          name, generation, segmentIds, task.getDescription());
-            segmentsReleasedForTasks.put(task, segmentIds);
+            segmentsReleasedForTasks.merge(task, segmentIds,
+                                           (kept, added) -> Stream.concat(kept.stream(), added.stream()).toList());
             Instant blockedUntil = clock.instant().plus(CoordinatorTask.RECLAIM_BLOCK_TIMEOUT);
             segmentIds.forEach(segmentId -> releasesDeadlines.put(segmentId, blockedUntil));
             workPackages.forEach(workPackage -> abortWorkPackage(workPackage, null, false));

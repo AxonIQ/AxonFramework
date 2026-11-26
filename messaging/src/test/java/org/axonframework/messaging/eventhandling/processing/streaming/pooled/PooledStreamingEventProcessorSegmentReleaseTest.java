@@ -565,6 +565,24 @@ class PooledStreamingEventProcessorSegmentReleaseTest {
             // then
             assertThat(segmentChanges).noneMatch(change -> change.segment().equals(untouched));
         }
+
+        @Test
+        void aSplitAndAMergeOfTheSameSegmentGivenBackToBackLeaveNoSegmentBlocked() {
+            // given
+            startProcessor(2);
+            await().atMost(TIMEOUT).until(() -> processor().processingStatus().containsKey(1));
+
+            // when - the split gives 0/3 and 2/3, which the merge turns back into 0/1
+            CompletableFuture<Boolean> split = processor().splitSegment(0);
+            CompletableFuture<Boolean> merge = processor().mergeSegment(0);
+            assertThat(split).succeedsWithin(TIMEOUT).isEqualTo(true);
+            assertThat(merge).succeedsWithin(TIMEOUT).isEqualTo(true);
+
+            // then - both segments are processed again within a few claim intervals
+            await().atMost(TIMEOUT).untilAsserted(
+                    () -> assertThat(processor().processingStatus()).containsOnlyKeys(0, 1)
+            );
+        }
     }
 
     @Nested
