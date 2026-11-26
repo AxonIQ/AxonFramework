@@ -271,16 +271,14 @@ class Coordinator {
      */
     public CompletableFuture<Boolean> splitSegment(int segmentId) {
         CompletableFuture<Boolean> result = new CompletableFuture<>();
-        coordinatorTasks.add(new SplitTask(result,
-                                           name,
-                                           segmentId,
-                                           workPackages,
-                                           releasesDeadlines,
-                                           tokenStore,
-                                           unitOfWorkFactory,
-                                           clock));
-        scheduleCoordinator();
-        return result;
+        return queue(new SplitTask(result,
+                                   name,
+                                   segmentId,
+                                   workPackages,
+                                   releasesDeadlines,
+                                   tokenStore,
+                                   unitOfWorkFactory,
+                                   clock), result);
     }
 
     /**
@@ -298,16 +296,14 @@ class Coordinator {
      */
     public CompletableFuture<Boolean> mergeSegment(int segmentId) {
         CompletableFuture<Boolean> result = new CompletableFuture<>();
-        coordinatorTasks.add(new MergeTask(result,
-                                           name,
-                                           segmentId,
-                                           workPackages,
-                                           releasesDeadlines,
-                                           tokenStore,
-                                           unitOfWorkFactory,
-                                           clock));
-        scheduleCoordinator();
-        return result;
+        return queue(new MergeTask(result,
+                                   name,
+                                   segmentId,
+                                   workPackages,
+                                   releasesDeadlines,
+                                   tokenStore,
+                                   unitOfWorkFactory,
+                                   clock), result);
     }
 
     /**
@@ -325,13 +321,28 @@ class Coordinator {
      */
     public CompletableFuture<Boolean> claimSegment(int segmentId) {
         CompletableFuture<Boolean> result = new CompletableFuture<>();
-        coordinatorTasks.add(new ClaimTask(result,
-                                           name,
-                                           segmentId,
-                                           workPackages,
-                                           releasesDeadlines,
-                                           tokenStore,
-                                           unitOfWorkFactory));
+        return queue(new ClaimTask(result,
+                                   name,
+                                   segmentId,
+                                   workPackages,
+                                   releasesDeadlines,
+                                   tokenStore,
+                                   unitOfWorkFactory), result);
+    }
+
+    /**
+     * Queues the given {@code task} for the coordination task to run. Once this coordinator is stopped, no coordination
+     * task is left to run it, so the task completes unsuccessfully instead.
+     *
+     * @param task   the task to queue
+     * @param result the result of the given {@code task}
+     * @return the given {@code result}
+     */
+    private CompletableFuture<Boolean> queue(CoordinatorTask task, CompletableFuture<Boolean> result) {
+        coordinatorTasks.add(task);
+        if (runState.get().wasStopped() && coordinatorTasks.remove(task)) {
+            task.complete(false, null);
+        }
         scheduleCoordinator();
         return result;
     }
@@ -384,23 +395,23 @@ class Coordinator {
 
     /**
      * Status holder for this service. Defines whether it is running, has been started (to ensure double
-     * {@link #start()} invocations do not restart this coordinator) and maintains a shutdown handler to complete
-     * asynchronously through {@link #stop()}.
+     * {@link #start()} invocations do not restart this coordinator), has been stopped since it last started, and
+     * maintains a shutdown handler to complete asynchronously through {@link #stop()}.
      */
-    private record RunState(boolean isRunning, boolean wasStarted, @Nullable CompletableFuture<Void> shutdownHandle,
-                            Runnable shutdownAction) {
+    private record RunState(boolean isRunning, boolean wasStarted, boolean wasStopped,
+                            @Nullable CompletableFuture<Void> shutdownHandle, Runnable shutdownAction) {
 
         public static RunState initial(Runnable shutdownAction) {
-            return new RunState(false, false, emptyCompletedFuture(), shutdownAction);
+            return new RunState(false, false, false, emptyCompletedFuture(), shutdownAction);
         }
 
         public RunState attemptStart() {
             if (isRunning) {
                 // It was already started
-                return new RunState(true, false, null, shutdownAction);
+                return new RunState(true, false, false, null, shutdownAction);
             } else if (shutdownHandle.isDone()) {
                 // Shutdown has previously been completed. It's allowed to start
-                return new RunState(true, true, null, shutdownAction);
+                return new RunState(true, true, false, null, shutdownAction);
             } else {
                 // Shutdown is in progress
                 return this;
@@ -414,7 +425,7 @@ class Coordinator {
             }
             CompletableFuture<Void> newShutdownHandle = new CompletableFuture<>();
             newShutdownHandle.whenComplete((r, e) -> shutdownAction.run());
-            return new RunState(false, false, newShutdownHandle, shutdownAction);
+            return new RunState(false, false, true, newShutdownHandle, shutdownAction);
         }
     }
 
