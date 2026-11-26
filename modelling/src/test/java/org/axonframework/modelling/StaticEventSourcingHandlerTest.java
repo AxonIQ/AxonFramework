@@ -21,6 +21,7 @@ import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
 import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
 import org.axonframework.messaging.core.annotation.ClasspathParameterResolverFactory;
 import org.axonframework.messaging.core.annotation.MetadataValue;
+import org.axonframework.messaging.core.annotation.UnsupportedHandlerException;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
@@ -314,6 +315,100 @@ class StaticEventSourcingHandlerTest {
             // then
             assertThat(result).isNotNull();
             assertThat(result.lastMetadata()).isEqualTo("sampleValue");
+        }
+    }
+
+    @Nested
+    class ReturnTypeValidation {
+
+        @SuppressWarnings("unused")
+        private static final class VoidReturning {
+
+            @EventHandler
+            static void onCreated(Created event, @Nullable VoidReturning state) {
+            }
+        }
+
+        @SuppressWarnings("unused")
+        private static final class UnrelatedTypeReturning {
+
+            @EventHandler
+            static String onCreated(Created event, @Nullable UnrelatedTypeReturning state) {
+                return "not the next state";
+            }
+        }
+
+        @SuppressWarnings("unused")
+        private static final class ObjectReturning {
+
+            @EventHandler
+            static Object onCreated(Created event, @Nullable ObjectReturning state) {
+                return "not the next state";
+            }
+        }
+
+        sealed interface Vehicle permits Car, Bike {
+
+            @EventHandler
+            static Car onCreated(Created event, @Nullable Vehicle state) {
+                return new Car();
+            }
+        }
+
+        record Car() implements Vehicle {
+
+        }
+
+        record Bike() implements Vehicle {
+
+        }
+
+        private static <E> AnnotationBasedEntityEvolvingComponent<E> evolverFor(Class<E> type) {
+            return new AnnotationBasedEntityEvolvingComponent<>(
+                    type, converter, messageTypeResolver,
+                    ClasspathParameterResolverFactory.forClass(type),
+                    ClasspathHandlerDefinition.forClass(type)
+            );
+        }
+
+        @Test
+        void staticHandlerReturningVoidIsRejectedAtConstruction() {
+            // when / then a static handler that cannot return the next state is a configuration mistake
+            assertThatThrownBy(() -> evolverFor(VoidReturning.class))
+                    .isInstanceOf(UnsupportedHandlerException.class)
+                    .hasMessageContaining("onCreated")
+                    .hasMessageContaining("declares [void]")
+                    .hasMessageContaining("use an instance handler to mutate the current entity");
+        }
+
+        @Test
+        void staticHandlerReturningUnrelatedTypeIsRejectedAtConstruction() {
+            assertThatThrownBy(() -> evolverFor(UnrelatedTypeReturning.class))
+                    .isInstanceOf(UnsupportedHandlerException.class)
+                    .hasMessageContaining("Return the next entity state");
+        }
+
+        @Test
+        void staticHandlerDeclaringObjectAndReturningAnUnrelatedValueIsRejectedWhenEvolving() {
+            // given a static handler whose declared return type cannot be checked at construction
+            var evolver = evolverFor(ObjectReturning.class);
+            EventMessage created = asEventMessage(new Created());
+
+            // when / then the unrelated value it returns is not silently ignored
+            assertThatThrownBy(() -> evolver.evolve(null, created, StubProcessingContext.forMessage(created)))
+                    .isInstanceOf(StateEvolvingException.class)
+                    .hasMessageContaining("returned [java.lang.String]");
+        }
+
+        @Test
+        void staticHandlerOnSuperTypeReturningConcreteSubtypeIsAcceptedForEverySubtype() {
+            // given a static creator on the super type that returns one concrete subtype
+
+            // when / then each concrete type's evolver, which inherits the handler, still builds
+            assertThat(evolverFor(Bike.class).supportedEvents())
+                    .contains(messageTypeResolver.resolveOrThrow(Created.class).qualifiedName());
+            assertThat(evolverFor(Car.class).supportedEvents())
+                    .contains(messageTypeResolver.resolveOrThrow(Created.class).qualifiedName());
         }
     }
 

@@ -1615,16 +1615,18 @@ class AnnotationBasedEntityEvolvingComponentTest {
         static class StaticParent {
 
             @EventHandler
-            static void on(Deposited event) {
+            static StaticParent on(Deposited event) {
                 staticTrace.add("StaticParent.on");
+                return new StaticChild();
             }
         }
 
         static class StaticChild extends StaticParent {
 
             @EventHandler
-            static void on(Deposited event) {
+            static StaticChild on(Deposited event) {
                 staticTrace.add("StaticChild.on");
+                return new StaticChild();
             }
         }
 

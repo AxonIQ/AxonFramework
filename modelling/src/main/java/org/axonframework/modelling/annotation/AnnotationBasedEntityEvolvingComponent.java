@@ -27,6 +27,7 @@ import org.axonframework.messaging.core.annotation.ClasspathParameterResolverFac
 import org.axonframework.messaging.core.annotation.HandlerDefinition;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
+import org.axonframework.messaging.core.annotation.UnsupportedHandlerException;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
@@ -228,7 +229,7 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
                                         .first()
                                         .asCompletableFuture()
                                         .join();
-                evolvedEntity = nextState(result, evolvedEntity, evolvingHandler, event);
+                evolvedEntity = nextState(result, evolvedEntity, handler, evolvingHandler.isStatic(), event);
             }
 
             return evolvedEntity;
@@ -273,8 +274,28 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
     private EvolvingHandler<E> toEvolvingHandler(MessageHandlingMember<? super E> handler) {
         Optional<Method> method = handler.unwrap(Method.class);
         boolean isStatic = method.map(m -> Modifier.isStatic(m.getModifiers())).orElse(false);
-        boolean returnsEntity = method.map(m -> entityType.isAssignableFrom(m.getReturnType())).orElse(false);
-        return new EvolvingHandler<>(handler, isStatic, returnsEntity);
+        if (isStatic) {
+            assertReturnsNextState(method.get());
+        }
+        return new EvolvingHandler<>(handler, isStatic);
+    }
+
+    /**
+     * Rejects a {@code static} event sourcing handler whose return type cannot be the next entity state, such as
+     * {@code void}. The return type is compared with the declaring type rather than this component's entity type, so a
+     * handler on a polymorphic super type may return one concrete subtype.
+     */
+    private static void assertReturnsNextState(Method method) {
+        Class<?> returnType = method.getReturnType();
+        Class<?> declaringType = method.getDeclaringClass();
+        if (!returnType.isAssignableFrom(declaringType) && !declaringType.isAssignableFrom(returnType)) {
+            throw new UnsupportedHandlerException(
+                    "Static event sourcing handler [" + method + "] declares [" + returnType.getName()
+                            + "]. Return the next entity state compatible with [" + declaringType.getName()
+                            + "], or use an instance handler to mutate the current entity.",
+                    method
+            );
+        }
     }
 
     /**
@@ -335,37 +356,44 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
                       .orElseGet(() -> messageTypeResolver.resolveOrThrow(handler.payloadType()).qualifiedName());
     }
 
+    /**
+     * Returns the entity state after the given {@code handler} ran: the entity it returned, or {@code existing} when it
+     * returned nothing. A static handler always returns the next state, so a value that is not an entity is rejected,
+     * and a {@code null} is the next state while the entity does not exist yet, declining to create it, and is rejected
+     * once the entity exists.
+     */
     @Nullable
     private E nextState(MessageStream.@Nullable Entry<?> potentialEntityFromStream,
                         @Nullable E existing,
-                        EvolvingHandler<E> evolvingHandler,
+                        MessageHandlingMember<? super E> handler,
+                        boolean staticHandler,
                         EventMessage event) {
-        var handler = evolvingHandler.member();
-        if (potentialEntityFromStream != null) {
-            var resultPayload = potentialEntityFromStream.message().payload();
-            if (resultPayload != null && entityType.isAssignableFrom(resultPayload.getClass())) {
-                Class<?> resultType = resultPayload.getClass();
-                if (!evolvableTypes.contains(resultType)) {
-                    throw new StateEvolvingException(
-                            ("Cannot apply [%s]: [%s] returned [%s], which is not the entity type [%s] or a registered "
-                                    + "concrete type. List it in @EventSourcedEntity(concreteTypes = ...) or make the "
-                                    + "entity type sealed.")
-                                    .formatted(
-                                            event.type(),
-                                            handler.signature(),
-                                            resultType.getName(),
-                                            entityType.getName()
-                                    )
-                    );
-                }
-                //noinspection unchecked
-                return (E) entityType.cast(resultPayload);
+        Object resultPayload = potentialEntityFromStream == null ? null : potentialEntityFromStream.message().payload();
+        if (resultPayload != null && entityType.isAssignableFrom(resultPayload.getClass())) {
+            Class<?> resultType = resultPayload.getClass();
+            if (!evolvableTypes.contains(resultType)) {
+                throw new StateEvolvingException(
+                        ("Cannot apply [%s]: [%s] returned [%s], which is not the entity type [%s] or a registered "
+                                + "concrete type. List it in @EventSourcedEntity(concreteTypes = ...) or make the "
+                                + "entity type sealed.")
+                                .formatted(
+                                        event.type(),
+                                        handler.signature(),
+                                        resultType.getName(),
+                                        entityType.getName()
+                                )
+                );
             }
+            //noinspection unchecked
+            return (E) entityType.cast(resultPayload);
         }
-        // A static handler declaring the entity as its return type returned null (an empty stream). While the entity
-        // does not exist yet, this is a legitimate "decline to create" outcome. Once the entity exists, however, it
-        // may not be removed by returning null: model end-of-life as a terminal state instead.
-        if (evolvingHandler.isStatic() && evolvingHandler.returnsEntity()) {
+        if (staticHandler && resultPayload != null) {
+            throw new StateEvolvingException(
+                    "Cannot apply [" + event.type() + "]: static event sourcing handler [" + handler.signature()
+                            + "] returned [" + resultPayload.getClass().getName() + "], which is not an ["
+                            + entityType.getName() + "]. Return the next entity state.");
+        }
+        if (staticHandler) {
             if (existing != null) {
                 throw new StateEvolvingException(
                         "A static event sourcing handler returned null for an existing [" + entityType.getName()
@@ -385,17 +413,15 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
     }
 
     /**
-     * A {@link MessageHandlingMember} together with the reflective facts the evolve loop needs, determined once at
-     * construction rather than on every event.
+     * A {@link MessageHandlingMember} together with whether it is {@code static}, determined once at construction
+     * rather than on every event. Only a static handler can run while the entity does not exist yet, and only a static
+     * handler returning {@code null} declines to create it.
      *
-     * @param member        the handler to invoke
-     * @param isStatic      whether the handler is a {@code static} method, which can run while the entity is
-     *                      {@code null}
-     * @param returnsEntity whether the handler declares the entity type as its return type, so that a {@code null}
-     *                      result means the handler returned {@code null} rather than nothing
-     * @param <E>           the entity type
+     * @param member   the handler to invoke
+     * @param isStatic whether the handler is a {@code static} method
+     * @param <E>      the entity type
      */
-    private record EvolvingHandler<E>(MessageHandlingMember<? super E> member, boolean isStatic, boolean returnsEntity) {
+    private record EvolvingHandler<E>(MessageHandlingMember<? super E> member, boolean isStatic) {
 
     }
 }
