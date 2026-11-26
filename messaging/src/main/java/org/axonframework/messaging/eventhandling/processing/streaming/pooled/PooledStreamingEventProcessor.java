@@ -199,9 +199,11 @@ public class PooledStreamingEventProcessor implements StreamingEventProcessor {
      * {@inheritDoc}
      * <p>
      * The shutdown completes once every segment release has ended, also releases that started before the shutdown, for
-     * example after an error. Only the segment release listeners of a release are bounded, by the claim extension
-     * threshold. Aborting the work package and storing its final progress are not, so a final progress store that hangs
-     * holds up the shutdown just as long.
+     * example after an error. When a release that the shutdown starts ends with an {@link Error}, for example because a
+     * segment release listener throws one, the shutdown completes once the releases it started have ended, without
+     * waiting for releases that started before it. Only the segment release listeners of a release are bounded, by the
+     * claim extension threshold. Aborting the work package, storing its final progress and releasing its claim are not,
+     * so a final progress store that hangs holds up the shutdown just as long.
      */
     @Override
     public CompletableFuture<Void> shutdown() {
