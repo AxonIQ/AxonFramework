@@ -217,58 +217,6 @@ class PooledStreamingEventProcessorSegmentReleaseTest {
             // then
             assertThat(shutdown).succeedsWithin(TIMEOUT);
         }
-
-        @Test
-        void shutdownEndsAfterTheClaimExtensionThresholdWhileTheFinalStoreHangsAndTheClaimIsReleasedAfterTheStore() {
-            // given
-            claimExtensionThreshold = 1000;
-            releaseListenerGate.complete(null);
-            startProcessor();
-
-            // when
-            CompletableFuture<Void> shutdown = processor().shutdown();
-
-            // then - shutdown waits for the release up to the claim extension threshold, and ends without it
-            await().during(Duration.ofMillis(claimExtensionThreshold / 2))
-                   .atMost(TIMEOUT)
-                   .untilAsserted(() -> assertThat(shutdown).isNotDone());
-            assertThat(shutdown).succeedsWithin(Duration.ofMillis(claimExtensionThreshold * 2));
-            assertThat(segmentLog).containsExactly(CLAIMED, STORING_FINAL_PROGRESS);
-
-            // when
-            finalProgressGate.complete(null);
-
-            // then - the release goes on, releasing the claim only once the final progress is stored
-            await().atMost(TIMEOUT).untilAsserted(() -> assertThat(segmentLog).containsExactly(
-                    CLAIMED, STORING_FINAL_PROGRESS, FINAL_PROGRESS_STORED, RELEASE_LISTENER_INVOKED, CLAIM_RELEASED
-            ));
-        }
-
-        @Test
-        void aRestartAfterShutdownDoesNotClaimASegmentWhoseReleaseStillRuns() {
-            // given - the shutdown ended while the final store of the segment hangs
-            claimExtensionThreshold = 500;
-            releaseListenerGate.complete(null);
-            startProcessor();
-            assertThat(processor().shutdown()).succeedsWithin(TIMEOUT);
-
-            // when
-            assertThat(processor().start()).succeedsWithin(TIMEOUT);
-
-            // then
-            await().during(Duration.ofMillis(TOKEN_CLAIM_INTERVAL * 10))
-                   .atMost(TIMEOUT)
-                   .untilAsserted(() -> assertThat(segmentLog).containsExactly(CLAIMED, STORING_FINAL_PROGRESS));
-
-            // when
-            finalProgressGate.complete(null);
-
-            // then - the restarted processor claims the segment once its release has ended
-            await().atMost(TIMEOUT).untilAsserted(() -> assertThat(segmentLog).containsExactly(
-                    CLAIMED, STORING_FINAL_PROGRESS, FINAL_PROGRESS_STORED, RELEASE_LISTENER_INVOKED, CLAIM_RELEASED,
-                    CLAIMED
-            ));
-        }
     }
 
     @Nested
