@@ -268,6 +268,7 @@ class AnnotatedHandlerInspectorTest {
             return "Some result";
         }
     }
+
     @Nested
     class GivenAHandlerDefinitionCreatingSeveralMembersForOneMethod {
 

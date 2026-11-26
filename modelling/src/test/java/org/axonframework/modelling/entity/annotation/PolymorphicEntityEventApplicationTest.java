@@ -543,6 +543,7 @@ class PolymorphicEntityEventApplicationTest {
             assertThat(result.label.names).containsExactly("fiction");
         }
     }
+
     @Nested
     class RepeatedHandlerAnnotations {
 
