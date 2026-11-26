@@ -221,14 +221,15 @@ class MergeTask extends CoordinatorTask {
      * partner is being released. The cost is that a merge may wait for the release of a segment that is not its
      * partner, at most until that release ends. For a merge of segment 0:
      * <table>
-     *     <caption>Partners of segment 0 and whether this rule counts them</caption>
-     *     <tr><th>Mask of segment 0 (unknown to this node)</th><th>Real partner</th><th>Counted by this rule</th></tr>
-     *     <tr><td>1</td><td>1</td><td>yes</td></tr>
-     *     <tr><td>3</td><td>2</td><td>yes</td></tr>
-     *     <tr><td>7</td><td>4</td><td>yes</td></tr>
+     *     <caption>Releases a merge of segment 0 waits for</caption>
+     *     <tr><th>Released segment</th><th>Partner of segment 0 under mask</th><th>Merge waits</th></tr>
+     *     <tr><td>1</td><td>mask 1</td><td>yes</td></tr>
+     *     <tr><td>2</td><td>mask 3</td><td>yes</td></tr>
+     *     <tr><td>3</td><td>none</td><td>no</td></tr>
+     *     <tr><td>4</td><td>mask 7</td><td>yes</td></tr>
+     *     <tr><td>5</td><td>none</td><td>no</td></tr>
+     *     <tr><td>6</td><td>none</td><td>no</td></tr>
      * </table>
-     * <p>
-     * Releases of segments 3, 5, 6 and 7 never count, since no mask merges them with segment 0.
      * <p>
      * The exact answer would be {@link Segment#mergeableSegmentId()}, but that needs the mask of the segment to merge,
      * and this node does not know the mask of a segment it does not process. The mask of the released segment is not
