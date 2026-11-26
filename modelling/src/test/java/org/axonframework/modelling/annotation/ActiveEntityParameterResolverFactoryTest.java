@@ -17,6 +17,11 @@
 package org.axonframework.modelling.annotation;
 
 import org.axonframework.common.Priority;
+import org.axonframework.conversion.jackson.JacksonConverter;
+import org.axonframework.messaging.core.ClassBasedMessageTypeResolver;
+import org.axonframework.messaging.core.Message;
+import org.axonframework.messaging.core.Metadata;
+import org.axonframework.messaging.core.annotation.ClasspathHandlerDefinition;
 import org.axonframework.messaging.core.annotation.ClasspathParameterResolverFactory;
 import org.axonframework.messaging.core.annotation.MultiParameterResolverFactory;
 import org.axonframework.messaging.core.annotation.ParameterResolver;
@@ -25,6 +30,9 @@ import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
+import org.axonframework.messaging.eventhandling.annotation.Timestamp;
+import org.axonframework.messaging.eventhandling.conversion.DelegatingEventConverter;
+import org.axonframework.modelling.EntityEvolver;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.*;
 
@@ -32,9 +40,12 @@ import java.lang.reflect.Executable;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.time.Duration;
+import java.time.Instant;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.axonframework.messaging.eventhandling.EventTestUtils.asEventMessage;
 
 /**
  * Test class validating the {@link ActiveEntityParameterResolverFactory}: which parameters it resolves to the active
@@ -283,6 +294,100 @@ class ActiveEntityParameterResolverFactoryTest {
             ProcessingContext context = ActiveEntity.set(new StubProcessingContext(), active);
             assertThat(resolver).isNotNull();
             assertThat(resolver.resolveParameterValue(context)).succeedsWithin(TIMEOUT).isEqualTo(active);
+        }
+    }
+
+    @Nested
+    class StateAmongOtherParameters {
+
+        private record Opened() {
+
+        }
+
+        private record Deposited(int amount) {
+
+        }
+
+        @SuppressWarnings("unused")
+        private record Ledger(@Nullable Ledger previous,
+                              int balance,
+                              String messageIdentifier,
+                              Metadata metadata,
+                              @Nullable String contextMessageIdentifier,
+                              Instant timestamp) {
+
+            @EventHandler
+            static Ledger onOpened(Opened event,
+                                   EventMessage message,
+                                   Metadata metadata,
+                                   @Nullable Ledger state,
+                                   ProcessingContext context,
+                                   @Timestamp Instant timestamp) {
+                return new Ledger(state, 0, message.identifier(), metadata, contextMessageIdentifier(context),
+                                  timestamp);
+            }
+
+            @EventHandler
+            static Ledger onDeposited(Deposited event,
+                                      EventMessage message,
+                                      Metadata metadata,
+                                      ProcessingContext context,
+                                      @Timestamp Instant timestamp,
+                                      @Nullable Ledger state) {
+                int balance = state == null ? 0 : state.balance();
+                return new Ledger(state, balance + event.amount(), message.identifier(), metadata,
+                                  contextMessageIdentifier(context), timestamp);
+            }
+
+            private static @Nullable String contextMessageIdentifier(ProcessingContext context) {
+                Message message = Message.fromContext(context);
+                return message == null ? null : message.identifier();
+            }
+        }
+
+        private final EntityEvolver<Ledger> evolver = new AnnotationBasedEntityEvolvingComponent<>(
+                Ledger.class,
+                new DelegatingEventConverter(new JacksonConverter()),
+                new ClassBasedMessageTypeResolver(),
+                ClasspathParameterResolverFactory.forClass(Ledger.class),
+                ClasspathHandlerDefinition.forClass(Ledger.class)
+        );
+
+        @Test
+        void resolvesNullStateBetweenOtherParametersWhileTheEntityDoesNotExistYet() {
+            // given
+            EventMessage opened = asEventMessage(new Opened()).withMetadata(Map.of("key", "opened"));
+
+            // when
+            Ledger result = evolver.evolve(null, opened, StubProcessingContext.forMessage(opened));
+
+            // then
+            assertThat(result).isNotNull();
+            assertThat(result.previous()).isNull();
+            assertThat(result.messageIdentifier()).isEqualTo(opened.identifier());
+            assertThat(result.metadata()).isEqualTo(Metadata.with("key", "opened"));
+            assertThat(result.contextMessageIdentifier()).isEqualTo(opened.identifier());
+            assertThat(result.timestamp()).isEqualTo(opened.timestamp());
+        }
+
+        @Test
+        void resolvesExistingStateAsTheLastParameterAfterOtherParameters() {
+            // given
+            EventMessage opened = asEventMessage(new Opened());
+            Ledger existing = evolver.evolve(null, opened, StubProcessingContext.forMessage(opened));
+            EventMessage deposited = asEventMessage(new Deposited(5)).withMetadata(Map.of("key", "deposited"));
+
+            // when
+            Ledger result = evolver.evolve(existing, deposited, StubProcessingContext.forMessage(deposited));
+
+            // then
+            assertThat(result).isNotNull();
+            assertThat(result.previous()).isSameAs(existing);
+            assertThat(result.balance()).isEqualTo(5);
+            assertThat(result.messageIdentifier()).isEqualTo(deposited.identifier());
+            assertThat(result.metadata()).isEqualTo(Metadata.with("key", "deposited"));
+            assertThat(result.contextMessageIdentifier()).isEqualTo(deposited.identifier());
+            assertThat(result.timestamp()).isEqualTo(deposited.timestamp());
         }
     }
 }
