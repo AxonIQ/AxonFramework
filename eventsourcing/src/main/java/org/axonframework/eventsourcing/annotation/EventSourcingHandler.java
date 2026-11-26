@@ -114,8 +114,8 @@ public @interface EventSourcingHandler {
      * The namespace of the event this method handles, matching the
      * {@link org.axonframework.messaging.core.QualifiedName#namespace()} of the {@link EventMessage#type()}.
      * <p>
-     * Optional. If unspecified, the namespace of the name the payload type, thus the first parameter of the method,
-     * resolves to is used. Cannot be combined with {@link #eventName()}. Mirrors {@link EventHandler#namespace()}.
+     * Optional. Defaults to the namespace of the event name the payload type resolves to. Cannot be combined with
+     * {@link #eventName()}. Mirrors {@link EventHandler#namespace()}.
      *
      * @return the namespace of the event this method handles, or an empty {@code String} to derive it from the payload
      * type
@@ -127,8 +127,8 @@ public @interface EventSourcingHandler {
      * The local name of the event this method handles, matching the
      * {@link org.axonframework.messaging.core.QualifiedName#localName()} of the {@link EventMessage#type()}.
      * <p>
-     * Optional. If unspecified, the local name of the name the payload type, thus the first parameter of the method,
-     * resolves to is used. Cannot be combined with {@link #eventName()}. Mirrors {@link EventHandler#name()}.
+     * Optional. Defaults to the local name of the event name the payload type resolves to. Cannot be combined with
+     * {@link #eventName()}. Mirrors {@link EventHandler#name()}.
      *
      * @return the local name of the event this method handles, or an empty {@code String} to derive it from the
      * payload type

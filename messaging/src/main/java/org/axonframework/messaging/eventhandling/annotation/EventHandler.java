@@ -120,8 +120,7 @@ public @interface EventHandler {
      * The namespace of the event this handler listens to, matching to the
      * {@link org.axonframework.messaging.core.QualifiedName#namespace()} of the {@link EventMessage#type()}.
      * <p>
-     * Optional. If unspecified, the namespace of the name the payload type (thus the <b>first</b> parameter) of the
-     * annotated method resolves to through the {@link org.axonframework.messaging.core.MessageTypeResolver} is used.
+     * Optional. Defaults to the namespace of the event name the payload type resolves to.
      *
      * @return the namespace of the event this handler listens to, or an empty {@code String} to derive it from the
      * payload type
@@ -133,8 +132,7 @@ public @interface EventHandler {
      * The local name of the event this handler listens to, matching to the
      * {@link org.axonframework.messaging.core.QualifiedName#localName()} of the {@link EventMessage#type()}.
      * <p>
-     * Optional. If unspecified, the local name of the name the payload type (thus the <b>first</b> parameter) of the
-     * annotated method resolves to through the {@link org.axonframework.messaging.core.MessageTypeResolver} is used.
+     * Optional. Defaults to the local name of the event name the payload type resolves to.
      *
      * @return the local name of the event this handler listens to, or an empty {@code String} to derive it from the
      * payload type
