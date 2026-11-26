@@ -82,7 +82,7 @@ public class MethodInvokingMessageHandlingMember<T> implements MessageHandlingMe
      * of the given {@code messageType}, reading the {@link HandlerAttributes} of this member from the given
      * {@code attributeSource}.
      * <p>
-     * The {@code attributeSource} is either the {@code method} itself, or an {@link AnnotatedHandlerElement} of the
+     * The {@code attributeSource} is either the {@code method} itself, or an {@code AnnotatedHandlerElement} of the
      * {@code method} when the method declares several message handler annotations, each describing a separate
      * handler.
      *
