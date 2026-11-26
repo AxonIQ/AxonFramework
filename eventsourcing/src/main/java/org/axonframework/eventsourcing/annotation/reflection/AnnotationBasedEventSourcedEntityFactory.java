@@ -89,7 +89,7 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
     private final ParameterResolverFactory resolverFactory;
     private final MessageTypeResolver messageTypeResolver;
     private final EventConverter converter;
-    private final boolean declaresStaticEventHandler;
+    private boolean declaresStaticEventHandler;
 
     /**
      * Instantiate an annotation-based {@link EventSourcedEntityFactory} for the given concrete {@code entityType}. When
@@ -147,7 +147,6 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
         this.messageTypeResolver = Objects.requireNonNull(messageTypeResolver,
                                                           "The messageTypeResolver must not be null.");
         this.converter = Objects.requireNonNull(converter, "The converter must not be null.");
-        this.declaresStaticEventHandler = scanForStaticEventHandlers();
 
         initialize();
     }
@@ -155,13 +154,14 @@ public class AnnotationBasedEventSourcedEntityFactory<E, ID> implements EventSou
     private void initialize() {
         scanMethods();
         scanConstructors();
+        declaresStaticEventHandler = scanForStaticEventHandlers();
         validate();
     }
 
     private void validate() {
         if (creators.isEmpty() && !declaresStaticEventHandler) {
             throw new AxonConfigurationException(
-                    "No @EntityCreator present on entity of type [%s], nor a static @EventSourcingHandler that could create it. Can not initialize AnnotationBasedEventSourcedEntityFactory.".formatted(
+                    "No @EntityCreator present on entity of type [%s], nor any static @EventSourcingHandler. Can not initialize AnnotationBasedEventSourcedEntityFactory.".formatted(
                             entityType.getName()));
         }
     }

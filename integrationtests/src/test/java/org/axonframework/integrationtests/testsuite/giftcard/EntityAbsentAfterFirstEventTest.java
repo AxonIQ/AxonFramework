@@ -502,7 +502,7 @@ class EntityAbsentAfterFirstEventTest {
                     .rootCause()
                     .isInstanceOf(AxonConfigurationException.class)
                     .hasMessageContaining("No @EntityCreator present on entity of type")
-                    .hasMessageContaining("nor a static @EventSourcingHandler that could create it");
+                    .hasMessageContaining("nor any static @EventSourcingHandler");
         }
     }
 }
