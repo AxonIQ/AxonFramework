@@ -17,7 +17,6 @@
 package org.axonframework.messaging.core.annotation;
 
 import org.axonframework.common.annotation.AnnotationUtils;
-import org.axonframework.common.annotation.Internal;
 import org.jspecify.annotations.Nullable;
 
 import java.lang.annotation.Annotation;
@@ -53,8 +52,7 @@ import java.util.Set;
  * @author Allard Buijze
  * @since 5.5.0
  */
-@Internal
-public final class AnnotatedHandlerElement implements AnnotatedElement {
+final class AnnotatedHandlerElement implements AnnotatedElement {
 
     private final Method method;
     private final int index;
