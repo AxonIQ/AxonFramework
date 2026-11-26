@@ -556,6 +556,43 @@ class PooledStreamingEventProcessorSegmentReleaseTest {
             assertThat(handlerInstruction).succeedsWithin(TIMEOUT).isEqualTo(false);
             assertThat(claimOfZero).succeedsWithin(TIMEOUT).isEqualTo(true);
         }
+
+        @Test
+        void anInstructionForTheHandlersOwnSegmentOnlyCompletesOnceTheHandlerStopsWaitingForIt() {
+            // given - a handler that, while it handles an event, waits a second for an instruction for its own segment
+            CompletableFuture<Void> handling = new CompletableFuture<>();
+            CompletableFuture<Void> released = new CompletableFuture<>();
+            CompletableFuture<CompletableFuture<Boolean>> handlerInstruction = new CompletableFuture<>();
+            AtomicBoolean handlerGaveUp = new AtomicBoolean();
+            handlerAction.set(() -> {
+                handling.complete(null);
+                released.orTimeout(TIMEOUT.toMillis(), TimeUnit.MILLISECONDS).join();
+                CompletableFuture<Boolean> claim = processor().claimSegment(0);
+                handlerInstruction.complete(claim);
+                claim.copy()
+                     .orTimeout(1, TimeUnit.SECONDS)
+                     .exceptionally(failure -> {
+                         handlerGaveUp.set(true);
+                         return false;
+                     })
+                     .join();
+            });
+            startProcessor();
+            eventSource.publishMessage(EventTestUtils.asEventMessage("event"));
+            await().atMost(TIMEOUT).until(handling::isDone);
+
+            // when - the segment is released, which waits for the batch the handler is in
+            processor().releaseSegment(0, TOKEN_CLAIM_INTERVAL, TimeUnit.MILLISECONDS);
+            await().pollDelay(Duration.ofMillis(TOKEN_CLAIM_INTERVAL * 4)).until(() -> true);
+            released.complete(null);
+
+            // then - the instruction waits for the release, so the handler gives up, after which the release ends
+            CompletableFuture<Boolean> claim = handlerInstruction.orTimeout(TIMEOUT.toMillis(), TimeUnit.MILLISECONDS)
+                                                                 .join();
+            assertThat(claim).succeedsWithin(TIMEOUT).isEqualTo(true);
+            assertThat(handlerGaveUp).isTrue();
+            assertThat(segmentLog).containsSubsequence(RELEASE_LISTENER_INVOKED, CLAIM_RELEASED, CLAIMED);
+        }
     }
 
     private void startProcessor() {

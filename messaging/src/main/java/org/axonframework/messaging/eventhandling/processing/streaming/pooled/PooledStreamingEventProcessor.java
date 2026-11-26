@@ -241,7 +241,8 @@ public class PooledStreamingEventProcessor implements StreamingEventProcessor {
      * has completed: its work package has aborted, its final progress has been stored and its segment release listeners
      * have been notified, after which its claim has been released. Until then, claim and split instructions for the
      * segment wait, as do merge instructions for the segment or for the segment to merge it with. A segment release
-     * listener should therefore not wait for those.
+     * listener should therefore not wait for those, and neither should an event handler processing the segment: the
+     * release waits for the batch it handles, so the instruction would only complete once the handler stops waiting.
      */
     @Override
     public CompletableFuture<Void> releaseSegment(int segmentId, long releaseDuration, TimeUnit unit) {
@@ -251,6 +252,12 @@ public class PooledStreamingEventProcessor implements StreamingEventProcessor {
         return FutureUtils.emptyCompletedFuture();
     }
 
+    /**
+     * {@inheritDoc}
+     * <p>
+     * While the segment is being released, the claim waits until the release has completed, see
+     * {@link #releaseSegment(int, long, TimeUnit)}.
+     */
     @Override
     public CompletableFuture<Boolean> claimSegment(int segmentId) {
         return coordinator.claimSegment(segmentId);
