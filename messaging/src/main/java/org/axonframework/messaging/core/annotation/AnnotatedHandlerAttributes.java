@@ -61,8 +61,8 @@ public class AnnotatedHandlerAttributes implements HandlerAttributes {
         this.annotatedElement = annotatedElement;
         this.simpleHandlerAttributes = new SimpleHandlerAttributes(
                 // An occurrence of a repeated handler annotation knows which of the repeated annotations it describes
-                annotatedElement instanceof AnnotatedHandlerElement occurrence
-                        ? occurrence.handlerAttributes()
+                annotatedElement instanceof AnnotatedHandlerElement annotatedHandler
+                        ? annotatedHandler.handlerAttributes()
                         : constructHandlerAttributesFor(annotatedElement)
         );
     }

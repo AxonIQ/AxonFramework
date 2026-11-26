@@ -83,8 +83,8 @@ public class AnnotatedMessageHandlingMemberDefinition implements HandlerDefiniti
     }
 
     private static Optional<Map<String, Object>> messageHandlerAttributesOf(AnnotatedElement element) {
-        if (element instanceof AnnotatedHandlerElement occurrence) {
-            return Optional.of(occurrence.messageHandlerAttributes());
+        if (element instanceof AnnotatedHandlerElement annotatedHandler) {
+            return Optional.of(annotatedHandler.messageHandlerAttributes());
         }
         return findAnnotationAttributes(element, MessageHandler.class);
     }
