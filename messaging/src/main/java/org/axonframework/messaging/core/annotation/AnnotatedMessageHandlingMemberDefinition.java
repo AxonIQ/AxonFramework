@@ -73,9 +73,9 @@ public class AnnotatedMessageHandlingMemberDefinition implements HandlerDefiniti
             Function<Object, MessageStream<?>> messageStreamResolver
     ) {
         List<MessageHandlingMember<T>> handlers = new ArrayList<>();
-        for (AnnotatedElement occurrence : AnnotatedHandlerElement.of(method)) {
-            messageHandlerAttributesOf(occurrence)
-                    .map(attr -> createMember(method, occurrence, attr, parameterResolverFactory,
+        for (AnnotatedElement annotatedElement : AnnotatedHandlerElement.of(method)) {
+            messageHandlerAttributesOf(annotatedElement)
+                    .map(attr -> createMember(method, annotatedElement, attr, parameterResolverFactory,
                                               messageStreamResolver))
                     .ifPresent(member -> handlers.add((MessageHandlingMember<T>) member));
         }
@@ -91,13 +91,13 @@ public class AnnotatedMessageHandlingMemberDefinition implements HandlerDefiniti
 
     @SuppressWarnings("unchecked")
     private static MessageHandlingMember<?> createMember(Method method,
-                                                         AnnotatedElement occurrence,
+                                                         AnnotatedElement annotatedElement,
                                                          Map<String, Object> attributes,
                                                          ParameterResolverFactory parameterResolverFactory,
                                                          Function<Object, MessageStream<?>> messageStreamResolver) {
         return new MethodInvokingMessageHandlingMember<>(
                 method,
-                occurrence,
+                annotatedElement,
                 (Class<? extends Message>) attributes.getOrDefault("messageType", Message.class),
                 (Class<?>) attributes.getOrDefault("payloadType", Object.class),
                 parameterResolverFactory,
