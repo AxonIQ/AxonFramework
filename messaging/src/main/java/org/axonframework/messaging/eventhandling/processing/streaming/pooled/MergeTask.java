@@ -197,8 +197,10 @@ class MergeTask extends CoordinatorTask {
      *     {@link Segment#mergeableSegmentId()} names the segment to merge with. A merge of segment 0 with mask 7 only
      *     touches segments 0 and 4.</li>
      *     <li>When it does not, the mask is only read from the token store once the merge runs. Until then, every
-     *     segment that {@link #isPossibleMergePartner(int, int) could be the partner} counts. A merge of segment 0 then
-     *     touches segment 0 and every power of two (1, 2, 4, 8, ...), but not 3 or 5.</li>
+     *     segment that {@link #isPossibleMergePartner(int, int) some mask merges it with} counts. This is
+     *     conservative: the real partner is always counted, and at worst the merge waits for an unrelated release
+     *     until that release ends. A merge of segment 0 then waits for releases of segment 0 and of every power of two
+     *     (1, 2, 4, 8, ...), but not of 3 or 5.</li>
      * </ul>
      */
     @Override
@@ -212,14 +214,27 @@ class MergeTask extends CoordinatorTask {
     }
 
     /**
-     * Indicates whether the given segments merge with each other under some mask: their identifiers differ in a single
-     * bit, which is the highest bit of the larger one.
+     * Indicates whether some mask merges the given segments: their identifiers differ in a single bit, which is the
+     * highest bit of the larger one.
      * <p>
-     * This is a guess on purpose. The exact answer would be {@link Segment#mergeableSegmentId()}, but that needs the
-     * mask, and this node does not know the mask of a segment it does not process. Using the mask of the other segment
-     * instead is not enough, since after a split the masks differ. Take four segments and split segment 2. That gives
-     * 0/3, 1/3, 2/7, 3/3 and 6/7 (identifier/mask). Under mask 3, segment 0 merges with segment 2. Segment 2/7 merges
-     * with segment 6, so its own mask would say that a merge of segment 0 never touches it, and the merge would touch
+     * The rule is conservative. It counts the real partner whatever the mask is, so a merge never runs while its
+     * partner is being released. The cost is that a merge may wait for the release of a segment that is not its
+     * partner, at most until that release ends. For a merge of segment 0:
+     * <table>
+     *     <caption>Partners of segment 0 and whether this rule counts them</caption>
+     *     <tr><th>Mask of segment 0 (unknown to this node)</th><th>Real partner</th><th>Counted by this rule</th></tr>
+     *     <tr><td>1</td><td>1</td><td>yes</td></tr>
+     *     <tr><td>3</td><td>2</td><td>yes</td></tr>
+     *     <tr><td>7</td><td>4</td><td>yes</td></tr>
+     * </table>
+     * <p>
+     * Releases of segments 3, 5, 6 and 7 never count, since no mask merges them with segment 0.
+     * <p>
+     * The exact answer would be {@link Segment#mergeableSegmentId()}, but that needs the mask of the segment to merge,
+     * and this node does not know the mask of a segment it does not process. The mask of the released segment is not
+     * enough, since after a split the masks differ. Take four segments and split segment 2. That gives 0/3, 1/3, 2/7,
+     * 3/3 and 6/7 (identifier/mask). Under mask 3, segment 0 merges with segment 2, while segment 2/7 merges with
+     * segment 6. The mask of segment 2 would say that a merge of segment 0 never touches it, and the merge would touch
      * segment 2 while segment 2 is being released.
      *
      * @param segmentId      the identifier of the segment to merge
