@@ -185,4 +185,40 @@ class GenericCommandMessageTest extends MessageTestSuite<GenericCommandMessage> 
             assertThat(result.routingKey()).isEqualTo(original.routingKey());
         }
     }
+
+    @Nested
+    class MetadataModification {
+
+        @Test
+        void andMetadataKeepsRoutingKeyAndPriority() {
+            // given
+            GenericCommandMessage original = new GenericCommandMessage(
+                    new MessageType("command"), "payload", Metadata.emptyInstance(), "id-1", 5
+            );
+
+            // when
+            CommandMessage result = original.andMetadata(Metadata.with("key", "value"));
+
+            // then
+            assertThat(result.routingKey()).contains("id-1");
+            assertThat(result.priority()).hasValue(5);
+            assertThat(result.metadata()).containsEntry("key", "value");
+        }
+
+        @Test
+        void withMetadataKeepsRoutingKeyAndPriority() {
+            // given
+            GenericCommandMessage original = new GenericCommandMessage(
+                    new MessageType("command"), "payload", Metadata.emptyInstance(), "id-1", 5
+            );
+
+            // when
+            CommandMessage result = original.withMetadata(Metadata.with("key", "value"));
+
+            // then
+            assertThat(result.routingKey()).contains("id-1");
+            assertThat(result.priority()).hasValue(5);
+            assertThat(result.metadata()).containsEntry("key", "value");
+        }
+    }
 }
