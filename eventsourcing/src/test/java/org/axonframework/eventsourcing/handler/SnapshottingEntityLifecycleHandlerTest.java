@@ -256,7 +256,7 @@ class SnapshottingEntityLifecycleHandlerTest {
 
         @Test
         void snapshotStoredAfterEnoughEvents() {
-            // SnapshotPolicy.afterEvents(2) triggers when eventsApplied > 2
+            // SnapshotPolicy.afterEvents(2) triggers when eventsApplied >= 2
             publish(
                 new AccountCreated(ACCOUNT_ID, "Alice"),
                 new FundsDeposited(ACCOUNT_ID, 100),
@@ -269,6 +269,35 @@ class SnapshottingEntityLifecycleHandlerTest {
 
             assertThat(snapshot).isNotNull();
             assertThat(snapshot.payload()).isEqualTo(new Account(ACCOUNT_ID, "Alice", 300));
+        }
+
+        @Test
+        void snapshotStoredWhenEventCountEqualsThreshold() {
+            // given
+            publish(
+                new AccountCreated(ACCOUNT_ID, "Alice"),
+                new FundsDeposited(ACCOUNT_ID, 100)
+            );
+
+            // when
+            source();
+
+            // then
+            Snapshot snapshot = snapshotStore.load(ACCOUNT_TYPE.qualifiedName(), ACCOUNT_ID, null).join();
+            assertThat(snapshot).isNotNull();
+            assertThat(snapshot.payload()).isEqualTo(new Account(ACCOUNT_ID, "Alice", 100));
+        }
+
+        @Test
+        void noSnapshotStoredWhenEventCountBelowThreshold() {
+            // given
+            publish(new AccountCreated(ACCOUNT_ID, "Alice"));
+
+            // when
+            source();
+
+            // then
+            assertThat(snapshotStore.load(ACCOUNT_TYPE.qualifiedName(), ACCOUNT_ID, null).join()).isNull();
         }
 
         @Test

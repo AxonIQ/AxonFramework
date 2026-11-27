@@ -183,7 +183,7 @@ include::example$tuning/snapshotting/programmatic/SnapshotPolicyConfiguration.ja
 In this configuration:
 
 * A `SnapshotPolicy` determines when a snapshot should be created.
-In the example, a snapshot is created after more than five events have been applied or when a matching event is encountered during sourcing.
+In the example, a snapshot is created once five or more events have been applied or when a matching event is encountered during sourcing.
 * Snapshotting is activated automatically when a `SnapshotPolicy` is configured.
 If no policy is provided, snapshotting is not used and the entity is always sourced from events only.
 
