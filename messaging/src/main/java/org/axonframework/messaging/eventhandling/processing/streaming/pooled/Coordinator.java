@@ -811,7 +811,15 @@ class Coordinator {
                 // Also await releases that started earlier, e.g. on an error, and end the tasks that will not run.
                 abortWorkPackages(null)
                         .thenCompose(ignored -> awaitReleasesInProgress())
-                        .exceptionally(failure -> null)
+                        // Releases log their own failures; only an Error they rethrow arrives here. Shutdown
+                        // continues regardless, so the claims kept for abandoned tasks are released and the
+                        // shutdown handle completes.
+                        .exceptionally(failure -> {
+                            logger.warn("Processor [{}] (Coordination Task [{}]). Releasing segments on shutdown "
+                                                + "failed. Continuing shutdown.",
+                                        name, generation, failure);
+                            return null;
+                        })
                         .thenCompose(ignored -> abandonTasks())
                         .whenComplete((ignored, failure) -> runState.get().shutdownHandle().complete(null));
                 closeStreamQuietly();
