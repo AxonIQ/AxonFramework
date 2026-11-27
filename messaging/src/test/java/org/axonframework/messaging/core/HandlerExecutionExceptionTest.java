@@ -62,6 +62,59 @@ class HandlerExecutionExceptionTest {
     }
 
     @Test
+    void resolveDetailsTypeFromNestedExecutionException() {
+        VersionedType type = VersionedType.of("MyErrorType", "1.0.0");
+        Exception exception = new RuntimeException(new StubHandlerExecutionException("test", null, "Details!", type));
+
+        assertThat(HandlerExecutionException.resolveDetailsType(exception)).contains(type);
+    }
+
+    @Test
+    void resolveDetailsTypeFromExecutionException() {
+        VersionedType type = VersionedType.of("MyErrorType", "1.0.0");
+        Exception exception = new StubHandlerExecutionException("test", null, "Details!", type);
+
+        assertThat(HandlerExecutionException.resolveDetailsType(exception)).contains(type);
+    }
+
+    @Test
+    void resolveDetailsTypeFromNull() {
+        assertThat(HandlerExecutionException.resolveDetailsType(null)).isEmpty();
+    }
+
+    @Test
+    void resolveDetailsTypeFromRuntimeException() {
+        assertThat(HandlerExecutionException.resolveDetailsType(new RuntimeException())).isEmpty();
+    }
+
+    @Test
+    void detailsTypeReturnsEmptyWhenNotProvided() {
+        StubHandlerExecutionException exception = new StubHandlerExecutionException("test", null, "Details!");
+
+        assertThat(exception.detailsType()).isEmpty();
+    }
+
+    @Test
+    void detailsTypeReturnsProvidedType() {
+        VersionedType type = VersionedType.of("MyErrorType", "1.0.0");
+        StubHandlerExecutionException exception =
+                new StubHandlerExecutionException("test", null, "Details!", type);
+
+        assertThat(exception.detailsType()).contains(type);
+    }
+
+    @Test
+    void detailsTypeInheritedFromCause() {
+        VersionedType type = VersionedType.of("MyErrorType", "1.0.0");
+        StubHandlerExecutionException cause =
+                new StubHandlerExecutionException("cause", null, "Details!", type);
+        StubHandlerExecutionException outer = new StubHandlerExecutionException("outer", cause);
+
+        assertThat(outer.detailsType()).contains(type);
+        assertThat(outer.getDetails(String.class)).contains("Details!");
+    }
+
+    @Test
     void validatePresenceOfStackTraceWithWritableStackTraceSetting() {
         Exception exception = new StubHandlerExecutionException("Some message");
         assertEquals(0, exception.getStackTrace().length);
@@ -269,6 +322,13 @@ class HandlerExecutionExceptionTest {
                                              Object details,
                                              boolean writableStackTrace) {
             super(message, cause, details, writableStackTrace);
+        }
+
+        public StubHandlerExecutionException(String message,
+                                             Throwable cause,
+                                             Object details,
+                                             VersionedType detailsType) {
+            super(message, cause, details, detailsType);
         }
 
         public StubHandlerExecutionException(String message,

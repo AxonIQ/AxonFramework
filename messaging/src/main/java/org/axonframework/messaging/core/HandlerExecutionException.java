@@ -46,6 +46,7 @@ import java.util.Optional;
 public abstract class HandlerExecutionException extends AxonException {
 
     private final @Nullable Object details;
+    private final @Nullable VersionedType detailsType;
     private final @Nullable Converter converter;
 
     /**
@@ -75,10 +76,11 @@ public abstract class HandlerExecutionException extends AxonException {
                                       @Nullable Throwable cause,
                                       @Nullable HandlerExecutionException detailsSource) {
         this(message,
-            cause,
-            detailsSource == null ? null : detailsSource.details,
-            detailsSource == null ? null : detailsSource.converter,
-            false);
+             cause,
+             detailsSource == null ? null : detailsSource.details,
+             detailsSource == null ? null : detailsSource.detailsType,
+             detailsSource == null ? null : detailsSource.converter,
+             false);
     }
 
     /**
@@ -108,7 +110,23 @@ public abstract class HandlerExecutionException extends AxonException {
                                      @Nullable Throwable cause,
                                      @Nullable Object details,
                                      boolean writableStackTrace) {
-        this(message, cause, details, null, writableStackTrace);
+        this(message, cause, details, null, null, writableStackTrace);
+    }
+
+    /**
+     * Initializes an execution exception with given {@code message}, {@code cause}, application-specific
+     * {@code details}, and {@code detailsType}.
+     *
+     * @param message     a message describing the exception
+     * @param cause       the cause of the execution exception
+     * @param details     an object providing application-specific details of the exception
+     * @param detailsType the {@link VersionedType} describing the type and version of the details
+     */
+    public HandlerExecutionException(String message,
+                                     @Nullable Throwable cause,
+                                     @Nullable Object details,
+                                     @Nullable VersionedType detailsType) {
+        this(message, cause, details, detailsType, null, false);
     }
 
     /**
@@ -136,8 +154,18 @@ public abstract class HandlerExecutionException extends AxonException {
                                      @Nullable Object details,
                                      @Nullable Converter converter,
                                      boolean writableStackTrace) {
+        this(message, cause, details, null, converter, writableStackTrace);
+    }
+
+    private HandlerExecutionException(String message,
+                                      @Nullable Throwable cause,
+                                      @Nullable Object details,
+                                      @Nullable VersionedType detailsType,
+                                      @Nullable Converter converter,
+                                      boolean writableStackTrace) {
         super(message, cause, writableStackTrace);
         this.details = details;
+        this.detailsType = detailsType;
         this.converter = converter;
     }
 
@@ -155,6 +183,19 @@ public abstract class HandlerExecutionException extends AxonException {
     }
 
     /**
+     * Resolve the {@link VersionedType} of the details from the given {@code throwable}, taking into account that the
+     * details may be available in any of the {@code HandlerExecutionExceptions} in the "cause" chain.
+     *
+     * @param throwable the exception to resolve the details type from
+     * @return an {@code Optional} containing the {@link VersionedType} of the details, if present in the given
+     *         {@code throwable}
+     */
+    public static Optional<VersionedType> resolveDetailsType(@Nullable Throwable throwable) {
+        HandlerExecutionException detailsSource = findExceptionWithDetails(throwable);
+        return detailsSource == null ? Optional.empty() : detailsSource.detailsType();
+    }
+
+    /**
      * Finds the first {@code HandlerExecutionException} in the {@code throwable}'s "cause" chain (including
      * {@code throwable} itself) that carries application-specific details.
      *
@@ -164,12 +205,23 @@ public abstract class HandlerExecutionException extends AxonException {
     private static @Nullable HandlerExecutionException findExceptionWithDetails(@Nullable Throwable throwable) {
         Throwable current = throwable;
         while (current != null) {
-            if (current instanceof HandlerExecutionException exception && exception.details != null) {
+            if (current instanceof HandlerExecutionException exception
+                    && (exception.details != null || exception.detailsType != null)) {
                 return exception;
             }
             current = current.getCause();
         }
         return null;
+    }
+
+    /**
+     * Returns an {@code Optional} containing the {@link VersionedType} describing the type and version of this
+     * exception's details, if provided.
+     *
+     * @return an {@code Optional} containing the {@link VersionedType} of the details, if provided
+     */
+    public Optional<VersionedType> detailsType() {
+        return Optional.ofNullable(detailsType);
     }
 
     /**
