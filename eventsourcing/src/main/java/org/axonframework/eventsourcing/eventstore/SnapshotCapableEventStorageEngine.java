@@ -19,7 +19,7 @@ package org.axonframework.eventsourcing.eventstore;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.configuration.DecoratingComponent;
 import org.axonframework.common.infra.ComponentDescriptor;
-import org.axonframework.eventsourcing.snapshot.api.Snapshot;
+import org.axonframework.eventsourcing.snapshot.api.SnapshotMatch;
 import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
 import org.axonframework.messaging.core.DelayedMessageStream;
 import org.axonframework.messaging.core.MessageStream;
@@ -42,7 +42,8 @@ import java.util.concurrent.CompletableFuture;
  * strategy for stores that do not support this strategy natively.
  * <p>
  * When the given {@link SourcingCondition} carries a {@link SourcingStrategy.Snapshot} strategy, this decorator
- * loads the latest snapshot from the given {@link SnapshotStore} and prepends it as a synthetic leading message to
+ * loads the best acceptable snapshot for the strategy's candidates from the given {@link SnapshotStore}, in a single
+ * {@link SnapshotStore#load load} call, and prepends it as a synthetic leading message to
  * the event stream, followed by the events that occurred after the snapshot's position. If no snapshot is found, or
  * if loading fails, it falls back to full event sourcing from the beginning.
  * <p>
@@ -117,10 +118,10 @@ public class SnapshotCapableEventStorageEngine implements EventStorageEngine {
     public MessageStream<EventMessage> source(SourcingCondition condition, @Nullable ProcessingContext context) {
         if (condition.strategy() instanceof SourcingStrategy.Snapshot s) {
             return DelayedMessageStream.create(
-                snapshotStore.load(s.qualifiedName(), s.identifier(), context)
-                    .thenApply(snapshot -> buildStream(snapshot, condition, s.maximumPosition(), context))
+                snapshotStore.load(s.candidates(), s.aggregateBasedCandidate(), s.identifier(), context)
+                    .thenApply(match -> buildStream(match, condition, s.maximumPosition(), context))
                     .exceptionally(e -> {
-                        LOGGER.warn("Snapshot loading failed, falling back to full reconstruction for: {} ({})", s.qualifiedName(), s.identifier(), e);
+                        LOGGER.warn("Snapshot loading failed, falling back to full reconstruction for: {} ({})", s.candidates(), s.identifier(), e);
 
                         return source(Position.START, condition.criteria(), context);
                     })
@@ -131,17 +132,17 @@ public class SnapshotCapableEventStorageEngine implements EventStorageEngine {
     }
 
     private MessageStream<EventMessage> buildStream(
-        @Nullable Snapshot snapshot,
+        @Nullable SnapshotMatch match,
         SourcingCondition condition,
         @Nullable Position maximumPosition,
         @Nullable ProcessingContext context
     ) {
-        if (snapshot == null || isAfter(snapshot.position(), maximumPosition)) {
+        if (match == null || isAfter(match.snapshot().position(), maximumPosition)) {
             return source(Position.START, condition.criteria(), context);
         }
 
-        return MessageStream.<EventMessage>just(new SnapshotEventMessage(snapshot))
-            .concatWith(source(snapshot.position(), condition.criteria(), context));
+        return MessageStream.<EventMessage>just(new SnapshotEventMessage(match.qualifiedName(), match.snapshot()))
+            .concatWith(source(match.snapshot().position(), condition.criteria(), context));
     }
 
     private static boolean isAfter(Position position, @Nullable Position maximumPosition) {

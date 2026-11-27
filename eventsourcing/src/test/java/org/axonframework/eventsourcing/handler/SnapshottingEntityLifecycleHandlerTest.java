@@ -25,15 +25,20 @@ import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.conversion.Converter;
 import org.axonframework.eventsourcing.annotation.EventTag;
 import org.axonframework.eventsourcing.eventstore.AnnotationBasedTagResolver;
+import org.axonframework.eventsourcing.eventstore.EventStore;
 import org.axonframework.eventsourcing.eventstore.GlobalIndexPositions;
 import org.axonframework.eventsourcing.eventstore.Position;
 import org.axonframework.eventsourcing.eventstore.SnapshotCapableEventStorageEngine;
 import org.axonframework.eventsourcing.eventstore.StorageEngineBackedEventStore;
 import org.axonframework.eventsourcing.eventstore.inmemory.InMemoryEventStorageEngine;
 import org.axonframework.eventsourcing.snapshot.api.Snapshot;
+import org.axonframework.eventsourcing.snapshot.api.SnapshotCandidate;
+import org.axonframework.eventsourcing.snapshot.api.SnapshotMatch;
 import org.axonframework.eventsourcing.snapshot.api.SnapshotPolicy;
 import org.axonframework.eventsourcing.snapshot.inmemory.InMemorySnapshotStore;
+import org.axonframework.eventsourcing.snapshot.store.SnapshotStore;
 import org.axonframework.messaging.core.MessageType;
+import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.VersionedType;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.core.unitofwork.StubProcessingContext;
@@ -54,7 +59,11 @@ import org.junit.jupiter.api.Test;
 import java.lang.reflect.Type;
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.UnaryOperator;
@@ -212,7 +221,7 @@ class SnapshottingEntityLifecycleHandlerTest {
         }
 
         @Test
-        void fallsBackToFullReconstructionAndLogsWarningOnVersionMismatch() {
+        void shouldReconstructFullyWhenOnlyASnapshotOfAnUnacceptableVersionIsStored() {
             publish(new AccountCreated(ACCOUNT_ID, "Alice"), new FundsDeposited(ACCOUNT_ID, 100));
             storeSnapshot(new Account(ACCOUNT_ID, "Alice", 999), GlobalIndexPositions.of(2), "42.0");
 
@@ -221,13 +230,67 @@ class SnapshottingEntityLifecycleHandlerTest {
             Account account = source();
 
             assertThat(account.balance()).isEqualTo(100);
+
+            // the store passes over a snapshot of a version that was not asked for, so the handler never sees it
             assertThat(handlerLog.getEvents())
                 .extracting(LogEvent::getMessage)
                 .extracting(Message::getFormattedMessage)
-                .contains(
-                    "Unsupported snapshot version. Snapshot of Account#0.0.1 for identifier "
-                        + ACCOUNT_ID + " had unsupported version: 42.0"
-                );
+                .noneMatch(message -> message.startsWith("Unsupported snapshot version"));
+        }
+
+        @Test
+        void shouldReconstructFullyWhenASnapshotOfAnotherNameReachesIt() {
+            // given a store answering with a snapshot found under a former name, left untransformed
+            QualifiedName formerName = new QualifiedName("FormerAccount");
+            SnapshotStore formerNameStore = new SnapshotStore() {
+
+                @Override
+                public CompletableFuture<Void> store(QualifiedName qualifiedName, Object identifier,
+                                                     Snapshot snapshot, @Nullable ProcessingContext context) {
+                    return CompletableFuture.completedFuture(null);
+                }
+
+                @Override
+                public CompletableFuture<@Nullable SnapshotMatch> load(List<SnapshotCandidate> candidates,
+                                                                       Object identifier,
+                                                                       @Nullable ProcessingContext context) {
+                    Snapshot snapshot = new Snapshot(
+                        GlobalIndexPositions.of(2), ACCOUNT_TYPE.version(), new Account(ACCOUNT_ID, "Alice", 999),
+                        Instant.now(), Map.of()
+                    );
+
+                    return CompletableFuture.completedFuture(new SnapshotMatch(formerName, snapshot));
+                }
+
+                // temporary: SnapshotStore keeps this deprecated method so Axoniq Framework keeps compiling
+                @Override
+                public CompletableFuture<@Nullable Snapshot> load(QualifiedName qualifiedName, Object identifier,
+                                                                  @Nullable ProcessingContext context) {
+                    throw new UnsupportedOperationException();
+                }
+
+                @Override
+                public void describeTo(ComponentDescriptor descriptor) {
+                }
+            };
+            StorageEngineBackedEventStore store = new StorageEngineBackedEventStore(
+                new SnapshotCapableEventStorageEngine(new InMemoryEventStorageEngine(), formerNameStore),
+                new SimpleEventBus(),
+                new AnnotationBasedTagResolver()
+            );
+
+            publish(store, new AccountCreated(ACCOUNT_ID, "Alice"), new FundsDeposited(ACCOUNT_ID, 100));
+            handlerLog.clear();
+
+            // when
+            Account account = source(handlerOn(store, SnapshotPolicy.afterEvents(100)));
+
+            // then
+            assertThat(account.balance()).isEqualTo(100);
+            assertThat(handlerLog.getEvents())
+                .extracting(LogEvent::getMessage)
+                .extracting(Message::getFormattedMessage)
+                .anyMatch(message -> message.startsWith("Unsupported snapshot version"));
         }
 
         @Test
@@ -265,7 +328,7 @@ class SnapshottingEntityLifecycleHandlerTest {
 
             source();
 
-            Snapshot snapshot = snapshotStore.load(ACCOUNT_TYPE.qualifiedName(), ACCOUNT_ID, null).join();
+            Snapshot snapshot = storedSnapshot();
 
             assertThat(snapshot).isNotNull();
             assertThat(snapshot.payload()).isEqualTo(new Account(ACCOUNT_ID, "Alice", 300));
@@ -313,7 +376,7 @@ class SnapshottingEntityLifecycleHandlerTest {
 
             source(matchHandler);
 
-            assertThat(snapshotStore.load(ACCOUNT_TYPE.qualifiedName(), ACCOUNT_ID, null).join()).isNotNull();
+            assertThat(storedSnapshot()).isNotNull();
         }
 
         @Test
@@ -372,7 +435,11 @@ class SnapshottingEntityLifecycleHandlerTest {
     }
 
     private void publish(Object... events) {
-        eventStore.publish(
+        publish(eventStore, events);
+    }
+
+    private static void publish(EventStore store, Object... events) {
+        store.publish(
             null,
             Arrays.stream(events)
                 .map(e -> (EventMessage) new GenericEventMessage(new MessageType(e.getClass()), e))
@@ -382,6 +449,16 @@ class SnapshottingEntityLifecycleHandlerTest {
 
     private Account source() {
         return source(handler);
+    }
+
+    private @Nullable Snapshot storedSnapshot() {
+        SnapshotMatch match = snapshotStore.load(
+            List.of(new SnapshotCandidate(ACCOUNT_TYPE.qualifiedName(), Set.of(ACCOUNT_TYPE.version()))),
+            ACCOUNT_ID,
+            null
+        ).orTimeout(1, TimeUnit.SECONDS).join();
+
+        return match == null ? null : match.snapshot();
     }
 
     private Account source(SnapshottingEntityLifecycleHandler<String, Account> handler) {
@@ -404,8 +481,12 @@ class SnapshottingEntityLifecycleHandlerTest {
     }
 
     private SnapshottingEntityLifecycleHandler<String, Account> handlerWithPolicy(SnapshotPolicy policy) {
+        return handlerOn(eventStore, policy);
+    }
+
+    private SnapshottingEntityLifecycleHandler<String, Account> handlerOn(EventStore store, SnapshotPolicy policy) {
         return new SnapshottingEntityLifecycleHandler<>(
-            eventStore,
+            store,
             (id, ctx) -> EventCriteria.havingTags(Tag.of("account", id)),
             new AnnotationBasedTagResolver(),
             new InitializingEntityEvolver<>(

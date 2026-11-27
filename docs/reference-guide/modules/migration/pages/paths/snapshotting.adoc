@@ -134,25 +134,66 @@ Snapshot storage is now an explicit dependency of the entity module.
 ====
 
 [#reusing_existing_snapshots]
+[.axoniq-feature]
 == Reusing existing Axon Framework 4 snapshots
 
-The stores above only begin writing snapshots once your application runs on Axon Framework 5.
-The snapshots you already hold from Axon Framework 4 cannot be carried over, because the two versions locate a snapshot in the event stream with incompatible numbering:
+When a context runs on Dynamic Consistency Boundary (DCB) storage, Axon Server keeps the snapshots Axon Framework 4 takes, both those taken before the context was migrated and those taken by Axon Framework 4 applications still running against it.
+Axon Server stores such an _aggregate-based snapshot_ under the identifier of its aggregate, positioned in the context-wide event stream, and identified by its payload type (the aggregate class) and revision.
 
-* *Aggregate-based storage* (the Axon Framework 4 model, and the aggregate-based storage engines in Axon Framework 5) numbers events per entity, each entity starting at 0.
-* *Dynamic Consistency Boundary (DCB) storage* numbers events context-wide, as a single global index shared by every event.
+An Axon Framework 5 application can start from these snapshots instead of replaying an entity's full history.
+An aggregate-based snapshot holds Axon Framework 4 aggregate state, in the format it was serialized with, so it is lifted into the entity type explicitly, through a snapshot transformation:
 
-An Axon Framework 4 snapshot is positioned only by its aggregate sequence number and carries no global index, so a DCB store has no way to know where in the global stream to resume.
+[source,java,role=pseudocode]
+----
+XStream xStream = new XStream();
+xStream.allowTypes(new Class<?>[]{LegacyAccount.class});
+xStream.alias("com.example.bank.BankAccount", LegacyAccount.class);
 
-[IMPORTANT]
-====
-Existing Axon Framework 4 snapshots are therefore neither reusable in Axon Framework 5 nor migratable to a DCB context.
-Once a context is switched to DCB they are ignored entirely: affected entities rebuild from a full event replay, and fresh snapshots are written from then on.
-====
+SnapshotTransformerChain chain = SnapshotTransformerChain.builder()
+        .register(SnapshotTransformation
+                .pathFromAggregateBased(VersionedType.of("com.example.bank.BankAccount", "0.0.0"))
+                .storedAs(new XStreamConverter(xStream))
+                .to(VersionedType.of("com.example.bank.Account", "1.0.0"))
+                .transform(LegacyAccount.class, legacy -> new Account(legacy.id, legacy.balance))
+                .build())
+        .build();
+
+configurer.componentRegistry(registry -> registry.registerComponent(SnapshotTransformerChain.class, c -> chain));
+----
+
+* `pathFromAggregateBased` names the payload type and revision of the Axon Framework 4 snapshots to start from.
+A snapshot without a revision has version `0.0.0`.
+Register a path for each revision you can read.
+* `storedAs` declares the converter the snapshot was serialized with.
+Axon Framework 4 serializes snapshots with XStream by default, which the `XStreamConverter` of the `axoniq-legacy` module reads.
+* `to` and `transform` map the stored state into the entity type, identified by its name and version.
+
+Registering the chain is all that is needed: when an entity is sourced, Axon Framework 5 also asks Axon Server for the aggregate-based snapshot of its identifier, and lifts it before the entity sees it.
+
+* An aggregate-based snapshot is only used when its payload type and revision match a declared path.
+Any other snapshot stored under the same aggregate identifier, such as one of a revision you did not declare, is passed over, and the entity is sourced in full.
+* An aggregate-based snapshot is only looked for when the entity has no snapshot of its own.
+Once sourced, the entity writes and uses snapshots of its own type, even when Axon Framework 4 keeps writing newer ones.
+* Give the entity a name or version that differs from the payload type and revision of the Axon Framework 4 snapshots, so a snapshot of either cannot be mistaken for the other.
+* The lookup requires an Axon Server version that supports snapshot-aware sourcing.
+Against an older Axon Server, aggregate-based snapshots are not found, and entities rebuild from their event streams.
+
+=== Running Axon Framework 4 and 5 side by side
+
+Axon Framework 4 and 5 applications can source the same entities from the same DCB context at the same time.
+Axon Framework 4 keeps starting from its own snapshots, and never sees those Axon Framework 5 writes, as they are stored separately.
+
+Axon Server tags the events Axon Framework 4 appends with the aggregate type as key, and with `AGGREGATE_ID`, both with the aggregate identifier as value.
+An Axon Framework 5 entity sources those events through the aggregate type tag.
+For Axon Framework 4 to see the events Axon Framework 5 appends to the same entity, tag them the same way, including `AGGREGATE_ID`.
+
+=== Without a transformation
+
+Without a declared path, existing Axon Framework 4 snapshots are not used: affected entities rebuild from a full event replay, and fresh snapshots are written from then on.
 
 This is not a correctness problem: a snapshot is only an optional cache, and every entity can be rebuilt from its event stream.
 It is a performance one, and the cost depends on your domain.
 Until fresh snapshots accumulate, each affected entity is sourced from its full history, so the first load after migration is slower.
 For short streams this is negligible, but an entity with a long stream, hundreds of thousands or millions of events, can suffer a significant response-time hit.
-There is no single answer here: assess the impact against your longest-lived entities and plan for the initial replay accordingly.
+Assess the impact against your longest-lived entities, and declare a path for those whose replay would be too slow.
 For the storage engine choices that decide whether a context runs in aggregate-based or DCB mode, see the xref:migration:paths/event-store.adoc[Event Store migration].

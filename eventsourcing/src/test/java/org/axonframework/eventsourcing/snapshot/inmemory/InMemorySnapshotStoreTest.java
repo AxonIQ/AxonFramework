@@ -22,14 +22,19 @@ import org.axonframework.conversion.Converter;
 import org.axonframework.conversion.jackson.JacksonConverter;
 import org.axonframework.eventsourcing.eventstore.GlobalIndexPositions;
 import org.axonframework.eventsourcing.snapshot.api.Snapshot;
+import org.axonframework.eventsourcing.snapshot.api.SnapshotCandidate;
+import org.axonframework.eventsourcing.snapshot.api.SnapshotMatch;
 import org.axonframework.messaging.core.QualifiedName;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -42,6 +47,8 @@ class InMemorySnapshotStoreTest {
 
     private static final QualifiedName SNAPSHOT_NAME = new QualifiedName("Ledger");
     private static final String IDENTIFIER = "ledger-1";
+    private static final List<SnapshotCandidate> CANDIDATES =
+        List.of(new SnapshotCandidate(SNAPSHOT_NAME, Set.of("1.0")));
 
     @Nested
     class StoreAndLoadWithConverter {
@@ -57,7 +64,7 @@ class InMemorySnapshotStoreTest {
             // when
             testSubject.store(SNAPSHOT_NAME, IDENTIFIER, snapshot, null).get(1, TimeUnit.SECONDS);
             payload.setTotal(5);
-            Snapshot loaded = testSubject.load(SNAPSHOT_NAME, IDENTIFIER, null).get(1, TimeUnit.SECONDS);
+            Snapshot loaded = loadSnapshot(testSubject);
 
             // then
             assertThat(loaded).isNotNull();
@@ -71,11 +78,11 @@ class InMemorySnapshotStoreTest {
             // given
             testSubject.store(SNAPSHOT_NAME, IDENTIFIER, snapshot(new MutableState(3)), null)
                        .get(1, TimeUnit.SECONDS);
-            Snapshot firstLoad = testSubject.load(SNAPSHOT_NAME, IDENTIFIER, null).get(1, TimeUnit.SECONDS);
+            Snapshot firstLoad = loadSnapshot(testSubject);
 
             // when
             ((MutableState) firstLoad.payload()).setTotal(99);
-            Snapshot secondLoad = testSubject.load(SNAPSHOT_NAME, IDENTIFIER, null).get(1, TimeUnit.SECONDS);
+            Snapshot secondLoad = loadSnapshot(testSubject);
 
             // then
             assertThat(secondLoad).isNotNull();
@@ -92,7 +99,7 @@ class InMemorySnapshotStoreTest {
             // when
             testSubject.store(SNAPSHOT_NAME, IDENTIFIER, snapshot(new MutableState(7)), null)
                        .get(1, TimeUnit.SECONDS);
-            Snapshot loaded = testSubject.load(SNAPSHOT_NAME, IDENTIFIER, null).get(1, TimeUnit.SECONDS);
+            Snapshot loaded = loadSnapshot(testSubject);
 
             // then
             assertThat(loaded).isNotNull();
@@ -102,7 +109,7 @@ class InMemorySnapshotStoreTest {
         @Test
         void loadReturnsNullWhenNoSnapshotWasStored() throws Exception {
             // given / when
-            Snapshot loaded = testSubject.load(SNAPSHOT_NAME, IDENTIFIER, null).get(1, TimeUnit.SECONDS);
+            Snapshot loaded = loadSnapshot(testSubject);
 
             // then
             assertThat(loaded).isNull();
@@ -116,7 +123,7 @@ class InMemorySnapshotStoreTest {
 
             // when
             payload[0] = 9;
-            Snapshot loaded = testSubject.load(SNAPSHOT_NAME, IDENTIFIER, null).get(1, TimeUnit.SECONDS);
+            Snapshot loaded = loadSnapshot(testSubject);
 
             // then
             assertThat(loaded).isNotNull();
@@ -138,11 +145,112 @@ class InMemorySnapshotStoreTest {
             // when
             testSubject.store(SNAPSHOT_NAME, IDENTIFIER, snapshot(payload), null).get(1, TimeUnit.SECONDS);
             payload.setTotal(5);
-            Snapshot loaded = testSubject.load(SNAPSHOT_NAME, IDENTIFIER, null).get(1, TimeUnit.SECONDS);
+            Snapshot loaded = loadSnapshot(testSubject);
 
             // then
             assertThat(loaded).isNotNull();
             assertThat(((MutableState) loaded.payload()).getTotal()).isEqualTo(3);
+        }
+    }
+
+    @Nested
+    class LoadWithCandidates {
+
+        private static final QualifiedName FORMER_NAME = new QualifiedName("FormerLedger");
+
+        private final InMemorySnapshotStore testSubject = new InMemorySnapshotStore(new CopyingConverter());
+
+        @Test
+        void shouldReturnTheSnapshotOfTheFirstCandidateWithAnAcceptableOne() throws Exception {
+            // given
+            store(SNAPSHOT_NAME, snapshot(new MutableState(1), "1.0"));
+            store(FORMER_NAME, snapshot(new MutableState(2), "1.0"));
+
+            // when
+            SnapshotMatch match = load(candidate(SNAPSHOT_NAME, "1.0"), candidate(FORMER_NAME, "1.0"));
+
+            // then
+            assertThat(match).isNotNull();
+            assertThat(match.qualifiedName()).isEqualTo(SNAPSHOT_NAME);
+            assertThat(((MutableState) match.snapshot().payload()).getTotal()).isEqualTo(1);
+        }
+
+        @Test
+        void shouldFallBackToALaterCandidateWhenAnEarlierOneHasNoSnapshot() throws Exception {
+            // given
+            store(FORMER_NAME, snapshot(new MutableState(2), "1.0"));
+
+            // when
+            SnapshotMatch match = load(candidate(SNAPSHOT_NAME, "1.0"), candidate(FORMER_NAME, "1.0"));
+
+            // then
+            assertThat(match).isNotNull();
+            assertThat(match.qualifiedName()).isEqualTo(FORMER_NAME);
+        }
+
+        @Test
+        void shouldPassOverASnapshotOfAVersionThatIsNotAcceptable() throws Exception {
+            // given a snapshot written by a newer version of the application than the one now loading it
+            store(SNAPSHOT_NAME, snapshot(new MutableState(1), "2.0"));
+
+            // when
+            SnapshotMatch match = load(candidate(SNAPSHOT_NAME, "1.0"));
+
+            // then
+            assertThat(match).isNull();
+        }
+
+        @Test
+        void shouldMoveOnToTheNextCandidateWhenASnapshotIsOfAnUnacceptableVersion() throws Exception {
+            // given
+            store(SNAPSHOT_NAME, snapshot(new MutableState(1), "2.0"));
+            store(FORMER_NAME, snapshot(new MutableState(2), "1.0"));
+
+            // when
+            SnapshotMatch match = load(candidate(SNAPSHOT_NAME, "1.0"), candidate(FORMER_NAME, "1.0"));
+
+            // then
+            assertThat(match).isNotNull();
+            assertThat(match.qualifiedName()).isEqualTo(FORMER_NAME);
+        }
+
+        @Test
+        void shouldAcceptAnyVersionInTheAcceptableSet() throws Exception {
+            // given
+            store(SNAPSHOT_NAME, snapshot(new MutableState(1), "1.0"));
+
+            // when
+            SnapshotMatch match = load(new SnapshotCandidate(SNAPSHOT_NAME, Set.of("1.0", "2.0")));
+
+            // then
+            assertThat(match).isNotNull();
+            assertThat(match.snapshot().version()).isEqualTo("1.0");
+        }
+
+        @Test
+        void shouldIgnoreAnAggregateBasedCandidate() throws Exception {
+            // given a snapshot under the aggregate-based candidate's name, which an aggregate-based lookup cannot find
+            store(FORMER_NAME, snapshot(new MutableState(2), "1.0"));
+
+            // when
+            SnapshotMatch match = testSubject.load(
+                List.of(candidate(SNAPSHOT_NAME, "1.0")), candidate(FORMER_NAME, "1.0"), IDENTIFIER, null
+            ).get(1, TimeUnit.SECONDS);
+
+            // then
+            assertThat(match).isNull();
+        }
+
+        private void store(QualifiedName name, Snapshot snapshot) throws Exception {
+            testSubject.store(name, IDENTIFIER, snapshot, null).get(1, TimeUnit.SECONDS);
+        }
+
+        private @Nullable SnapshotMatch load(SnapshotCandidate... candidates) throws Exception {
+            return testSubject.load(List.of(candidates), IDENTIFIER, null).get(1, TimeUnit.SECONDS);
+        }
+
+        private static SnapshotCandidate candidate(QualifiedName name, String version) {
+            return new SnapshotCandidate(name, Set.of(version));
         }
     }
 
@@ -204,17 +312,25 @@ class InMemorySnapshotStoreTest {
         }
 
         @Test
-        void loadRejectsNullQualifiedName() {
+        void loadRejectsNullCandidates() {
             // given / when / then
-            assertThatThrownBy(() -> testSubject.load(null, IDENTIFIER, null))
+            assertThatThrownBy(() -> testSubject.load((List<SnapshotCandidate>) null, IDENTIFIER, null))
                 .isInstanceOf(NullPointerException.class)
-                .hasMessageContaining("qualifiedName");
+                .hasMessageContaining("candidates");
+        }
+
+        @Test
+        void shouldRejectEmptyCandidatesOnLoad() {
+            // given / when / then
+            assertThatThrownBy(() -> testSubject.load(List.of(), IDENTIFIER, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("candidates");
         }
 
         @Test
         void loadRejectsNullIdentifier() {
             // given / when / then
-            assertThatThrownBy(() -> testSubject.load(SNAPSHOT_NAME, null, null))
+            assertThatThrownBy(() -> testSubject.load(CANDIDATES, null, null))
                 .isInstanceOf(NullPointerException.class)
                 .hasMessageContaining("identifier");
         }
@@ -229,13 +345,23 @@ class InMemorySnapshotStoreTest {
     }
 
     private static Snapshot snapshot(Object payload) {
+        return snapshot(payload, "1.0");
+    }
+
+    private static Snapshot snapshot(Object payload, String version) {
         return new Snapshot(
             GlobalIndexPositions.of(3),
-            "1.0",
+            version,
             payload,
             Instant.parse("2026-01-01T00:00:00Z"),
             Map.of()
         );
+    }
+
+    private static @Nullable Snapshot loadSnapshot(InMemorySnapshotStore store) throws Exception {
+        SnapshotMatch match = store.load(CANDIDATES, IDENTIFIER, null).get(1, TimeUnit.SECONDS);
+
+        return match == null ? null : match.snapshot();
     }
 
     /**
