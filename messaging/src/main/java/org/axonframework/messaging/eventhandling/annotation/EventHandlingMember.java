@@ -16,8 +16,14 @@
 
 package org.axonframework.messaging.eventhandling.annotation;
 
+import org.axonframework.common.StringUtils;
 import org.axonframework.common.annotation.Internal;
+import org.axonframework.messaging.core.MessageTypeResolver;
+import org.axonframework.messaging.core.QualifiedName;
+import org.axonframework.messaging.core.annotation.HandlerAttributes;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
+
+import java.util.Optional;
 
 /**
  * Interface indicating that a {@link MessageHandlingMember} is capable of handling specific event messages.
@@ -38,4 +44,43 @@ public interface EventHandlingMember<T> extends MessageHandlingMember<T> {
      * @return The name of the event that can be handled.
      */
     String eventName();
+
+    /**
+     * Resolves the {@link QualifiedName} of the events the given {@code handler} handles.
+     * <p>
+     * The name is resolved as follows:
+     * <ol>
+     *     <li>A non-empty {@link #eventName()} of the {@code handler} is used as is.</li>
+     *     <li>Otherwise, the {@link HandlerAttributes#EVENT_NAMESPACE namespace} and
+     *     {@link HandlerAttributes#EVENT_LOCAL_NAME local name} attributes of the {@code handler} are used. A part
+     *     that is undefined is taken from the name the {@link MessageHandlingMember#payloadType() payload type}
+     *     resolves to.</li>
+     *     <li>Otherwise, the name the payload type resolves to through the given {@code messageTypeResolver} is
+     *     used.</li>
+     * </ol>
+     *
+     * @param handler             the handler to resolve the handled event name of
+     * @param messageTypeResolver the resolver deriving the name of the payload type of the {@code handler}
+     * @return the qualified name of the events the given {@code handler} handles
+     * @since 5.5.0
+     */
+    static QualifiedName qualifiedNameOf(MessageHandlingMember<?> handler, MessageTypeResolver messageTypeResolver) {
+        Optional<String> eventName = handler.unwrap(EventHandlingMember.class)
+                                            .map(EventHandlingMember::eventName)
+                                            .filter(StringUtils::nonEmpty);
+        if (eventName.isPresent()) {
+            return new QualifiedName(eventName.get());
+        }
+        String namespace = handler.<String>attribute(HandlerAttributes.EVENT_NAMESPACE).orElse("");
+        String localName = handler.<String>attribute(HandlerAttributes.EVENT_LOCAL_NAME).orElse("");
+        if (!namespace.isEmpty() && !localName.isEmpty()) {
+            return new QualifiedName(namespace, localName);
+        }
+        QualifiedName payloadName = messageTypeResolver.resolveOrThrow(handler.payloadType()).qualifiedName();
+        if (namespace.isEmpty() && localName.isEmpty()) {
+            return payloadName;
+        }
+        return new QualifiedName(namespace.isEmpty() ? payloadName.namespace() : namespace,
+                                 localName.isEmpty() ? payloadName.localName() : localName);
+    }
 }

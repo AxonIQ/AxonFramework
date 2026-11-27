@@ -87,7 +87,10 @@ public final class AnnotationUtils {
     /**
      * Find the attributes of an annotation of type {@code annotationType} on the given {@code element}. The returned
      * optional has a value present if the annotation has been found, either directly on the {@code element}, or as a
-     * meta-annotation.
+     * meta-annotation. Annotations grouped in the container annotation of a {@link Repeatable} annotation type are
+     * inspected as if they were placed directly, on the {@code element} as well as on meta-annotations. When several
+     * occurrences match, the attributes of the first one are returned; use
+     * {@link #findAllAnnotationAttributes(AnnotatedElement, Class)} to find all of them.
      * <p>
      * The map of attributes contains all the attributes found on the annotation, as well as attributes of any
      * annotations on which the targeted annotation was placed (directly, or indirectly).
@@ -108,7 +111,10 @@ public final class AnnotationUtils {
     /**
      * Find the attributes of an annotation of type {@code annotationType} on the given {@code element}. The returned
      * optional has a value present if the annotation has been found, either directly on the {@code element}, or as a
-     * meta-annotation.
+     * meta-annotation. Annotations grouped in the container annotation of a {@link Repeatable} annotation type are
+     * inspected as if they were placed directly, on the {@code element} as well as on meta-annotations. When several
+     * occurrences match, the attributes of the first one are returned; use
+     * {@link #findAllAnnotationAttributes(AnnotatedElement, Class)} to find all of them.
      * <p>
      * The map of attributes contains all the attributes found on the annotation. The {@code overrideOnly} parameter
      * defines whether all attributes of any annotation on which the targeted annotation was placed (directly, or
@@ -134,7 +140,10 @@ public final class AnnotationUtils {
     /**
      * Find the attributes of an annotation with given {@code annotationName} on the given {@code element}. The returned
      * optional has a value present if the annotation has been found, either directly on the {@code element}, or as a
-     * meta-annotation.
+     * meta-annotation. Annotations grouped in the container annotation of a {@link Repeatable} annotation type are
+     * inspected as if they were placed directly, on the {@code element} as well as on meta-annotations. When several
+     * occurrences match, the attributes of the first one are returned; use
+     * {@link #findAllAnnotationAttributes(AnnotatedElement, Class)} to find all of them.
      * <p>
      * The map of attributes contains all the attributes found on the annotation, as well as attributes of any
      * annotations on which the targeted annotation was placed (directly, or indirectly).
@@ -151,7 +160,10 @@ public final class AnnotationUtils {
     /**
      * Find the attributes of an annotation with given {@code annotationName} on the given {@code element}. The returned
      * optional has a value present if the annotation has been found, either directly on the {@code element}, or as a
-     * meta-annotation.
+     * meta-annotation. Annotations grouped in the container annotation of a {@link Repeatable} annotation type are
+     * inspected as if they were placed directly, on the {@code element} as well as on meta-annotations. When several
+     * occurrences match, the attributes of the first one are returned; use
+     * {@link #findAllAnnotationAttributes(AnnotatedElement, Class)} to find all of them.
      * <p>
      * The map of attributes contains all the attributes found on the annotation. The {@code overrideOnly} parameter
      * defines whether all attributes of any annotation on which the targeted annotation was placed (directly, or
@@ -179,7 +191,7 @@ public final class AnnotationUtils {
             found = true;
         } else {
             HashSet<String> visited = new HashSet<>();
-            for (Annotation metaAnn : element.getAnnotations()) {
+            for (Annotation metaAnn : annotationsOf(element)) {
                 if (collectAnnotationAttributes(metaAnn.annotationType(),
                                                 annotationName,
                                                 visited,
@@ -302,8 +314,16 @@ public final class AnnotationUtils {
     /**
      * Returns the {@link Repeatable} annotation type of which the given {@code type} is the container annotation, or
      * {@code null} if the given {@code type} is not a container annotation.
+     * <p>
+     * A type is a container annotation when its {@code value} attribute is an array of an annotation type that declares
+     * the given {@code type} as its {@link Repeatable#value() container}.
+     *
+     * @param type the annotation type to inspect
+     * @return the annotation type repeated through the given container {@code type}, or {@code null} if the given
+     * {@code type} is not a container annotation
+     * @since 5.5.0
      */
-    private static @Nullable Class<? extends Annotation> repeatedTypeOf(Class<? extends Annotation> type) {
+    public static @Nullable Class<? extends Annotation> repeatedTypeOf(Class<? extends Annotation> type) {
         Method valueMethod;
         try {
             valueMethod = type.getDeclaredMethod("value");
@@ -389,7 +409,7 @@ public final class AnnotationUtils {
             return false;
         }
 
-        for (Annotation metaAnn : target.getAnnotations()) {
+        for (Annotation metaAnn : annotationsOf(target)) {
             if (collectAnnotationAttributes(metaAnn.annotationType(),
                                             annotationType,
                                             visited,
@@ -402,8 +422,50 @@ public final class AnnotationUtils {
         return false;
     }
 
+    /**
+     * Returns the annotations present on the given {@code element}, including the annotations grouped in a container
+     * annotation of a {@link Repeatable} annotation type. The repeated annotations directly follow their container
+     * annotation, allowing the meta-annotation lookups to inspect each of them as if it were placed on the
+     * {@code element} directly. A repeatable annotation placed directly on the {@code element} next to its container
+     * annotation is included once.
+     */
+    private static List<Annotation> annotationsOf(AnnotatedElement element) {
+        Annotation[] annotations = element.getAnnotations();
+        List<Annotation> result = new ArrayList<>(annotations.length);
+        Set<Class<? extends Annotation>> expandedTypes = new HashSet<>();
+        for (Annotation annotation : annotations) {
+            Class<? extends Annotation> repeatedType = repeatedTypeOf(annotation.annotationType());
+            if (repeatedType != null) {
+                result.add(annotation);
+                if (expandedTypes.add(repeatedType)) {
+                    result.addAll(List.of(element.getAnnotationsByType(repeatedType)));
+                }
+            } else if (!expandedTypes.contains(annotation.annotationType())) {
+                result.add(annotation);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Returns the attributes of the given {@code annotation}, keyed by attribute name.
+     * <p>
+     * Note that the {@code value} property of the annotation is reported as the simple class name (lowercase first
+     * character) of the annotation, consistent with
+     * {@link #findAnnotationAttributes(AnnotatedElement, Class) findAnnotationAttributes(...)}.
+     *
+     * @param annotation the annotation to read the attributes of
+     * @return a map with the attribute names and values of the given {@code annotation}
+     * @since 5.5.0
+     */
+    public static Map<String, Object> attributesOf(Annotation annotation) {
+        Map<String, Object> attributes = new HashMap<>();
+        collectAttributes(annotation, attributes);
+        return attributes;
+    }
+
     private @Nullable static Annotation getAnnotation(AnnotatedElement target, String annotationType) {
-        for (Annotation annotation : target.getAnnotations()) {
+        for (Annotation annotation : annotationsOf(target)) {
             if (annotationType.equals(annotation.annotationType().getName())) {
                 return annotation;
             }
@@ -451,7 +513,8 @@ public final class AnnotationUtils {
     /**
      * Validate whether the given {@code target} annotation {@link Class} is meta-annotated with the given
      * {@code subject}. If this is the case for the {@code target} itself or any meta-annotation on any level of the
-     * {@code target}, {@code true} will be returned.
+     * {@code target}, {@code true} will be returned. Annotations grouped in the container annotation of a
+     * {@link Repeatable} annotation type are inspected as if they were placed directly.
      * <p>
      * Any {@link Annotation} classes which are directly annotated or meta-annotated with the given {@code subject} will
      * be stored in the {@code annotatedWithSubject} {@link Set}. The {@code visited} {@code Set} is used to ignore
@@ -473,7 +536,7 @@ public final class AnnotationUtils {
                                           Set<Class<? extends Annotation>> annotatedWithSubject,
                                           Set<Class<? extends Annotation>> visited) {
         boolean hasSubjectAnnotation = false;
-        for (Annotation metaAnnotation : target.getAnnotations()) {
+        for (Annotation metaAnnotation : annotationsOf(target)) {
             if (subject.isAssignableFrom(metaAnnotation.annotationType())) {
                 annotatedWithSubject.add(target);
                 hasSubjectAnnotation = true;
@@ -481,7 +544,7 @@ public final class AnnotationUtils {
         }
 
         if (visited.add(target)) {
-            for (Annotation metaAnnotation : target.getAnnotations()) {
+            for (Annotation metaAnnotation : annotationsOf(target)) {
                 if (isAnnotatedWith(metaAnnotation.annotationType(), subject, annotatedWithSubject, visited)) {
                     annotatedWithSubject.add(target);
                     hasSubjectAnnotation = true;

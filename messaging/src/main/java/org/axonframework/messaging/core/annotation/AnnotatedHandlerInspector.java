@@ -44,6 +44,7 @@ import java.util.SortedSet;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static java.util.Collections.emptySet;
 import static java.util.Collections.emptySortedSet;
@@ -207,12 +208,12 @@ public class AnnotatedHandlerInspector<T> {
         handlers.put(inspectedType, new TreeSet<>(HandlerComparator.instance()));
         MessageStreamResolver messageStreamResolver = this::resolveResultToStream;
         for (Method method : inspectedType.getDeclaredMethods()) {
-            handlerDefinition.createHandler(
+            handlerDefinition.createHandlers(
                     inspectedType,
                     method,
                     parameterResolverFactory,
                     messageStreamResolver
-            ).ifPresent(h -> registerHandler(inspectedType, h));
+            ).forEach(h -> registerHandler(inspectedType, h));
         }
 
         // we need to consider handlers from parent/subclasses as well
@@ -298,23 +299,34 @@ public class AnnotatedHandlerInspector<T> {
         // supertype's implementation to be invoked instead of the subtype's.
         // Note: the messageType is filtered first on purpose, so a member handling a different message type
         // cannot displace the member that actually handles the requested messageType.
-        Map<ExecutableSignature, MessageHandlingMember<? super T>> uniqueBySignature = set.stream()
-            .filter(member -> member.canHandleMessageType(messageType))
-            .collect(Collectors.toMap(
-                member -> member.unwrap(Executable.class).map(ExecutableSignature::of).orElseThrow(
-                        () -> new AxonConfigurationException(
-                                "The handler [" + member.getClass().getName() + "] does not expose the method or"
-                                        + " constructor it wraps through unwrap(Executable.class). A wrapper must pass"
-                                        + " unwrap on to the handler it wraps, for example by extending"
-                                        + " WrappedMessageHandlingMember."
-                        )
-                ),
-                member -> member,
-                (existing, replacement) ->
-                    existing.declaringClass().isAssignableFrom(replacement.declaringClass()) ? replacement : existing,
-                LinkedHashMap::new
-            ));
-        return List.copyOf(uniqueBySignature.values());
+        // A method repeating its handler annotation results in several members of the same declaring type. All of
+        // those are kept, as each of them describes a separate handler.
+        Map<ExecutableSignature, List<MessageHandlingMember<? super T>>> uniqueBySignature = new LinkedHashMap<>();
+        set.stream()
+           .filter(member -> member.canHandleMessageType(messageType))
+           .forEach(member -> uniqueBySignature.merge(
+                   member.unwrap(Executable.class).map(ExecutableSignature::of).orElseThrow(
+                           () -> new AxonConfigurationException(
+                                   "The handler [" + member.getClass().getName() + "] does not expose the method or"
+                                           + " constructor it wraps through unwrap(Executable.class). A wrapper must pass"
+                                           + " unwrap on to the handler it wraps, for example by extending"
+                                           + " WrappedMessageHandlingMember."
+                           )
+                   ),
+                   List.of(member),
+                   AnnotatedHandlerInspector::mostSpecificDeclaration
+           ));
+        return uniqueBySignature.values().stream().flatMap(List::stream).toList();
+    }
+
+    private static <M extends MessageHandlingMember<?>> List<M> mostSpecificDeclaration(List<M> existing,
+                                                                                       List<M> candidate) {
+        Class<?> existingType = existing.getFirst().declaringClass();
+        Class<?> candidateType = candidate.getFirst().declaringClass();
+        if (existingType.equals(candidateType)) {
+            return Stream.concat(existing.stream(), candidate.stream()).toList();
+        }
+        return existingType.isAssignableFrom(candidateType) ? candidate : existing;
     }
 
     /**

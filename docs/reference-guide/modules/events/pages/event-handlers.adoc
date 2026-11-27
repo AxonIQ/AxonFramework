@@ -130,15 +130,61 @@ Axon's autodetected configuration will find the `OrderPlacedEvent` event handler
 The resulting name is then used to register the handler.
 The component in charge of this resolution is the `MessageTypeResolver`, which is explained in more detail xref:messaging-concepts:anatomy-message.adoc#message_type_resolution[here].
 
-If you need to override the name used to register the event handler or if the event payload does not contain the `@Event` annotation at all, you should define the `eventName` attribute of the `@EventHandler`:
+If you need to override the name used to register the event handler or if the event payload does not contain the `@Event` annotation at all, you should define the `namespace` and `name` attributes of the `@EventHandler`.
+They mirror the attributes of the `@Event` annotation:
 
 [source,java]
 ----
 include::example$events/eventhandlers/NameResolutionHandlers.java[tag=event-handler-explicit-name,indent=0]
 ----
 
-`@EventSourcingHandler` has the same `eventName` attribute.
-Use it when an entity evolves from an event published under a name that differs from its payload class, for example an event from another module that the entity reads through its own class.
+You only have to define the parts that differ from the name of the payload type.
+An undefined `namespace` or `name` is taken from the name the payload type resolves to:
+
+[source,java]
+----
+include::example$events/eventhandlers/NameResolutionHandlers.java[tag=event-handler-partial-name,indent=0]
+----
+
+Alternatively, the `eventName` attribute takes the fully qualified name, for example `"orders.OrderPlaced"`.
+It cannot be combined with `namespace` or `name`.
+
+To handle events published under several names with a single method, repeat the annotation.
+Each occurrence registers the method as a separate event handler, for example to handle events stored under a previous name:
+
+[source,java]
+----
+include::example$events/eventhandlers/NameResolutionHandlers.java[tag=event-handler-repeated,indent=0]
+----
+
+Names declared on `@EventHandler` replace the name of the payload type instead of adding to it.
+`@Event` sets the name an event is published under, and `@EventHandler` sets the names a handler consumes.
+For example, `@EventHandler(namespace = "legacy")` on a method handling `OrderPlacedEvent` handles `legacy.OrderPlaced` only, not `orders.OrderPlaced`.
+To also handle the name of the payload type, add an `@EventHandler` without attributes:
+
+[source,java]
+----
+include::example$events/eventhandlers/NameResolutionHandlers.java[tag=event-handler-payload-and-legacy,indent=0]
+----
+
+To reuse a set of names across handlers, place the `@EventHandler` annotations on an annotation of your own.
+Each `@EventHandler` on that annotation registers the annotated method as a separate event handler:
+
+[source,java]
+----
+include::example$events/eventhandlers/OrderPlacedHandler.java[tag=composed-event-handler-annotation,indent=0]
+----
+
+[source,java]
+----
+include::example$events/eventhandlers/NameResolutionHandlers.java[tag=event-handler-composed,indent=0]
+----
+
+Attributes of your annotation override the same-named attributes of each `@EventHandler` on it.
+For example, a `name` attribute on your annotation sets the local name, while the `@EventHandler` annotations on it set the namespaces.
+
+`@EventSourcingHandler` has the same `namespace`, `name`, and `eventName` attributes, and can be repeated as well.
+Use them when an entity evolves from an event published under a name that differs from its payload class, for example an event from another module that the entity reads through its own class.
 
 [[handler-resolution]]
 == Handler resolution - How a published event reaches an event handler

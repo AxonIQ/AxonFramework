@@ -22,7 +22,11 @@ import org.axonframework.messaging.eventhandling.annotation.EventHandler;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
 
+import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
 
@@ -48,7 +52,6 @@ import static org.axonframework.common.annotation.AnnotationUtils.findAnnotation
  */
 public class AnnotatedMessageHandlingMemberDefinition implements HandlerDefinition {
 
-    @SuppressWarnings("unchecked")
     @Override
     public <T> Optional<MessageHandlingMember<T>> createHandler(
             Class<T> declaringType,
@@ -56,13 +59,49 @@ public class AnnotatedMessageHandlingMemberDefinition implements HandlerDefiniti
             ParameterResolverFactory parameterResolverFactory,
             Function<Object, MessageStream<?>> messageStreamResolver
     ) {
-        return findAnnotationAttributes(method, MessageHandler.class)
-                .map(attr -> new MethodInvokingMessageHandlingMember<>(
-                        method,
-                        (Class<? extends Message>) attr.getOrDefault("messageType", Message.class),
-                        (Class<? extends Message>) attr.getOrDefault("payloadType", Object.class),
-                        parameterResolverFactory,
-                        messageStreamResolver
-                ));
+        return createHandlers(declaringType, method, parameterResolverFactory, messageStreamResolver)
+                .stream()
+                .findFirst();
+    }
+
+    @SuppressWarnings("unchecked")
+    @Override
+    public <T> List<MessageHandlingMember<T>> createHandlers(
+            Class<T> declaringType,
+            Method method,
+            ParameterResolverFactory parameterResolverFactory,
+            Function<Object, MessageStream<?>> messageStreamResolver
+    ) {
+        List<MessageHandlingMember<T>> handlers = new ArrayList<>();
+        for (AnnotatedElement annotatedElement : AnnotatedHandlerElement.of(method)) {
+            messageHandlerAttributesOf(annotatedElement)
+                    .map(attr -> createMember(method, annotatedElement, attr, parameterResolverFactory,
+                                              messageStreamResolver))
+                    .ifPresent(member -> handlers.add((MessageHandlingMember<T>) member));
+        }
+        return handlers;
+    }
+
+    private static Optional<Map<String, Object>> messageHandlerAttributesOf(AnnotatedElement element) {
+        if (element instanceof AnnotatedHandlerElement annotatedHandler) {
+            return Optional.of(annotatedHandler.messageHandlerAttributes());
+        }
+        return findAnnotationAttributes(element, MessageHandler.class);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static MessageHandlingMember<?> createMember(Method method,
+                                                         AnnotatedElement annotatedElement,
+                                                         Map<String, Object> attributes,
+                                                         ParameterResolverFactory parameterResolverFactory,
+                                                         Function<Object, MessageStream<?>> messageStreamResolver) {
+        return new MethodInvokingMessageHandlingMember<>(
+                method,
+                annotatedElement,
+                (Class<? extends Message>) attributes.getOrDefault("messageType", Message.class),
+                (Class<?>) attributes.getOrDefault("payloadType", Object.class),
+                parameterResolverFactory,
+                messageStreamResolver
+        );
     }
 }

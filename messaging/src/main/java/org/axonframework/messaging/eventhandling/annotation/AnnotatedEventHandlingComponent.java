@@ -16,7 +16,6 @@
 
 package org.axonframework.messaging.eventhandling.annotation;
 
-import org.axonframework.common.StringUtils;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageStream;
@@ -42,6 +41,7 @@ import org.axonframework.messaging.eventhandling.replay.ResetHandler;
 import org.axonframework.messaging.core.sequencing.SequencingPolicy;
 
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
 
@@ -65,6 +65,7 @@ public class AnnotatedEventHandlingComponent<T> implements EventHandlingComponen
     private final AnnotatedHandlerInspector<T> model;
     private final MessageTypeResolver messageTypeResolver;
     private final EventConverter converter;
+    private final Set<RegisteredHandler> registeredHandlers = new HashSet<>();
 
     /**
      * Wraps the given {@code annotatedEventHandler}, allowing it to be subscribed to an {@link EventSink} as an
@@ -116,16 +117,11 @@ public class AnnotatedEventHandlingComponent<T> implements EventHandlingComponen
     }
 
     private void registerHandler(MessageHandlingMember<? super T> handler) {
-        Class<?> payloadType = handler.payloadType();
-        QualifiedName qualifiedName = handler.unwrap(EventHandlingMember.class)
-                                             .map(EventHandlingMember::eventName)
-                                             // Filter empty Strings to  fall back to the MessageTypeResolver
-                                             .filter(StringUtils::nonEmpty)
-                                             .map(QualifiedName::new)
-                                             .orElseGet(() -> messageTypeResolver.resolveOrThrow(payloadType)
-                                                                                 .qualifiedName());
-
-        handlingComponent.subscribe(qualifiedName, constructEventHandlerFor(qualifiedName, handler));
+        QualifiedName qualifiedName = EventHandlingMember.qualifiedNameOf(handler, messageTypeResolver);
+        // Occurrences of a repeated @EventHandler that resolve to the same name describe one and the same handler
+        if (registeredHandlers.add(new RegisteredHandler(handler.signature(), qualifiedName))) {
+            handlingComponent.subscribe(qualifiedName, constructEventHandlerFor(qualifiedName, handler));
+        }
     }
 
     private EventHandler constructEventHandlerFor(QualifiedName qualifiedName,
@@ -273,5 +269,9 @@ public class AnnotatedEventHandlingComponent<T> implements EventHandlingComponen
         descriptor.describeWrapperOf(handlingComponent);
         descriptor.describeProperty("messageTypeResolver", messageTypeResolver);
         descriptor.describeProperty("converter", converter);
+    }
+
+    private record RegisteredHandler(String signature, QualifiedName eventName) {
+
     }
 }

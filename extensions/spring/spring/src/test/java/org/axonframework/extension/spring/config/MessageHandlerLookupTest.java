@@ -74,6 +74,26 @@ class MessageHandlerLookupTest {
         }
     }
 
+    @Nested
+    class RepeatedHandlerAnnotations {
+
+        @Test
+        void detectsABeanWhoseOnlyHandlersRepeatTheirAnnotation() {
+            // given
+            DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory();
+            beanFactory.registerBeanDefinition(
+                    "repeatedHandler",
+                    BeanDefinitionBuilder.genericBeanDefinition(RepeatedEventHandler.class).getBeanDefinition()
+            );
+
+            // when
+            List<String> found = MessageHandlerLookup.messageHandlerBeans(EventMessage.class, beanFactory, false);
+
+            // then
+            assertThat(found).containsExactly("repeatedHandler");
+        }
+    }
+
     /**
      * Event handling components within a processor are invoked in the order the lookup hands them over, so the lookup
      * must sort by {@link Order @Order} and keep registration order for beans of equal order.
@@ -137,6 +157,15 @@ class MessageHandlerLookupTest {
     static class SimpleEventHandler {
 
         @EventHandler
+        void on(SomethingHappened event) {
+            // Intentionally empty; the bean only needs a handler for the lookup to consider it.
+        }
+    }
+
+    static class RepeatedEventHandler {
+
+        @EventHandler(namespace = "current", name = "SomethingHappened")
+        @EventHandler(namespace = "legacy", name = "SomethingHappened")
         void on(SomethingHappened event) {
             // Intentionally empty; the bean only needs a handler for the lookup to consider it.
         }

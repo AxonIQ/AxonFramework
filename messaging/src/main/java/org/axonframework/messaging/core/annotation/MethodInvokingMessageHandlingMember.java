@@ -26,6 +26,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.invoke.MethodHandles;
+import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
@@ -53,6 +54,7 @@ public class MethodInvokingMessageHandlingMember<T> implements MessageHandlingMe
     private final Method method;
     private final Class<? extends Message> messageType;
     private final HandlerAttributes attributes;
+    private final AnnotatedElement attributeSource;
 
     /**
      * Initializes a new instance that will invoke the given {@code executable} (method) on a target to handle a message
@@ -72,6 +74,36 @@ public class MethodInvokingMessageHandlingMember<T> implements MessageHandlingMe
                                                Class<?> explicitPayloadType,
                                                ParameterResolverFactory parameterResolverFactory,
                                                Function<Object, MessageStream<?>> returnTypeConverter) {
+        this(method, method, messageType, explicitPayloadType, parameterResolverFactory, returnTypeConverter);
+    }
+
+    /**
+     * Initializes a new instance that will invoke the given {@code executable} (method) on a target to handle a message
+     * of the given {@code messageType}, reading the {@link HandlerAttributes} of this member from the given
+     * {@code attributeSource}.
+     * <p>
+     * The {@code attributeSource} is either the {@code method} itself, or an {@code AnnotatedHandlerElement} of the
+     * {@code method} when the method declares several message handler annotations, each describing a separate
+     * handler.
+     *
+     * @param method                   the method to invoke on a target
+     * @param attributeSource          the element to read the handler attributes of this member from
+     * @param messageType              the type of message that is expected by the target method
+     * @param explicitPayloadType      the expected message payload type
+     * @param parameterResolverFactory factory used to resolve method parameters
+     * @param returnTypeConverter      the return type converter to apply to the handling result. When it is a
+     *                                 {@link MessageStreamResolver}, the given {@code messageType} is passed along to
+     *                                 it, so that it can tell how many {@link Message Messages} this handler may
+     *                                 produce
+     * @since 5.5.0
+     */
+    public MethodInvokingMessageHandlingMember(Method method,
+                                               AnnotatedElement attributeSource,
+                                               Class<? extends Message> messageType,
+                                               Class<?> explicitPayloadType,
+                                               ParameterResolverFactory parameterResolverFactory,
+                                               Function<Object, MessageStream<?>> returnTypeConverter) {
+        this.attributeSource = Objects.requireNonNull(attributeSource, "The attribute source may not be null.");
         this.messageType = messageType;
         this.method = ReflectionUtils.ensureAccessible(method);
         this.returnTypeConverter = returnTypeConverter instanceof MessageStreamResolver resolver
@@ -98,7 +130,7 @@ public class MethodInvokingMessageHandlingMember<T> implements MessageHandlingMe
             }
         }
         this.payloadType = supportedPayloadType;
-        this.attributes = new AnnotatedHandlerAttributes(method);
+        this.attributes = new AnnotatedHandlerAttributes(attributeSource);
     }
 
     @Override
@@ -234,17 +266,21 @@ public class MethodInvokingMessageHandlingMember<T> implements MessageHandlingMe
         if (handlerType.isInstance(method)) {
             return (Optional<H>) Optional.of(method);
         }
+        if (handlerType.isInstance(attributeSource)) {
+            return (Optional<H>) Optional.of(attributeSource);
+        }
         return Optional.empty();
     }
 
     @Override
     public String toString() {
-        return getClass().getSimpleName() + " " + method.toGenericString();
+        String handler = attributeSource.equals(method) ? method.toGenericString() : attributeSource.toString();
+        return getClass().getSimpleName() + " " + handler;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(method);
+        return Objects.hash(method, attributeSource);
     }
 
     @Override
@@ -256,6 +292,6 @@ public class MethodInvokingMessageHandlingMember<T> implements MessageHandlingMe
             return false;
         }
         MethodInvokingMessageHandlingMember<?> that = (MethodInvokingMessageHandlingMember<?>) o;
-        return method.equals(that.method);
+        return method.equals(that.method) && attributeSource.equals(that.attributeSource);
     }
 }

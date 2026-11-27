@@ -23,6 +23,7 @@ import org.axonframework.messaging.eventhandling.EventMessage;
 
 import java.lang.annotation.Documented;
 import java.lang.annotation.ElementType;
+import java.lang.annotation.Repeatable;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
@@ -61,6 +62,29 @@ import java.lang.annotation.Target;
  * <p>
  * Note: if there are two event handler methods accepting the same argument, the order in which they are invoked is
  * undefined.
+ * <p>
+ * The annotation may be repeated on a method. Each occurrence registers the method as a separate event handler, for
+ * example to keep handling events that were published under a previous name:
+ * <pre>{@code
+ * @EventHandler(namespace = "orders", name = "OrderPlaced")
+ * @EventHandler(namespace = "legacy", name = "OrderPlaced")
+ * void on(OrderPlaced event) {
+ *     // handles both orders.OrderPlaced and legacy.OrderPlaced
+ * }
+ * }</pre>
+ * The payload of each handled event is converted to the payload type of the method before it is invoked.
+ * <p>
+ * Declared names replace the name the payload type resolves to, instead of adding to it. To handle that name as well,
+ * add an {@code @EventHandler} without attributes:
+ * <pre>{@code
+ * @EventHandler                        // the name of OrderPlaced, for example orders.OrderPlaced
+ * @EventHandler(namespace = "legacy")  // legacy.OrderPlaced
+ * void on(OrderPlaced event) { ... }
+ * }</pre>
+ * <p>
+ * The annotation may also be placed, once or repeatedly, on a custom annotation. Each {@code @EventHandler} on that
+ * annotation registers the annotated method as a separate event handler. Attributes of the custom annotation override
+ * the same-named attributes of each {@code @EventHandler} on it.
  *
  * @author Allard Buijze
  * @see AnnotatedEventHandlingComponent
@@ -70,20 +94,51 @@ import java.lang.annotation.Target;
 @Documented
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.METHOD, ElementType.ANNOTATION_TYPE})
+@Repeatable(EventHandlers.class)
 @MessageHandler(messageType = EventMessage.class)
 public @interface EventHandler {
 
     /**
-     * The name of the event this handler listens to, matching to the {@link MessageType#name()} from the
-     * {@link EventMessage#type()}.
+     * The fully qualified name of the event this handler listens to, matching to the {@link MessageType#name()} from
+     * the {@link EventMessage#type()}.
      * <p>
-     * When not defined the {@link org.axonframework.messaging.core.MessageTypeResolver} will derive the name based on
-     * the payload type (thus the <b>first</b> parameter) of the annotated method.
+     * The name is used as is, thus including the namespace. Prefer {@link #namespace()} and {@link #name()}, which
+     * describe the namespace and local name separately, mirroring the
+     * {@link org.axonframework.messaging.eventhandling.annotation.Event @Event} annotation. This attribute cannot be
+     * combined with either of them.
+     * <p>
+     * When neither this attribute, {@link #namespace()}, nor {@link #name()} is defined, the
+     * {@link org.axonframework.messaging.core.MessageTypeResolver} will derive the name based on the payload type (thus
+     * the <b>first</b> parameter) of the annotated method.
      *
-     * @return The name of the event this handler listens to, matching to the {@link MessageType#name()} from the
-     * {@link EventMessage#type()}.
+     * @return the fully qualified name of the event this handler listens to, or an empty {@code String} to derive it
+     * from {@link #namespace()}, {@link #name()}, and the payload type
      */
     String eventName() default "";
+
+    /**
+     * The namespace of the event this handler listens to, matching to the
+     * {@link org.axonframework.messaging.core.QualifiedName#namespace()} of the {@link EventMessage#type()}.
+     * <p>
+     * Optional. Defaults to the namespace of the event name the payload type resolves to.
+     *
+     * @return the namespace of the event this handler listens to, or an empty {@code String} to derive it from the
+     * payload type
+     * @since 5.5.0
+     */
+    String namespace() default "";
+
+    /**
+     * The local name of the event this handler listens to, matching to the
+     * {@link org.axonframework.messaging.core.QualifiedName#localName()} of the {@link EventMessage#type()}.
+     * <p>
+     * Optional. Defaults to the local name of the event name the payload type resolves to.
+     *
+     * @return the local name of the event this handler listens to, or an empty {@code String} to derive it from the
+     * payload type
+     * @since 5.5.0
+     */
+    String name() default "";
 
     /**
      * The representation of the event this method requires. This is an indication for the framework to convert the

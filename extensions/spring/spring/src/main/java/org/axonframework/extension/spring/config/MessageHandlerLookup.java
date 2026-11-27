@@ -40,8 +40,6 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
-import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
@@ -102,8 +100,12 @@ public class MessageHandlerLookup implements BeanDefinitionRegistryPostProcessor
 
     private static boolean hasMessageHandler(Class<? extends Message> messageType, Class<?> beanType) {
         for (Method m : ReflectionUtils.methodsOf(beanType)) {
-            Optional<Map<String, Object>> attr = AnnotationUtils.findAnnotationAttributes(m, MessageHandler.class);
-            if (attr.isPresent() && messageType.isAssignableFrom((Class<?>) attr.get().get("messageType"))) {
+            // Finds all occurrences, including those grouped in the container of a repeated handler annotation
+            boolean handlesMessageType =
+                    AnnotationUtils.findAllAnnotationAttributes(m, MessageHandler.class)
+                                   .stream()
+                                   .anyMatch(attr -> messageType.isAssignableFrom((Class<?>) attr.get("messageType")));
+            if (handlesMessageType) {
                 return true;
             }
         }

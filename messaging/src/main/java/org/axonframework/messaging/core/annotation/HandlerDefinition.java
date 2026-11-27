@@ -21,6 +21,7 @@ import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 
 import java.lang.reflect.Method;
+import java.util.List;
 import java.util.Optional;
 import java.util.function.Function;
 
@@ -51,4 +52,40 @@ public interface HandlerDefinition {
             ParameterResolverFactory parameterResolverFactory,
             Function<Object, MessageStream<?>> messageStreamResolver
     );
+
+    /**
+     * Create the {@link MessageHandlingMember MessageHandlingMembers} for the given {@code method}. Use the given
+     * {@code parameterResolverFactory} to resolve the method's parameters.
+     * <p>
+     * A method results in several members when it declares several message handler annotations, for example by
+     * repeating {@link org.axonframework.messaging.eventhandling.annotation.EventHandler @EventHandler}. Each member
+     * then describes one of those annotations.
+     * <p>
+     * Members created for one method that do not stem from separate handler annotations must differ in their
+     * {@link MessageHandlingMember#payloadType() payload type}. Members of one method that share both their payload
+     * type and their annotation are considered the same handler, and only one of them is registered.
+     * <p>
+     * Defaults to the result of
+     * {@link #createHandler(Class, Method, ParameterResolverFactory, Function) createHandler(...)}, thus at most one
+     * member per method.
+     *
+     * @param <T>                      the type of the declaring object
+     * @param declaringType            the type of object declaring the given method
+     * @param method                   the method to inspect
+     * @param parameterResolverFactory factory for a {@link ParameterResolver} of the method
+     * @param messageStreamResolver    the lambda resolving a {@link MessageStream} out of the result from
+     *                                 {@link MessageHandlingMember#handle(Message, ProcessingContext, Object)}
+     * @return the handlers for the given {@code method}, or an empty list if the method is not suitable
+     * @since 5.5.0
+     */
+    default <T> List<MessageHandlingMember<T>> createHandlers(
+            Class<T> declaringType,
+            Method method,
+            ParameterResolverFactory parameterResolverFactory,
+            Function<Object, MessageStream<?>> messageStreamResolver
+    ) {
+        return createHandler(declaringType, method, parameterResolverFactory, messageStreamResolver)
+                .map(List::of)
+                .orElseGet(List::of);
+    }
 }
