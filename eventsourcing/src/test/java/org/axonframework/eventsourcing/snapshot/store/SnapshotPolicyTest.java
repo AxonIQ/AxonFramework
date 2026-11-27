@@ -50,8 +50,9 @@ class SnapshotPolicyTest {
         SnapshotPolicy policy = SnapshotPolicy.afterEvents(5);
 
         assertThat(policy.shouldSnapshot(new EvolutionResult(6, Duration.ZERO))).isTrue();
-        assertThat(policy.shouldSnapshot(new EvolutionResult(5, Duration.ZERO))).isFalse();
-        assertThat(policy.shouldSnapshot(new EvolutionResult(5, Duration.ofDays(1)))).isFalse();
+        assertThat(policy.shouldSnapshot(new EvolutionResult(5, Duration.ZERO))).isTrue();
+        assertThat(policy.shouldSnapshot(new EvolutionResult(4, Duration.ZERO))).isFalse();
+        assertThat(policy.shouldSnapshot(new EvolutionResult(4, Duration.ofDays(1)))).isFalse();
     }
 
     @Test

@@ -52,7 +52,7 @@ import java.util.function.Predicate;
 public interface SnapshotPolicy {
 
     /**
-     * Creates a policy that triggers a snapshot once more than the specified number
+     * Creates a policy that triggers a snapshot once at least the specified number
      * of events have been applied since the last snapshot.
      *
      * @param eventCount the minimum number of events after which a snapshot should be made, cannot be negative
@@ -64,7 +64,7 @@ public interface SnapshotPolicy {
             throw new IllegalArgumentException("The eventCount cannot be negative: " + eventCount);
         }
 
-        return result -> result.eventsApplied() > eventCount;
+        return result -> result.eventsApplied() >= eventCount;
     }
 
     /**
