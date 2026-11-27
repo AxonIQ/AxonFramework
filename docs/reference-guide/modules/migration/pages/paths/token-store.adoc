@@ -8,6 +8,10 @@ If you are migrating from Axon Framework 4, the existing schema must be updated 
 Alongside this schema change, the tracking token classes moved to a new package, so the class names stored in existing token data also need attention.
 See <<token-class-names>> for what that means and when you need to act.
 
+ifdef::advanced-framework[]
+include::mongo:partial$migration-token-store-note.adoc[]
+endif::[]
+
 == Understanding the mask column
 
 Streaming event processors divide the event stream into xref:events:event-processors/streaming.adoc[segments].
@@ -207,6 +211,10 @@ Adjust them to match your actual configuration:
 | JDBC (`TokenSchema` defaults)
 | `TokenEntry`
 | `processorName`, `segment`, `mask`
+
+ifdef::advanced-framework[]
+include::mongo:partial$migration-token-store-columns.adoc[]
+endif::[]
 
 |===
 

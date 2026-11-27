@@ -15,7 +15,8 @@ The most significant changes are:
 * **Database schema**: Column names in the embedded event entry changed. The schema is not backward compatible with Axon Framework 4 data.
 * **Queue scoping**: DLQs are now scoped per event handling component, not per processing group.
 Each component within a processor gets its own queue.
-* **MongoDB support removed**: The `MongoSequencedDeadLetterQueue` (previously available via the MongoDB Extension) is not available in Axon Framework 5.
+* **MongoDB support moved**: The `MongoSequencedDeadLetterQueue` (previously available via the MongoDB Extension) is part of the Axoniq Framework `axoniq-mongo` module.
+Its documents are not backward compatible with Axon Framework 4 data either.
 * **Configuration Changes**: The configuration APIs have changed in several places between Axon 4 and 5.
 * **Sequence Processing**: the API of the `SequencedDeadLetterProcessor` interface has been adjusted to an async-first approach.
 ====
@@ -93,6 +94,80 @@ The following columns in the embedded event entry remain unchanged:
 
 The outer `DeadLetterEntry` table structure (columns `dead_letter_id`, `processing_group`, `sequence_identifier`, `sequence_index`, `enqueued_at`, `last_touched`, `processing_started`, `cause_type`, `cause_message`, `diagnostics`) remains unchanged.
 
+[#_mongodb_document_changes]
+=== MongoDB document changes
+
+The same concern applies to the `MongoSequencedDeadLetterQueue`.
+Dead letters persisted by Axon Framework 4 in MongoDB cannot be read directly by Axon Framework 5.
+Reading one fails with a `ClassCastException`, because the payload of the embedded event entry was a string and is now stored as bytes.
+
+The best way to move forward is to fully process the dead letters before migrating to Axon Framework 5.
+
+If your dead-letter queue is empty, or you are comfortable discarding existing dead letters, you can simply remove them from the `deadletters` collection to move to the new documents.
+
+The `deadletters` collection exists in both Axon Framework 4 and 5, and its indexes did not change.
+However, the structure of the embedded event entry (the `message` field) has changed, making the documents **not backwards compatible**.
+
+The following table explains the changes to the embedded event entry document:
+
+|===
+|Axon Framework 4 field |Axon Framework 5 field |Change
+
+|(not present)
+|`type`
+|Added to hold the newly introduced xref:messaging-concepts:anatomy-message.adoc#message_type[message type]
+
+|`eventIdentifier`
+|`identifier`
+|Renamed for consistency
+
+|`serializedPayload` (string)
+|`payload` (bytes)
+|Renamed for consistency, and stored as bytes instead of a string
+
+|`serializedMetaData` (string)
+|`metadata` (bytes)
+|Renamed for consistency, and stored as bytes instead of a string
+
+|`type` (aggregate type)
+|`aggregateType`
+|Renamed for consistency and to make it explicit it holds aggregate specific type information
+
+|`sequenceNumber`
+|`aggregateSequenceNumber`
+|Renamed for consistency and to make it explicit it holds aggregate specific sequence information
+
+|`messageType`
+|(removed)
+|Removed in favor of the new `type` field
+
+|`payloadType`
+|(removed)
+|Removed since the information is now contained in the new `type` field
+
+|`payloadRevision`
+|(removed)
+|Removed since the information is now contained in the new `type` field
+
+|`tokenType`, `token`
+|`tokenType`, `token`
+|Same fields, but `tokenType` holds the class name of Axon Framework 5, and `token` the format of the `Converter`
+|===
+
+The following fields in the embedded event entry remain unchanged:
+
+|===
+|Axon Framework 4 field |Axon Framework 5 field
+|`timestamp`
+|`timestamp`
+
+|`aggregateIdentifier`
+|`aggregateIdentifier`
+|===
+
+The outer document structure (fields `processingGroup`, `sequenceIdentifier`, `index`, `enqueuedAt`, `lastTouched`, `processingStarted`, `causeType`, `causeMessage` and `diagnostics`) remains unchanged.
+The exceptions are that `diagnostics` is stored as bytes instead of a string, and that the value of `processingGroup` changed, see <<_queue_scoping_changes>>.
+
 [#_queue_scoping_changes]
 == Queue scoping changes
 
@@ -103,6 +178,8 @@ In Axon Framework 5, each Event Handling Component within a processor has its ow
 This prevents interference between components and means retries only invoke the component that originally failed.
 
 Each queue is now identified by both the `processorName` and `componentName`, where `componentName` is the registered name of the Event Handling Component.
+Whatever the storage, the queue stores this identity as its name, in the place where Axon Framework 4 stored the processing group.
+That name has the form `DeadLetterQueue[EventHandlingComponent[processorName][componentName]]`, for instance `DeadLetterQueue[EventHandlingComponent[shipping][shipping]]` instead of `shipping`.
 
 [IMPORTANT]
 ====
@@ -110,6 +187,8 @@ Component names are part of the queue's persistent identity.
 Renaming a component effectively orphans any previously dead-lettered events for that component.
 In Axon Framework 4, the processing group name played this role.
 In Axon Framework 5, both the processor name and the component name together form this identity.
+For the same reason, dead letters that Axon Framework 4 stored under a processing group name are not found by the queues of Axon Framework 5.
+They stay in the store unnoticed until you process or remove them.
 ====
 
 ifdef::advanced-framework[]
@@ -135,14 +214,16 @@ endif::[]
 
 |`MongoSequencedDeadLetterQueue` (MongoDB Extension)
 |✓
-|✗ Not available
+|✓ (Axoniq Framework `axoniq-mongo` module)
 |===
 
 [NOTE]
 ====
 MongoDB support for the DLQ was available in Axon Framework 4 via the MongoDB Extension.
-This integration is not available in Axon Framework 5.
-If your application relied on the `MongoSequencedDeadLetterQueue`, migrate to `JpaSequencedDeadLetterQueue` or `JdbcSequencedDeadLetterQueue` alongside the schema migration described above.
+The Axoniq Framework `axoniq-mongo` module provides the `MongoSequencedDeadLetterQueue`, together with the `MongoTokenStore`.
+ifdef::advanced-framework[]
+See the xref:migration:paths/mongo.adoc[Mongo Migration] for the rest of that module, and <<_mongodb_document_changes>> for the data of the dead letters.
+endif::[]
 ====
 
 == Configuration
@@ -291,6 +372,13 @@ axon.eventhandling.processors.my-processor.dlq.enabled=true
 ----
 ====
 
+In Axon Framework 4, the `MongoSequencedDeadLetterQueue` additionally required the property `axon.mongo.event-handling.dlq-enabled`, which defaulted to `true`.
+Axon Framework 5 no longer has that property, as enabling the queue on the processor is enough.
+The settings of the Mongo queue, such as its capacity, are properties with the prefix `axon.mongo.dead-letter-queue`.
+ifdef::advanced-framework[]
+See xref:mongo:dead-letter-queue.adoc[the Mongo dead-letter queue] for them.
+endif::[]
+
 [TIP]
 ====
 Axon Framework 5 now also allows to apply DLQ defaults across processors that can be overridden by individual processors.
@@ -345,7 +433,7 @@ public class AxonConfig {
 
 Axon Framework 5::
 +
-Configuration API (using `InMemorySequencedDeadLetterQueue` for brevity, but replace with `JpaSequencedDeadLetterQueue` or `JdbcSequencedDeadLetterQueue` for production):
+Configuration API (using `InMemorySequencedDeadLetterQueue` for brevity, but replace with `JpaSequencedDeadLetterQueue`, `JdbcSequencedDeadLetterQueue` or, with Axoniq Framework, `MongoSequencedDeadLetterQueue` for production):
 +
 [source,java,role=pseudocode]
 ----
@@ -595,14 +683,18 @@ class CustomEnqueuePolicy implements EnqueuePolicy<EventMessage> {
 ----
 ====
 
+== Adjusted means of dead-letter queue construction
 
-== Changes in the builder API of `JdbcSequencedDeadLetterQueue` and `JpaSequencedDeadLetterQueue`
-
-The changes between Axon Framework 4 and 5 also affected the builder API of the `JdbcSequencedDeadLetterQueue` and `JpaSequencedDeadLetterQueue`.
+The changes between Axon Framework 4 and 5 also affected the builder API of the `JdbcSequencedDeadLetterQueue` and `JpaSequencedDeadLetterQueue`, and replaced the builder of the `MongoSequencedDeadLetterQueue` by a constructor.
 The most notable changes are:
 
-* **Change from Serializer to Converter**: instead of an event serializer and generic serializer, the builders now take `EventConverter` and `Converter` respectively.
+* **Change from Serializer to Converter**: instead of an event serializer and generic serializer, the builders (and the constructor of the `MongoSequencedDeadLetterQueue`) now take `EventConverter` and `Converter` respectively.
 * **Transaction handling**: instead of a `ConnectionProvider` and `TransactionManager` for internal transaction management, Axon Framework 5 now uses the `TransactionalExecutorProvider` for ensuring transactional execution of database tasks.
+The `MongoSequencedDeadLetterQueue` takes a `TransactionalExecutorProvider<ClientSession>` instead of a `TransactionManager`.
+ifdef::advanced-framework[]
+The Mongo transaction components are described in xref:mongo:mongo-template.adoc#_transaction_components[the Mongo setup].
+endif::[]
+* **Collection instead of template**: the `MongoSequencedDeadLetterQueue` takes the dead letter `MongoCollection` instead of a `MongoTemplate`, and a `MongoSequencedDeadLetterQueueConfiguration` instead of the builder options for its settings.
 
 == Processing dead lettered sequences
 
