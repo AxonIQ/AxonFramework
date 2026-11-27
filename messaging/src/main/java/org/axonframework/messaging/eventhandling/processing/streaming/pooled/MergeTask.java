@@ -24,12 +24,14 @@ import org.axonframework.messaging.eventhandling.processing.streaming.segmenting
 import org.axonframework.messaging.eventhandling.processing.streaming.token.MergedTrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.invoke.MethodHandles;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -62,6 +64,7 @@ class MergeTask extends CoordinatorTask {
     private final TokenStore tokenStore;
     private final UnitOfWorkFactory unitOfWorkFactory;
     private final Map<Integer, Instant> releasesDeadlines;
+    private volatile @Nullable Segment processedSegment;
     @Deprecated(forRemoval = true, since = "5.2.0")
     private final Clock clock;
 
@@ -177,28 +180,37 @@ class MergeTask extends CoordinatorTask {
     /**
      * {@inheritDoc}
      * <p>
-     * Returns the work package of the given {@code segmentId} and of the segment it merges with, if present. Without a
-     * work package for the given {@code segmentId}, its mask is unknown, so the work package of any segment that merges
+     * Returns the work package of the given {@code segmentId} and of the segment it merges with, if present. The
+     * segment of the given {@code segmentId} is remembered once its work package was seen, so it is still known after
+     * that work package was released. Without that, its mask is unknown, so the work package of any segment that merges
      * with it is returned.
      */
     @Override
     List<WorkPackage> workPackagesToRelease() {
         WorkPackage workPackage = workPackages.get(segmentId);
-        if (workPackage == null) {
+        if (workPackage != null) {
+            processedSegment = workPackage.segment();
+        }
+        Segment segment = processedSegment;
+        if (segment == null) {
             return workPackages.values()
                                .stream()
                                .filter(other -> other.segment().mergeableSegmentId() == segmentId)
                                .toList();
         }
-        Segment segment = workPackage.segment();
         if (segment.mergeableSegmentId() == segmentId) {
             // A segment covering all events cannot be merged, which the task reports.
             return List.of();
         }
         WorkPackage other = workPackages.get(segment.mergeableSegmentId());
-        return other != null && other.segment().isMergeableWith(segment)
-                ? List.of(workPackage, other)
-                : List.of(workPackage);
+        List<WorkPackage> toRelease = new ArrayList<>();
+        if (workPackage != null) {
+            toRelease.add(workPackage);
+        }
+        if (other != null && other.segment().isMergeableWith(segment)) {
+            toRelease.add(other);
+        }
+        return toRelease;
     }
 
     // The segment to merge with is only known once this task runs, so any release counts.
