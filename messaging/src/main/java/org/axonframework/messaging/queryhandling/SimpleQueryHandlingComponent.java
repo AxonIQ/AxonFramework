@@ -23,8 +23,10 @@ import org.axonframework.messaging.core.MessageStream;
 import org.axonframework.messaging.core.QualifiedName;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -43,7 +45,7 @@ public class SimpleQueryHandlingComponent implements
         QueryHandlerRegistry<SimpleQueryHandlingComponent> {
 
     private final String name;
-    private final Map<QualifiedName, QueryHandler> queryHandlers = new HashMap<>();
+    private final Map<QualifiedName, List<QueryHandler>> queryHandlers = new HashMap<>();
     private final Set<QueryHandlingComponent> subComponents = new HashSet<>();
 
     /**
@@ -68,11 +70,21 @@ public class SimpleQueryHandlingComponent implements
             return subscribe(component);
         }
 
-        QueryHandler existingHandler = queryHandlers.computeIfAbsent(queryName, k -> handler);
-
-        if (existingHandler != handler) {
-            throw new DuplicateQueryHandlerSubscriptionException(queryName, existingHandler, handler);
-        }
+        queryHandlers.compute(queryName, (key, existingHandlers) -> {
+            if (existingHandlers == null) {
+                existingHandlers = new ArrayList<>();
+            }
+            for (QueryHandler existing : existingHandlers) {
+                if (existing == handler) {
+                    return existingHandlers;
+                }
+                if (existing.supportedVersions().overlaps(handler.supportedVersions())) {
+                    throw new DuplicateQueryHandlerSubscriptionException(queryName, existing, handler);
+                }
+            }
+            existingHandlers.add(handler);
+            return existingHandlers;
+        });
 
         return this;
     }
@@ -98,14 +110,33 @@ public class SimpleQueryHandlingComponent implements
                 return MessageStream.failed(e);
             }
         }
-        if (queryHandlers.containsKey(handlerName)) {
-            try {
-                return queryHandlers.get(handlerName).handle(query, context);
-            } catch (Throwable e) {
-                return MessageStream.failed(e);
+        String version = query.type().version();
+        List<QueryHandler> handlers = queryHandlers.get(handlerName);
+        if (handlers != null) {
+            Optional<MessageStream<QueryResponseMessage>> result = handleWithVersionMatch(handlers, version, query, context);
+            if (result.isPresent()) {
+                return result.get();
             }
         }
+
         return MessageStream.failed(NoHandlerForQueryException.forHandlingComponent(query));
+    }
+
+    private Optional<MessageStream<QueryResponseMessage>> handleWithVersionMatch(
+            List<QueryHandler> handlers,
+            String version,
+            QueryMessage query,
+            ProcessingContext context) {
+        for (QueryHandler handler : handlers) {
+            if (handler.supportedVersions().matches(version)) {
+                try {
+                    return Optional.of(handler.handle(query, context));
+                } catch (Throwable e) {
+                    return Optional.of(MessageStream.failed(e));
+                }
+            }
+        }
+        return Optional.empty();
     }
 
     @Override

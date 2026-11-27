@@ -58,10 +58,25 @@ public interface HandlerAttributes {
      */
     String QUERY_NAME = "QueryHandler.queryName";
     /**
+     * Attribute key referencing the version range of the {@link org.axonframework.messaging.queryhandling.QueryMessage}
+     * the handler can handle.
+     */
+    String QUERY_VERSION_RANGE = "QueryHandler.versionRange";
+    /**
+     * Attribute key referencing the version range of the {@link CommandMessage} the handler
+     * can handle.
+     */
+    String COMMAND_VERSION_RANGE = "CommandHandler.versionRange";
+    /**
      * Attribute key referencing the name of the {@link EventMessage} the handler can
      * handle.
      */
     String EVENT_NAME = "EventHandler.eventName";
+    /**
+     * Attribute key referencing the version range of the {@link EventMessage} the handler
+     * can handle.
+     */
+    String EVENT_VERSION_RANGE = "EventHandler.versionRange";
     /**
      * Attribute key referencing the result type the handler can handle.
      */
