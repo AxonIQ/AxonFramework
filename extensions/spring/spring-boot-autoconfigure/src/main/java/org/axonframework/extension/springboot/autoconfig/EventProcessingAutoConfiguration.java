@@ -22,6 +22,8 @@ import org.axonframework.extension.spring.config.EventProcessorSettings;
 import org.axonframework.extension.spring.config.ProcessorModuleFactory;
 import org.axonframework.extension.springboot.EventProcessorProperties;
 import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorModule;
+import org.axonframework.messaging.eventhandling.processing.subscribing.SubscribingEventProcessorModule;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -53,7 +55,7 @@ public class EventProcessingAutoConfiguration {
     public EventProcessorSettings.MapWrapper eventProcessorSettings(Environment environment) {
         Map<String, EventProcessorSettings> map = EventProcessorProperties.getProcessors(environment);
         // Retain the default behavior
-        map.putIfAbsent(EventProcessorSettings.DEFAULT, new EventProcessorProperties.ProcessorSettings());
+        map.putIfAbsent(EventProcessorSettings.DEFAULT, EventProcessorProperties.getDefaultProcessor(environment));
 
         return new EventProcessorSettings.MapWrapper(map);
     }
@@ -63,10 +65,14 @@ public class EventProcessingAutoConfiguration {
     ProcessorModuleFactory processorModuleFactory(
             List<EventProcessorDefinition> eventProcessorDefinitions,
             EventProcessorSettings.MapWrapper eventProcessorSettings,
-            List<PooledStreamingEventProcessorModule.Customization> extensionsCustomizations
+            List<PooledStreamingEventProcessorModule.Customization> extensionsCustomizations,
+            ObjectProvider<SubscribingEventProcessorModule.Customization> subscribingCustomizations
     ) {
         return new DefaultProcessorModuleFactory(
-                eventProcessorDefinitions, eventProcessorSettings.settings(), extensionsCustomizations
+                eventProcessorDefinitions,
+                eventProcessorSettings.settings(),
+                extensionsCustomizations,
+                subscribingCustomizations.orderedStream().toList()
         );
     }
 }

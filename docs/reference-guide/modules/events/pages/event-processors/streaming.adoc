@@ -362,6 +362,8 @@ The configuration function receives a `TrackingTokenSource` which provides metho
 
 These functions may require a `ProcessingContext` parameter. It is safe to pass `null` if no ProcessingContext is available.
 
+With Spring Boot, the initial token is also available as a property. See the xref:configuration:spring.adoc#event-processor-properties[event processor properties].
+
 Consider the following snippets if you want to configure a different initial token:
 
 [tabs]

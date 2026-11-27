@@ -21,6 +21,7 @@ import org.axonframework.messaging.eventhandling.processing.streaming.pooled.Poo
 import org.axonframework.messaging.eventhandling.processing.subscribing.SubscribingEventProcessor;
 import org.jspecify.annotations.Nullable;
 
+import java.time.Instant;
 import java.util.Map;
 
 /**
@@ -60,6 +61,29 @@ public sealed interface EventProcessorSettings {
          * Indicates a {@link PooledStreamingEventProcessor} should be used.
          */
         POOLED
+    }
+
+    /**
+     * The position a {@link PooledStreamingEventProcessor} starts streaming from when it has no token yet.
+     */
+    enum InitialToken {
+        /**
+         * Keeps the initial token of the processor configuration, which is the first position of the event stream.
+         */
+        DEFAULT,
+        /**
+         * Starts at the first (tail) position of the event stream, handling every event the source holds.
+         */
+        FIRST,
+        /**
+         * Starts at the latest (head) position of the event stream, handling only events appended from then on.
+         */
+        LATEST,
+        /**
+         * Starts at the position of the event stream at the configured
+         * {@link PooledEventProcessorSettings#initialTokenTimestamp() timestamp}.
+         */
+        AT_TIMESTAMP
     }
 
     /**
@@ -183,6 +207,32 @@ public sealed interface EventProcessorSettings {
          */
         @Nullable
         default String sequencingPolicy() {
+            return null;
+        }
+
+        /**
+         * The position this pooled streaming processor starts streaming from when it has no token yet.
+         * <p>
+         * Defaults to {@link InitialToken#DEFAULT}, which keeps the initial token of the processor configuration.
+         *
+         * @return the initial token position
+         * @since 5.5.0
+         */
+        default InitialToken initialToken() {
+            return InitialToken.DEFAULT;
+        }
+
+        /**
+         * The timestamp to start streaming from when {@link #initialToken()} is {@link InitialToken#AT_TIMESTAMP}.
+         * <p>
+         * Required for {@link InitialToken#AT_TIMESTAMP}, and ignored for any other {@link InitialToken}. Defaults to
+         * {@code null}.
+         *
+         * @return the timestamp to start streaming from, or {@code null} when unset
+         * @since 5.5.0
+         */
+        @Nullable
+        default Instant initialTokenTimestamp() {
             return null;
         }
     }

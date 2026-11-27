@@ -32,6 +32,7 @@ import org.springframework.boot.context.properties.bind.Bindable;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.core.env.Environment;
 
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -49,6 +50,9 @@ public class EventProcessorProperties {
     /**
      * Provides ProcessorSettings per processor name via Environment.
      * <p>
+     * Each processor starts from the {@link Defaults defaults} of its {@link Mode}, and only the properties explicitly
+     * set for that processor override them. A processor without a {@code mode} property is {@link Mode#POOLED}.
+     * <p>
      * <i>This is required due to changes on how spring boot 4 loads configurations properties.
      * If the application configures WebMvc we get cyclic application context. By using {@link Environment} and {@link Binder}
      * to manually create the processors map we avoid this problem. See <a href="https://github.com/AxonFramework/AxonFramework/issues/4010">issue #4010</a> for details.</i>
@@ -60,14 +64,48 @@ public class EventProcessorProperties {
     public static Map<String, EventProcessorSettings> getProcessors(Environment environment) {
         Binder binder = Binder.get(environment);
 
-        // Bind the same structure that EventProcessorProperties would expose
+        // Bind the same structure that EventProcessorProperties would expose, to learn the names and modes.
         Map<String, ProcessorSettings> raw =
-                binder.bind("axon.eventhandling.processors",
-                            Bindable.mapOf(String.class, EventProcessorProperties.ProcessorSettings.class))
+                binder.bind(
+                              "axon.eventhandling.processors",
+                              Bindable.mapOf(String.class, EventProcessorProperties.ProcessorSettings.class)
+                      )
                       .orElseGet(java.util.HashMap::new);
 
-        return new HashMap<>(raw);
+        Map<String, EventProcessorSettings> result = new HashMap<>();
+        raw.forEach((name, settings) -> {
+            ProcessorSettings merged = defaultsFor(binder, settings.getMode());
+            binder.bind("axon.eventhandling.processors[" + name + "]", Bindable.ofInstance(merged));
+            result.put(name, merged);
+        });
+        return result;
     }
+
+    /**
+     * Provides the {@link ProcessorSettings} for processors that have no settings of their own, being the
+     * {@link Defaults defaults} of the {@link Mode#POOLED} mode.
+     *
+     * @param environment the spring boot environment
+     * @return the {@link ProcessorSettings} to use for processors without settings of their own
+     */
+    @Internal
+    public static ProcessorSettings getDefaultProcessor(Environment environment) {
+        return defaultsFor(Binder.get(environment), Mode.POOLED);
+    }
+
+    private static ProcessorSettings defaultsFor(Binder binder, Mode mode) {
+        ProcessorSettings defaults = new ProcessorSettings();
+        binder.bind("axon.eventhandling.defaults." + mode.name().toLowerCase(java.util.Locale.ROOT),
+                    Bindable.ofInstance(defaults));
+        // A mode is never a default, as it is what selects the defaults to start from.
+        defaults.setMode(mode);
+        return defaults;
+    }
+
+    /**
+     * The defaults every processor starts from, per {@link Mode}.
+     */
+    private final Defaults defaults = new Defaults();
 
     /**
      * The configuration of each of the processors. The key is the name of the processor, the value represents the
@@ -76,12 +114,55 @@ public class EventProcessorProperties {
     private final Map<String, ProcessorSettings> processors = new HashMap<>();
 
     /**
+     * Returns the defaults every processor starts from, per {@link Mode}.
+     * <p>
+     * Settings of a specific processor override these defaults, property by property.
+     *
+     * @return the defaults every processor starts from, per {@link Mode}
+     * @since 5.5.0
+     */
+    public Defaults getDefaults() {
+        return defaults;
+    }
+
+    /**
      * Returns the settings for each of the configured processors, by name.
      *
      * @return the settings for each of the configured processors, by name.
      */
     public Map<String, ProcessorSettings> getProcessors() {
         return processors;
+    }
+
+    /**
+     * The {@link ProcessorSettings} every processor starts from, per {@link Mode}.
+     * <p>
+     * Configured through {@code axon.eventhandling.defaults.pooled.*} and {@code axon.eventhandling.defaults.subscribing.*}.
+     *
+     * @since 5.5.0
+     */
+    public static class Defaults {
+
+        private final ProcessorSettings pooled = new ProcessorSettings();
+        private final ProcessorSettings subscribing = new ProcessorSettings();
+
+        /**
+         * Returns the settings every {@link Mode#POOLED} processor starts from.
+         *
+         * @return the settings every {@link Mode#POOLED} processor starts from
+         */
+        public ProcessorSettings getPooled() {
+            return pooled;
+        }
+
+        /**
+         * Returns the settings every {@link Mode#SUBSCRIBING} processor starts from.
+         *
+         * @return the settings every {@link Mode#SUBSCRIBING} processor starts from
+         */
+        public ProcessorSettings getSubscribing() {
+            return subscribing;
+        }
     }
 
     /**
@@ -195,6 +276,23 @@ public class EventProcessorProperties {
          */
         @Nullable
         private String sequencingPolicy;
+
+        /**
+         * The position a {@link PooledStreamingEventProcessor} starts streaming from when it has no token yet.
+         * <p>
+         * Defaults to {@link EventProcessorSettings.InitialToken#DEFAULT}, which keeps the first position of the event
+         * stream.
+         */
+        private EventProcessorSettings.InitialToken initialToken = EventProcessorSettings.InitialToken.DEFAULT;
+
+        /**
+         * The timestamp to start streaming from, as an ISO-8601 instant like {@code 2026-01-01T00:00:00Z}.
+         * <p>
+         * Required when {@link #initialToken} is {@link EventProcessorSettings.InitialToken#AT_TIMESTAMP}, and ignored
+         * otherwise.
+         */
+        @Nullable
+        private Instant initialTokenTimestamp;
 
         /**
          * Returns the name of the bean that should be used as source for Event Messages. If not provided, the
@@ -441,5 +539,36 @@ public class EventProcessorProperties {
             this.sequencingPolicy = sequencingPolicy;
         }
 
+        @Override
+        public EventProcessorSettings.InitialToken initialToken() {
+            return initialToken;
+        }
+
+        /**
+         * Sets the position a {@link PooledStreamingEventProcessor} starts streaming from when it has no token yet.
+         * <p>
+         * Defaults to {@link EventProcessorSettings.InitialToken#DEFAULT}.
+         *
+         * @param initialToken the position to start streaming from
+         */
+        public void setInitialToken(EventProcessorSettings.InitialToken initialToken) {
+            this.initialToken = Objects.requireNonNull(initialToken, "InitialToken cannot be null");
+        }
+
+        @Override
+        @Nullable
+        public Instant initialTokenTimestamp() {
+            return initialTokenTimestamp;
+        }
+
+        /**
+         * Sets the timestamp to start streaming from. Required when the initial token is
+         * {@link EventProcessorSettings.InitialToken#AT_TIMESTAMP}, and ignored otherwise.
+         *
+         * @param initialTokenTimestamp the timestamp to start streaming from
+         */
+        public void setInitialTokenTimestamp(Instant initialTokenTimestamp) {
+            this.initialTokenTimestamp = initialTokenTimestamp;
+        }
     }
 }

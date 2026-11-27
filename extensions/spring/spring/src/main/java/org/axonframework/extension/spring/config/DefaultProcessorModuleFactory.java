@@ -27,6 +27,8 @@ import org.axonframework.messaging.eventhandling.configuration.EventProcessorCon
 import org.axonframework.messaging.eventhandling.configuration.EventProcessorModule;
 import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorConfiguration;
 import org.axonframework.messaging.eventhandling.processing.streaming.pooled.PooledStreamingEventProcessorModule;
+import org.axonframework.messaging.eventhandling.processing.subscribing.SubscribingEventProcessorConfiguration;
+import org.axonframework.messaging.eventhandling.processing.subscribing.SubscribingEventProcessorModule;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -66,32 +68,37 @@ public class DefaultProcessorModuleFactory implements ProcessorModuleFactory {
     private final List<EventProcessorDefinition> eventProcessorDefinitions;
     private final Map<String, EventProcessorSettings> allSettings;
     private final List<PooledStreamingEventProcessorModule.Customization> extensionsCustomizations;
+    private final List<SubscribingEventProcessorModule.Customization> subscribingCustomizations;
 
     /**
      * Creates a new factory with the given processor definitions and settings.
      *
-     * @param eventProcessorDefinitions The list of processor definitions that define handler assignment rules.
-     * @param settings                  The map of processor settings, keyed by processor name.
+     * @param eventProcessorDefinitions the list of processor definitions that define handler assignment rules
+     * @param settings                  the map of processor settings, keyed by processor name
      */
     public DefaultProcessorModuleFactory(List<EventProcessorDefinition> eventProcessorDefinitions,
                                          Map<String, EventProcessorSettings> settings) {
-        this(eventProcessorDefinitions, settings, Collections.emptyList());
+        this(eventProcessorDefinitions, settings, Collections.emptyList(), Collections.emptyList());
     }
 
     /**
      * Creates a new factory with the given processor definitions, settings, and additional customizations.
      *
-     * @param eventProcessorDefinitions The list of processor definitions that define handler assignment rules.
-     * @param settings                  The map of processor settings, keyed by processor name.
-     * @param extensionsCustomizations  Additional {@link PooledStreamingEventProcessorModule.Customization} beans
-     *                                  (e.g., DLQ configuration) to apply to each processor during module creation.
+     * @param eventProcessorDefinitions the list of processor definitions that define handler assignment rules
+     * @param settings                  the map of processor settings, keyed by processor name
+     * @param extensionsCustomizations  global {@link PooledStreamingEventProcessorModule.Customization} beans (e.g.,
+     *                                  DLQ configuration) to apply to each pooled streaming processor
+     * @param subscribingCustomizations global {@link SubscribingEventProcessorModule.Customization} beans to apply to
+     *                                  each subscribing processor
      */
     public DefaultProcessorModuleFactory(List<EventProcessorDefinition> eventProcessorDefinitions,
                                          Map<String, EventProcessorSettings> settings,
-                                         List<PooledStreamingEventProcessorModule.Customization> extensionsCustomizations) {
+                                         List<PooledStreamingEventProcessorModule.Customization> extensionsCustomizations,
+                                         List<SubscribingEventProcessorModule.Customization> subscribingCustomizations) {
         this.eventProcessorDefinitions = eventProcessorDefinitions;
         this.allSettings = settings;
         this.extensionsCustomizations = extensionsCustomizations;
+        this.subscribingCustomizations = subscribingCustomizations;
     }
 
     /**
@@ -162,11 +169,24 @@ public class DefaultProcessorModuleFactory implements ProcessorModuleFactory {
                 }
                 case SUBSCRIBING -> {
                     var moduleSettings = (EventProcessorSettings.SubscribingEventProcessorSettings) settings;
+                    var baseCustomization = SpringCustomizations.subscribingCustomizations(
+                            processorName, moduleSettings
+                    );
+                    UnaryOperator<SubscribingEventProcessorConfiguration> definitionCustomization =
+                            customizeConfiguration(processorName);
+                    SubscribingEventProcessorModule.Customization customization =
+                            (axonConfig, processorConfig) -> {
+                                var result = baseCustomization.apply(axonConfig, processorConfig);
+                                result = definitionCustomization.apply(result);
+                                for (var global : subscribingCustomizations) {
+                                    result = global.apply(axonConfig, result);
+                                }
+                                return result;
+                            };
                     yield EventProcessorModule
                             .subscribing(processorName)
                             .eventHandlingComponents(componentRegistration)
-                            .customized(SpringCustomizations.subscribingCustomizations(processorName, moduleSettings)
-                                                            .andThen(customizeConfiguration(processorName)))
+                            .customized(customization)
                             .build();
                 }
             };
