@@ -16,6 +16,7 @@
 
 package org.axonframework.messaging.commandhandling.interception;
 
+import org.axonframework.common.configuration.DecoratorOrder;
 import org.jspecify.annotations.Nullable;
 import org.axonframework.messaging.commandhandling.CommandBus;
 import org.axonframework.messaging.commandhandling.CommandHandler;
@@ -66,8 +67,11 @@ public class InterceptingCommandBus implements CommandBus {
      * <p>
      * The order of the {@code InterceptingCommandBus} is set to {@code Integer.MIN_VALUE + 100} to ensure it is applied
      * very early in the configuration process, but not the earliest to allow for other decorators to be applied.
+     *
+     * @deprecated in favor of {@link DecoratorOrder#INTERCEPTING}
      */
-    public static final int DECORATION_ORDER = Integer.MIN_VALUE + 100;
+    @Deprecated(since = "5.5.0")
+    public static final int DECORATION_ORDER = DecoratorOrder.INTERCEPTING;
 
     private final CommandBus delegate;
     private final List<MessageHandlerInterceptor<? super CommandMessage>> handlerInterceptors;

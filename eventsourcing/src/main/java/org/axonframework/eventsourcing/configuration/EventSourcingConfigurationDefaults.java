@@ -19,6 +19,7 @@ package org.axonframework.eventsourcing.configuration;
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.Configuration;
 import org.axonframework.common.configuration.ConfigurationEnhancer;
+import org.axonframework.common.configuration.DecoratorOrder;
 import org.axonframework.eventsourcing.eventstore.AnnotationBasedTagResolver;
 import org.axonframework.eventsourcing.eventstore.EventStorageEngine;
 import org.axonframework.eventsourcing.eventstore.EventStore;
@@ -86,7 +87,7 @@ public class EventSourcingConfigurationDefaults implements ConfigurationEnhancer
         registry.registerEnhancer(new SnapshotSourcingConfigurationEnhancer());
         registry.registerDecorator(
                 EventStore.class,
-                InterceptingEventStore.DECORATION_ORDER,
+                DecoratorOrder.INTERCEPTING - 50,
                 (config, name, delegate) -> {
                     List<MessageDispatchInterceptor<? super EventMessage>> dispatchInterceptors =
                             config.getComponent(DispatchInterceptorRegistry.class)

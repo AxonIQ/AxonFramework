@@ -16,9 +16,9 @@
 
 package org.axonframework.common.configuration;
 
-import org.jspecify.annotations.Nullable;
-import org.axonframework.common.infra.DescribableComponent;
 import org.axonframework.common.configuration.Component.Identifier;
+import org.axonframework.common.infra.DescribableComponent;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The starting point when configuring any Axon Framework application.
@@ -101,16 +101,17 @@ public interface ComponentRegistry extends DescribableComponent {
      * <p>
      * Decorators are invoked based on the given {@code order}. Decorators with a lower {@code order} will be executed
      * before those with a higher one. If decorators depend on the result of another decorator, their {@code order} must
-     * be strictly higher than the one they depend on.
+     * be strictly higher than the one they depend on. We refer to the {@link DecoratorOrder} for commonly used order
+     * values, providing information to decide the {@code order} for the given {@code decorator} on.
      * <p>
      * The order in which components are decorated by decorators with the same {@code order} is undefined.
      *
-     * @param type      The declared type of the component to decorate, typically an interface.
-     * @param order     The order of the given {@code decorator} among other decorators.
-     * @param decorator The decoration function for a component of type {@code C}.
-     * @param <C>       The type of component the {@code decorator} decorates.
-     * @param <D>       The type of component the {@code decorator} returns.
-     * @return The current instance of the {@code Configurer} for a fluent API.
+     * @param type      the declared type of the component to decorate, typically an interface
+     * @param order     the order of the given {@code decorator} among other decorators
+     * @param decorator the decoration function for a component of type {@code C}
+     * @param <C>       the type of component the {@code decorator} decorates
+     * @param <D>       the type of component the {@code decorator} returns
+     * @return the current instance of the {@code Configurer} for a fluent API
      */
     default <C, D extends C> ComponentRegistry registerDecorator(Class<C> type,
                                                                  int order,
@@ -125,19 +126,20 @@ public interface ComponentRegistry extends DescribableComponent {
      * {@link #registerComponent(Class, String, ComponentBuilder) registered} components of the given {@code type}
      * <b>and</b> {@code name} combination.
      * <p>
-     * Decorators are invoked based on the given {@code order}. Decorators with a lowe {@code order} will be executed
+     * Decorators are invoked based on the given {@code order}. Decorators with a lower {@code order} will be executed
      * before those with a higher one. If decorators depend on the result of another decorator, their {@code order} must
-     * be strictly higher than the one they depend on.
+     * be strictly higher than the one they depend on. We refer to the {@link DecoratorOrder} for commonly used order
+     * values, providing information to decide the {@code order} for the given {@code decorator} on.
      * <p>
      * The order in which components are decorated by decorators with the same {@code order} is undefined.
      *
-     * @param type      The declared type of the component to decorate, typically an interface.
-     * @param name      The name of the component to decorate.
-     * @param order     The order of the given {@code decorator} among other decorators.
-     * @param decorator The decoration function for a component of type {@code C}.
-     * @param <C>       The type of component the {@code decorator} decorates.
-     * @param <D>       The type of component the {@code decorator} returns.
-     * @return The current instance of the {@code Configurer} for a fluent API.
+     * @param type      the declared type of the component to decorate, typically an interface
+     * @param name      the name of the component to decorate
+     * @param order     the order of the given {@code decorator} among other decorators
+     * @param decorator the decoration function for a component of type {@code C}
+     * @param <C>       the type of component the {@code decorator} decorates
+     * @param <D>       the type of component the {@code decorator} returns
+     * @return the current instance of the {@code Configurer} for a fluent API
      */
     default <C, D extends C> ComponentRegistry registerDecorator(Class<C> type,
                                                                  String name,
@@ -151,9 +153,9 @@ public interface ComponentRegistry extends DescribableComponent {
     /**
      * Registers a decorator based on the given {@code definition}.
      *
-     * @param definition The definition of the decorator to apply to components.
-     * @param <C>        The declared type of the component(s) to decorate.
-     * @return The current instance of the {@code Configurer} for a fluent API.
+     * @param definition the definition of the decorator to apply to components
+     * @param <C>        the declared type of the component(s) to decorate
+     * @return the current instance of the {@code Configurer} for a fluent API
      * @see DecoratorDefinition
      */
     <C> ComponentRegistry registerDecorator(DecoratorDefinition<C, ? extends C> definition);

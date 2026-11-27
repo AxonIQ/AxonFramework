@@ -19,6 +19,7 @@ package org.axonframework.messaging.eventhandling.interception;
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.configuration.ComponentRegistry;
 import org.axonframework.common.configuration.DecoratorDefinition;
+import org.axonframework.common.configuration.DecoratorOrder;
 import org.axonframework.common.infra.ComponentDescriptor;
 import org.axonframework.messaging.core.Message;
 import org.axonframework.messaging.core.MessageHandlerInterceptor;
@@ -58,8 +59,11 @@ public class InterceptingEventHandlingComponent extends DelegatingEventHandlingC
      * The order of the {@code InterceptingEventHandlingComponent} is set to {@code Integer.MIN_VALUE + 100} to ensure
      * it is applied very early in the configuration process, but not the earliest to allow for other decorators to be
      * applied.
+     *
+     * @deprecated in favor of {@link DecoratorOrder#INTERCEPTING}
      */
-    public static final int DECORATION_ORDER = Integer.MIN_VALUE + 100;
+    @Deprecated(since = "5.5.0")
+    public static final int DECORATION_ORDER = DecoratorOrder.INTERCEPTING;
 
     private final List<MessageHandlerInterceptor<? super EventMessage>> interceptors;
     private final EventMessageHandlerInterceptorChain interceptorChain;

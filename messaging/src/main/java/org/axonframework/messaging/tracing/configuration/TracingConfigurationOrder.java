@@ -18,6 +18,7 @@ package org.axonframework.messaging.tracing.configuration;
 
 import org.axonframework.common.annotation.Internal;
 import org.axonframework.common.configuration.ConfigurationEnhancer;
+import org.axonframework.common.configuration.DecoratorOrder;
 
 /**
  * Ordering constants shared by the tracing modules' {@link ConfigurationEnhancer ConfigurationEnhancers} and
@@ -51,8 +52,11 @@ public final class TracingConfigurationOrder {
      * ({@code Integer.MIN_VALUE + 100}). The resulting stack is {@code Tracing(...(Intercepting(Simple...)))}: dispatch
      * and handler spans include interception time, and a message rejected by a dispatch interceptor still produces
      * a span.
+     *
+     * @deprecated in favor of {@link DecoratorOrder#TRACING}
      */
-    public static final int TRACING_DECORATOR_ORDER = Integer.MAX_VALUE - 1000;
+    @Deprecated(since = "5.5.0")
+    public static final int TRACING_DECORATOR_ORDER = DecoratorOrder.TRACING;
 
     /**
      * {@link ConfigurationEnhancer#order() Enhancer order} for the {@code *SpanAttributesProviderConfigurationEnhancer}

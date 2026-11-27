@@ -106,7 +106,9 @@ public sealed interface DecoratorDefinition<C, D extends C> permits DecoratorDef
     /**
      * Sets the {@code order} in which this decorator will be invoked on a component relative to other decorators.
      * <p>
-     * The relative order of decorators with the same {@code order} is undefined.
+     * We refer to the {@link DecoratorOrder} for commonly used order values, providing information to decide the
+     * {@code order} for the given {@code decorator} on. The relative order of decorators with the same {@code order} is
+     * undefined.
      * <p>
      * In absence of configuration, the order is {@code 0}.
      *

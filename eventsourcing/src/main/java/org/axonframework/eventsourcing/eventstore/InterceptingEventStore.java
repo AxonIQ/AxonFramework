@@ -16,6 +16,7 @@
 
 package org.axonframework.eventsourcing.eventstore;
 
+import org.axonframework.common.configuration.DecoratorOrder;
 import org.jspecify.annotations.Nullable;
 import org.axonframework.common.Registration;
 import org.axonframework.common.annotation.Internal;
@@ -67,8 +68,11 @@ public class InterceptingEventStore implements EventStore {
      * <p>
      * The order of the {@code InterceptingEventStore} is set to {@code Integer.MIN_VALUE + 50} to ensure it is applied
      * very early in the configuration process, but not the earliest to allow for other decorators to be applied.
+     *
+     * @deprecated in favor of {@link DecoratorOrder#INTERCEPTING} - 50
      */
-    public static final int DECORATION_ORDER = Integer.MIN_VALUE + 50;
+    @Deprecated(since = "5.5.0")
+    public static final int DECORATION_ORDER = DecoratorOrder.INTERCEPTING - 50;
 
     private final EventStore delegate;
     private final List<MessageDispatchInterceptor<? super EventMessage>> interceptors;
