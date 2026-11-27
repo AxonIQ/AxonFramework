@@ -569,6 +569,63 @@ public abstract class StorageEngineTestSuite<ESE extends EventStorageEngine> {
     }
 
     @Test
+    protected void streamingFromFirstTrackingTokenReturnsAllEvents() {
+        TaggedEventMessage<EventMessage> expectedEventOne = taggedEventMessage("event-0", TEST_CRITERIA_TAGS);
+        TaggedEventMessage<EventMessage> expectedEventTwo = taggedEventMessage("event-1", TEST_CRITERIA_TAGS);
+        appendEvents(AppendCondition.none(), expectedEventOne, expectedEventTwo);
+
+        MessageStream<EventMessage> result = testSubject.stream(
+                StreamingCondition.conditionFor(TrackingToken.FIRST, TEST_CRITERIA)
+        );
+
+        StepVerifier.create(FluxUtils.of(result))
+                    .assertNext(entry -> assertEvent(entry.message(), expectedEventOne.event()))
+                    .assertNext(entry -> assertEvent(entry.message(), expectedEventTwo.event()))
+                    .thenCancel()
+                    .verify();
+    }
+
+    @Test
+    protected void streamingFromFirstTrackingTokenHonorsCriteria() {
+        TaggedEventMessage<EventMessage> matching = taggedEventMessage("event-0", TEST_CRITERIA_TAGS);
+        appendEvents(
+                AppendCondition.none(),
+                matching,
+                taggedEventMessage("event-1", OTHER_CRITERIA_TAGS)
+        );
+
+        MessageStream<EventMessage> result = testSubject.stream(
+                StreamingCondition.conditionFor(TrackingToken.FIRST, TEST_CRITERIA)
+        );
+
+        StepVerifier.create(FluxUtils.of(result))
+                    .assertNext(entry -> assertEvent(entry.message(), matching.event()))
+                    .thenCancel()
+                    .verify();
+    }
+
+    @Test
+    protected void streamingFromLatestTrackingTokenSkipsExistingEvents() {
+        appendEvents(
+                AppendCondition.none(),
+                taggedEventMessage("event-0", TEST_CRITERIA_TAGS),
+                taggedEventMessage("event-1", TEST_CRITERIA_TAGS)
+        );
+
+        MessageStream<EventMessage> stream = testSubject.stream(StreamingCondition.startingFrom(TrackingToken.LATEST));
+
+        assertFalse(stream.hasNextAvailable());
+
+        TaggedEventMessage<EventMessage> expectedEvent = taggedEventMessage("event-2", TEST_CRITERIA_TAGS);
+        appendEvents(AppendCondition.none(), expectedEvent);
+
+        waitUntilHasNextAvailable(stream);
+        Optional<Entry<EventMessage>> next = stream.next();
+        assertTrue(next.isPresent());
+        assertEvent(next.get().message(), expectedEvent.event());
+    }
+
+    @Test
     protected void streamingAfterLastPositionReturnsEmptyStream() throws Exception {
         TrackingToken startToken = testSubject.latestToken().join();
 
