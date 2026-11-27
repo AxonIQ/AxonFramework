@@ -234,6 +234,59 @@ To recap, this implementation is primarily useful for:
 * Short-lived tools and utilities.
 * Development and prototyping.
 
+[#observing_appends]
+=== Observing appends
+
+Every append to an `EventStorageEngine` ends in one of four outcomes: the events are committed, the append is rejected because its `AppendCondition` was violated, the append fails for another reason, or it is rolled back.
+A rejection is the expected result of two concurrent decisions over the same consistency boundary, yet by default it only surfaces as an `AppendEventsTransactionRejectedException` at whichever layer happens to handle it.
+
+To see these outcomes in one place, decorate the storage engine with the `AppendObservingEventStorageEngine`, a xref:configuration:configurer.adoc#decorators[decorator] that reports the outcome of each append to an `AppendObserver`, at most once.
+The `AppendObservation` the observer receives carries the `AppendCondition`, the appended events, the `ProcessingContext` of the append, and one of the following outcomes:
+
+* `Committed`, with the `ConsistencyMarker` of the committed events.
+* `Rejected`, with the `AppendEventsTransactionRejectedException`, whether the engine detected the conflict when the append started or when it was committed.
+* `Failed`, with the cause of any other failure. The events may still be stored, for example when the failure happened after the commit, or when the storage did not confirm the commit.
+* `RolledBack`, when the append is rolled back before any of the other outcomes was reported.
+
+No outcome is reported in two cases: when the append committed but another commit action of the same `ProcessingContext` failed afterwards (the events are stored, but no consistency marker is obtained), and when a transaction is neither committed nor rolled back.
+
+The decorator only observes.
+It never replaces the result or the failure of an append, and an exception thrown by the observer is logged at `WARN` level without affecting the append.
+An `Error` thrown by the observer does not affect the append either: it is logged at `ERROR` level and, for a rejected or failed append, also attached as a suppressed exception to the cause of the failure.
+Since the observer is invoked before the caller of the append continues, keep it fast and non-blocking.
+
+Register the decorator through `AppendObservingEventStorageEngine.decoratorDefinition()`.
+It reports to the `AppendObserver` component, if you registered one, and otherwise to a `LoggingAppendObserver`.
+The `LoggingAppendObserver` logs every outcome at `DEBUG` level, rendering events by their type, identifier and tags only, never by their payload or metadata.
+Tag values and the `AppendCondition` are logged as is, and a failed append is logged with the stack trace of its cause.
+Enable `DEBUG` logging for `org.axonframework.eventsourcing.eventstore.LoggingAppendObserver` to see these log lines.
+
+The following example registers both the decorator and an observer counting rejected appends:
+
+[tabs]
+====
+Configuration API::
++
+--
+[source,java]
+----
+include::example$events/infrastructure/observing/configapi/AxonConfig.java[tag=observing-appends-configapi,indent=0]
+----
+--
+
+Spring Boot::
++
+--
+[source,java]
+----
+include::example$events/infrastructure/observing/springboot/AxonConfig.java[tag=observing-appends-springboot,indent=0]
+----
+--
+====
+
+The decorator registers at `AppendObservingEventStorageEngine.DECORATION_ORDER`, see xref:configuration:configurer.adoc#decorator-order[ordering decorators].
+It wraps the storage engine outside of the snapshot support Axon Framework adds to it, so the observer sees the appends as the event store issues them, and inside the tracing decorator, so a traced append includes the time spent in the observer.
+
 [#configuring_event_conversion]
 == Configuring event conversion
 
