@@ -131,7 +131,7 @@ public class AsyncInMemoryStreamableEventSource implements StreamableEventSource
     public @NonNull CompletableFuture<TrackingToken> latestToken(@Nullable ProcessingContext context) {
         return CompletableFuture.completedFuture(
                 eventStorage.isEmpty()
-                        ? null
+                        ? new GlobalSequenceTrackingToken(-1)
                         : new GlobalSequenceTrackingToken(eventStorage.lastKey() + 1)
         );
     }
@@ -270,18 +270,11 @@ public class AsyncInMemoryStreamableEventSource implements StreamableEventSource
                 return;
             }
 
-            // Properly handle tracking token position (unlike the original implementation)
-            TrackingToken startToken = condition.position();
-            if (startToken == null) {
-                // Start from the beginning
-                this.currentPosition = new AtomicLong(0);
-            } else {
-                // Events are published with a token one higher than their storage index, so a token's position is the
-                // index of the first event that has not been consumed yet. Matching the InMemoryEventStorageEngine,
-                // which opens a stream at condition.position() directly.
-                long tokenPosition = startToken.position().orElse(-1);
-                this.currentPosition = new AtomicLong(Math.max(0, tokenPosition));
-            }
+            // Events are published with a token one higher than their storage index, so a token's position is the
+            // index of the first event that has not been consumed yet. Matching the InMemoryEventStorageEngine,
+            // which opens a stream at condition.position() directly.
+            long tokenPosition = condition.position().position().orElse(-1);
+            this.currentPosition = new AtomicLong(Math.max(0, tokenPosition));
         }
 
         @Override
