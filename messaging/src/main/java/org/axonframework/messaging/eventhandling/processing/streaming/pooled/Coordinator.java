@@ -239,8 +239,8 @@ class Coordinator {
      * ignored for "re-claiming" for the specified {@code releaseDuration}, or until the release of the segment has
      * completed, whichever comes last.
      * <p>
-     * Claim and split instructions for a segment that is being released, and merge instructions, wait until the
-     * release has completed.
+     * Claim and split instructions for a segment that is being released, and merge instructions for it or for the
+     * segment to merge it with, wait until the release has completed.
      * <p>
      * If the coordinator is not actively processing {@code segmentId}, it will be disregarded for processing for the
      * given timeframe nonetheless.

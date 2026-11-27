@@ -195,6 +195,16 @@ public class PooledStreamingEventProcessor implements StreamingEventProcessor {
                          .thenCompose(unused -> coordinator.start());
     }
 
+    /**
+     * {@inheritDoc}
+     * <p>
+     * The shutdown completes once every segment release has ended, also releases that started before the shutdown, for
+     * example after an error. When a release that the shutdown starts ends with an {@link Error}, for example because a
+     * segment release listener throws one, the shutdown completes once the releases it started have ended, without
+     * waiting for releases that started before it. Only the segment release listeners of a release are bounded, by the
+     * claim extension threshold. Aborting the work package, storing its final progress and releasing its claim are not,
+     * so a final progress store that hangs holds up the shutdown just as long.
+     */
     @Override
     public CompletableFuture<Void> shutdown() {
         logger.info("Stopping PooledStreamingEventProcessor [{}]", name);
@@ -240,7 +250,9 @@ public class PooledStreamingEventProcessor implements StreamingEventProcessor {
      * Regardless of the {@code releaseDuration}, this processor does not claim the segment again before its release
      * has completed: its work package has aborted, its final progress has been stored and its segment release listeners
      * have been notified, after which its claim has been released. Until then, claim and split instructions for the
-     * segment wait, as do merge instructions. A segment release listener should therefore not wait for those.
+     * segment wait, as do merge instructions for the segment or for the segment to merge it with. A segment release
+     * listener should therefore not wait for those, and neither should an event handler processing the segment: the
+     * release waits for the batch it handles, so the instruction would only complete once the handler stops waiting.
      */
     @Override
     public CompletableFuture<Void> releaseSegment(int segmentId, long releaseDuration, TimeUnit unit) {
@@ -250,6 +262,12 @@ public class PooledStreamingEventProcessor implements StreamingEventProcessor {
         return FutureUtils.emptyCompletedFuture();
     }
 
+    /**
+     * {@inheritDoc}
+     * <p>
+     * While the segment is being released, the claim waits until the release has completed, see
+     * {@link #releaseSegment(int, long, TimeUnit)}.
+     */
     @Override
     public CompletableFuture<Boolean> claimSegment(int segmentId) {
         return coordinator.claimSegment(segmentId);
