@@ -177,12 +177,12 @@ public class SnapshottingEntityLifecycleHandler<I, E> implements EntityLifecycle
                 }
             };
 
-        return source
-            .reduce(null, accumulator)
+        return reduce(source, accumulator, pc)
             .exceptionallyCompose(e -> switch (e) {
                 case SnapshotIncompatibleException sce ->
-                    transaction.source(SourcingCondition.conditionFor(Position.START, criteria), positionRef::set)
-                        .reduce(null, accumulator);
+                    reduce(transaction.source(SourcingCondition.conditionFor(Position.START, criteria), positionRef::set),
+                           accumulator,
+                           pc);
                 default -> CompletableFuture.failedFuture(e);
             })
             .thenApply(entity -> {
@@ -197,6 +197,14 @@ public class SnapshottingEntityLifecycleHandler<I, E> implements EntityLifecycle
 
                 return entity;
             });
+    }
+
+    private CompletableFuture<E> reduce(MessageStream<? extends EventMessage> source,
+                                        BiFunction<E, MessageStream.Entry<? extends EventMessage>, E> accumulator,
+                                        ProcessingContext pc) {
+        return pc.requiresSameThreadInvocations()
+            ? source.reduce(null, accumulator, null)
+            : source.reduce(null, accumulator);
     }
 
     private void storeSnapshot(I identifier, E entity, Position position, ProcessingContext context) {

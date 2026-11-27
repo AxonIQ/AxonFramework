@@ -31,6 +31,7 @@ import org.axonframework.modelling.repository.ManagedEntity;
 
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.BiFunction;
 
 /**
  * A simple implementation of {@link EntityLifecycleHandler} that reconstructs an entity
@@ -101,10 +102,12 @@ public class SimpleEntityLifecycleHandler<I, E> implements EntityLifecycleHandle
         EventStoreTransaction transaction = eventStore.transaction(pc);
         MessageStream<? extends EventMessage> source = transaction.source(SourcingCondition.conditionFor(criteria));
 
-        return source.reduce(
-            (E) null,
-            (entity, entry) -> evolver.evolve(identifier, entity, entry.message(), pc)
-        );
+        BiFunction<E, MessageStream.Entry<? extends EventMessage>, E> accumulator =
+            (entity, entry) -> evolver.evolve(identifier, entity, entry.message(), pc);
+
+        return pc.requiresSameThreadInvocations()
+            ? source.reduce((E) null, accumulator, null)
+            : source.reduce((E) null, accumulator);
     }
 
     @Override

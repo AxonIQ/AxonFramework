@@ -75,7 +75,8 @@ public record UnitOfWorkConfiguration(Executor workScheduler,
     /**
      * Creates a new {@link UnitOfWorkConfiguration} that forces all handlers to be invoked by the same thread. The
      * configuration uses a direct execution model where all tasks are run immediately on the calling thread, and the
-     * coordinating thread will wait for any asynchronous processing to complete.
+     * coordinating thread will wait for any asynchronous processing to complete. The context of the unit of work then
+     * {@link ProcessingContext#requiresSameThreadInvocations() requires same-thread invocations}.
      * <p>
      * The {@link #processingLifecycleEnhancers() enhancers} and the {@link #lifecycleInterceptor() interceptor} are
      * preserved, so lifecycle customization and state-bridging around framework-executed segments survive the switch to
