@@ -142,13 +142,13 @@ public class GenericCommandMessage extends MessageDecorator implements CommandMe
     }
 
     @Override
-        public CommandMessage withMetadata(Map<String, String> metadata) {
-        return new GenericCommandMessage(delegate().withMetadata(metadata));
+    public CommandMessage withMetadata(Map<String, String> metadata) {
+        return new GenericCommandMessage(delegate().withMetadata(metadata), routingKey, priority);
     }
 
     @Override
-        public CommandMessage andMetadata(Map<String, String> metadata) {
-        return new GenericCommandMessage(delegate().andMetadata(metadata));
+    public CommandMessage andMetadata(Map<String, String> metadata) {
+        return new GenericCommandMessage(delegate().andMetadata(metadata), routingKey, priority);
     }
 
     @Override
