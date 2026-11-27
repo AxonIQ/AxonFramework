@@ -16,6 +16,7 @@
 
 package org.axonframework.modelling.annotation;
 
+import org.axonframework.common.AxonConfigurationException;
 import org.axonframework.common.StringUtils;
 import org.axonframework.common.ReflectionUtils;
 import org.axonframework.messaging.core.MessageStream;
@@ -27,6 +28,7 @@ import org.axonframework.messaging.core.annotation.ClasspathParameterResolverFac
 import org.axonframework.messaging.core.annotation.HandlerDefinition;
 import org.axonframework.messaging.core.annotation.MessageHandlingMember;
 import org.axonframework.messaging.core.annotation.ParameterResolverFactory;
+import org.axonframework.messaging.core.annotation.UnsupportedHandlerException;
 import org.axonframework.messaging.core.unitofwork.ProcessingContext;
 import org.axonframework.messaging.eventhandling.EventMessage;
 import org.axonframework.messaging.eventhandling.annotation.EventHandler;
@@ -39,6 +41,7 @@ import org.jspecify.annotations.Nullable;
 
 import java.lang.reflect.Member;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
@@ -79,8 +82,9 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
     private final Class<E> entityType;
     private final AnnotatedHandlerInspector<E> inspector;
     private final EventConverter converter;
-    private final Map<Class<?>, Map<QualifiedName, List<MessageHandlingMember<? super E>>>> handlersByEntityType;
+    private final Map<Class<?>, Map<QualifiedName, List<EvolvingHandler<E>>>> handlersByEntityType;
     private final Set<Class<? extends E>> evolvableTypes;
+    private final boolean hasStaticHandlers;
 
     /**
      * Initialize a new annotation-based {@link EntityEvolver}.
@@ -181,33 +185,55 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
                 evolvableTypes,
                 "The evolvable types must not be null."
         ));
+        this.hasStaticHandlers = handlersByEntityType.values().stream()
+                                                     .flatMap(handlers -> handlers.values().stream())
+                                                     .flatMap(List::stream)
+                                                     .anyMatch(EvolvingHandler::isStatic);
     }
 
+    @Nullable
     @Override
-    public E evolve(E entity,
+    public E evolve(@Nullable E entity,
                     EventMessage event,
                     ProcessingContext context) {
+        if (entity == null && !hasStaticHandlers) {
+            throw new AxonConfigurationException(
+                    "Cannot apply [" + event.type() + "]: the [" + entityType.getName() + "] entity does not exist yet,"
+                            + " and it declares no static event sourcing handler that could create it. Create the entity"
+                            + " before this event, for example with an @EntityCreator or in its EventSourcedEntityFactory,"
+                            + " or declare a static @EventSourcingHandler that creates it."
+            );
+        }
+        // With a null entity the concrete type is unknown, so static (create-from-null) handlers are routed by the
+        // declared entity type, mirroring how creational command handlers are registered on the super type.
+        Class<?> listenerType = entity != null ? entity.getClass() : entityType;
         try {
-            var listenerType = entity.getClass();
-
             var handlers = handlersByEntityType.getOrDefault(listenerType, Map.of())
                                                .getOrDefault(event.type().qualifiedName(), List.of());
 
             E evolvedEntity = entity;
             MessageHandlingMember<? super E> previous = null;
-            for (var handler : handlers) {
-                var convertedEvent = event.withConvertedPayload(handler.payloadType(), converter);
-                if (!handler.canHandle(convertedEvent, context)) {
+            for (var evolvingHandler : handlers) {
+                if (evolvedEntity == null && !evolvingHandler.isStatic()) {
+                    // An instance handler cannot run without an instance to invoke it on.
                     continue;
                 }
-                assertHandlerCanRunOn(handler, previous, evolvedEntity, event);
+                var handler = evolvingHandler.member();
+                var convertedEvent = event.withConvertedPayload(handler.payloadType(), converter);
+                var contextWithEntity = ActiveEntity.set(context, evolvedEntity);
+                if (!handler.canHandle(convertedEvent, contextWithEntity)) {
+                    continue;
+                }
+                if (evolvedEntity != null) {
+                    assertHandlerCanRunOn(handler, previous, evolvedEntity, event);
+                }
                 previous = handler;
                 var interceptor = inspector.chainedInterceptor(listenerType);
-                var result = interceptor.handle(convertedEvent, context, evolvedEntity, handler)
+                var result = interceptor.handle(convertedEvent, contextWithEntity, evolvedEntity, handler)
                                         .first()
                                         .asCompletableFuture()
                                         .join();
-                evolvedEntity = entityFromStreamResultOrUpdatedExisting(result, evolvedEntity, handler, event);
+                evolvedEntity = nextState(result, evolvedEntity, handler, evolvingHandler.isStatic(), event);
             }
 
             return evolvedEntity;
@@ -215,13 +241,13 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
             throw e;
         } catch (Exception e) {
             throw new StateEvolvingException(
-                    "Failed to apply event [" + event.type() + "] in order to evolve [" + entity.getClass() + "] state",
+                    "Failed to apply event [" + event.type() + "] in order to evolve [" + listenerType + "] state",
                     e
             );
         }
     }
 
-    private Map<Class<?>, Map<QualifiedName, List<MessageHandlingMember<? super E>>>> indexHandlersByEntityType(
+    private Map<Class<?>, Map<QualifiedName, List<EvolvingHandler<E>>>> indexHandlersByEntityType(
             MessageTypeResolver messageTypeResolver
     ) {
         return inspector.getAllHandlers().entrySet().stream()
@@ -231,7 +257,7 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
                         ));
     }
 
-    private Map<QualifiedName, List<MessageHandlingMember<? super E>>> indexHandlersByEventName(
+    private Map<QualifiedName, List<EvolvingHandler<E>>> indexHandlersByEventName(
             Class<?> type,
             Collection<MessageHandlingMember<? super E>> handlers,
             MessageTypeResolver messageTypeResolver
@@ -243,7 +269,37 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
                        .collect(Collectors.toUnmodifiableMap(
                                Map.Entry::getKey,
                                entry -> onePerDispatchTargetParentFirst(type, entry.getValue())
+                                       .stream()
+                                       .map(this::toEvolvingHandler)
+                                       .toList()
                        ));
+    }
+
+    private EvolvingHandler<E> toEvolvingHandler(MessageHandlingMember<? super E> handler) {
+        Optional<Method> method = handler.unwrap(Method.class);
+        boolean isStatic = method.map(m -> Modifier.isStatic(m.getModifiers())).orElse(false);
+        if (isStatic) {
+            assertReturnsNextState(method.get());
+        }
+        return new EvolvingHandler<>(handler, isStatic);
+    }
+
+    /**
+     * Rejects a {@code static} event sourcing handler whose return type cannot be the next entity state, such as
+     * {@code void}. The return type is compared with the declaring type rather than this component's entity type, so a
+     * handler on a polymorphic super type may return one concrete subtype.
+     */
+    private static void assertReturnsNextState(Method method) {
+        Class<?> returnType = method.getReturnType();
+        Class<?> declaringType = method.getDeclaringClass();
+        if (!returnType.isAssignableFrom(declaringType) && !declaringType.isAssignableFrom(returnType)) {
+            throw new UnsupportedHandlerException(
+                    "Static event sourcing handler [" + method + "] declares [" + returnType.getName()
+                            + "]. Return the next entity state compatible with [" + declaringType.getName()
+                            + "], or use an instance handler to mutate the current entity.",
+                    method
+            );
+        }
     }
 
     /**
@@ -304,30 +360,51 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
                       .orElseGet(() -> messageTypeResolver.resolveOrThrow(handler.payloadType()).qualifiedName());
     }
 
-    private E entityFromStreamResultOrUpdatedExisting(MessageStream.Entry<?> potentialEntityFromStream,
-                                                      E existing,
-                                                      MessageHandlingMember<? super E> handler,
-                                                      EventMessage event) {
-        if (potentialEntityFromStream != null) {
-            var resultPayload = potentialEntityFromStream.message().payload();
-            if (resultPayload != null && entityType.isAssignableFrom(resultPayload.getClass())) {
-                Class<?> resultType = resultPayload.getClass();
-                if (!evolvableTypes.contains(resultType)) {
-                    throw new StateEvolvingException(
-                            ("Cannot apply [%s]: [%s] returned [%s], which is not the entity type [%s] or a registered "
-                                    + "concrete type. List it in @EventSourcedEntity(concreteTypes = ...) or make the "
-                                    + "entity type sealed.")
-                                    .formatted(
-                                            event.type(),
-                                            handler.signature(),
-                                            resultType.getName(),
-                                            entityType.getName()
-                                    )
-                    );
-                }
-                //noinspection unchecked
-                return (E) entityType.cast(resultPayload);
+    /**
+     * Returns the entity state after the given {@code handler} ran: the entity it returned, or {@code existing} when it
+     * returned nothing. A static handler always returns the next state, so a value that is not an entity is rejected,
+     * and a {@code null} is the next state while the entity does not exist yet, declining to create it, and is rejected
+     * once the entity exists.
+     */
+    @Nullable
+    private E nextState(MessageStream.@Nullable Entry<?> potentialEntityFromStream,
+                        @Nullable E existing,
+                        MessageHandlingMember<? super E> handler,
+                        boolean staticHandler,
+                        EventMessage event) {
+        Object resultPayload = potentialEntityFromStream == null ? null : potentialEntityFromStream.message().payload();
+        if (resultPayload != null && entityType.isAssignableFrom(resultPayload.getClass())) {
+            Class<?> resultType = resultPayload.getClass();
+            if (!evolvableTypes.contains(resultType)) {
+                throw new StateEvolvingException(
+                        ("Cannot apply [%s]: [%s] returned [%s], which is not the entity type [%s] or a registered "
+                                + "concrete type. List it in @EventSourcedEntity(concreteTypes = ...) or make the "
+                                + "entity type sealed.")
+                                .formatted(
+                                        event.type(),
+                                        handler.signature(),
+                                        resultType.getName(),
+                                        entityType.getName()
+                                )
+                );
             }
+            //noinspection unchecked
+            return (E) entityType.cast(resultPayload);
+        }
+        if (staticHandler && resultPayload != null) {
+            throw new StateEvolvingException(
+                    "Cannot apply [" + event.type() + "]: static event sourcing handler [" + handler.signature()
+                            + "] returned [" + resultPayload.getClass().getName() + "], which is not an ["
+                            + entityType.getName() + "]. Return the next entity state.");
+        }
+        if (staticHandler) {
+            if (existing != null) {
+                throw new StateEvolvingException(
+                        "A static event sourcing handler returned null for an existing [" + entityType.getName()
+                                + "] entity. An entity that exists cannot be removed by returning null; "
+                                + "model end-of-life as a terminal state instead.");
+            }
+            return null;
         }
         return existing;
     }
@@ -337,5 +414,18 @@ public class AnnotationBasedEntityEvolvingComponent<E> implements EntityEvolving
         return handlersByEntityType.values().stream()
                                   .flatMap(handlers -> handlers.keySet().stream())
                                   .collect(Collectors.toUnmodifiableSet());
+    }
+
+    /**
+     * A {@link MessageHandlingMember} together with whether it is {@code static}, determined once at construction
+     * rather than on every event. Only a static handler can run while the entity does not exist yet, and only a static
+     * handler returning {@code null} declines to create it.
+     *
+     * @param member   the handler to invoke
+     * @param isStatic whether the handler is a {@code static} method
+     * @param <E>      the entity type
+     */
+    private record EvolvingHandler<E>(MessageHandlingMember<? super E> member, boolean isStatic) {
+
     }
 }

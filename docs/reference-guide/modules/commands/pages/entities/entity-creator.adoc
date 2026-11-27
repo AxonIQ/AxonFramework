@@ -1,7 +1,7 @@
 = Entity Creator
 :navtitle: Entity creator
 
-Every event-sourced entity needs a creator method: a constructor or static factory method that Axon calls before replaying the entity's events.
+An entity creator is a constructor or static factory method that Axon calls to construct the entity before replaying its events.
 Three creator forms are supported:
 
 . **No-argument creator**: Axon calls a no-arg constructor, then replays the entity's events.
@@ -9,6 +9,12 @@ Three creator forms are supported:
 . **First-event-based creator**: Axon passes the first event in the entity's stream at construction time.
 
 The identifier-based and first-event-based forms are the foundation for **immutable entities**: by passing required state into the constructor, fields can be declared `final` and the entity's identity is fixed from the moment of creation.
+
+[TIP]
+====
+A creator is optional when the entity is created by a xref:commands:entities/event-sourced-entity.adoc#_static_event_sourcing_handlers[static event sourcing handler].
+Such a handler receives the event and the current state, which is `null` before the first event, and returns the next state, so it can create the entity from its first event without a creator.
+====
 
 Each form is supported by both configuration styles:
 
