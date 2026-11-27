@@ -24,13 +24,13 @@ import org.axonframework.messaging.eventhandling.processing.streaming.segmenting
 import org.axonframework.messaging.eventhandling.processing.streaming.token.MergedTrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.TrackingToken;
 import org.axonframework.messaging.eventhandling.processing.streaming.token.store.TokenStore;
-import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.invoke.MethodHandles;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -40,13 +40,13 @@ import java.util.function.Function;
 /**
  * A {@link CoordinatorTask} implementation dedicated to merging two {@link Segment}s.
  * <p>
- * If the {@link Coordinator} owning this instruction is currently in charge of the {@code segmentId} and the segment to
- * merge it with, both {@link WorkPackage}s will be aborted, after which the merge will start. When this coordinator is
- * not in charge of one of the two segments, it will try to claim either segment's {@link TrackingToken} and perform the
- * merge then.
+ * If the {@link Coordinator} owning this instruction is currently in charge of the {@code segmentId} or the segment to
+ * merge it with, it releases those segments before running this task, as with any release: their {@link WorkPackage}s
+ * are aborted, their final progress is stored and the segment release listeners are notified, but their claims are kept
+ * for this task. The task then claims both segments' {@link TrackingToken}s and merges them.
  * <p>
- * In either approach, this operation will delete one of the segments and release the claim on the other so that another
- * thread can proceed with processing it.
+ * This operation deletes both segments and leaves the merged segment unclaimed, so that any processor instance can
+ * proceed with processing it.
  *
  * @author Steven van Beelen
  * @see Coordinator
@@ -75,7 +75,7 @@ class MergeTask extends CoordinatorTask {
      * @param segmentId         The identifier of the {@link Segment} this instruction should merge.
      * @param workPackages      The collection of {@link WorkPackage}s controlled by the {@link Coordinator}. Will be
      *                          queried for the presence of the given {@code segmentId} and the segment to merge it
-     *                          with.
+     *                          with, to have them released first.
      * @param releasesDeadlines  the map of segments that are blocked from claiming until a specified time
      * @param tokenStore        The storage solution for {@link TrackingToken}s. Used to claim the {@code segmentId} if
      *                          it is not present in the {@code workPackages}, to remove one of the segments and merge
@@ -106,9 +106,8 @@ class MergeTask extends CoordinatorTask {
     /**
      * {@inheritDoc}
      * <p>
-     * Performs a {@link Segment} merge. Will succeed if either the given {@code workPackages} contain the
-     * {@link WorkPackage}s corresponding to the given {@code segmentId} and the identifier to merge with. Or, if the
-     * {@link TrackingToken}(s) for the segments can be claimed.
+     * Performs a {@link Segment} merge. Will succeed if the {@link TrackingToken}s for both segments can be claimed,
+     * which they can when the {@link Coordinator} kept their claims for this task.
      */
     @Override
     protected CompletableFuture<Boolean> task() {
@@ -127,9 +126,9 @@ class MergeTask extends CoordinatorTask {
             return unitOfWorkFactory.create().executeWithResult(
                     context -> tokenStore.fetchSegment(name, thisSegment.mergeableSegmentId(), context)
             ).thenCompose(thatSegment -> FutureUtils.runFailing(() -> {
-                // runFailing turns a synchronous throw (an abort rejected by a saturated worker executor, for
-                // instance) into a failed future, so the handler below observes it too rather than being skipped along
-                // with the rest of the chain -- leaking whichever blocks tokenFor already installed.
+                // runFailing turns a synchronous throw into a failed future, so the handler below observes it too
+                // rather than being skipped along with the rest of the chain -- leaking whichever blocks tokenFor
+                // already installed.
                 CompletableFuture<TrackingToken> thisTokenFuture = tokenFor(thisSegment.getSegmentId());
                 CompletableFuture<TrackingToken> thatTokenFuture = tokenFor(thatSegment.getSegmentId());
                 return thisTokenFuture
@@ -152,21 +151,9 @@ class MergeTask extends CoordinatorTask {
         // This prevents a race condition where the Coordinator might claim a segment that's being merged.
         releasesDeadlines.put(segmentId, clock.instant().plus(RECLAIM_BLOCK_TIMEOUT));
 
-        // Remove WorkPackage so that the CoordinatorTask cannot find it to release its claim upon impending abortion.
-        WorkPackage workPackage = workPackages.remove(segmentId);
-        return workPackage != null
-                ? workPackage.abort(null)
-                             .thenCompose(e -> fetchTokenInUnitOfWork(segmentId, workPackage))
-                : fetchTokenInUnitOfWork(segmentId, null);
-    }
-
-    private CompletableFuture<TrackingToken> fetchTokenInUnitOfWork(int segmentId, @Nullable WorkPackage workPackage) {
-        // Commit the aborted package's final progress BEFORE fetching the token, so the merged segment inherits the
-        // freshly-reconciled position rather than a stale stored token.
-        return releaseProgressOf(workPackage, unitOfWorkFactory)
-                .thenCompose(released -> unitOfWorkFactory.create().executeWithResult(
-                        context -> tokenStore.fetchToken(name, segmentId, context)
-                ));
+        return unitOfWorkFactory.create().executeWithResult(
+                context -> tokenStore.fetchToken(name, segmentId, context)
+        );
     }
 
     private CompletableFuture<Boolean> mergeSegments(Segment thisSegment, TrackingToken thisToken,
@@ -185,6 +172,33 @@ class MergeTask extends CoordinatorTask {
                                  return true;
                              });
         });
+    }
+
+    /**
+     * {@inheritDoc}
+     * <p>
+     * Returns the work package of the given {@code segmentId} and of the segment it merges with, if present. Without a
+     * work package for the given {@code segmentId}, its mask is unknown, so the work package of any segment that merges
+     * with it is returned.
+     */
+    @Override
+    List<WorkPackage> workPackagesToRelease() {
+        WorkPackage workPackage = workPackages.get(segmentId);
+        if (workPackage == null) {
+            return workPackages.values()
+                               .stream()
+                               .filter(other -> other.segment().mergeableSegmentId() == segmentId)
+                               .toList();
+        }
+        Segment segment = workPackage.segment();
+        if (segment.mergeableSegmentId() == segmentId) {
+            // A segment covering all events cannot be merged, which the task reports.
+            return List.of();
+        }
+        WorkPackage other = workPackages.get(segment.mergeableSegmentId());
+        return other != null && other.segment().isMergeableWith(segment)
+                ? List.of(workPackage, other)
+                : List.of(workPackage);
     }
 
     // The segment to merge with is only known once this task runs, so any release counts.

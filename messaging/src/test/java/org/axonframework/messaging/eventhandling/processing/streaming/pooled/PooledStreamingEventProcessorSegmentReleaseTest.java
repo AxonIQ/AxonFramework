@@ -409,6 +409,134 @@ class PooledStreamingEventProcessorSegmentReleaseTest {
     }
 
     @Nested
+    class WhenSplit {
+
+        @BeforeEach
+        void setUp() {
+            failNextEvent.set(false);
+            finalProgressGate.complete(null);
+        }
+
+        @Test
+        void releaseListenersLearnTheSegmentWasGivenUpBeforeItsHalvesAreClaimed() {
+            // given
+            releaseListenerGate.complete(null);
+            startProcessor(1);
+
+            // when
+            assertThat(processor().splitSegment(0)).succeedsWithin(TIMEOUT).isEqualTo(true);
+
+            // then - the claim is kept for the split, which leaves both halves unclaimed
+            Segment original = Segment.ROOT_SEGMENT;
+            await().atMost(TIMEOUT).untilAsserted(() -> assertThat(segmentChanges).containsExactlyInAnyOrder(
+                    new SegmentChange(CLAIMED, original),
+                    new SegmentChange(RELEASED, original),
+                    new SegmentChange(CLAIMED, new Segment(0, 1)),
+                    new SegmentChange(CLAIMED, new Segment(1, 1))
+            ));
+            assertThat(segmentLog).containsExactly(
+                    CLAIMED, STORING_FINAL_PROGRESS, FINAL_PROGRESS_STORED, RELEASE_LISTENER_INVOKED, CLAIMED, CLAIMED
+            );
+        }
+
+        @Test
+        void splitContinuesAfterAFailedFinalStore() {
+            // given
+            releaseListenerGate.complete(null);
+            firstFinalProgressFails.set(true);
+            startProcessor(1);
+
+            // when
+            assertThat(processor().splitSegment(0)).succeedsWithin(TIMEOUT).isEqualTo(true);
+
+            // then
+            assertThat(segmentChanges).contains(new SegmentChange(RELEASED, Segment.ROOT_SEGMENT));
+            await().atMost(TIMEOUT).untilAsserted(
+                    () -> assertThat(processor().processingStatus()).containsOnlyKeys(0, 1)
+            );
+        }
+
+        @Test
+        void otherSegmentsKeepProcessingWhileTheReleaseListenersOfTheSegmentToSplitWindDown() {
+            // given
+            startProcessor(2);
+            await().atMost(TIMEOUT).until(() -> processor().processingStatus().containsKey(1));
+            CompletableFuture<Boolean> split = processor().splitSegment(0);
+            await().atMost(TIMEOUT).until(() -> segmentLog.contains(RELEASE_LISTENER_INVOKED));
+            OptionalLong positionBefore = processor().processingStatus().get(1).getCurrentPosition();
+
+            // when
+            eventSource.publishMessage(EventTestUtils.asEventMessage("event"));
+
+            // then
+            await().atMost(TIMEOUT).untilAsserted(
+                    () -> assertThat(processor().processingStatus().get(1).getCurrentPosition())
+                            .isNotEqualTo(positionBefore)
+            );
+            assertThat(split).isNotDone();
+
+            // when
+            releaseListenerGate.complete(null);
+
+            // then
+            assertThat(split).succeedsWithin(TIMEOUT).isEqualTo(true);
+        }
+
+        @Test
+        void shutdownReleasesTheClaimKeptForASplitThatWillNotRun() {
+            // given
+            startProcessor(1);
+            CompletableFuture<Boolean> split = processor().splitSegment(0);
+            await().atMost(TIMEOUT).until(() -> segmentLog.contains(RELEASE_LISTENER_INVOKED));
+
+            // when
+            CompletableFuture<Void> shutdown = processor().shutdown();
+            releaseListenerGate.complete(null);
+
+            // then
+            assertThat(shutdown).succeedsWithin(TIMEOUT);
+            assertThat(split).succeedsWithin(TIMEOUT).isEqualTo(false);
+            assertThat(segmentLog).containsExactly(
+                    CLAIMED, STORING_FINAL_PROGRESS, FINAL_PROGRESS_STORED, RELEASE_LISTENER_INVOKED, CLAIM_RELEASED
+            );
+        }
+    }
+
+    @Nested
+    class WhenMerged {
+
+        @BeforeEach
+        void setUp() {
+            releaseListenerGate.complete(null);
+            finalProgressGate.complete(null);
+        }
+
+        @Test
+        void releaseListenersLearnBothSegmentsWereGivenUpBeforeTheMergedSegmentIsClaimed() {
+            // given
+            Segment lowerHalf = new Segment(0, 1);
+            Segment upperHalf = new Segment(1, 1);
+            startProcessor(2);
+            await().atMost(TIMEOUT).until(() -> processor().processingStatus().containsKey(1));
+
+            // when
+            assertThat(processor().mergeSegment(0)).succeedsWithin(TIMEOUT).isEqualTo(true);
+
+            // then
+            Segment merged = Segment.ROOT_SEGMENT;
+            await().atMost(TIMEOUT).untilAsserted(() -> assertThat(segmentChanges).containsExactlyInAnyOrder(
+                    new SegmentChange(CLAIMED, lowerHalf),
+                    new SegmentChange(CLAIMED, upperHalf),
+                    new SegmentChange(RELEASED, lowerHalf),
+                    new SegmentChange(RELEASED, upperHalf),
+                    new SegmentChange(CLAIMED, merged)
+            ));
+            assertThat(segmentChanges.getLast()).isEqualTo(new SegmentChange(CLAIMED, merged));
+            assertThat(segmentLog).doesNotContain(CLAIM_RELEASED);
+        }
+    }
+
+    @Nested
     class WhenAHandlerGivesAnInstruction {
 
         @BeforeEach
